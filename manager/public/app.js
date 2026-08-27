@@ -133,7 +133,7 @@ function selectTab(name) {
     setMiningPolling(name === 'mining');
     // Same for the kaspad log: no point streaming it from another section.
     if (name !== 'kaspad') setKaspadLog(false);
-    else setKaspadLog(document.querySelector('.subtab-btn.active')?.dataset.subtab === 'kaspadlog');
+    else setKaspadLog(activeSubtab('kaspad') === 'kaspadlog');
     // On the drawer layout, picking a destination should get out of the way.
     if (MOBILE()) closeDrawer();
 }
@@ -144,11 +144,11 @@ for (const item of document.querySelectorAll('.nav-item')) {
 
 // --- sub-tabs (panels inside one destination) ---
 
-function selectSubtab(name) {
-    for (const button of document.querySelectorAll('.subtab-btn')) {
+function selectSubtab(section, name) {
+    for (const button of section.querySelectorAll('.subtab-btn')) {
         button.classList.toggle('active', button.dataset.subtab === name);
     }
-    for (const panel of document.querySelectorAll('.subtab')) {
+    for (const panel of section.querySelectorAll(':scope > .subtab')) {
         panel.classList.toggle('active', panel.id === `sub-${name}`);
     }
     // The kaspad log only streams while it is on screen.
@@ -156,8 +156,12 @@ function selectSubtab(name) {
 }
 
 for (const button of document.querySelectorAll('.subtab-btn')) {
-    button.addEventListener('click', () => selectSubtab(button.dataset.subtab));
+    button.addEventListener('click', () => selectSubtab(button.closest('section'), button.dataset.subtab));
 }
+
+/** The sub-tab currently showing in a section, or null if it has none. */
+const activeSubtab = (tab) =>
+    document.querySelector(`#tab-${tab} .subtab-btn.active`)?.dataset.subtab ?? null;
 
 // --- collapse (wide screens) ---
 
@@ -704,7 +708,7 @@ async function loadMining() {
 }
 
 function renderMiningState(container, stats) {
-    const badge = $('bridge-state');
+    const badge = $('mining-state');
     const running = container?.running;
     badge.textContent = !miningConfig?.enabled ? 'off' : running ? 'running' : container?.status || 'stopped';
     badge.className = `tag ${!miningConfig?.enabled ? 'off' : running ? 'ok' : ''}`;
@@ -796,10 +800,28 @@ function renderStratumTargets(cfg) {
     $('stratum-body').innerHTML = rows.join('');
 }
 
-$('mining-save').addEventListener('click', async () => {
+$('mining-enabled').addEventListener('change', async (event) => {
+    const enabled = event.target.checked;
     const err = $('mining-error');
     err.hidden = true;
-    const config = {
+    event.target.disabled = true;
+    try {
+        await api('/api/mining', { method: 'PUT', body: { config: { ...collectMiningConfig(), enabled } } });
+        openConsole(enabled ? 'Starting the stratum bridge' : 'Stopping the stratum bridge');
+        setTimeout(loadMining, 2000);
+    } catch (e) {
+        // Put the switch back; nothing was started or stopped.
+        event.target.checked = !enabled;
+        err.textContent = e.message;
+        err.hidden = false;
+    } finally {
+        event.target.disabled = false;
+    }
+});
+
+/** Everything the Settings sub-tab owns, without the on/off state. */
+function collectMiningConfig() {
+    return {
         enabled: $('mining-enabled').checked,
         instances: collectInstances(),
         varDiff: $('mining-vardiff').checked,
@@ -812,9 +834,14 @@ $('mining-save').addEventListener('click', async () => {
         logToFile: $('mining-logfile').checked,
         publishDashboard: $('mining-dash').checked,
     };
+}
+
+$('mining-save').addEventListener('click', async () => {
+    const err = $('mining-settings-error');
+    err.hidden = true;
     try {
-        await api('/api/mining', { method: 'PUT', body: { config } });
-        openConsole(config.enabled ? 'Starting the stratum bridge' : 'Stopping the stratum bridge');
+        await api('/api/mining', { method: 'PUT', body: { config: collectMiningConfig() } });
+        openConsole('Applying mining settings');
         setTimeout(loadMining, 2000);
     } catch (e) {
         err.textContent = e.message;

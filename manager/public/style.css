@@ -797,3 +797,26 @@ table.ports td.note { color: var(--muted); font-size: 12.5px; font-family: inher
     font-style: italic;
     padding: 20px;
 }
+
+/* --------------------------------------------------- on/off toggle header */
+
+/* A section's main on/off control: the switch is the primary action, so it
+   leads, and there is no separate Apply to forget to press. */
+.toggle-bar { margin-bottom: 16px; }
+.toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+.toggle-row .toggle-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.toggle-row .toggle-text strong { font-size: 15px; }
+.toggle-row .toggle-text .muted { font-size: 13px; }
+.toggle-row .switch { width: 46px; height: 25px; flex-basis: 46px; }
+.toggle-row .switch .track::before { width: 17px; height: 17px; }
+.toggle-row .switch input:checked + .track::before { transform: translate(20px, -50%); }
