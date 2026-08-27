@@ -105,7 +105,10 @@ export async function containerState(name) {
         const { stdout } = await docker([
             'inspect',
             '--format',
-            '{{.State.Status}}|{{.State.Running}}|{{.State.StartedAt}}|{{.State.Health.Status}}|{{.Config.Image}}|{{.RestartCount}}',
+            // `.State.Health` only exists when the image declares a HEALTHCHECK.
+            // Referencing it unguarded makes `docker inspect` fail outright, so
+            // every container without one looked like it did not exist at all.
+            '{{.State.Status}}|{{.State.Running}}|{{.State.StartedAt}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{.Config.Image}}|{{.RestartCount}}',
             name,
         ]);
         const [status, running, startedAt, health, image, restarts] = stdout.trim().split('|');
@@ -114,7 +117,7 @@ export async function containerState(name) {
             status,
             running: running === 'true',
             startedAt,
-            health: health === '<no value>' ? null : health,
+            health: health === 'none' || health === '<no value>' ? null : health,
             image,
             restarts: Number(restarts) || 0,
         };

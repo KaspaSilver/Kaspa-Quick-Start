@@ -110,11 +110,75 @@ export function renderPortsOverride(cfg) {
 
 /** The ports a user has to open on their router/firewall to go public. */
 export function publicPorts(cfg) {
+    return portMatrix(cfg).filter((entry) => entry.on).map(({ port, name, required }) => ({ port, name, required }));
+}
+
+/**
+ * Every port the node can offer, on or off, for the dashboard's toggles.
+ *
+ * Listing only the enabled ones would be a trap: switching a port off would
+ * remove its own row, leaving no way to switch it back on.
+ *
+ * `canStopListening` records whether turning the toggle off can also drop the
+ * kaspad argument, or only unpublish the host port:
+ *   - P2P has no off switch worth having; a node without peers is not a node.
+ *   - wRPC JSON is how this panel talks to the node, so its listener stays up
+ *     on the internal network whatever the toggle says.
+ * In both of those cases "off" still means unreachable from outside, which is
+ * what this section is about.
+ */
+export function portMatrix(cfg) {
     const p = ports(cfg);
-    const out = [];
-    if (cfg.expose.p2p) out.push({ port: p.p2p, name: 'P2P', required: true });
-    if (cfg.expose.grpc && cfg.services.grpc) out.push({ port: p.grpc, name: 'gRPC', required: false });
-    if (cfg.expose.borsh && cfg.services.borsh) out.push({ port: p.borsh, name: 'wRPC Borsh', required: false });
-    if (cfg.expose.json) out.push({ port: p.json, name: 'wRPC JSON', required: false });
-    return out;
+    return [
+        {
+            key: 'p2p',
+            port: p.p2p,
+            name: 'P2P',
+            required: true,
+            on: Boolean(cfg.expose.p2p),
+            canStopListening: false,
+            note: 'Peers connect here. Off unpublishes the port; the node keeps talking to the peers it dials out to.',
+        },
+        {
+            key: 'grpc',
+            port: p.grpc,
+            name: 'gRPC',
+            required: false,
+            on: Boolean(cfg.expose.grpc && cfg.services.grpc),
+            canStopListening: true,
+            note: 'Wallets and tools. Off runs the node with --nogrpc and unpublishes the port.',
+        },
+        {
+            key: 'borsh',
+            port: p.borsh,
+            name: 'wRPC Borsh',
+            required: false,
+            on: Boolean(cfg.expose.borsh && cfg.services.borsh),
+            canStopListening: true,
+            note: 'Rusty/KDX style clients, and what the KaChat indexer reads. Off drops the listener and unpublishes the port.',
+        },
+        {
+            key: 'json',
+            port: p.json,
+            name: 'wRPC JSON',
+            required: false,
+            on: Boolean(cfg.expose.json),
+            canStopListening: false,
+            note: 'Browser and JSON clients. Off unpublishes the port; the listener stays on the internal network for this panel.',
+        },
+    ];
+}
+
+/**
+ * Applies a dashboard toggle to the stored config. Where a listener can be shut
+ * down as well as unpublished, both move together, so "off" means the node is
+ * genuinely started without that argument rather than merely firewalled.
+ */
+export function setPortEnabled(cfg, key, enabled) {
+    const entry = portMatrix(cfg).find((e) => e.key === key);
+    if (!entry) throw new Error(`Unknown port "${key}".`);
+
+    cfg.expose[key] = enabled;
+    if (entry.canStopListening) cfg.services[key] = enabled;
+    return cfg;
 }

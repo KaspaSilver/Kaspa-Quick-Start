@@ -69,6 +69,9 @@ function showLogin() {
 function showApp() {
     $('login').classList.add('hidden');
     $('app').classList.remove('hidden');
+    // The heading is static markup until something navigates; seed it from
+    // whichever entry starts active so it is not stale on first paint.
+    $('page-title').textContent = document.querySelector('.nav-item.active .label').textContent;
     startPolling();
     loadSettings();
     loadProxies();
@@ -128,12 +131,32 @@ function selectTab(name) {
     $('page-title').textContent = title;
     // Mining stats are only polled while that tab is on screen.
     setMiningPolling(name === 'mining');
+    // Same for the kaspad log: no point streaming it from another section.
+    if (name !== 'kaspad') setKaspadLog(false);
+    else setKaspadLog(document.querySelector('.subtab-btn.active')?.dataset.subtab === 'kaspadlog');
     // On the drawer layout, picking a destination should get out of the way.
     if (MOBILE()) closeDrawer();
 }
 
 for (const item of document.querySelectorAll('.nav-item')) {
     item.addEventListener('click', () => selectTab(item.dataset.tab));
+}
+
+// --- sub-tabs (panels inside one destination) ---
+
+function selectSubtab(name) {
+    for (const button of document.querySelectorAll('.subtab-btn')) {
+        button.classList.toggle('active', button.dataset.subtab === name);
+    }
+    for (const panel of document.querySelectorAll('.subtab')) {
+        panel.classList.toggle('active', panel.id === `sub-${name}`);
+    }
+    // The kaspad log only streams while it is on screen.
+    setKaspadLog(name === 'kaspadlog');
+}
+
+for (const button of document.querySelectorAll('.subtab-btn')) {
+    button.addEventListener('click', () => selectSubtab(button.dataset.subtab));
 }
 
 // --- collapse (wide screens) ---
@@ -288,25 +311,62 @@ function applyNodeGating(status) {
     // the user on a section whose controls no longer work.
     const active = document.querySelector('.nav-item.active');
     if (!ready && active?.hasAttribute('data-requires-node')) {
-        selectTab('dashboard');
+        selectTab('kaspad');
         toast(lockReason, 'bad');
     }
 }
 
+/**
+ * Every port gets a switch, on by default because that is how the node starts
+ * out. Every port is listed whether it is on or off -- showing only the enabled
+ * ones would remove a port's own row when you switched it off, leaving no way
+ * to switch it back on.
+ */
 function renderPorts(s) {
     const publishedSet = new Set(s.published.map((p) => (p.container || '').split('/')[0]));
-    const rows = s.publicPorts.map((p) => {
-        const live = publishedSet.has(String(p.port));
-        return `<tr>
+    const matrix = s.portMatrix || [];
+
+    $('ports-body').innerHTML = matrix
+        .map((p) => {
+            const live = publishedSet.has(String(p.port));
+            const state = !p.on
+                ? '<span class="tag off">off</span>'
+                : live
+                  ? '<span class="tag ok">published</span>'
+                  : '<span class="tag">applying…</span>';
+            return `<tr>
+      <td class="toggle">
+        <label class="switch" title="${escapeHtml(p.note)}">
+          <input type="checkbox" data-port-toggle="${p.key}" ${p.on ? 'checked' : ''}>
+          <span class="track"></span>
+        </label>
+      </td>
       <td>${p.port}</td>
       <td>${p.name}${p.required ? ' <span class="tag">needed to be public</span>' : ''}</td>
-      <td>${live ? '<span class="tag ok">published</span>' : '<span class="tag off">not published</span>'}</td>
-      <td><button class="ghost" data-portcheck="${p.port}">Test</button></td>
+      <td>${state}</td>
+      <td><button class="ghost" data-portcheck="${p.port}" ${p.on ? '' : 'disabled'}>Test</button></td>
     </tr>`;
-    });
-    $('ports-body').innerHTML =
-        rows.join('') || '<tr><td colspan="4" class="empty">No ports published — this node is reachable only from this machine.</td></tr>';
+        })
+        .join('');
 }
+
+// Flipping a switch restarts the node with that port on or off.
+$('ports-body').addEventListener('change', async (event) => {
+    const key = event.target.dataset?.portToggle;
+    if (!key) return;
+    const enabled = event.target.checked;
+    event.target.disabled = true;
+    try {
+        const r = await api(`/api/ports/${key}`, { method: 'POST', body: { enabled } });
+        if (!r.unchanged) openConsole(`${enabled ? 'Enabling' : 'Disabling'} ${key}`);
+    } catch (e) {
+        // Put the switch back where it was; the node was not changed.
+        event.target.checked = !enabled;
+        toast(e.message, 'bad');
+    } finally {
+        event.target.disabled = false;
+    }
+});
 
 document.addEventListener('click', async (event) => {
     const port = event.target.dataset?.portcheck;
@@ -1170,6 +1230,27 @@ function connectLogs() {
     });
 }
 $('log-source').addEventListener('change', connectLogs);
+
+// The Kaspad section's own log panel, separate from the all-container viewer
+// so switching sources over there cannot disturb it.
+let kaspadLogStream = null;
+
+function setKaspadLog(active) {
+    if (!active) {
+        kaspadLogStream?.close();
+        kaspadLogStream = null;
+        return;
+    }
+    if (kaspadLogStream) return;
+    const view = $('kaspadlog-view');
+    view.textContent = '';
+    kaspadLogStream = new EventSource('/api/logs/stream?container=kaspad');
+    kaspadLogStream.addEventListener('line', (event) => {
+        view.textContent += `${JSON.parse(event.data).line}\n`;
+        if (view.textContent.length > 400_000) view.textContent = view.textContent.slice(-300_000);
+        if ($('kaspadlog-follow').checked) view.scrollTop = view.scrollHeight;
+    });
+}
 
 // ---------------------------------------------------------------- console ---
 

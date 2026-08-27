@@ -1,10 +1,11 @@
 import http from 'node:http';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { CONF_DIR, ensureDirs, NODE_CONFIG_FILE, PROXIES_FILE } from './lib/paths.js';
+import { CONF_DIR, ensureDirs, KASPAD_ARGS_FILE, NODE_CONFIG_FILE, PROXIES_FILE } from './lib/paths.js';
 import {
     DEFAULT_NODE_CONFIG,
     NETWORKS,
@@ -16,7 +17,7 @@ import {
     saveNodeConfig,
     saveProxies,
 } from './lib/store.js';
-import { buildArgs, ports, publicPorts, renderPortsOverride, writeArgsFile } from './lib/kaspad-args.js';
+import { buildArgs, portMatrix, ports, publicPorts, renderPortsOverride, setPortEnabled, writeArgsFile } from './lib/kaspad-args.js';
 import * as dockerctl from './lib/dockerctl.js';
 import * as nginx from './lib/nginx.js';
 import * as certbot from './lib/certbot.js';
@@ -149,6 +150,9 @@ async function applyNodeConfig(cfg, onLine = () => {}) {
 
     onLine('Recreating the kaspad container...');
     await dockerctl.compose(['up', '-d', '--force-recreate', KASPAD_SERVICE], { onLine, timeoutMs: 10 * 60_000 });
+    // The container now matches the file; remember that so a manager restart
+    // does not decide the node needs recreating again.
+    recordAppliedArgs();
 
     try {
         await nginx.reload();
@@ -170,6 +174,31 @@ async function applyNodeConfig(cfg, onLine = () => {}) {
     }
 
     return { args, mappings };
+}
+
+const APPLIED_ARGS_FILE = path.join(CONF_DIR, 'kaspad-applied.json');
+
+const argsHash = () =>
+    crypto.createHash('sha256').update(fs.readFileSync(KASPAD_ARGS_FILE, 'utf8')).digest('hex');
+
+/** True when the args on disk are not what the running container was built with. */
+function argsDrifted() {
+    try {
+        const applied = JSON.parse(fs.readFileSync(APPLIED_ARGS_FILE, 'utf8'));
+        return applied.hash !== argsHash();
+    } catch {
+        // No record at all: either a fresh install or an older one. Treat as
+        // drifted so the node is brought in line exactly once.
+        return true;
+    }
+}
+
+function recordAppliedArgs() {
+    try {
+        fs.writeFileSync(APPLIED_ARGS_FILE, `${JSON.stringify({ hash: argsHash(), at: new Date().toISOString() }, null, 2)}\n`);
+    } catch (err) {
+        log(`could not record applied kaspad arguments: ${err.message}`);
+    }
 }
 
 /**
@@ -361,6 +390,7 @@ route('GET', /^\/api\/status$/, async (req, res) => {
         network: cfg.network,
         ports: ports(cfg),
         publicPorts: publicPorts(cfg),
+        portMatrix: portMatrix(cfg),
         published,
         disk,
         job: jobs.snapshot(),
@@ -388,6 +418,40 @@ route('PUT', /^\/api\/config$/, async (req, res) => {
     saveNodeConfig(cfg);
     const job = jobs.start('Apply node configuration', (onLine) => applyNodeConfig(cfg, onLine));
     sendJson(res, 202, { ok: true, jobId: job.id, config: cfg });
+});
+
+route('POST', /^\/api\/ports\/(p2p|grpc|borsh|json)$/, async (req, res, match) => {
+    const key = match[1];
+    const body = await readBody(req);
+    const enabled = Boolean(body.enabled);
+
+    const cfg = loadNodeConfig();
+    const entry = portMatrix(cfg).find((e) => e.key === key);
+    if (entry.on === enabled) return sendJson(res, 200, { ok: true, unchanged: true });
+
+    // Turning Borsh off pulls the chain feed out from under the KaChat indexer,
+    // which would then sit there doing nothing. Say so instead of breaking it.
+    if (key === 'borsh' && !enabled) {
+        const appsCfg = apps.loadAppsConfig();
+        if (appsCfg.kachat.enabled) {
+            return fail(res, 409, 'The KaChat indexer is running and reads the chain over wRPC Borsh.', {
+                details: ['Switch KaChat off first, or leave this port on.'],
+            });
+        }
+    }
+
+    setPortEnabled(cfg, key, enabled);
+    saveNodeConfig(cfg);
+
+    const job = jobs.start(`${enabled ? 'Enable' : 'Disable'} ${entry.name} (${entry.port})`, (onLine) => {
+        onLine(
+            enabled
+                ? `Restarting the node with ${entry.name} on.`
+                : `Restarting the node with ${entry.name} off${entry.canStopListening ? ' (listener and host port)' : ' (host port; listener stays internal)'}.`,
+        );
+        return applyNodeConfig(cfg, onLine);
+    });
+    sendJson(res, 202, { ok: true, jobId: job.id });
 });
 
 route('POST', /^\/api\/node\/(start|stop|restart)$/, async (req, res, match) => {
@@ -1007,6 +1071,26 @@ async function bootstrap() {
             ? 'auth           : password required'
             : 'auth           : none (panel expects to be bound to 127.0.0.1)',
     );
+
+    // Self-heal the first-boot race. kaspad and this container start together,
+    // and kaspad reads its arguments file the instant it boots -- so on a fresh
+    // install it can start before the file exists and come up on kaspad's own
+    // defaults: gRPC on loopback and no wRPC at all, which this panel cannot
+    // talk to at all.
+    //
+    // The check is against a hash recorded when the container was last created,
+    // not the file's timestamp: bootstrap rewrites that file on every start, so
+    // a timestamp comparison would recreate the node every time the manager
+    // restarted.
+    try {
+        const state = await dockerctl.containerState(dockerctl.KASPAD_CONTAINER);
+        if (state.running && argsDrifted()) {
+            log('kaspad is running with different arguments than configured - recreating it');
+            jobs.start('Apply kaspad arguments', (onLine) => applyNodeConfig(cfg, onLine));
+        }
+    } catch (err) {
+        log(`could not compare kaspad against its arguments: ${err.message}`);
+    }
 
     duckdns.scheduleFromConfig(log);
 
