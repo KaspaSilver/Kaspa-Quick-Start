@@ -398,8 +398,13 @@
                 <option value="1e12" selected>TH/s</option>
                 <option value="1e15">PH/s</option>
               </select>
-              <button type="button" id="earn-reset" class="ghost" title="Use the hashrate your miners are actually reporting">measured</button>
+              <button type="button" id="earn-reset" class="ghost">Use my miners</button>
+              <span class="tag" id="earn-source">–</span>
             </label>
+            <p class="hint tight">
+              Type any hashrate to see what it would earn. <strong>Use my miners</strong>
+              puts the figure your connected miners are reporting back in the box.
+            </p>
             <div class="grid stats" id="earn-grid">
               <div class="stat"><span id="earn-day">–</span><small>per day</small></div>
               <div class="stat"><span id="earn-1">–</span><small>1 month</small></div>

@@ -863,3 +863,5 @@ table.ports td.note { color: var(--muted); font-size: 12.5px; font-family: inher
 
 #scan-results td { font-size: 13px; }
 #scan-results a { color: var(--accent); }
+
+.hint.tight { margin-top: 4px; margin-bottom: 12px; }

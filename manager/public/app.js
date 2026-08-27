@@ -871,6 +871,22 @@ function renderProjection(p, net) {
     $('earn-6').textContent = fmtKas(byMonths[6] ?? 0);
     $('earn-12').textContent = fmtKas(byMonths[12] ?? 0);
 
+    // Say plainly whether these numbers come from real miners or a typed
+    // what-if, and do not offer a button that would fill in a zero.
+    const hasMeasured = Number(p.measured) > 0;
+    const usingMeasured = hasMeasured && !p.hypothetical;
+    const source = $('earn-source');
+    source.textContent = usingMeasured ? 'from your miners' : p.hashrate > 0 ? 'what-if' : 'no hashrate';
+    source.className = `tag ${usingMeasured ? 'ok' : 'off'}`;
+
+    const reset = $('earn-reset');
+    reset.disabled = !hasMeasured || usingMeasured;
+    reset.title = !hasMeasured
+        ? 'No miners are connected, so there is no measured hashrate to use.'
+        : usingMeasured
+          ? 'Already showing your miners\' reported hashrate.'
+          : 'Put your miners\' reported hashrate back in the box.';
+
     $('earn-share').textContent = p.share > 0 ? `${(p.share * 100).toPrecision(3)}%` : '–';
     $('earn-nethash').textContent = net?.value
         ? `${fmtRawHashrate(net.value)}${net.source ? ` (from the ${net.source})` : ''}`
