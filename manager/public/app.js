@@ -1276,10 +1276,47 @@ function renderLogTile(key) {
     const buf = logBuffers.get(key) ?? [];
     const filter = $('log-filter').value.trim().toLowerCase();
     const shown = filter ? buf.filter((l) => l.toLowerCase().includes(filter)) : buf;
+
+    // While filtering, a container with no match is dropped rather than left as
+    // an empty box: the point of a filter is to be shown only what matched.
+    const tile = document.querySelector(`[data-tile="${key}"]`);
+    if (tile) tile.hidden = Boolean(filter) && shown.length === 0;
+
     pre.textContent = shown.join('\n');
     const count = document.querySelector(`[data-tilecount="${key}"]`);
     if (count) count.textContent = filter ? `${shown.length}/${buf.length}` : String(buf.length);
     if ($('log-follow').checked) pre.scrollTop = pre.scrollHeight;
+}
+
+/** Keeps the toolbar honest about what the filter is hiding. */
+function updateLogSummary() {
+    const tiles = [...document.querySelectorAll('.log-tile')];
+    if (!tiles.length) return;
+    const visible = tiles.filter((t) => !t.hidden);
+    const filter = $('log-filter').value.trim();
+    const note = $('logs-note');
+
+    if (!filter) {
+        note.textContent = `${tiles.length} container${tiles.length === 1 ? '' : 's'} running`;
+    } else if (visible.length) {
+        note.textContent = `${visible.length} of ${tiles.length} container${tiles.length === 1 ? '' : 's'} match “${filter}”`;
+    } else {
+        note.textContent = `Nothing matches “${filter}”`;
+    }
+
+    let empty = document.getElementById('log-no-match');
+    if (!visible.length && filter) {
+        if (!empty) {
+            empty = document.createElement('p');
+            empty.id = 'log-no-match';
+            empty.className = 'empty-tile';
+            $('log-grid').appendChild(empty);
+        }
+        empty.textContent = `No lines in any container match “${filter}”.`;
+        empty.hidden = false;
+    } else if (empty) {
+        empty.hidden = true;
+    }
 }
 
 function connectLogs() {
@@ -1303,6 +1340,7 @@ function connectLogs() {
             const dot = document.querySelector(`[data-tiledot="${c.key}"]`);
             if (dot) dot.className = 'dot ok';
         }
+        updateLogSummary();
     });
 
     logStream.addEventListener('line', (event) => {
@@ -1311,7 +1349,10 @@ function connectLogs() {
         if (!buf) return;
         buf.push(line);
         if (buf.length > LOG_TILE_LINES) buf.splice(0, buf.length - LOG_TILE_LINES);
+        const wasHidden = document.querySelector(`[data-tile="${key}"]`)?.hidden;
         renderLogTile(key);
+        // A newly arrived line can pull a hidden container back into the match.
+        if (wasHidden !== document.querySelector(`[data-tile="${key}"]`)?.hidden) updateLogSummary();
     });
 
     logStream.addEventListener('error', () => {
@@ -1321,6 +1362,7 @@ function connectLogs() {
 
 $('log-filter').addEventListener('input', () => {
     for (const key of logBuffers.keys()) renderLogTile(key);
+    updateLogSummary();
 });
 
 $('log-grid').addEventListener('click', (event) => {

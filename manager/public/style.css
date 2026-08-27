@@ -753,6 +753,8 @@ table.ports td.note { color: var(--muted); font-size: 12.5px; font-family: inher
     height: 320px;
 }
 .log-tile.expanded { grid-column: 1 / -1; height: min(70vh, 640px); }
+/* .log-tile sets display:flex, which would otherwise beat the hidden attribute. */
+.log-tile[hidden] { display: none; }
 
 .log-tile-head {
     display: flex;
