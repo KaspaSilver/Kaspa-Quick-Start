@@ -103,7 +103,19 @@ $('logout').addEventListener('click', async () => {
 const SIDEBAR_KEY = 'kaspa-node-sidebar';
 const MOBILE = () => window.matchMedia('(max-width: 860px)').matches;
 
+// Why the node-dependent sections are locked, or null when they are open.
+let lockReason = 'Waiting for the node…';
+
+const isLocked = (name) => {
+    const item = document.querySelector(`.nav-item[data-tab="${name}"]`);
+    return Boolean(item?.classList.contains('locked'));
+};
+
 function selectTab(name) {
+    if (isLocked(name)) {
+        toast(lockReason || 'This section needs a running, synced node.', 'bad');
+        return;
+    }
     let title = name;
     for (const item of document.querySelectorAll('.nav-item')) {
         const active = item.dataset.tab === name;
@@ -245,6 +257,40 @@ async function refreshStatus() {
     }
 
     renderPorts(s);
+    applyNodeGating(s);
+}
+
+/**
+ * Mining and KaChat only make sense against a node that is up and caught up:
+ * a stratum server on a syncing node hands miners stale work, and the indexer
+ * would index a chain that is not there. The server refuses to enable them too
+ * -- this just stops the UI offering something it will reject.
+ */
+function applyNodeGating(status) {
+    const ready = Boolean(status?.ready);
+    lockReason = ready
+        ? null
+        : !status?.container?.running
+          ? 'The node is not running yet — start it on the Dashboard.'
+          : !status?.rpc?.reachable
+            ? 'The node is still starting up.'
+            : 'The node is still syncing — this unlocks once it has caught up.';
+
+    for (const item of document.querySelectorAll('.nav-item[data-requires-node]')) {
+        item.classList.toggle('locked', !ready);
+        item.setAttribute('aria-disabled', String(!ready));
+        item.title = ready
+            ? item.querySelector('.label').textContent
+            : `${item.querySelector('.label').textContent} — ${lockReason}`;
+    }
+
+    // If the node falls out of sync while one of these is open, do not strand
+    // the user on a section whose controls no longer work.
+    const active = document.querySelector('.nav-item.active');
+    if (!ready && active?.hasAttribute('data-requires-node')) {
+        selectTab('dashboard');
+        toast(lockReason, 'bad');
+    }
 }
 
 function renderPorts(s) {

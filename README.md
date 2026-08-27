@@ -139,6 +139,13 @@ published — and the panel says so if it is off.
 The bridge container only exists while mining is on: it sits behind a compose
 profile, so a normal node install never starts a stratum server.
 
+**Mining** and **KaChat** stay greyed out in the sidebar until the node is
+running *and* synced. Both read live chain data — a stratum server on a syncing
+node hands miners stale work, and the indexer would index a chain that is not
+there yet. The API refuses to enable them for the same reason, so the greying is
+a courtesy rather than the actual rule. Nextcloud is never gated; it has nothing
+to do with the chain.
+
 **KaChat** — runs the [KaChat indexer](https://github.com/KaspaSilver/KaChat-Indexer)
 and embeds its own admin dashboard, so you get the exact Dashboard, KaPosts,
 Broadcasts, Chats, Group chats, Export / Import and Settings tabs it ships with,

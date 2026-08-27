@@ -172,6 +172,30 @@ async function applyNodeConfig(cfg, onLine = () => {}) {
     return { args, mappings };
 }
 
+/**
+ * Whether the node is far enough along for the services that depend on it.
+ *
+ * The stratum bridge and the KaChat indexer both read live chain data: started
+ * against a syncing node they either serve stale work to miners or index a
+ * chain that is not there yet. The panel greys them out for the same reason,
+ * but the check lives here too -- the UI is a courtesy, this is the rule.
+ */
+async function nodeReadiness() {
+    const [state, snapshot] = await Promise.all([
+        dockerctl.containerState(dockerctl.KASPAD_CONTAINER),
+        nodeSnapshot(),
+    ]);
+    const synced = Boolean(snapshot.sync?.isSynced ?? snapshot.info?.isSynced ?? false);
+    const running = Boolean(state.running);
+
+    let reason = null;
+    if (!running) reason = 'The node is not running.';
+    else if (!snapshot.reachable) reason = 'The node is still starting — its RPC is not answering yet.';
+    else if (!synced) reason = 'The node is still syncing with the network.';
+
+    return { running, rpcReachable: snapshot.reachable, synced, ready: running && snapshot.reachable && synced, reason };
+}
+
 function sanitizeNodeConfig(input) {
     const errors = [];
     const cfg = structuredClone(DEFAULT_NODE_CONFIG);
@@ -331,6 +355,8 @@ route('GET', /^\/api\/status$/, async (req, res) => {
         // Inbound peers are the honest signal that the P2P port is reachable
         // from the internet: nobody can dial in if it is closed.
         p2pReachable: peers.length ? inbound > 0 : null,
+        // Drives whether the panel unlocks Mining and KaChat.
+        ready: state.running && snapshot.reachable && Boolean(snapshot.sync?.isSynced ?? snapshot.info?.isSynced ?? false),
         version,
         network: cfg.network,
         ports: ports(cfg),
@@ -626,6 +652,7 @@ route('GET', /^\/api\/mining$/, async (req, res) => {
         container: state,
         stats,
         blockers: bridge.miningBlockers(cfg, loadNodeConfig()),
+        readiness: await nodeReadiness(),
         // What a miner should be pointed at. The panel cannot know which
         // interface the miner will come from, so it offers the public address
         // and lets the UI show the LAN alternative.
@@ -639,6 +666,12 @@ route('PUT', /^\/api\/mining$/, async (req, res) => {
     if (errors.length) return fail(res, 400, 'The mining configuration has problems.', { details: errors });
 
     const blockers = bridge.miningBlockers(cfg, loadNodeConfig());
+    if (cfg.enabled) {
+        const readiness = await nodeReadiness();
+        if (!readiness.ready) {
+            blockers.unshift(`${readiness.reason} Mining can only be switched on once the node is running and synced.`);
+        }
+    }
     if (blockers.length) return fail(res, 409, 'Mining cannot start yet.', { details: blockers });
 
     bridge.saveBridgeConfig(cfg);
@@ -736,7 +769,7 @@ route('GET', /^\/api\/apps$/, async (req, res) => {
             blockers: apps.appBlockers(name, cfg, nodeCfg),
         };
     }
-    sendJson(res, 200, { config: cfg, apps: state, adminPath: kachatProxy.MOUNT });
+    sendJson(res, 200, { config: cfg, apps: state, adminPath: kachatProxy.MOUNT, readiness: await nodeReadiness() });
 });
 
 route('PUT', /^\/api\/apps\/(kachat|nextcloud)$/, async (req, res, match) => {
@@ -751,6 +784,13 @@ route('PUT', /^\/api\/apps\/(kachat|nextcloud)$/, async (req, res, match) => {
     if (errors.length) return fail(res, 400, 'The configuration has problems.', { details: errors });
 
     const blockers = apps.appBlockers(name, cfg, loadNodeConfig());
+    // Nextcloud does not read the chain, so it is not gated on the node.
+    if (cfg[name].enabled && apps.APPS[name].needsSyncedNode) {
+        const readiness = await nodeReadiness();
+        if (!readiness.ready) {
+            blockers.unshift(`${readiness.reason} ${apps.APPS[name].label} can only be switched on once the node is running and synced.`);
+        }
+    }
     if (blockers.length) return fail(res, 409, `${apps.APPS[name].label} cannot start yet.`, { details: blockers });
 
     apps.saveAppsConfig(cfg);

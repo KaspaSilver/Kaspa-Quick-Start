@@ -20,6 +20,8 @@ export const APPS = {
         repo: 'KaspaSilver/KaChat-Indexer',
         profile: 'kachat',
         services: ['kachat-db', 'kachat-app'],
+        // Reads live chain data, so it is pointless before the node has synced.
+        needsSyncedNode: true,
         container: 'kaspa-node-kachat',
         // Ports the container listens on, and whether publishing them is useful.
         ports: {
@@ -35,6 +37,8 @@ export const APPS = {
         repo: 'KaspaSilver/KaChat-NextCloud',
         profile: 'nextcloud',
         services: ['nextcloud-db', 'nextcloud-redis', 'nextcloud-imaginary', 'nextcloud'],
+        // A file server: nothing to do with the chain, so never gated on it.
+        needsSyncedNode: false,
         container: 'kaspa-node-nextcloud',
         ports: {
             web: { port: 80, label: 'Nextcloud web', hostPort: 8080 },
