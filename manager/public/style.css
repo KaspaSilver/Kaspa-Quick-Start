@@ -344,3 +344,45 @@ dialog .row label { flex: 1; min-width: 110px; }
 }
 .toast.bad { border-color: var(--danger); color: var(--danger); }
 .toast.good { border-color: var(--accent-dim); }
+
+/* ---------------------------------------------------------------- mining */
+
+.grid.stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 14px;
+}
+@media (max-width: 700px) {
+    .grid.stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.stat {
+    background: var(--panel-2);
+    border-radius: 8px;
+    padding: 12px 14px;
+    min-width: 0;
+}
+.stat span {
+    display: block;
+    font-size: 24px;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+}
+.stat small { color: var(--muted); font-size: 12px; }
+
+/* Wide tables scroll inside their card rather than the page. */
+.scroll-x { overflow-x: auto; }
+.scroll-x table { min-width: 720px; }
+
+table.workers td, table.blocks td { font-family: var(--mono); font-size: 12.5px; }
+table.workers td.name, table.blocks td.name { font-family: inherit; font-size: 14px; }
+.trunc { display: inline-block; max-width: 200px; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; white-space: nowrap; }
+
+.status-online  { color: var(--ok); }
+.status-idle    { color: var(--warn); }
+.status-offline { color: var(--muted); }
+
+table.instances input[type="number"] { width: 100%; margin: 0; }
+table.instances td { padding: 6px 8px; }
+table.instances td:last-child { width: 40px; text-align: right; }

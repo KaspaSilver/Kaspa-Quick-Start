@@ -82,14 +82,16 @@ if command -v docker >/dev/null 2>&1 && d info >/dev/null 2>&1; then
         say "Stopping the stack"
         compose_files=(-f "$STACK_DIR/docker-compose.yml")
         [ -f "$STACK_DIR/conf/ports.yml" ] && compose_files+=(-f "$STACK_DIR/conf/ports.yml")
-        down=(down --remove-orphans --rmi local)
+        # --profile mining makes compose aware of the stratum bridge; without
+        # it the bridge container and volume are left behind as orphans.
+        down=(--profile mining down --remove-orphans --rmi local)
         [ "$KEEP_DATA" = "1" ] || down+=(--volumes)
         d compose "${compose_files[@]}" --project-directory "$STACK_DIR" "${down[@]}" 2>/dev/null \
             || warn "compose down reported an error; removing objects individually."
     fi
 
     say "Removing leftover containers"
-    for name in kaspa-node-kaspad kaspa-node-manager kaspa-node-proxy; do
+    for name in kaspa-node-kaspad kaspa-node-manager kaspa-node-proxy kaspa-node-bridge; do
         d rm -f "$name" >/dev/null 2>&1 && ok "removed container $name" || true
     done
 
@@ -110,7 +112,9 @@ if command -v docker >/dev/null 2>&1 && d info >/dev/null 2>&1; then
 
     if [ "$KEEP_DATA" = "0" ]; then
         say "Removing volumes"
-        d volume rm -f kaspa-node-data >/dev/null 2>&1 && ok "removed volume kaspa-node-data" || true
+        for volume in kaspa-node-data kaspa-node-bridge-data; do
+            d volume rm -f "$volume" >/dev/null 2>&1 && ok "removed volume $volume" || true
+        done
     fi
 
     say "Removing the network"

@@ -37,6 +37,11 @@ function toast(message, kind = '') {
 
 const fmtNum = (n) => (n === null || n === undefined || n === '' ? '–' : Number(n).toLocaleString());
 
+// Worker names, wallets and block hashes come from whatever a miner sent, so
+// they are untrusted input on their way into innerHTML.
+const escapeHtml = (value) =>
+    String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
 function fmtBytes(text) {
     if (!text) return '–';
     return text; // docker already reports a human-readable size
@@ -67,6 +72,7 @@ function showApp() {
     startPolling();
     loadSettings();
     loadProxies();
+    loadMining();
     loadDuckDns();
     connectJobs();
     connectLogs();
@@ -99,6 +105,7 @@ for (const button of document.querySelectorAll('.tabs button')) {
         for (const tab of document.querySelectorAll('.tab')) {
             tab.classList.toggle('active', tab.id === `tab-${button.dataset.tab}`);
         }
+        setMiningPolling(button.dataset.tab === 'mining');
     });
 }
 
@@ -112,6 +119,7 @@ const startPolling = () => {
 const stopPolling = () => {
     clearInterval(pollTimer);
     pollTimer = null;
+    setMiningPolling(false);
 };
 
 let lastStatus = null;
@@ -394,6 +402,257 @@ $('settings-form').addEventListener('submit', async (event) => {
 
 $('settings-reset').addEventListener('click', () => loadSettings());
 
+// ----------------------------------------------------------------- mining ---
+
+let miningConfig = null;
+let miningTimer = null;
+let miningPublicIp = null;
+
+// Worker hashrate arrives in GH/s (the bridge's own unit).
+function fmtHashrate(ghs) {
+    const n = Number(ghs);
+    if (!Number.isFinite(n) || n <= 0) return '0';
+    const units = ['GH/s', 'TH/s', 'PH/s', 'EH/s'];
+    let value = n;
+    let unit = 0;
+    while (value >= 1000 && unit < units.length - 1) {
+        value /= 1000;
+        unit++;
+    }
+    return `${value.toFixed(value < 10 ? 2 : value < 100 ? 1 : 0)} ${units[unit]}`;
+}
+
+// The node's network hashrate is a raw hashes/second count, not GH/s.
+function fmtRawHashrate(hs) {
+    const n = Number(hs);
+    if (!Number.isFinite(n) || n <= 0) return '–';
+    return fmtHashrate(n / 1e9);
+}
+
+function fmtSeconds(secs) {
+    const n = Number(secs);
+    if (!Number.isFinite(n) || n <= 0) return '–';
+    const d = Math.floor(n / 86400);
+    const h = Math.floor((n % 86400) / 3600);
+    const m = Math.floor((n % 3600) / 60);
+    if (d) return `${d}d ${h}h`;
+    if (h) return `${h}h ${m}m`;
+    if (m) return `${m}m`;
+    return `${Math.floor(n)}s`;
+}
+
+function renderInstances(instances) {
+    $('instances-body').innerHTML = instances
+        .map(
+            (inst, i) => `<tr data-i="${i}">
+      <td><input type="number" class="inst-port" min="1024" max="65535" value="${inst.stratumPort}"></td>
+      <td><input type="number" class="inst-diff" min="1" value="${inst.minShareDiff}"></td>
+      <td style="text-align:center"><input type="checkbox" class="inst-pub" ${inst.publish !== false ? 'checked' : ''}></td>
+      <td><button type="button" class="ghost danger inst-del" title="Remove">×</button></td>
+    </tr>`,
+        )
+        .join('');
+}
+
+function collectInstances() {
+    return [...document.querySelectorAll('#instances-body tr')].map((row) => ({
+        stratumPort: Number(el('.inst-port', row).value),
+        minShareDiff: Number(el('.inst-diff', row).value),
+        publish: el('.inst-pub', row).checked,
+    }));
+}
+
+$('instance-add').addEventListener('click', () => {
+    const next = collectInstances();
+    const highest = next.reduce((max, i) => Math.max(max, i.stratumPort || 0), 5554);
+    next.push({ stratumPort: highest + 1, minShareDiff: 512, publish: true });
+    renderInstances(next);
+});
+
+$('instances-body').addEventListener('click', (event) => {
+    if (!event.target.classList.contains('inst-del')) return;
+    const rows = collectInstances();
+    if (rows.length <= 1) return toast('At least one stratum port is required.', 'bad');
+    const index = Number(event.target.closest('tr').dataset.i);
+    renderInstances(rows.filter((_, i) => i !== index));
+});
+
+async function loadMining() {
+    const r = await api('/api/mining');
+    miningConfig = r.config;
+    miningPublicIp = r.publicIp;
+    const c = r.config;
+
+    $('mining-enabled').checked = c.enabled;
+    $('mining-vardiff').checked = c.varDiff;
+    $('mining-spm').value = c.sharesPerMin;
+    $('mining-pow2').checked = c.pow2Clamp;
+    $('mining-vdstats').checked = c.varDiffStats;
+    $('mining-extranonce').value = c.extranonceSize;
+    $('mining-blockwait').value = c.blockWaitTimeMs;
+    $('mining-tag').value = c.coinbaseTagSuffix;
+    $('mining-logfile').checked = c.logToFile;
+    $('mining-dash').checked = c.publishDashboard;
+    renderInstances(c.instances);
+
+    const blockers = $('mining-blockers');
+    blockers.hidden = !r.blockers.length;
+    blockers.textContent = r.blockers.join(' ');
+
+    renderMiningState(r.container, r.stats);
+    renderStratumTargets(c);
+}
+
+function renderMiningState(container, stats) {
+    const badge = $('bridge-state');
+    const running = container?.running;
+    badge.textContent = !miningConfig?.enabled ? 'off' : running ? 'running' : container?.status || 'stopped';
+    badge.className = `tag ${!miningConfig?.enabled ? 'off' : running ? 'ok' : ''}`;
+
+    const on = Boolean(miningConfig?.enabled);
+    $('mining-live').hidden = !on;
+    $('mining-connect').hidden = !on;
+    $('mining-workers-card').hidden = !on;
+    $('mining-blocks-card').hidden = !on;
+    if (!on) return;
+
+    if (!stats || !stats.reachable) {
+        $('m-unreachable').hidden = false;
+        $('m-unreachable').textContent = running
+            ? 'The bridge is starting up — stats appear once it has connected to the node.'
+            : 'The bridge container is not running.';
+        return;
+    }
+    $('m-unreachable').hidden = true;
+
+    const s = stats.summary;
+    $('m-hashrate').textContent = fmtHashrate(s.poolHashrate);
+    $('m-workers').textContent = fmtNum(s.activeWorkers);
+    $('m-blocks').textContent = fmtNum(s.totalBlocks);
+    $('m-shares').textContent = fmtNum(s.totalShares);
+    $('m-nethash').textContent = fmtRawHashrate(s.networkHashrate);
+    $('m-netdiff').textContent = s.networkDifficulty ? Number(s.networkDifficulty).toExponential(3) : '–';
+    $('m-uptime').textContent = fmtSeconds(s.bridgeUptime);
+
+    renderWorkers(stats.workers);
+    renderBlocks(stats.blocks);
+}
+
+function renderWorkers(workers) {
+    if (!workers.length) {
+        $('workers-body').innerHTML =
+            '<tr><td colspan="10" class="empty">No miners connected yet. Point one at a stratum port below.</td></tr>';
+        return;
+    }
+    $('workers-body').innerHTML = workers
+        .map((w) => {
+            const status = w.status || 'offline';
+            return `<tr>
+        <td class="name">${escapeHtml(w.worker || '–')}</td>
+        <td><span class="trunc" title="${escapeHtml(w.wallet || '')}">${escapeHtml(w.wallet || '–')}</span></td>
+        <td>${fmtHashrate(w.hashrate)}</td>
+        <td>${w.currentDifficulty ? fmtNum(Math.round(w.currentDifficulty)) : '–'}</td>
+        <td>${fmtNum(w.shares)}</td>
+        <td>${fmtNum(w.stale)}</td>
+        <td>${fmtNum(w.invalid)}</td>
+        <td>${fmtNum(w.blocks)}</td>
+        <td>${fmtSeconds(w.sessionUptime)}</td>
+        <td class="status-${escapeHtml(status)}">${escapeHtml(status)}</td>
+      </tr>`;
+        })
+        .join('');
+}
+
+function renderBlocks(blocks) {
+    if (!blocks.length) {
+        $('blocks-body').innerHTML = '<tr><td colspan="4" class="empty">No blocks found yet.</td></tr>';
+        return;
+    }
+    $('blocks-body').innerHTML = blocks
+        .slice(0, 25)
+        .map(
+            (b) => `<tr>
+      <td class="name">${escapeHtml(b.timestamp || '–')}</td>
+      <td class="name">${escapeHtml(b.worker || '–')}</td>
+      <td>${escapeHtml(b.bluescore || '–')}</td>
+      <td><span class="trunc" title="${escapeHtml(b.hash || '')}">${escapeHtml(b.hash || '–')}</span></td>
+    </tr>`,
+        )
+        .join('');
+}
+
+function renderStratumTargets(cfg) {
+    const rows = cfg.instances.map((inst) => {
+        const target = inst.publish
+            ? `${miningPublicIp || 'your-ip'}:${inst.stratumPort}`
+            : `127.0.0.1:${inst.stratumPort}`;
+        return `<tr>
+      <td>${inst.stratumPort}</td>
+      <td><code>stratum+tcp://${escapeHtml(target)}</code></td>
+      <td>starts at difficulty ${fmtNum(inst.minShareDiff)}</td>
+      <td>${inst.publish ? '<span class="tag ok">reachable from outside</span>' : '<span class="tag off">this machine only</span>'}</td>
+    </tr>`;
+    });
+    $('stratum-body').innerHTML = rows.join('');
+}
+
+$('mining-save').addEventListener('click', async () => {
+    const err = $('mining-error');
+    err.hidden = true;
+    const config = {
+        enabled: $('mining-enabled').checked,
+        instances: collectInstances(),
+        varDiff: $('mining-vardiff').checked,
+        sharesPerMin: $('mining-spm').value,
+        varDiffStats: $('mining-vdstats').checked,
+        pow2Clamp: $('mining-pow2').checked,
+        extranonceSize: $('mining-extranonce').value,
+        blockWaitTimeMs: $('mining-blockwait').value,
+        coinbaseTagSuffix: $('mining-tag').value,
+        logToFile: $('mining-logfile').checked,
+        publishDashboard: $('mining-dash').checked,
+    };
+    try {
+        await api('/api/mining', { method: 'PUT', body: { config } });
+        openConsole(config.enabled ? 'Starting the stratum bridge' : 'Stopping the stratum bridge');
+        setTimeout(loadMining, 2000);
+    } catch (e) {
+        err.textContent = e.message;
+        err.hidden = false;
+    }
+});
+
+for (const button of document.querySelectorAll('[data-bridge]')) {
+    button.addEventListener('click', async () => {
+        try {
+            await api(`/api/mining/${button.dataset.bridge}`, { method: 'POST' });
+            openConsole(`${button.dataset.bridge} stratum bridge`);
+        } catch (e) {
+            toast(e.message, 'bad');
+        }
+    });
+}
+
+async function refreshMiningStats() {
+    if (!miningConfig?.enabled) return;
+    try {
+        const [stats, state] = await Promise.all([api('/api/mining/stats'), api('/api/mining')]);
+        renderMiningState(state.container, stats.enabled ? stats : null);
+    } catch {
+        /* transient; the next tick retries */
+    }
+}
+
+// Only poll while the tab is actually being looked at.
+function setMiningPolling(active) {
+    clearInterval(miningTimer);
+    miningTimer = null;
+    if (active) {
+        refreshMiningStats();
+        miningTimer = setInterval(refreshMiningStats, 5000);
+    }
+}
+
 // ---------------------------------------------------------------- proxies ---
 
 let proxies = [];
@@ -675,6 +934,7 @@ function connectJobs() {
         toast(job.status === 'succeeded' ? `${job.name}: done` : `${job.name}: failed`, job.status === 'succeeded' ? 'good' : 'bad');
         refreshStatus();
         loadProxies();
+        loadMining();
     });
 }
 

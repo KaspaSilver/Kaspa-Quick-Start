@@ -22,6 +22,7 @@ import * as nginx from './lib/nginx.js';
 import * as certbot from './lib/certbot.js';
 import * as duckdns from './lib/duckdns.js';
 import * as updater from './lib/updater.js';
+import * as bridge from './lib/bridge.js';
 import { nodeSnapshot, rpc } from './lib/rpc.js';
 import { jobs } from './lib/jobs.js';
 import {
@@ -153,6 +154,19 @@ async function applyNodeConfig(cfg, onLine = () => {}) {
     } catch (err) {
         onLine(`Proxy reload skipped: ${err.message}`);
     }
+
+    // The bridge's config embeds kaspad's gRPC port, which moves when the
+    // network changes, and it holds a gRPC connection that a kaspad restart
+    // breaks. Rewrite and bounce it whenever the node is reconfigured.
+    const miningCfg = bridge.loadBridgeConfig();
+    bridge.writeBridgeFiles(miningCfg, cfg);
+    if (miningCfg.enabled) {
+        onLine('Restarting the stratum bridge against the reconfigured node...');
+        await dockerctl
+            .compose(['up', '-d', '--force-recreate', 'bridge'], { onLine, profile: 'mining', timeoutMs: 10 * 60_000 })
+            .catch((err) => onLine(`Bridge restart failed: ${err.message}`));
+    }
+
     return { args, mappings };
 }
 
@@ -358,16 +372,22 @@ route('POST', /^\/api\/node\/(start|stop|restart)$/, async (req, res, match) => 
     sendJson(res, 202, { ok: true, jobId: job.id });
 });
 
+const containerFor = (url) => {
+    switch (url.searchParams.get('container')) {
+        case 'proxy': return dockerctl.PROXY_CONTAINER;
+        case 'bridge': return dockerctl.BRIDGE_CONTAINER;
+        default: return dockerctl.KASPAD_CONTAINER;
+    }
+};
+
 route('GET', /^\/api\/logs$/, async (req, res, match, url) => {
     const tail = Math.min(Number(url.searchParams.get('tail')) || 300, 5000);
-    const which = url.searchParams.get('container') === 'proxy' ? dockerctl.PROXY_CONTAINER : dockerctl.KASPAD_CONTAINER;
-    sendJson(res, 200, { text: await dockerctl.logs(which, tail) });
+    sendJson(res, 200, { text: await dockerctl.logs(containerFor(url), tail) });
 });
 
 route('GET', /^\/api\/logs\/stream$/, async (req, res, match, url) => {
-    const which = url.searchParams.get('container') === 'proxy' ? dockerctl.PROXY_CONTAINER : dockerctl.KASPAD_CONTAINER;
     const { send, onClose } = sse(req, res);
-    const stop = dockerctl.streamLogs(which, (line) => send('line', { line }));
+    const stop = dockerctl.streamLogs(containerFor(url), (line) => send('line', { line }));
     onClose(stop);
 });
 
@@ -560,6 +580,89 @@ route('POST', /^\/api\/proxy\/renew$/, async (req, res) => {
     sendJson(res, 202, { ok: true, jobId: job.id });
 });
 
+// ------------------------------------------------------------------- mining --
+
+/**
+ * Brings the bridge in line with the saved config: writes its YAML and port
+ * override, then starts, recreates or removes the container. Disabling mining
+ * removes the container rather than stopping it, so a stopped-but-present
+ * stratum service can't be resurrected by an unrelated `compose up`.
+ */
+async function applyMiningConfig(cfg, onLine = () => {}) {
+    const nodeCfg = loadNodeConfig();
+    const published = bridge.writeBridgeFiles(cfg, nodeCfg);
+
+    if (!cfg.enabled) {
+        onLine('Mining disabled - removing the stratum bridge container.');
+        await dockerctl.compose(['rm', '-sf', 'bridge'], { onLine, profile: 'mining' });
+        return { enabled: false };
+    }
+
+    onLine(`Stratum ports: ${cfg.instances.map((i) => `${i.stratumPort} (diff ${i.minShareDiff})`).join(', ')}`);
+    onLine(`Published to the host: ${published.length ? published.join(', ') : 'none - local miners only'}`);
+    onLine(`Connecting to kaspad gRPC on port ${ports(nodeCfg).grpc}.`);
+
+    onLine('Building the stratum bridge image if needed...');
+    await dockerctl.compose(['build', 'bridge'], { onLine, profile: 'mining', timeoutMs: 90 * 60_000 });
+
+    onLine('Starting the stratum bridge...');
+    await dockerctl.compose(['up', '-d', '--force-recreate', 'bridge'], { onLine, profile: 'mining', timeoutMs: 10 * 60_000 });
+
+    return { enabled: true, published };
+}
+
+route('GET', /^\/api\/mining$/, async (req, res) => {
+    const cfg = bridge.loadBridgeConfig();
+    const [state, stats] = await Promise.all([
+        dockerctl.containerState(dockerctl.BRIDGE_CONTAINER),
+        cfg.enabled ? bridge.fetchStats() : Promise.resolve(null),
+    ]);
+    sendJson(res, 200, {
+        config: cfg,
+        container: state,
+        stats,
+        blockers: bridge.miningBlockers(cfg, loadNodeConfig()),
+        // What a miner should be pointed at. The panel cannot know which
+        // interface the miner will come from, so it offers the public address
+        // and lets the UI show the LAN alternative.
+        publicIp: await duckdns.publicIp(),
+    });
+});
+
+route('PUT', /^\/api\/mining$/, async (req, res) => {
+    const body = await readBody(req);
+    const { cfg, errors } = bridge.validateBridgeConfig(body.config ?? {});
+    if (errors.length) return fail(res, 400, 'The mining configuration has problems.', { details: errors });
+
+    const blockers = bridge.miningBlockers(cfg, loadNodeConfig());
+    if (blockers.length) return fail(res, 409, 'Mining cannot start yet.', { details: blockers });
+
+    bridge.saveBridgeConfig(cfg);
+    const job = jobs.start(cfg.enabled ? 'Start stratum bridge' : 'Stop stratum bridge', (onLine) =>
+        applyMiningConfig(cfg, onLine),
+    );
+    sendJson(res, 202, { ok: true, jobId: job.id, config: cfg });
+});
+
+route('GET', /^\/api\/mining\/stats$/, async (req, res) => {
+    const cfg = bridge.loadBridgeConfig();
+    if (!cfg.enabled) return sendJson(res, 200, { enabled: false, reachable: false, workers: [], blocks: [] });
+    sendJson(res, 200, { enabled: true, ...(await bridge.fetchStats()) });
+});
+
+route('POST', /^\/api\/mining\/(start|stop|restart)$/, async (req, res, match) => {
+    const action = match[1];
+    const cfg = bridge.loadBridgeConfig();
+    if (!cfg.enabled) return fail(res, 409, 'Mining is switched off. Enable it first.');
+
+    const job = jobs.start(`${action} stratum bridge`, async (onLine) => {
+        if (action === 'start') await dockerctl.compose(['up', '-d', 'bridge'], { onLine, profile: 'mining' });
+        else if (action === 'stop') await dockerctl.compose(['stop', 'bridge'], { onLine, profile: 'mining' });
+        else await dockerctl.compose(['restart', 'bridge'], { onLine, profile: 'mining' });
+    });
+    sendJson(res, 202, { ok: true, jobId: job.id });
+});
+
 // ------------------------------------------------------------------ duckdns --
 
 route('GET', /^\/api\/duckdns$/, async (req, res) => {
@@ -685,6 +788,7 @@ async function bootstrap() {
     writeArgsFile(cfg);
     renderPortsOverride(cfg);
     nginx.writeAll(loadProxies(), cfg);
+    bridge.writeBridgeFiles(bridge.loadBridgeConfig(), cfg);
     rpc.setUrl(`ws://${KASPAD_SERVICE}:${ports(cfg).json}`);
 
     log(`stack dir      : ${CONF_DIR}`);

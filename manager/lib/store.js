@@ -65,7 +65,9 @@ export const DEFAULT_MANAGER_CONFIG = {
 
 // ------------------------------------------------------------------- io ----
 
-function readJson(file, fallback) {
+// Exported so modules with their own config file (bridge.js) reuse the same
+// defaults-merging behaviour instead of reimplementing it.
+export function readJson(file, fallback) {
     try {
         const raw = fs.readFileSync(file, 'utf8');
         return mergeDefaults(JSON.parse(raw), fallback);
@@ -74,7 +76,7 @@ function readJson(file, fallback) {
     }
 }
 
-function writeJson(file, value) {
+export function writeJson(file, value) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
 }

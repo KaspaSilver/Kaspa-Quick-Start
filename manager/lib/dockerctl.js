@@ -1,11 +1,13 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
-import { COMPOSE_FILE, PORTS_OVERRIDE, STACK_LOCAL } from './paths.js';
+import path from 'node:path';
+import { COMPOSE_FILE, CONF_DIR, PORTS_OVERRIDE, STACK_LOCAL } from './paths.js';
 
 const KASPAD_CONTAINER = process.env.KASPAD_CONTAINER || 'kaspa-node-kaspad';
 const PROXY_CONTAINER = process.env.PROXY_CONTAINER || 'kaspa-node-proxy';
+const BRIDGE_CONTAINER = process.env.BRIDGE_CONTAINER || 'kaspa-node-bridge';
 
-export { KASPAD_CONTAINER, PROXY_CONTAINER };
+export { KASPAD_CONTAINER, PROXY_CONTAINER, BRIDGE_CONTAINER };
 
 export class CommandError extends Error {
     constructor(message, { code, stdout, stderr }) {
@@ -67,11 +69,30 @@ export const docker = (args, opts) => run('docker', args, opts);
 function composeFiles() {
     const files = ['-f', COMPOSE_FILE];
     if (fs.existsSync(PORTS_OVERRIDE)) files.push('-f', PORTS_OVERRIDE);
+    const bridgePorts = path.join(CONF_DIR, 'bridge-ports.yml');
+    if (fs.existsSync(bridgePorts)) files.push('-f', bridgePorts);
     return files;
 }
 
-export const compose = (args, opts) =>
-    run('docker', ['compose', ...composeFiles(), '--project-directory', STACK_LOCAL, ...args], opts);
+/**
+ * `profile: 'mining'` is what makes the bridge service visible to compose. It
+ * sits behind a profile so that a bare `up -d` -- what the installer runs, and
+ * what any node-only operation does -- never starts a stratum server nobody
+ * asked for.
+ */
+export const compose = (args, { profile, ...opts } = {}) =>
+    run(
+        'docker',
+        [
+            'compose',
+            ...composeFiles(),
+            ...(profile ? ['--profile', profile] : []),
+            '--project-directory',
+            STACK_LOCAL,
+            ...args,
+        ],
+        opts,
+    );
 
 // ------------------------------------------------------------- inspection --
 

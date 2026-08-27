@@ -41,6 +41,38 @@ services:
         max-size: "20m"
         max-file: "5"
 
+  # Stratum bridge: lets ASICs and miners point at this node.
+  #
+  # It sits behind the "mining" profile so a plain `docker compose up -d` (what
+  # the installer runs) leaves it down. The control panel brings it up with
+  # `--profile mining` when you enable mining, and removes it when you don't.
+  # Stratum port mappings live in the generated conf/bridge-ports.yml, same
+  # arrangement as kaspad's.
+  bridge:
+    image: kaspa-one-click/bridge:${KASPAD_VERSION:-v2.0.1}
+    build:
+      context: ./bridge
+      args:
+        KASPAD_VERSION: ${KASPAD_VERSION:-v2.0.1}
+        REPO_URL: ${KASPAD_REPO_URL:-https://github.com/kaspanet/rusty-kaspa}
+    container_name: kaspa-node-bridge
+    hostname: bridge
+    profiles: ["mining"]
+    restart: unless-stopped
+    stop_grace_period: 30s
+    volumes:
+      - bridge-data:/data
+      - ${STACK_DIR}/conf:/conf:ro
+    networks:
+      - kaspa
+    depends_on:
+      - kaspad
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+
   manager:
     image: kaspa-one-click/manager:1
     build:
@@ -101,3 +133,5 @@ networks:
 volumes:
   kaspad-data:
     name: kaspa-node-data
+  bridge-data:
+    name: kaspa-node-bridge-data

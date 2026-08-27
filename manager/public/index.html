@@ -33,6 +33,7 @@
     <nav class="tabs">
       <button data-tab="dashboard" class="active">Dashboard</button>
       <button data-tab="settings">Node settings</button>
+      <button data-tab="mining">Mining</button>
       <button data-tab="proxy">Proxy &amp; domains</button>
       <button data-tab="logs">Logs</button>
     </nav>
@@ -241,6 +242,108 @@
       </form>
     </section>
 
+    <!-- ---------------------------------------------------------- mining -->
+    <section id="tab-mining" class="tab">
+      <div class="grid">
+
+        <article class="card span2">
+          <h3>
+            Stratum bridge
+            <span id="bridge-state" class="tag">off</span>
+          </h3>
+          <p class="muted">
+            Lets ASICs and miners point at this node. Miners keep their own
+            payout address — nothing to configure here for that.
+          </p>
+          <div id="mining-blockers" class="verdict bad" hidden></div>
+          <div class="row">
+            <label class="check"><input type="checkbox" id="mining-enabled"> Enable mining</label>
+            <button id="mining-save" class="primary">Apply</button>
+            <button class="ghost" data-bridge="restart">Restart bridge</button>
+          </div>
+        </article>
+
+        <article class="card span2" id="mining-live" hidden>
+          <h3>Live</h3>
+          <div class="grid stats">
+            <div class="stat"><span id="m-hashrate">–</span><small>pool hashrate</small></div>
+            <div class="stat"><span id="m-workers">–</span><small>active workers</small></div>
+            <div class="stat"><span id="m-blocks">–</span><small>blocks found</small></div>
+            <div class="stat"><span id="m-shares">–</span><small>shares accepted</small></div>
+          </div>
+          <dl class="kv">
+            <div><dt>Network hashrate</dt><dd id="m-nethash">–</dd></div>
+            <div><dt>Network difficulty</dt><dd id="m-netdiff">–</dd></div>
+            <div><dt>Bridge uptime</dt><dd id="m-uptime">–</dd></div>
+          </dl>
+          <p class="hint" id="m-unreachable" hidden></p>
+        </article>
+
+        <article class="card span2" id="mining-workers-card" hidden>
+          <h3>Workers</h3>
+          <div class="scroll-x">
+            <table class="workers">
+              <thead>
+                <tr>
+                  <th>Worker</th><th>Wallet</th><th>Hashrate</th><th>Difficulty</th>
+                  <th>Shares</th><th>Stale</th><th>Invalid</th><th>Blocks</th>
+                  <th>Uptime</th><th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="workers-body"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card span2" id="mining-blocks-card" hidden>
+          <h3>Recent blocks</h3>
+          <div class="scroll-x">
+            <table class="blocks">
+              <thead><tr><th>Found</th><th>Worker</th><th>Blue score</th><th>Hash</th></tr></thead>
+              <tbody id="blocks-body"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card span2" id="mining-connect" hidden>
+          <h3>Point your miner here</h3>
+          <table class="ports"><tbody id="stratum-body"></tbody></table>
+          <p class="hint">
+            Username is <code>kaspa:YOUR_WALLET_ADDRESS.WORKERNAME</code>, password anything.
+            Forward the stratum port on your router only if miners are outside your network.
+          </p>
+        </article>
+
+        <article class="card">
+          <h3>Stratum ports</h3>
+          <p class="muted">
+            One entry per listener. Give slow and fast miners different ports so
+            each starts at a sensible difficulty.
+          </p>
+          <table class="instances">
+            <thead><tr><th>Port</th><th>Start difficulty</th><th>Publish</th><th></th></tr></thead>
+            <tbody id="instances-body"></tbody>
+          </table>
+          <div class="row"><button type="button" id="instance-add" class="ghost">Add port</button></div>
+        </article>
+
+        <article class="card">
+          <h3>Difficulty &amp; tuning</h3>
+          <label class="check"><input type="checkbox" id="mining-vardiff"> Automatic difficulty (VarDiff)</label>
+          <label class="inline">Target shares/min <input type="number" id="mining-spm" min="1" max="600"></label>
+          <label class="check"><input type="checkbox" id="mining-pow2"> Clamp difficulty to powers of two</label>
+          <label class="check"><input type="checkbox" id="mining-vdstats"> VarDiff statistics</label>
+          <label class="inline">Extranonce size <input type="number" id="mining-extranonce" min="0" max="3"></label>
+          <label class="inline">Block wait (ms) <input type="number" id="mining-blockwait" min="10" max="60000"></label>
+          <label>Coinbase tag suffix <input id="mining-tag" placeholder="optional"></label>
+          <label class="check"><input type="checkbox" id="mining-logfile"> Write bridge log files</label>
+          <label class="check"><input type="checkbox" id="mining-dash"> Publish the bridge's own dashboard on port 3030</label>
+          <p class="error" id="mining-error" hidden></p>
+        </article>
+
+      </div>
+    </section>
+
     <!-- ----------------------------------------------------------- proxy -->
     <section id="tab-proxy" class="tab">
       <div class="grid">
@@ -288,6 +391,7 @@
           Live log
           <select id="log-source" class="inline-select">
             <option value="kaspad">kaspad</option>
+            <option value="bridge">stratum bridge</option>
             <option value="proxy">nginx proxy</option>
           </select>
           <label class="check tail"><input type="checkbox" id="log-follow" checked> follow</label>

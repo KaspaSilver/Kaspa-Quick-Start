@@ -6,6 +6,8 @@ domains, HTTPS and updates.
 
 The node always runs with `--utxoindex`, and always listens on the P2P, gRPC and
 wRPC ports. **To go public you only have to open the ports on your router.**
+A stratum bridge is included, so miners and ASICs can point straight at your
+node — with a dashboard for hashrate, workers and blocks found.
 
 This repository is packaging only. The node itself is stock
 [kaspad](https://github.com/kaspanet/rusty-kaspa) — the installer builds its
@@ -57,6 +59,7 @@ add `--keep-data` / `-KeepData` to preserve the synced blockchain.
 | `16110` | gRPC RPC            | let wallets and tools reach your node    |
 | `17110` | wRPC Borsh          | serve Rusty/KDX style clients            |
 | `18110` | wRPC JSON           | serve browser / JSON clients (off by default) |
+| `5555`  | stratum             | only if you mine, and only for miners outside this machine |
 | `80`,`443` | nginx            | only if you use the domain / HTTPS features |
 | `8080`  | control panel       | bound to `127.0.0.1` — do not forward it |
 
@@ -92,6 +95,26 @@ cannot be switched off from the UI.
 - optional username/password, IP allow-lists and per-IP rate limits
 - DuckDNS: enter a subdomain and token to keep a free domain pointed here
 
+**Mining** — switches on the stratum bridge that ships with rusty-kaspa, so
+ASICs and miners can point at your own node instead of a pool:
+
+- pool hashrate, active workers, blocks found and accepted shares at a glance
+- per-worker table: hashrate, current VarDiff difficulty, shares, stale,
+  invalid, blocks, session uptime and online/idle/offline state
+- recent blocks your miners found, with blue score and hash
+- as many stratum ports as you want, each with its own starting difficulty, so
+  a big ASIC and a small home miner do not have to share one
+- VarDiff tuning, extranonce size, coinbase tag
+- the exact `stratum+tcp://` address to paste into each miner
+
+Miners supply their own payout address as the stratum username
+(`kaspa:YOUR_ADDRESS.WORKERNAME`), so there is no wallet key anywhere in this
+stack. The bridge needs kaspad's gRPC listener enabled — it does not have to be
+published — and the panel says so if it is off.
+
+The bridge container only exists while mining is on: it sits behind a compose
+profile, so a normal node install never starts a stratum server.
+
 **Update node** — checks `kaspanet/rusty-kaspa` for a newer release, shows the
 release notes, and on confirmation rebuilds the kaspad image at that tag and
 restarts the container. The chain data volume is untouched, so there is no
@@ -111,6 +134,9 @@ conf/node.json         node settings from the panel
 conf/kaspad.args       generated kaspad command line
 conf/ports.yml         generated compose override for published ports
 conf/proxies.json      proxy host definitions
+conf/mining.json       mining settings from the panel
+conf/bridge.yaml       generated stratum bridge config
+conf/bridge-ports.yml  generated compose override for stratum ports
 proxy/conf.d/          generated nginx config
 proxy/letsencrypt/     certificates
 kaspad/ manager/       image build contexts
@@ -126,6 +152,7 @@ bind-mounting a RocksDB database into Docker Desktop is painfully slow.
 | `kaspad`  | built from the release binary | the node |
 | `manager` | Node 22, zero npm deps        | control panel + Docker control plane |
 | `proxy`   | `nginx:1.27-alpine`           | domains, TLS, reverse proxying |
+| `bridge`  | built from the release binary | stratum server for miners (only when mining is on) |
 
 On `linux/amd64` the kaspad image is built by downloading the official release
 archive — those binaries are static musl builds, so the image is a bare Alpine

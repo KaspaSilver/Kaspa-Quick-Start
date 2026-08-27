@@ -58,14 +58,16 @@ if ($dockerUsable) {
         $files = @('-f', $composeFile)
         $ports = Join-Path $StackDir 'conf\ports.yml'
         if (Test-Path $ports) { $files += @('-f', $ports) }
-        $down = @('down', '--remove-orphans', '--rmi', 'local')
+        # --profile mining makes compose aware of the stratum bridge; without
+        # it the bridge container and volume are left behind as orphans.
+        $down = @('--profile', 'mining', 'down', '--remove-orphans', '--rmi', 'local')
         if (-not $KeepData) { $down += '--volumes' }
         & docker compose @files --project-directory $StackDir @down 2>&1 | Out-Null
         if ($LASTEXITCODE -ne 0) { Warn 'compose down reported an error; removing objects individually.' }
     }
 
     Say 'Removing leftover containers'
-    foreach ($name in @('kaspa-node-kaspad', 'kaspa-node-manager', 'kaspa-node-proxy')) {
+    foreach ($name in @('kaspa-node-kaspad', 'kaspa-node-manager', 'kaspa-node-proxy', 'kaspa-node-bridge')) {
         & docker rm -f $name 2>&1 | Out-Null
         if ($LASTEXITCODE -eq 0) { Ok "removed container $name" }
     }
@@ -87,8 +89,10 @@ if ($dockerUsable) {
 
     if (-not $KeepData) {
         Say 'Removing volumes'
-        & docker volume rm -f kaspa-node-data 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0) { Ok 'removed volume kaspa-node-data' }
+        foreach ($volume in @('kaspa-node-data', 'kaspa-node-bridge-data')) {
+            & docker volume rm -f $volume 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) { Ok "removed volume $volume" }
+        }
     }
 
     Say 'Removing the network'
