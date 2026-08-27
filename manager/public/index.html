@@ -28,24 +28,69 @@
 <!-- ---------------------------------------------------------------- app -->
 <div id="app" class="hidden">
 
-  <header class="topbar">
-    <div class="brand"><span class="dot" id="health-dot"></span> Kaspa Node Control</div>
-    <nav class="tabs">
-      <button data-tab="dashboard" class="active">Dashboard</button>
-      <button data-tab="settings">Node settings</button>
-      <button data-tab="mining">Mining</button>
-      <button data-tab="proxy">Proxy &amp; domains</button>
-      <button data-tab="logs">Logs</button>
+  <!--
+    Nav lives in the sidebar so sections can keep being added without the
+    horizontal room running out. Each entry is just a .nav-item with a data-tab
+    matching a <section id="tab-...">; groups are cosmetic.
+  -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head">
+      <span class="brand">
+        <span class="dot" id="health-dot" title="Node health"></span>
+        <span class="label">Kaspa Node</span>
+      </span>
+      <button id="sidebar-toggle" class="icon-button" aria-label="Collapse sidebar" aria-expanded="true" title="Collapse sidebar">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+      </button>
+    </div>
+
+    <nav class="nav" aria-label="Sections">
+      <p class="nav-group-title">Node</p>
+      <button class="nav-item active" data-tab="dashboard" title="Dashboard">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 13h8V3H3zM13 21h8V11h-8zM3 21h8v-6H3zM13 9h8V3h-8z"/></svg>
+        <span class="label">Dashboard</span>
+      </button>
+      <button class="nav-item" data-tab="settings" title="Node settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="8" cy="18" r="2"/></svg>
+        <span class="label">Node settings</span>
+      </button>
+      <button class="nav-item" data-tab="logs" title="Logs">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8zM14 3v5h5M9 13h6M9 17h4"/></svg>
+        <span class="label">Logs</span>
+      </button>
+
+      <p class="nav-group-title">Mining</p>
+      <button class="nav-item" data-tab="mining" title="Mining">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="8" height="8" rx="1"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>
+        <span class="label">Mining</span>
+      </button>
+
+      <p class="nav-group-title">Network</p>
+      <button class="nav-item" data-tab="proxy" title="Proxy &amp; domains">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 010 18a15 15 0 010-18z"/></svg>
+        <span class="label">Proxy &amp; domains</span>
+      </button>
     </nav>
-    <div class="topbar-right">
+
+    <div class="sidebar-foot">
       <span id="auth-note" class="badge local" hidden
             title="No admin password is set, so anyone who can reach this port has full control of the node and the Docker daemon. The installer binds the panel to 127.0.0.1 for that reason. Re-run it with --password to set one.">local only</span>
       <span id="version-badge" class="badge">–</span>
       <button id="logout" class="ghost" hidden>Sign out</button>
     </div>
-  </header>
+  </aside>
 
-  <main>
+  <div class="sidebar-scrim" id="sidebar-scrim" hidden></div>
+
+  <div class="content">
+    <header class="topbar">
+      <button id="sidebar-open" class="icon-button" aria-label="Open menu" title="Menu">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+      <h1 id="page-title">Dashboard</h1>
+    </header>
+
+    <main>
 
     <!-- ------------------------------------------------------- dashboard -->
     <section id="tab-dashboard" class="tab active">
@@ -400,7 +445,8 @@
       </article>
     </section>
 
-  </main>
+    </main>
+  </div>
 </div>
 
 <!-- ----------------------------------------------------------- job console -->

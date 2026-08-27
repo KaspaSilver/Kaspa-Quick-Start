@@ -97,17 +97,76 @@ $('logout').addEventListener('click', async () => {
     showLogin();
 });
 
-// ------------------------------------------------------------------ tabs ---
+// --------------------------------------------------------- navigation ---
 
-for (const button of document.querySelectorAll('.tabs button')) {
-    button.addEventListener('click', () => {
-        for (const b of document.querySelectorAll('.tabs button')) b.classList.toggle('active', b === button);
-        for (const tab of document.querySelectorAll('.tab')) {
-            tab.classList.toggle('active', tab.id === `tab-${button.dataset.tab}`);
-        }
-        setMiningPolling(button.dataset.tab === 'mining');
-    });
+const SIDEBAR_KEY = 'kaspa-node-sidebar';
+const MOBILE = () => window.matchMedia('(max-width: 860px)').matches;
+
+function selectTab(name) {
+    let title = name;
+    for (const item of document.querySelectorAll('.nav-item')) {
+        const active = item.dataset.tab === name;
+        item.classList.toggle('active', active);
+        if (active) title = el('.label', item).textContent;
+    }
+    for (const tab of document.querySelectorAll('.tab')) {
+        tab.classList.toggle('active', tab.id === `tab-${name}`);
+    }
+    $('page-title').textContent = title;
+    // Mining stats are only polled while that tab is on screen.
+    setMiningPolling(name === 'mining');
+    // On the drawer layout, picking a destination should get out of the way.
+    if (MOBILE()) closeDrawer();
 }
+
+for (const item of document.querySelectorAll('.nav-item')) {
+    item.addEventListener('click', () => selectTab(item.dataset.tab));
+}
+
+// --- collapse (wide screens) ---
+
+function setCollapsed(collapsed) {
+    const sidebar = $('sidebar');
+    sidebar.classList.toggle('collapsed', collapsed);
+    const toggle = $('sidebar-toggle');
+    toggle.setAttribute('aria-expanded', String(!collapsed));
+    toggle.setAttribute('aria-label', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
+    toggle.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+    try {
+        localStorage.setItem(SIDEBAR_KEY, collapsed ? 'collapsed' : 'expanded');
+    } catch {
+        /* private browsing; the preference just will not persist */
+    }
+}
+
+$('sidebar-toggle').addEventListener('click', () => setCollapsed(!$('sidebar').classList.contains('collapsed')));
+
+try {
+    if (localStorage.getItem(SIDEBAR_KEY) === 'collapsed') setCollapsed(true);
+} catch {
+    /* no stored preference */
+}
+
+// --- drawer (narrow screens) ---
+
+function openDrawer() {
+    $('sidebar').classList.add('open');
+    $('sidebar-scrim').hidden = false;
+}
+function closeDrawer() {
+    $('sidebar').classList.remove('open');
+    $('sidebar-scrim').hidden = true;
+}
+
+$('sidebar-open').addEventListener('click', openDrawer);
+$('sidebar-scrim').addEventListener('click', closeDrawer);
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeDrawer();
+});
+// Leaving the drawer width with the drawer "open" would strand the scrim.
+window.addEventListener('resize', () => {
+    if (!MOBILE()) closeDrawer();
+});
 
 // -------------------------------------------------------------- dashboard ---
 
