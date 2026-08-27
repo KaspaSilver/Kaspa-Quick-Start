@@ -62,14 +62,17 @@ if ($dockerUsable) {
         if (Test-Path $ports) { $files += @('-f', $ports) }
         # --profile mining makes compose aware of the stratum bridge; without
         # it the bridge container and volume are left behind as orphans.
-        $down = @('--profile', 'mining', 'down', '--remove-orphans', '--rmi', 'local')
+        $down = @('--profile', 'mining', '--profile', 'kachat', '--profile', 'nextcloud',
+                  'down', '--remove-orphans', '--rmi', 'local')
         if (-not $KeepData) { $down += '--volumes' }
         & docker compose @files --project-directory $StackDir @down 2>&1 | Out-Null
         if ($LASTEXITCODE -ne 0) { Warn 'compose down reported an error; removing objects individually.' }
     }
 
     Say 'Removing leftover containers'
-    foreach ($name in @('kaspa-node-kaspad', 'kaspa-node-manager', 'kaspa-node-proxy', 'kaspa-node-bridge')) {
+    foreach ($name in @('kaspa-node-kaspad', 'kaspa-node-manager', 'kaspa-node-proxy', 'kaspa-node-bridge',
+                        'kaspa-node-kachat', 'kaspa-node-kachat-db', 'kaspa-node-nextcloud',
+                        'kaspa-node-nextcloud-db', 'kaspa-node-nextcloud-redis', 'kaspa-node-nextcloud-imaginary')) {
         & docker rm -f $name 2>&1 | Out-Null
         if ($LASTEXITCODE -eq 0) { Ok "removed container $name" }
     }
@@ -83,7 +86,9 @@ if ($dockerUsable) {
 
     if (-not $KeepBaseImages) {
         # These may be shared with other projects, so a refusal is expected.
-        foreach ($image in @('nginx:1.27-alpine', 'certbot/certbot:latest', 'node:22-alpine', 'alpine:3.21')) {
+        foreach ($image in @('nginx:1.27-alpine', 'certbot/certbot:latest', 'node:22-alpine', 'alpine:3.21',
+                             'postgres:17-alpine', 'mariadb:10.11', 'redis:7-alpine',
+                             'nextcloud/aio-imaginary:latest', 'nextcloud:stable')) {
             & docker rmi $image 2>&1 | Out-Null
             if ($LASTEXITCODE -eq 0) { Ok "removed image $image" }
         }
@@ -91,7 +96,9 @@ if ($dockerUsable) {
 
     if (-not $KeepData) {
         Say 'Removing volumes'
-        foreach ($volume in @('kaspa-node-data', 'kaspa-node-bridge-data')) {
+        foreach ($volume in @('kaspa-node-data', 'kaspa-node-bridge-data',
+                              'kaspa-node-kachat-db-data', 'kaspa-node-kachat-app-data',
+                              'kaspa-node-nextcloud-db-data', 'kaspa-node-nextcloud-data')) {
             & docker volume rm -f $volume 2>&1 | Out-Null
             if ($LASTEXITCODE -eq 0) { Ok "removed volume $volume" }
         }

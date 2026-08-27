@@ -73,6 +73,168 @@ services:
         max-size: "20m"
         max-file: "3"
 
+  # ---- KaChat indexer -------------------------------------------------------
+  #
+  # Behind the "kachat" profile, so it only exists once enabled in the panel.
+  #
+  # Upstream ships its own kaspad, Postgres, Portainer and nginx-proxy-manager.
+  # Only Postgres is kept: this stack already has a node (reached over the
+  # internal network, no second chain sync) and its own reverse proxy, and a
+  # second nginx would fight for ports 80/443.
+  kachat-db:
+    image: postgres:17-alpine
+    container_name: kaspa-node-kachat-db
+    hostname: kachat-db
+    profiles: ["kachat"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${KACHAT_DB_USER:-kachat}
+      POSTGRES_PASSWORD: ${KACHAT_DB_PASSWORD:-}
+      POSTGRES_DB: ${KACHAT_DB_NAME:-kachat}
+    volumes:
+      - kachat-db-data:/var/lib/postgresql/data
+    networks:
+      - kaspa
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${KACHAT_DB_USER:-kachat}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  kachat-app:
+    image: kaspa-one-click/kachat:${KACHAT_REF:-main}
+    build:
+      # Built straight from the repository -- no host clone to keep in sync.
+      # Changing KACHAT_REF and rebuilding is what the panel's update button does.
+      context: ${KACHAT_REPO:-https://github.com/KaspaSilver/KaChat-Indexer.git}#${KACHAT_REF:-main}
+      dockerfile: docker/kachat/Dockerfile.kachat-app
+    container_name: kaspa-node-kachat
+    hostname: kachat-app
+    profiles: ["kachat"]
+    restart: unless-stopped
+    # The chat indexer needs time to flush its store; killing it mid-compaction
+    # corrupts the LSM metadata partition (upstream docs/RECOVERY-chat-metadata).
+    stop_grace_period: 90s
+    environment:
+      # Our node, over the internal network. BORSH wRPC is what it wants.
+      KASPA_NODE_ADDRESS: kaspad
+      KASPA_NODE_PORT: ${KACHAT_NODE_PORT:-17110}
+      KASPA_NODE_WBORSH_URL: ws://kaspad:${KACHAT_NODE_PORT:-17110}
+      NETWORK: ${KACHAT_NETWORK:-mainnet}
+      NETWORK_TYPE: ${KACHAT_NETWORK:-mainnet}
+      DB_USER: ${KACHAT_DB_USER:-kachat}
+      DB_PASSWORD: ${KACHAT_DB_PASSWORD:-}
+      DB_NAME: ${KACHAT_DB_NAME:-kachat}
+      DB_PORT: 5432
+      DB_HOST: kachat-db
+      SKI_PORT: 8500
+      WEBSERVER_PORT: 3080
+      ADMIN_PORT: 3081
+      CHAT_API_PORT: 8600
+      KASIA_INDEXER_DB_ROOT: /app/data
+      KASIA_API_BIND: 0.0.0.0:8600
+      INTERNAL_PUSH_SECRET: ${KACHAT_PUSH_SECRET:-}
+      FCM_PROJECT_ID: ${KACHAT_FCM_PROJECT_ID:-}
+      FCM_SERVICE_ACCOUNT_PATH: /app/data/fcm/service-account.json
+      RUST_LOG: info
+    volumes:
+      - kachat-app-data:/app/data
+    networks:
+      - kaspa
+    depends_on:
+      - kaspad
+      - kachat-db
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "3" }
+
+  # ---- Nextcloud ------------------------------------------------------------
+  #
+  # Behind the "nextcloud" profile. Upstream's compose also brings its own
+  # nginx-proxy-manager, Portainer and DuckDNS updater; all three are dropped
+  # because this stack already provides those, and NPM would collide on 80/443.
+  nextcloud-db:
+    image: mariadb:10.11
+    container_name: kaspa-node-nextcloud-db
+    hostname: nextcloud-db
+    profiles: ["nextcloud"]
+    restart: unless-stopped
+    command: --transaction-isolation=READ-COMMITTED --log-bin=binlog --binlog-format=ROW
+    environment:
+      MARIADB_ROOT_PASSWORD: ${NEXTCLOUD_DB_ROOT_PASSWORD:-}
+      MARIADB_DATABASE: nextcloud
+      MARIADB_USER: nextcloud
+      MARIADB_PASSWORD: ${NEXTCLOUD_DB_PASSWORD:-}
+    volumes:
+      - nextcloud-db-data:/var/lib/mysql
+    networks:
+      - kaspa
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  nextcloud-redis:
+    image: redis:7-alpine
+    container_name: kaspa-node-nextcloud-redis
+    hostname: nextcloud-redis
+    profiles: ["nextcloud"]
+    restart: unless-stopped
+    networks:
+      - kaspa
+    logging:
+      driver: json-file
+      options: { max-size: "5m", max-file: "2" }
+
+  # Generates image previews, including iPhone HEIC.
+  nextcloud-imaginary:
+    image: nextcloud/aio-imaginary:latest
+    container_name: kaspa-node-nextcloud-imaginary
+    hostname: nextcloud-imaginary
+    profiles: ["nextcloud"]
+    restart: unless-stopped
+    cap_add: ["SYS_NICE"]
+    environment:
+      IMAGINARY_SECRET: ${NEXTCLOUD_IMAGINARY_SECRET:-}
+    networks:
+      - kaspa
+    logging:
+      driver: json-file
+      options: { max-size: "5m", max-file: "2" }
+
+  nextcloud:
+    image: kaspa-one-click/nextcloud:1
+    build:
+      context: ./nextcloud
+    container_name: kaspa-node-nextcloud
+    hostname: nextcloud
+    profiles: ["nextcloud"]
+    restart: unless-stopped
+    environment:
+      MYSQL_HOST: nextcloud-db
+      MYSQL_DATABASE: nextcloud
+      MYSQL_USER: nextcloud
+      MYSQL_PASSWORD: ${NEXTCLOUD_DB_PASSWORD:-}
+      REDIS_HOST: nextcloud-redis
+      NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USER:-admin}
+      NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD:-}
+      NEXTCLOUD_TRUSTED_DOMAINS: ${NEXTCLOUD_TRUSTED_DOMAINS:-localhost}
+      TRUSTED_PROXIES: 172.16.0.0/12
+    volumes:
+      - nextcloud-data:/var/www/html
+    networks:
+      - kaspa
+    depends_on:
+      - nextcloud-db
+      - nextcloud-redis
+      - nextcloud-imaginary
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
   manager:
     image: kaspa-one-click/manager:1
     build:
@@ -135,3 +297,11 @@ volumes:
     name: kaspa-node-data
   bridge-data:
     name: kaspa-node-bridge-data
+  kachat-db-data:
+    name: kaspa-node-kachat-db-data
+  kachat-app-data:
+    name: kaspa-node-kachat-app-data
+  nextcloud-db-data:
+    name: kaspa-node-nextcloud-db-data
+  nextcloud-data:
+    name: kaspa-node-nextcloud-data

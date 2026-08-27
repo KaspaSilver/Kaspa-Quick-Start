@@ -85,14 +85,16 @@ if command -v docker >/dev/null 2>&1 && d info >/dev/null 2>&1; then
         [ -f "$STACK_DIR/conf/ports.yml" ] && compose_files+=(-f "$STACK_DIR/conf/ports.yml")
         # --profile mining makes compose aware of the stratum bridge; without
         # it the bridge container and volume are left behind as orphans.
-        down=(--profile mining down --remove-orphans --rmi local)
+        down=(--profile mining --profile kachat --profile nextcloud down --remove-orphans --rmi local)
         [ "$KEEP_DATA" = "1" ] || down+=(--volumes)
         d compose "${compose_files[@]}" --project-directory "$STACK_DIR" "${down[@]}" 2>/dev/null \
             || warn "compose down reported an error; removing objects individually."
     fi
 
     say "Removing leftover containers"
-    for name in kaspa-node-kaspad kaspa-node-manager kaspa-node-proxy kaspa-node-bridge; do
+    for name in kaspa-node-kaspad kaspa-node-manager kaspa-node-proxy kaspa-node-bridge \
+               kaspa-node-kachat kaspa-node-kachat-db \
+               kaspa-node-nextcloud kaspa-node-nextcloud-db kaspa-node-nextcloud-redis kaspa-node-nextcloud-imaginary; do
         d rm -f "$name" >/dev/null 2>&1 && ok "removed container $name" || true
     done
 
@@ -106,14 +108,18 @@ if command -v docker >/dev/null 2>&1 && d info >/dev/null 2>&1; then
     if [ "$KEEP_BASE_IMAGES" = "0" ]; then
         # Base images the stack pulled. These may be shared with other projects,
         # so a refusal here is expected and harmless.
-        for image in nginx:1.27-alpine certbot/certbot:latest node:22-alpine alpine:3.21; do
+        for image in nginx:1.27-alpine certbot/certbot:latest node:22-alpine alpine:3.21 \
+                     postgres:17-alpine mariadb:10.11 redis:7-alpine \
+                     nextcloud/aio-imaginary:latest nextcloud:stable; do
             d rmi "$image" >/dev/null 2>&1 && ok "removed image $image" || true
         done
     fi
 
     if [ "$KEEP_DATA" = "0" ]; then
         say "Removing volumes"
-        for volume in kaspa-node-data kaspa-node-bridge-data; do
+        for volume in kaspa-node-data kaspa-node-bridge-data \
+                      kaspa-node-kachat-db-data kaspa-node-kachat-app-data \
+                      kaspa-node-nextcloud-db-data kaspa-node-nextcloud-data; do
             d volume rm -f "$volume" >/dev/null 2>&1 && ok "removed volume $volume" || true
         done
     fi

@@ -65,6 +65,16 @@
         <span class="label">Mining</span>
       </button>
 
+      <p class="nav-group-title">Apps</p>
+      <button class="nav-item" data-tab="kachat" title="KaChat indexer">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 01-9 8.4 9 9 0 01-4.2-1L3 20l1.3-4a8.2 8.2 0 01-1-4 8.4 8.4 0 018.7-8.4 8.4 8.4 0 019 8.4z"/></svg>
+        <span class="label">KaChat</span>
+      </button>
+      <button class="nav-item" data-tab="nextcloud" title="Nextcloud">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 16.5a3.5 3.5 0 00-.7-6.9 5.5 5.5 0 00-10.5-1.2A4.2 4.2 0 006 16.5z"/><circle cx="12" cy="12.5" r="2.2"/></svg>
+        <span class="label">Nextcloud</span>
+      </button>
+
       <p class="nav-group-title">Network</p>
       <button class="nav-item" data-tab="proxy" title="Proxy &amp; domains">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 010 18a15 15 0 010-18z"/></svg>
@@ -389,6 +399,106 @@
       </div>
     </section>
 
+    <!-- ---------------------------------------------------------- kachat -->
+    <section id="tab-kachat" class="tab">
+
+      <article class="card kachat-bar">
+        <div class="row tight">
+          <span id="kachat-state" class="tag">off</span>
+          <label class="check"><input type="checkbox" id="kachat-enabled"> Run the KaChat indexer</label>
+          <label class="inline">Branch / tag <input id="kachat-ref" size="10" value="main"></label>
+          <label class="inline">Network
+            <select id="kachat-network">
+              <option value="mainnet">Mainnet</option>
+              <option value="testnet-10">Testnet 10</option>
+            </select>
+          </label>
+          <label class="check"><input type="checkbox" id="kachat-pub-api"> publish REST 3080</label>
+          <label class="check"><input type="checkbox" id="kachat-pub-chat"> publish chat 8600</label>
+          <button id="kachat-save" class="primary">Apply</button>
+          <button id="kachat-check" class="ghost">Check for updates</button>
+          <button id="kachat-update" class="ghost" disabled>Update</button>
+          <button id="kachat-open" class="ghost" title="Open the dashboard in its own tab">↗</button>
+        </div>
+        <div id="kachat-notice" class="verdict" hidden></div>
+        <p class="error" id="kachat-error" hidden></p>
+      </article>
+
+      <!--
+        The indexer's own admin dashboard, proxied through the manager at
+        /kachat and framed here. Its tabs (Dashboard, KaPosts, Broadcasts,
+        Chats, Group chats, Export / Import, Settings) are the real thing, so
+        they cannot drift out of step with the indexer.
+      -->
+      <div class="embed-shell" id="kachat-embed-shell" hidden>
+        <iframe id="kachat-frame" title="KaChat indexer dashboard" src="about:blank"></iframe>
+      </div>
+      <article class="card" id="kachat-placeholder">
+        <h3>KaChat indexer</h3>
+        <p class="muted">
+          Turn it on above and the indexer's own dashboard appears here — the same
+          Dashboard, KaPosts, Broadcasts, Chats, Group chats, Export / Import and
+          Settings tabs it always had.
+        </p>
+        <p class="hint">
+          It reads the chain from the node in this stack, so there is no second
+          sync. The first build compiles the indexer from Rust source and takes a
+          while; watch it in Logs → kachat indexer.
+        </p>
+      </article>
+    </section>
+
+    <!-- ------------------------------------------------------- nextcloud -->
+    <section id="tab-nextcloud" class="tab">
+      <div class="grid">
+
+        <article class="card span2">
+          <h3>Nextcloud <span id="nextcloud-state" class="tag">off</span></h3>
+          <p class="muted">
+            Your own cloud for files, photos and video — the media and backup
+            destination KaChat can share links from. Video thumbnails and iPhone
+            HEIC previews are set up for you.
+          </p>
+          <div id="nextcloud-notice" class="verdict" hidden></div>
+          <div class="row">
+            <label class="check"><input type="checkbox" id="nextcloud-enabled"> Run Nextcloud</label>
+            <button id="nextcloud-save" class="primary">Apply</button>
+            <button id="nextcloud-check" class="ghost">Check for updates</button>
+            <button id="nextcloud-update" class="ghost" disabled>Update</button>
+            <button class="ghost" data-app-action="nextcloud/restart">Restart</button>
+          </div>
+          <p class="error" id="nextcloud-error" hidden></p>
+        </article>
+
+        <article class="card">
+          <h3>Access</h3>
+          <label class="check"><input type="checkbox" id="nextcloud-pub-web"> Publish on the host</label>
+          <label class="inline">Port <input type="number" id="nextcloud-port" min="1024" max="65535"></label>
+          <label class="inline">Admin user <input id="nextcloud-user"></label>
+          <label>Trusted domains
+            <input id="nextcloud-domains" placeholder="localhost, cloud.example.com">
+          </label>
+          <p class="hint">
+            Add the domain here as well as in Proxy &amp; domains, or Nextcloud
+            refuses the request.
+          </p>
+          <div id="nextcloud-link" class="verdict" hidden></div>
+        </article>
+
+        <article class="card">
+          <h3>Source</h3>
+          <label class="inline">Branch / tag <input id="nextcloud-ref" value="main"></label>
+          <p class="hint">
+            Tracks <code>KaspaSilver/KaChat-NextCloud</code>. The admin password was
+            generated at first start and is stored in <code>.env</code> as
+            <code>NEXTCLOUD_ADMIN_PASSWORD</code>.
+          </p>
+          <div id="nextcloud-build" class="verdict"></div>
+        </article>
+
+      </div>
+    </section>
+
     <!-- ----------------------------------------------------------- proxy -->
     <section id="tab-proxy" class="tab">
       <div class="grid">
@@ -437,6 +547,8 @@
           <select id="log-source" class="inline-select">
             <option value="kaspad">kaspad</option>
             <option value="bridge">stratum bridge</option>
+            <option value="kachat">kachat indexer</option>
+            <option value="nextcloud">nextcloud</option>
             <option value="proxy">nginx proxy</option>
           </select>
           <label class="check tail"><input type="checkbox" id="log-follow" checked> follow</label>

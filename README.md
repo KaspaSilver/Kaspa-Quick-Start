@@ -7,7 +7,10 @@ domains, HTTPS and updates.
 The node always runs with `--utxoindex`, and always listens on the P2P, gRPC and
 wRPC ports. **To go public you only have to open the ports on your router.**
 A stratum bridge is included, so miners and ASICs can point straight at your
-node — with a dashboard for hashrate, workers and blocks found.
+node — with a dashboard for hashrate, workers and blocks found. The
+[KaChat indexer](https://github.com/KaspaSilver/KaChat-Indexer) and
+[Nextcloud](https://github.com/KaspaSilver/KaChat-NextCloud) can be switched on
+from the same panel, each tracking its own repository.
 
 This repository is packaging only. The node itself is stock
 [kaspad](https://github.com/kaspanet/rusty-kaspa) — the installer builds its
@@ -78,6 +81,9 @@ Docker gone, remove it yourself afterwards.
 | `17110` | wRPC Borsh          | serve Rusty/KDX style clients            |
 | `18110` | wRPC JSON           | serve browser / JSON clients (off by default) |
 | `5555`  | stratum             | only if you mine, and only for miners outside this machine |
+| `3080`  | KaPosts REST API    | only if KaChat clients connect from outside this machine |
+| `8600`  | chat indexer API    | as above |
+| `8080`  | Nextcloud           | only if you reach Nextcloud without a proxy host |
 | `80`,`443` | nginx            | only if you use the domain / HTTPS features |
 | `8080`  | control panel       | bound to `127.0.0.1` — do not forward it |
 
@@ -133,6 +139,33 @@ published — and the panel says so if it is off.
 The bridge container only exists while mining is on: it sits behind a compose
 profile, so a normal node install never starts a stratum server.
 
+**KaChat** — runs the [KaChat indexer](https://github.com/KaspaSilver/KaChat-Indexer)
+and embeds its own admin dashboard, so you get the exact Dashboard, KaPosts,
+Broadcasts, Chats, Group chats, Export / Import and Settings tabs it ships with,
+not a reimplementation that drifts. Switch it on, pick a branch or tag, and the
+panel builds it and keeps it running.
+
+It reads the chain from the node already in this stack over wRPC Borsh, so there
+is no second node and no second sync. Upstream's bundled kaspad, Portainer and
+nginx-proxy-manager are not used — this stack already provides all three, and a
+second nginx would collide on ports 80/443. Its Postgres does run, as its own
+container.
+
+The first build compiles the indexer from Rust source and takes a while; follow
+it under Logs → kachat indexer.
+
+**Nextcloud** — your own cloud for the files, photos and video KaChat shares and
+backs up, from [KaChat-NextCloud](https://github.com/KaspaSilver/KaChat-NextCloud).
+Video thumbnails (ffmpeg) and iPhone HEIC previews (Imaginary) are configured for
+you. Publish it on a port, or give it a domain and HTTPS under Proxy & domains —
+remember to add that domain to its trusted-domains list too, or Nextcloud will
+refuse the request.
+
+Both apps have a **Check for updates** button. Neither publishes releases, so the
+honest question is how far the branch you track has moved: the panel compares the
+commit your running image was built from against the newest commit on that
+branch, and rebuilds on request.
+
 **Update node** — checks `kaspanet/rusty-kaspa` for a newer release, shows the
 release notes, and on confirmation rebuilds the kaspad image at that tag and
 restarts the container. The chain data volume is untouched, so there is no
@@ -155,6 +188,9 @@ conf/proxies.json      proxy host definitions
 conf/mining.json       mining settings from the panel
 conf/bridge.yaml       generated stratum bridge config
 conf/bridge-ports.yml  generated compose override for stratum ports
+conf/apps.json         KaChat / Nextcloud settings from the panel
+conf/apps-ports.yml    generated compose override for their ports
+conf/*-build.json      which upstream commit each app image was built from
 proxy/conf.d/          generated nginx config
 proxy/letsencrypt/     certificates
 kaspad/ manager/       image build contexts
@@ -171,6 +207,8 @@ bind-mounting a RocksDB database into Docker Desktop is painfully slow.
 | `manager` | Node 22, zero npm deps        | control panel + Docker control plane |
 | `proxy`   | `nginx:1.27-alpine`           | domains, TLS, reverse proxying |
 | `bridge`  | built from the release binary | stratum server for miners (only when mining is on) |
+| `kachat-app` + `kachat-db` | built from KaChat-Indexer | chat/KaPosts indexer and its Postgres (only when KaChat is on) |
+| `nextcloud` + db/redis/imaginary | `nextcloud:stable` + ffmpeg | private cloud (only when Nextcloud is on) |
 
 On `linux/amd64` the kaspad image is built by downloading the official release
 archive — those binaries are static musl builds, so the image is a bare Alpine

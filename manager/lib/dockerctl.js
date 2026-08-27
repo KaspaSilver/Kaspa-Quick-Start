@@ -6,8 +6,10 @@ import { COMPOSE_FILE, CONF_DIR, PORTS_OVERRIDE, STACK_LOCAL } from './paths.js'
 const KASPAD_CONTAINER = process.env.KASPAD_CONTAINER || 'kaspa-node-kaspad';
 const PROXY_CONTAINER = process.env.PROXY_CONTAINER || 'kaspa-node-proxy';
 const BRIDGE_CONTAINER = process.env.BRIDGE_CONTAINER || 'kaspa-node-bridge';
+const KACHAT_CONTAINER = process.env.KACHAT_CONTAINER || 'kaspa-node-kachat';
+const NEXTCLOUD_CONTAINER = process.env.NEXTCLOUD_CONTAINER || 'kaspa-node-nextcloud';
 
-export { KASPAD_CONTAINER, PROXY_CONTAINER, BRIDGE_CONTAINER };
+export { KASPAD_CONTAINER, PROXY_CONTAINER, BRIDGE_CONTAINER, KACHAT_CONTAINER, NEXTCLOUD_CONTAINER };
 
 export class CommandError extends Error {
     constructor(message, { code, stdout, stderr }) {
@@ -69,8 +71,10 @@ export const docker = (args, opts) => run('docker', args, opts);
 function composeFiles() {
     const files = ['-f', COMPOSE_FILE];
     if (fs.existsSync(PORTS_OVERRIDE)) files.push('-f', PORTS_OVERRIDE);
-    const bridgePorts = path.join(CONF_DIR, 'bridge-ports.yml');
-    if (fs.existsSync(bridgePorts)) files.push('-f', bridgePorts);
+    for (const name of ['bridge-ports.yml', 'apps-ports.yml']) {
+        const override = path.join(CONF_DIR, name);
+        if (fs.existsSync(override)) files.push('-f', override);
+    }
     return files;
 }
 

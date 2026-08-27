@@ -23,6 +23,8 @@ import * as certbot from './lib/certbot.js';
 import * as duckdns from './lib/duckdns.js';
 import * as updater from './lib/updater.js';
 import * as bridge from './lib/bridge.js';
+import * as apps from './lib/apps.js';
+import * as kachatProxy from './lib/kachat-proxy.js';
 import { nodeSnapshot, rpc } from './lib/rpc.js';
 import { jobs } from './lib/jobs.js';
 import {
@@ -376,6 +378,8 @@ const containerFor = (url) => {
     switch (url.searchParams.get('container')) {
         case 'proxy': return dockerctl.PROXY_CONTAINER;
         case 'bridge': return dockerctl.BRIDGE_CONTAINER;
+        case 'kachat': return dockerctl.KACHAT_CONTAINER;
+        case 'nextcloud': return dockerctl.NEXTCLOUD_CONTAINER;
         default: return dockerctl.KASPAD_CONTAINER;
     }
 };
@@ -663,6 +667,156 @@ route('POST', /^\/api\/mining\/(start|stop|restart)$/, async (req, res, match) =
     sendJson(res, 202, { ok: true, jobId: job.id });
 });
 
+// --------------------------------------------------------------------- apps --
+
+/**
+ * Brings an optional app in line with its saved config. Disabling removes the
+ * containers rather than stopping them, matching how mining behaves: a stopped
+ * service could otherwise be restarted by an unrelated `compose up`.
+ */
+async function applyAppConfig(name, cfg, onLine = () => {}) {
+    const app = apps.APPS[name];
+    const settings = cfg[name];
+
+    apps.ensureSecrets();
+    apps.writeAppsEnv(cfg);
+    apps.renderAppsPortsOverride(cfg);
+
+    if (!settings.enabled) {
+        onLine(`${app.label} disabled - removing its containers.`);
+        await dockerctl.compose(['rm', '-sf', ...app.services], { onLine, profile: app.profile, timeoutMs: 10 * 60_000 });
+        return { enabled: false };
+    }
+
+    onLine(`${app.label}: tracking ${app.repo}@${settings.ref}`);
+    if (name === 'kachat') {
+        onLine(`Reading the chain from the node in this stack (wRPC borsh, ${settings.network}).`);
+        onLine('First build compiles the indexer from Rust source - expect this to take a while.');
+    }
+
+    onLine('Building images if needed...');
+    await dockerctl.compose(['build', ...app.services.filter((sv) => sv === 'kachat-app' || sv === 'nextcloud')], {
+        onLine,
+        profile: app.profile,
+        timeoutMs: 120 * 60_000,
+    });
+
+    onLine('Starting containers...');
+    await dockerctl.compose(['up', '-d', ...app.services], { onLine, profile: app.profile, timeoutMs: 20 * 60_000 });
+
+    // Record what was actually built so "commits behind" can be answered later.
+    try {
+        const upstream = await apps.checkUpstream(name, cfg);
+        apps.writeBuildRecord(name, { sha: upstream.latestSha, ref: settings.ref, builtAt: new Date().toISOString() });
+        onLine(`Built from ${upstream.shortSha}.`);
+    } catch (err) {
+        onLine(`Could not record the upstream commit: ${err.message}`);
+    }
+
+    onLine(`${app.label} is up.`);
+    return { enabled: true };
+}
+
+route('GET', /^\/api\/apps$/, async (req, res) => {
+    const cfg = apps.loadAppsConfig();
+    const nodeCfg = loadNodeConfig();
+
+    const state = {};
+    for (const [name, app] of Object.entries(apps.APPS)) {
+        const [container, published] = await Promise.all([
+            dockerctl.containerState(app.container),
+            dockerctl.publishedPorts(app.container),
+        ]);
+        state[name] = {
+            label: app.label,
+            repo: app.repo,
+            container,
+            published,
+            build: apps.readBuildRecord(name),
+            blockers: apps.appBlockers(name, cfg, nodeCfg),
+        };
+    }
+    sendJson(res, 200, { config: cfg, apps: state, adminPath: kachatProxy.MOUNT });
+});
+
+route('PUT', /^\/api\/apps\/(kachat|nextcloud)$/, async (req, res, match) => {
+    const name = match[1];
+    const body = await readBody(req);
+
+    // Validate the whole document so one app's edit cannot corrupt the other's
+    // stored settings, then apply only the app that was asked for.
+    const current = apps.loadAppsConfig();
+    const merged = { ...current, [name]: { ...current[name], ...(body.config ?? {}) } };
+    const { cfg, errors } = apps.validateAppsConfig(merged);
+    if (errors.length) return fail(res, 400, 'The configuration has problems.', { details: errors });
+
+    const blockers = apps.appBlockers(name, cfg, loadNodeConfig());
+    if (blockers.length) return fail(res, 409, `${apps.APPS[name].label} cannot start yet.`, { details: blockers });
+
+    apps.saveAppsConfig(cfg);
+    const job = jobs.start(
+        `${cfg[name].enabled ? 'Start' : 'Stop'} ${apps.APPS[name].label}`,
+        (onLine) => applyAppConfig(name, cfg, onLine),
+    );
+    sendJson(res, 202, { ok: true, jobId: job.id, config: cfg });
+});
+
+route('GET', /^\/api\/apps\/(kachat|nextcloud)\/check$/, async (req, res, match) => {
+    const name = match[1];
+    try {
+        const upstream = await apps.checkUpstream(name, apps.loadAppsConfig());
+        const built = apps.readBuildRecord(name);
+        sendJson(res, 200, {
+            ...upstream,
+            builtSha: built.sha,
+            builtAt: built.builtAt,
+            // No published releases upstream, so "up to date" means the running
+            // image was built from the commit the branch currently points at.
+            updateAvailable: Boolean(built.sha) && built.sha !== upstream.latestSha,
+            neverBuilt: !built.sha,
+        });
+    } catch (err) {
+        fail(res, 502, err.message);
+    }
+});
+
+route('POST', /^\/api\/apps\/(kachat|nextcloud)\/update$/, async (req, res, match) => {
+    const name = match[1];
+    const cfg = apps.loadAppsConfig();
+    if (!cfg[name].enabled) return fail(res, 409, `${apps.APPS[name].label} is switched off.`);
+
+    const app = apps.APPS[name];
+    const job = jobs.start(`Update ${app.label}`, async (onLine) => {
+        onLine(`Rebuilding ${app.label} from ${app.repo}@${cfg[name].ref}...`);
+        // --no-cache: the build context is a git ref, and Docker would otherwise
+        // reuse the layer it already has for that same ref string.
+        await dockerctl.compose(['build', '--no-cache', ...app.services.filter((sv) => sv === 'kachat-app' || sv === 'nextcloud')], {
+            onLine,
+            profile: app.profile,
+            timeoutMs: 120 * 60_000,
+        });
+        await dockerctl.compose(['up', '-d', '--force-recreate', ...app.services], {
+            onLine,
+            profile: app.profile,
+            timeoutMs: 20 * 60_000,
+        });
+        const upstream = await apps.checkUpstream(name, cfg);
+        apps.writeBuildRecord(name, { sha: upstream.latestSha, ref: cfg[name].ref, builtAt: new Date().toISOString() });
+        onLine(`${app.label} is now running ${upstream.shortSha}.`);
+    });
+    sendJson(res, 202, { ok: true, jobId: job.id });
+});
+
+route('POST', /^\/api\/apps\/(kachat|nextcloud)\/(start|stop|restart)$/, async (req, res, match) => {
+    const [, name, action] = match;
+    const app = apps.APPS[name];
+    const job = jobs.start(`${action} ${app.label}`, async (onLine) => {
+        const verb = action === 'start' ? ['up', '-d'] : [action];
+        await dockerctl.compose([...verb, ...app.services], { onLine, profile: app.profile, timeoutMs: 10 * 60_000 });
+    });
+    sendJson(res, 202, { ok: true, jobId: job.id });
+});
+
 // ------------------------------------------------------------------ duckdns --
 
 route('GET', /^\/api\/duckdns$/, async (req, res) => {
@@ -740,6 +894,14 @@ route('GET', /^\/api\/portcheck$/, async (req, res, match, url) => {
 
 const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+
+    // The embedded KaChat dashboard. Behind the same auth as everything else,
+    // since it can delete indexed content.
+    if (url.pathname === kachatProxy.MOUNT || url.pathname.startsWith(`${kachatProxy.MOUNT}/`)) {
+        if (authRequired() && !isAuthenticated(req)) return fail(res, 401, 'Not signed in.');
+        return kachatProxy.handle(req, res, url);
+    }
+
     const isApi = url.pathname.startsWith('/api/') || url.pathname === '/healthz';
 
     if (!isApi) return serveStatic(req, res, url.pathname);
@@ -789,6 +951,12 @@ async function bootstrap() {
     renderPortsOverride(cfg);
     nginx.writeAll(loadProxies(), cfg);
     bridge.writeBridgeFiles(bridge.loadBridgeConfig(), cfg);
+
+    const appsCfg = apps.loadAppsConfig();
+    apps.ensureSecrets();
+    apps.writeAppsEnv(appsCfg);
+    apps.renderAppsPortsOverride(appsCfg);
+
     rpc.setUrl(`ws://${KASPAD_SERVICE}:${ports(cfg).json}`);
 
     log(`stack dir      : ${CONF_DIR}`);

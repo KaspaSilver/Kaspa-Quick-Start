@@ -558,3 +558,26 @@ table.workers td.name, table.blocks td.name { font-family: inherit; font-size: 1
 table.instances input[type="number"] { width: 100%; margin: 0; }
 table.instances td { padding: 6px 8px; }
 table.instances td:last-child { width: 40px; text-align: right; }
+
+/* ------------------------------------------------------------------ apps */
+
+/* The KaChat tab hands almost the whole viewport to the embedded dashboard,
+   so the control strip above it stays deliberately compact. */
+.kachat-bar { margin-bottom: 12px; padding: 12px 14px; }
+.kachat-bar .row.tight { margin-top: 0; gap: 10px 14px; align-items: center; }
+.kachat-bar label { margin-bottom: 0; }
+
+.embed-shell {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--panel);
+    height: calc(100vh - 190px);
+    min-height: 420px;
+}
+.embed-shell iframe {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    display: block;
+}

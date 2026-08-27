@@ -73,6 +73,7 @@ function showApp() {
     loadSettings();
     loadProxies();
     loadMining();
+    loadApps();
     loadDuckDns();
     connectJobs();
     connectLogs();
@@ -712,6 +713,172 @@ function setMiningPolling(active) {
     }
 }
 
+// ------------------------------------------------------------------- apps ---
+
+let appsState = null;
+let adminPath = '/kachat';
+
+async function loadApps() {
+    const r = await api('/api/apps');
+    appsState = r;
+    adminPath = r.adminPath || '/kachat';
+    const c = r.config;
+
+    // --- KaChat ---
+    $('kachat-enabled').checked = c.kachat.enabled;
+    $('kachat-ref').value = c.kachat.ref;
+    $('kachat-network').value = c.kachat.network;
+    $('kachat-pub-api').checked = c.kachat.publish.api;
+    $('kachat-pub-chat').checked = c.kachat.publish.chat;
+    renderAppState('kachat', r.apps.kachat);
+
+    // --- Nextcloud ---
+    $('nextcloud-enabled').checked = c.nextcloud.enabled;
+    $('nextcloud-ref').value = c.nextcloud.ref;
+    $('nextcloud-pub-web').checked = c.nextcloud.publish.web;
+    $('nextcloud-port').value = c.nextcloud.hostPort;
+    $('nextcloud-user').value = c.nextcloud.adminUser;
+    $('nextcloud-domains').value = c.nextcloud.trustedDomains;
+    renderAppState('nextcloud', r.apps.nextcloud);
+}
+
+function renderAppState(name, state) {
+    const badge = $(`${name}-state`);
+    const running = state.container?.running;
+    const enabled = appsState.config[name].enabled;
+    badge.textContent = !enabled ? 'off' : running ? 'running' : state.container?.status || 'stopped';
+    badge.className = `tag ${!enabled ? 'off' : running ? 'ok' : ''}`;
+
+    const notice = $(`${name}-notice`);
+    if (state.blockers?.length) {
+        notice.hidden = false;
+        notice.className = 'verdict bad';
+        notice.textContent = state.blockers.join(' ');
+    } else {
+        notice.hidden = true;
+    }
+
+    if (name === 'kachat') {
+        // Only point the frame at the dashboard once the container is actually
+        // up, so the panel does not show a proxy error while it boots.
+        const shell = $('kachat-embed-shell');
+        const frame = $('kachat-frame');
+        const show = enabled && running;
+        shell.hidden = !show;
+        $('kachat-placeholder').hidden = show;
+        if (show && !frame.src.includes(adminPath)) frame.src = adminPath;
+        if (!show) frame.src = 'about:blank';
+        if (enabled && !running) {
+            $('kachat-placeholder').hidden = false;
+            notice.hidden = false;
+            notice.className = 'verdict';
+            notice.textContent = 'The indexer container is not running yet — the first build takes a while. Watch Logs → kachat indexer.';
+        }
+    }
+
+    if (name === 'nextcloud') {
+        const link = $('nextcloud-link');
+        const cfg = appsState.config.nextcloud;
+        if (enabled && running && cfg.publish.web) {
+            link.hidden = false;
+            link.className = 'verdict ok';
+            link.innerHTML = `Open it at <a href="http://${location.hostname}:${cfg.hostPort}" target="_blank" rel="noreferrer noopener">http://${location.hostname}:${cfg.hostPort}</a>`;
+        } else if (enabled && running) {
+            link.hidden = false;
+            link.className = 'verdict';
+            link.textContent = 'Running, but not published on the host. Reach it through a proxy host, or tick "Publish on the host".';
+        } else {
+            link.hidden = true;
+        }
+
+        const build = $('nextcloud-build');
+        build.textContent = state.build?.sha
+            ? `Built from ${String(state.build.sha).slice(0, 7)} on ${new Date(state.build.builtAt).toLocaleString()}`
+            : 'Not built yet.';
+    }
+}
+
+function collectAppConfig(name) {
+    if (name === 'kachat') {
+        return {
+            enabled: $('kachat-enabled').checked,
+            ref: $('kachat-ref').value.trim() || 'main',
+            network: $('kachat-network').value,
+            publish: { api: $('kachat-pub-api').checked, chat: $('kachat-pub-chat').checked },
+        };
+    }
+    return {
+        enabled: $('nextcloud-enabled').checked,
+        ref: $('nextcloud-ref').value.trim() || 'main',
+        publish: { web: $('nextcloud-pub-web').checked },
+        hostPort: Number($('nextcloud-port').value),
+        adminUser: $('nextcloud-user').value.trim(),
+        trustedDomains: $('nextcloud-domains').value.trim(),
+    };
+}
+
+for (const name of ['kachat', 'nextcloud']) {
+    $(`${name}-save`).addEventListener('click', async () => {
+        const err = $(`${name}-error`);
+        err.hidden = true;
+        try {
+            await api(`/api/apps/${name}`, { method: 'PUT', body: { config: collectAppConfig(name) } });
+            openConsole($(`${name}-enabled`).checked ? `Starting ${name}` : `Stopping ${name}`);
+            setTimeout(loadApps, 2000);
+        } catch (e) {
+            err.textContent = e.message;
+            err.hidden = false;
+        }
+    });
+
+    $(`${name}-check`).addEventListener('click', async () => {
+        const notice = $(`${name}-notice`);
+        notice.hidden = false;
+        notice.className = 'verdict';
+        notice.textContent = 'Checking GitHub…';
+        try {
+            const r = await api(`/api/apps/${name}/check`);
+            $(`${name}-update`).disabled = !r.updateAvailable;
+            if (r.neverBuilt) {
+                notice.textContent = `${r.repo}@${r.ref} is at ${r.shortSha} — "${r.message}". Nothing built yet; apply to build it.`;
+            } else if (r.updateAvailable) {
+                notice.className = 'verdict bad';
+                notice.textContent = `Update available: ${r.shortSha} — "${r.message}". You are running ${String(r.builtSha).slice(0, 7)}.`;
+            } else {
+                notice.className = 'verdict ok';
+                notice.textContent = `Up to date — running ${r.shortSha}, the newest commit on ${r.ref}.`;
+            }
+        } catch (e) {
+            notice.className = 'verdict bad';
+            notice.textContent = e.message;
+        }
+    });
+
+    $(`${name}-update`).addEventListener('click', async () => {
+        if (!confirm(`Rebuild ${name} from the newest commit?\n\nIt will be unavailable while it rebuilds.`)) return;
+        try {
+            await api(`/api/apps/${name}/update`, { method: 'POST' });
+            openConsole(`Updating ${name}`);
+            $(`${name}-update`).disabled = true;
+        } catch (e) {
+            toast(e.message, 'bad');
+        }
+    });
+}
+
+$('kachat-open').addEventListener('click', () => window.open(adminPath, '_blank', 'noopener'));
+
+for (const button of document.querySelectorAll('[data-app-action]')) {
+    button.addEventListener('click', async () => {
+        try {
+            await api(`/api/apps/${button.dataset.appAction}`, { method: 'POST' });
+            openConsole(button.dataset.appAction.replace('/', ' '));
+        } catch (e) {
+            toast(e.message, 'bad');
+        }
+    });
+}
+
 // ---------------------------------------------------------------- proxies ---
 
 let proxies = [];
@@ -994,6 +1161,7 @@ function connectJobs() {
         refreshStatus();
         loadProxies();
         loadMining();
+        loadApps();
     });
 }
 
