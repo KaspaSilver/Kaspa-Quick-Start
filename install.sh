@@ -132,13 +132,94 @@ resolve_docker_access() {
     return 1
 }
 
-install_docker_linux() {
+# Works out which Docker apt repository this machine should actually use.
+#
+# get.docker.com cannot be trusted here: on Ubuntu derivatives such as Linux
+# Mint it has been observed picking `debian trixie`, whose packages cannot
+# satisfy their dependencies against an Ubuntu base -- apt then reports
+# "held broken packages" and the install dies half-way. Derivatives carry the
+# codename of the distribution they are actually built on, so use that.
+#
+# Echoes "<ubuntu|debian> <codename>", or nothing if this is not apt-based.
+detect_apt_repo() {
+    command -v apt-get >/dev/null 2>&1 || return 0
+    [ -r /etc/os-release ] || return 0
+
+    # shellcheck disable=SC1091
+    . /etc/os-release
+
+    case "${ID:-}" in
+        ubuntu) printf 'ubuntu %s\n' "${VERSION_CODENAME:-}" ;;
+        debian) printf 'debian %s\n' "${VERSION_CODENAME:-}" ;;
+        *)
+            # Mint, Pop!_OS, elementary, Zorin, KDE neon ... all set this.
+            if [ -n "${UBUNTU_CODENAME:-}" ]; then
+                printf 'ubuntu %s\n' "$UBUNTU_CODENAME"
+            elif [ -n "${DEBIAN_CODENAME:-}" ]; then
+                printf 'debian %s\n' "$DEBIAN_CODENAME"
+            # Mint keeps its Ubuntu base here on older releases.
+            elif [ -r /etc/upstream-release/lsb-release ]; then
+                printf 'ubuntu %s\n' "$(sed -n 's/^DISTRIB_CODENAME=//p' /etc/upstream-release/lsb-release)"
+            fi
+            ;;
+    esac
+}
+
+install_docker_apt() {
+    local flavour="$1" codename="$2"
+    local list=/etc/apt/sources.list.d/docker.list
+    local line="deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/$flavour $codename stable"
+
+    say "Installing Docker Engine from the $flavour '$codename' repository"
+
+    # A previous run (or get.docker.com) may have left a repository for the
+    # wrong distribution behind, with partially installed packages from it.
+    # Clear those out first, otherwise apt keeps reporting broken dependencies.
+    if [ -f "$list" ] && [ "$(cat "$list")" != "$line" ]; then
+        warn "Replacing an existing Docker apt source that points somewhere else."
+        warn "  was: $(head -n1 "$list")"
+        $SUDO apt-get purge -y -qq docker-ce docker-ce-cli containerd.io \
+            docker-buildx-plugin docker-compose-plugin docker-ce-rootless-extras \
+            docker-model-plugin >/dev/null 2>&1 || true
+    fi
+
+    $SUDO install -m 0755 -d /etc/apt/keyrings || die "Could not create /etc/apt/keyrings."
+    $SUDO curl -fsSL "https://download.docker.com/linux/$flavour/gpg" -o /etc/apt/keyrings/docker.asc \
+        || die "Could not download the Docker signing key."
+    $SUDO chmod a+r /etc/apt/keyrings/docker.asc
+
+    printf '%s\n' "$line" | $SUDO tee "$list" >/dev/null || die "Could not write $list."
+
+    $SUDO apt-get -qq update >/dev/null || die "apt-get update failed after adding the Docker repository."
+    # `env` rather than a VAR=value prefix: sudo rejects inline assignments
+    # unless sudoers grants setenv.
+    $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin \
+        || die "Installing the Docker packages failed. Run 'sudo apt-get install docker-ce' to see the full error."
+}
+
+install_docker_generic() {
     say "Installing Docker Engine (get.docker.com)"
-    [ -n "$SUDO" ] || [ "$(id -u)" -eq 0 ] || die "Installing Docker needs root. Install sudo, or run this script as root."
     local script; script="$(mktemp)"
     curl -fsSL https://get.docker.com -o "$script" || die "Could not download the Docker install script."
     $SUDO sh "$script" || die "The Docker install script failed. Install Docker manually, then re-run this."
     rm -f "$script"
+}
+
+install_docker_linux() {
+    [ -n "$SUDO" ] || [ "$(id -u)" -eq 0 ] || die "Installing Docker needs root. Install sudo, or run this script as root."
+
+    local repo flavour codename
+    repo="$(detect_apt_repo)"
+    flavour="${repo%% *}"
+    codename="${repo##* }"
+
+    if [ -n "$flavour" ] && [ -n "$codename" ] && [ "$flavour" != "$codename" ]; then
+        install_docker_apt "$flavour" "$codename"
+    else
+        # Fedora, RHEL, Arch, SUSE and anything else apt-less.
+        install_docker_generic
+    fi
 
     if command -v systemctl >/dev/null 2>&1; then
         $SUDO systemctl enable --now docker >/dev/null 2>&1 || warn "Could not enable the docker service automatically."
