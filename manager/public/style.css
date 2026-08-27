@@ -820,3 +820,46 @@ table.ports td.note { color: var(--muted); font-size: 12.5px; font-family: inher
 .toggle-row .switch { width: 46px; height: 25px; flex-basis: 46px; }
 .toggle-row .switch .track::before { width: 17px; height: 17px; }
 .toggle-row .switch input:checked + .track::before { transform: translate(20px, -50%); }
+
+/* ------------------------------------------------------------ miner setup */
+
+.connect-block { margin-bottom: 18px; }
+.connect-block:last-child { margin-bottom: 0; }
+.connect-block h4 {
+    margin: 0 0 4px;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text);
+}
+.connect-block > .muted { font-size: 13px; margin: 0 0 8px; }
+
+/* The stratum URL is the thing people paste into a miner, so it gets the
+   emphasis and a copy button rather than being one cell among many. */
+.copyable {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+.copyable code {
+    font-size: 13.5px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 4px 8px;
+}
+.copy-btn {
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    color: var(--muted);
+    border-radius: 6px;
+    padding: 4px 9px;
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.copy-btn:hover { color: var(--text); border-color: var(--accent-dim); }
+.copy-btn.copied { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+
+#scan-results td { font-size: 13px; }
+#scan-results a { color: var(--accent); }

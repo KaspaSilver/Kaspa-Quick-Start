@@ -374,12 +374,41 @@
           </div>
           </article>
           <article class="card span2" id="mining-connect" hidden>
-          <h3>Point your miner here</h3>
-          <table class="ports"><tbody id="stratum-body"></tbody></table>
-          <p class="hint">
-          Username is <code>kaspa:YOUR_WALLET_ADDRESS.WORKERNAME</code>, password anything.
-          Forward the stratum port on your router only if miners are outside your network.
-          </p>
+            <h3>Point your miner here</h3>
+
+            <div class="connect-block">
+              <h4>On your own network</h4>
+              <p class="muted">Miners on the same network as this machine. Nothing to forward.</p>
+              <table class="ports"><tbody id="stratum-local"></tbody></table>
+            </div>
+
+            <div class="connect-block">
+              <h4>From outside</h4>
+              <p class="muted">
+                Miners elsewhere. Forward the stratum port on your router to
+                <code id="connect-lan-ip">this machine</code> first.
+              </p>
+              <table class="ports"><tbody id="stratum-public"></tbody></table>
+            </div>
+
+            <p class="hint">
+              Username is <code>kaspa:YOUR_WALLET_ADDRESS.WORKERNAME</code>, password anything.
+            </p>
+
+            <div class="connect-block">
+              <h4>Find miners on your network</h4>
+              <p class="muted">
+                Sweeps this machine's subnet for devices with a web interface or a
+                miner API, and links straight to them.
+              </p>
+              <div class="row">
+                <button type="button" id="miner-scan" class="ghost">Scan my network</button>
+                <span class="muted" id="scan-note"></span>
+              </div>
+              <div class="scroll-x">
+                <table class="ports"><tbody id="scan-results"></tbody></table>
+              </div>
+            </div>
           </article>
         </div>
       </div>

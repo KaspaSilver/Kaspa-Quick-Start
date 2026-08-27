@@ -27,6 +27,7 @@ import * as bridge from './lib/bridge.js';
 import * as apps from './lib/apps.js';
 import * as kachatProxy from './lib/kachat-proxy.js';
 import * as syncProgress from './lib/sync-progress.js';
+import * as network from './lib/network.js';
 import { nodeSnapshot, rpc } from './lib/rpc.js';
 import { jobs } from './lib/jobs.js';
 import {
@@ -789,10 +790,10 @@ route('GET', /^\/api\/mining$/, async (req, res) => {
         stats,
         blockers: bridge.miningBlockers(cfg, loadNodeConfig()),
         readiness: await nodeReadiness(),
-        // What a miner should be pointed at. The panel cannot know which
-        // interface the miner will come from, so it offers the public address
-        // and lets the UI show the LAN alternative.
+        // Both addresses: a miner on the same network wants the LAN one, and
+        // anything outside wants the public one through a forwarded port.
         publicIp: await duckdns.publicIp(),
+        lan: await network.primaryLanAddress(),
     });
 });
 
@@ -815,6 +816,17 @@ route('PUT', /^\/api\/mining$/, async (req, res) => {
         applyMiningConfig(cfg, onLine),
     );
     sendJson(res, 202, { ok: true, jobId: job.id, config: cfg });
+});
+
+route('POST', /^\/api\/mining\/scan$/, async (req, res) => {
+    try {
+        const logs = await dockerctl.logs(dockerctl.BRIDGE_CONTAINER, 2000).catch(() => '');
+        const knownMinerIps = await bridge.connectedMinerIps(logs);
+        const result = await network.scanLan({ knownMinerIps });
+        sendJson(res, 200, result);
+    } catch (err) {
+        fail(res, 502, err.message);
+    }
 });
 
 route('GET', /^\/api\/mining\/stats$/, async (req, res) => {

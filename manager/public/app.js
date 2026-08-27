@@ -611,6 +611,7 @@ $('settings-reset').addEventListener('click', () => loadSettings());
 let miningConfig = null;
 let miningTimer = null;
 let miningPublicIp = null;
+let miningLan = null;
 
 // Worker hashrate arrives in GH/s (the bridge's own unit).
 function fmtHashrate(ghs) {
@@ -685,6 +686,7 @@ async function loadMining() {
     const r = await api('/api/mining');
     miningConfig = r.config;
     miningPublicIp = r.publicIp;
+    miningLan = r.lan;
     const c = r.config;
 
     $('mining-enabled').checked = c.enabled;
@@ -785,20 +787,136 @@ function renderBlocks(blocks) {
         .join('');
 }
 
-function renderStratumTargets(cfg) {
-    const rows = cfg.instances.map((inst) => {
-        const target = inst.publish
-            ? `${miningPublicIp || 'your-ip'}:${inst.stratumPort}`
-            : `127.0.0.1:${inst.stratumPort}`;
-        return `<tr>
-      <td>${inst.stratumPort}</td>
-      <td><code>stratum+tcp://${escapeHtml(target)}</code></td>
-      <td>starts at difficulty ${fmtNum(inst.minShareDiff)}</td>
-      <td>${inst.publish ? '<span class="tag ok">reachable from outside</span>' : '<span class="tag off">this machine only</span>'}</td>
+// A miner needs the address of the machine it can actually route to: the LAN
+// address on your own network, the public one from outside. Showing only the
+// public IP sent people to an address their ASIC usually cannot reach.
+function stratumRow(port, host, diff, note) {
+    const url = `stratum+tcp://${host}:${port}`;
+    return `<tr>
+      <td class="port">${port}</td>
+      <td>
+        <span class="copyable">
+          <code>${escapeHtml(url)}</code>
+          <button type="button" class="copy-btn" data-copy="${escapeHtml(url)}">Copy</button>
+        </span>
+      </td>
+      <td>starts at difficulty ${fmtNum(diff)}</td>
+      <td>${note}</td>
     </tr>`;
-    });
-    $('stratum-body').innerHTML = rows.join('');
 }
+
+function renderStratumTargets(cfg) {
+    const lanIp = miningLan?.ip;
+    $('connect-lan-ip').textContent = lanIp ?? 'this machine';
+
+    $('stratum-local').innerHTML = cfg.instances
+        .map((inst) =>
+            stratumRow(
+                inst.stratumPort,
+                lanIp ?? 'this-machine-ip',
+                inst.minShareDiff,
+                lanIp ? '<span class="tag ok">ready</span>' : '<span class="tag">LAN address unknown</span>',
+            ),
+        )
+        .join('');
+
+    $('stratum-public').innerHTML = cfg.instances
+        .map((inst) =>
+            stratumRow(
+                inst.stratumPort,
+                miningPublicIp ?? 'your-public-ip',
+                inst.minShareDiff,
+                inst.publish
+                    ? '<span class="tag">needs port forwarded</span>'
+                    : '<span class="tag off">port not published</span>',
+            ),
+        )
+        .join('');
+}
+
+// Copy needs a secure context. The panel is on 127.0.0.1 so it normally has
+// one, but over plain http on a LAN address it does not -- hence the fallback.
+async function copyText(text) {
+    try {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+            return true;
+        }
+    } catch {
+        /* fall through */
+    }
+    const scratch = document.createElement('textarea');
+    scratch.value = text;
+    scratch.setAttribute('readonly', '');
+    scratch.style.cssText = 'position:fixed;top:-1000px';
+    document.body.appendChild(scratch);
+    scratch.select();
+    let ok = false;
+    try {
+        ok = document.execCommand('copy');
+    } catch {
+        ok = false;
+    }
+    scratch.remove();
+    return ok;
+}
+
+document.addEventListener('click', async (event) => {
+    const text = event.target.dataset?.copy;
+    if (!text) return;
+    const button = event.target;
+    const ok = await copyText(text);
+    button.textContent = ok ? 'Copied' : 'Select it';
+    button.classList.toggle('copied', ok);
+    if (!ok) toast('Could not reach the clipboard — select the address and copy it manually.', 'bad');
+    setTimeout(() => {
+        button.textContent = 'Copy';
+        button.classList.remove('copied');
+    }, 1600);
+});
+
+// --- LAN scan ---
+
+$('miner-scan').addEventListener('click', async () => {
+    const button = $('miner-scan');
+    const note = $('scan-note');
+    button.disabled = true;
+    note.textContent = 'Scanning…';
+    $('scan-results').innerHTML = '';
+    try {
+        const r = await api('/api/mining/scan', { method: 'POST' });
+        const devices = r.devices.filter((d) => !d.self);
+        note.textContent = `${r.subnet} — ${devices.length} device${devices.length === 1 ? '' : 's'} answered`;
+        $('scan-results').innerHTML = devices.length
+            ? devices
+                  .map((d) => {
+                      const what = d.vendor
+                          ? `<span class="tag ok">${escapeHtml(d.vendor)}</span>`
+                          : d.connectedToBridge
+                            ? '<span class="tag ok">mining here</span>'
+                            : d.likelyMiner
+                              ? '<span class="tag">looks like a miner</span>'
+                              : '<span class="tag off">unidentified</span>';
+                      const link = d.ports.includes(80)
+                          ? `<a href="http://${d.ip}" target="_blank" rel="noreferrer noopener">open its web page ↗</a>`
+                          : '<span class="muted">no web interface</span>';
+                      const seen = d.title ? escapeHtml(d.title) : d.server ? escapeHtml(d.server) : '';
+                      return `<tr>
+              <td class="port">${escapeHtml(d.ip)}</td>
+              <td>${link}</td>
+              <td>${what}</td>
+              <td class="muted">${seen}${seen ? ' · ' : ''}ports ${d.ports.join(', ')}</td>
+            </tr>`;
+                  })
+                  .join('')
+            : '<tr><td colspan="4" class="empty">Nothing else answered on this subnet.</td></tr>';
+    } catch (e) {
+        note.textContent = '';
+        toast(e.message, 'bad');
+    } finally {
+        button.disabled = false;
+    }
+});
 
 $('mining-enabled').addEventListener('change', async (event) => {
     const enabled = event.target.checked;

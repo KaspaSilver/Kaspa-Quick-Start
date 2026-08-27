@@ -167,6 +167,24 @@ export function writeBridgeFiles(bridgeCfg, nodeCfg) {
     return renderBridgePortsOverride(bridgeCfg);
 }
 
+// ---------------------------------------------------------- connected IPs --
+
+/**
+ * Miner addresses the bridge has actually seen, scraped from its log.
+ *
+ * The stats API reports workers by name and wallet but never by address, and
+ * connects are logged at debug level while disconnects are at info -- so this
+ * is best-effort. It is used only to corroborate a LAN scan, never as the sole
+ * source of truth.
+ */
+export async function connectedMinerIps(logs) {
+    const ips = new Set();
+    for (const match of String(logs || '').matchAll(/\[CONNECTION\][^\n]*?(\d+\.\d+\.\d+\.\d+)/g)) {
+        ips.add(match[1]);
+    }
+    return [...ips];
+}
+
 // ------------------------------------------------------------------- stats --
 
 /**
