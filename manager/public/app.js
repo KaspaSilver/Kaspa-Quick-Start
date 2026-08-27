@@ -682,12 +682,10 @@ function connectJobs() {
 
 api('/api/session')
     .then((s) => {
-        if (!s.configured) {
-            $('login').classList.remove('hidden');
-            $('login-error').textContent = 'No admin password is configured on the server. Re-run the installer.';
-            $('login-error').hidden = false;
-            return;
-        }
+        // No password set: skip the sign-in screen entirely and say why, so the
+        // absence of a login prompt reads as a decision rather than a bug.
+        $('logout').hidden = !s.required;
+        $('auth-note').hidden = Boolean(s.required);
         if (s.authenticated) showApp();
         else showLogin();
     })

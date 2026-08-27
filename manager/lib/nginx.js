@@ -20,9 +20,21 @@ export const TARGET_KINDS = {
 };
 
 /** Throws on anything that would let a value escape into the nginx grammar. */
-export function validateProxy(proxy, { existing = [] } = {}) {
+export function validateProxy(proxy, { existing = [], panelHasPassword = true } = {}) {
     const errors = [];
     const domain = String(proxy.domain || '').trim().toLowerCase();
+
+    // Publishing the panel is the one way to undo the "it is only on loopback"
+    // assumption that lets it run without a password. nginx reaches the manager
+    // over the internal network no matter what the panel is bound to, so this
+    // has to be caught here rather than by the port binding.
+    if (proxy.target?.kind === 'manager' && !panelHasPassword && !proxy.auth?.enabled) {
+        errors.push(
+            'This panel has no admin password, so it may not be proxied to a domain. ' +
+                'Either tick "Require a username and password" for this host, or re-run the ' +
+                'installer with --password to set one.',
+        );
+    }
 
     if (!domain) errors.push('Domain is required.');
     else if (domain.length > 253 || !DOMAIN_RE.test(domain)) errors.push(`"${domain}" is not a valid domain name.`);

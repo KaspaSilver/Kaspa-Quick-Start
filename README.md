@@ -28,8 +28,10 @@ curl -fsSL https://raw.githubusercontent.com/KaspaSilver/Quick-Start-Kaspa/main/
 irm https://raw.githubusercontent.com/KaspaSilver/Quick-Start-Kaspa/main/install.ps1 | iex
 ```
 
-When it finishes it prints the panel URL (`http://localhost:8080`) and a
-generated admin password. **Save the password** — only its scrypt hash is stored.
+When it finishes it prints the panel URL, `http://localhost:8080`. There is no
+login: the panel is bound to `127.0.0.1`, so only this machine can open it.
+See [Opening the panel to other machines](#opening-the-panel-to-other-machines)
+if you want to reach it from elsewhere.
 
 ### Uninstall — removes everything
 
@@ -56,7 +58,7 @@ add `--keep-data` / `-KeepData` to preserve the synced blockchain.
 | `17110` | wRPC Borsh          | serve Rusty/KDX style clients            |
 | `18110` | wRPC JSON           | serve browser / JSON clients (off by default) |
 | `80`,`443` | nginx            | only if you use the domain / HTTPS features |
-| `8080`  | control panel       | keep this on your LAN unless you proxy it with HTTPS |
+| `8080`  | control panel       | bound to `127.0.0.1` — do not forward it |
 
 Testnet-10 uses `16211 / 16210 / 17210 / 18210`; the panel switches them for you.
 
@@ -140,8 +142,9 @@ installer warns first, and it takes 30–60 minutes.
 --gui-port <port>     control panel port (default 8080)
 --http-port <port>    nginx http port (default 80)
 --https-port <port>   nginx https port (default 443)
---bind <address>      address the panel listens on (default 0.0.0.0)
---password <pass>     set the admin password instead of generating one
+--bind <address>      address the panel listens on (default 127.0.0.1)
+--password <pass>     require a password to open the panel
+--no-password         drop a password set by an earlier run
 --version <vX.Y.Z>    install a specific kaspad release
 --yes                 no prompts
 ```
@@ -153,12 +156,37 @@ settings, chain data and existing password.
 
 ---
 
+## Opening the panel to other machines
+
+The panel drives the Docker socket, which is root on the host. Without a
+password, anything that can reach port 8080 owns the machine — which is exactly
+why the default bind is loopback. To reach it from elsewhere, set a password
+first:
+
+```bash
+bash ~/.kaspa-node/install.sh --password 'something-long' --bind 0.0.0.0
+```
+
+Or keep it loopback-only and forward the port over SSH, which needs no password
+and no open port at all:
+
+```bash
+ssh -N -L 8080:127.0.0.1:8080 you@your-node
+```
+
+Two guard rails enforce this. The installer warns and asks for confirmation if
+you widen `--bind` with no password set. And because nginx can reach the manager
+over the internal Docker network regardless of what the panel is bound to, the
+panel refuses to create a proxy host pointing at itself unless either an admin
+password is set or that host has its own basic auth.
+
+---
+
 ## Security notes
 
-- The panel is protected by a scrypt-hashed password and an HMAC session cookie.
-  It binds `0.0.0.0` so you can reach it from your LAN — use `--bind 127.0.0.1`
-  to restrict it to the machine itself, or put it behind a proxy host with HTTPS
-  and basic auth.
+- The panel has no password by default and is bound to `127.0.0.1`, so reaching
+  the port already means sitting at the machine. Those two defaults belong
+  together — see below before changing either.
 - The manager container has access to the Docker socket, which is equivalent to
   root on the host. Treat the admin password accordingly.
 - Values that end up in nginx config or on the kaspad command line are validated

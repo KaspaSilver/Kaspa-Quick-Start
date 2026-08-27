@@ -37,8 +37,10 @@
       <button data-tab="logs">Logs</button>
     </nav>
     <div class="topbar-right">
+      <span id="auth-note" class="badge local" hidden
+            title="No admin password is set, so anyone who can reach this port has full control of the node and the Docker daemon. The installer binds the panel to 127.0.0.1 for that reason. Re-run it with --password to set one.">local only</span>
       <span id="version-badge" class="badge">–</span>
-      <button id="logout" class="ghost">Sign out</button>
+      <button id="logout" class="ghost" hidden>Sign out</button>
     </div>
   </header>
 

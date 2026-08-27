@@ -26,6 +26,7 @@ import { nodeSnapshot, rpc } from './lib/rpc.js';
 import { jobs } from './lib/jobs.js';
 import {
     authConfigured,
+    authRequired,
     clearCookie,
     isAuthenticated,
     issueSession,
@@ -254,7 +255,15 @@ route('GET', /^\/healthz$/, async (req, res) => sendJson(res, 200, { ok: true })
 route(
     'GET',
     /^\/api\/session$/,
-    async (req, res) => sendJson(res, 200, { authenticated: isAuthenticated(req), configured: authConfigured() }),
+    async (req, res) =>
+        sendJson(res, 200, {
+            // `required` false means no password is set, so the panel is open to
+            // whoever can reach the port. The installer keeps that bound to
+            // loopback; the UI says so, and proxying it out is refused unless a
+            // password or proxy-level basic auth is in place.
+            required: authRequired(),
+            authenticated: !authRequired() || isAuthenticated(req),
+        }),
     { auth: false },
 );
 
@@ -263,7 +272,7 @@ route(
     /^\/api\/login$/,
     async (req, res) => {
         const body = await readBody(req);
-        if (!authConfigured()) return fail(res, 503, 'No admin password is configured. Re-run the installer.');
+        if (!authRequired()) return sendJson(res, 200, { ok: true, required: false });
         if (!verifyPassword(String(body.password ?? ''))) {
             // Constant-ish delay so the endpoint is not a fast password oracle.
             await new Promise((r) => setTimeout(r, 500));
@@ -449,7 +458,7 @@ route('POST', /^\/api\/proxies$/, async (req, res) => {
         domain: String(body.proxy?.domain || '').trim().toLowerCase(),
     };
 
-    const errors = nginx.validateProxy(proxy, { existing: list });
+    const errors = nginx.validateProxy(proxy, { existing: list, panelHasPassword: authConfigured() });
     if (errors.length) return fail(res, 400, 'The proxy host has problems.', { details: errors });
 
     nginx.storeBasicAuth(proxy);
@@ -481,7 +490,7 @@ route('PUT', /^\/api\/proxies\/([a-f0-9]{12})$/, async (req, res, match) => {
         auth: { ...previous.auth, ...body.proxy?.auth },
     };
 
-    const errors = nginx.validateProxy(proxy, { existing: list });
+    const errors = nginx.validateProxy(proxy, { existing: list, panelHasPassword: authConfigured() });
     if (errors.length) return fail(res, 400, 'The proxy host has problems.', { details: errors });
 
     nginx.storeBasicAuth(proxy);
@@ -635,9 +644,10 @@ const server = http.createServer(async (req, res) => {
     const match = routes.find((r) => r.method === req.method && r.pattern.test(url.pathname));
     if (!match) return fail(res, 404, 'Not found');
 
-    if (match.auth) {
-        if (!authConfigured()) return fail(res, 503, 'No admin password is configured. Re-run the installer.');
-        if (!isAuthenticated(req)) return fail(res, 401, 'Not signed in.');
+    // With no password set the panel is open; the installer binds it to
+    // loopback so "open" means "open to this machine".
+    if (match.auth && authRequired() && !isAuthenticated(req)) {
+        return fail(res, 401, 'Not signed in.');
     }
 
     // Same-origin guard for state changes. The session cookie is SameSite=Strict
@@ -680,7 +690,11 @@ async function bootstrap() {
     log(`stack dir      : ${CONF_DIR}`);
     log(`kaspad version : ${readEnvFile().KASPAD_VERSION || 'unset'}`);
     log(`network        : ${cfg.network} (${JSON.stringify(ports(cfg))})`);
-    if (!authConfigured()) log('WARNING: ADMIN_PASSWORD_HASH is not set - the API is disabled.');
+    log(
+        authRequired()
+            ? 'auth           : password required'
+            : 'auth           : none (panel expects to be bound to 127.0.0.1)',
+    );
 
     duckdns.scheduleFromConfig(log);
 

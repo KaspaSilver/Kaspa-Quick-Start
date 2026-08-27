@@ -115,6 +115,11 @@ body {
     border-radius: 999px;
     color: var(--muted);
 }
+.badge.local {
+    color: var(--warn);
+    border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+    cursor: help;
+}
 
 /* ------------------------------------------------------------------ layout */
 

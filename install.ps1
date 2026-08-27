@@ -15,8 +15,12 @@ param(
     [int]    $GuiPort    = $(if ($env:KASPA_GUI_PORT) { [int]$env:KASPA_GUI_PORT } else { 8080 }),
     [int]    $HttpPort   = 80,
     [int]    $HttpsPort  = 443,
-    [string] $Bind       = '0.0.0.0',
+    # Loopback by default. The panel ships without a password, and it drives the
+    # Docker socket, so binding it anywhere reachable would hand the host to
+    # whoever finds the port. -Password is what makes a wider bind reasonable.
+    [string] $Bind       = '127.0.0.1',
     [string] $Password   = $env:KASPA_ADMIN_PASSWORD,
+    [switch] $NoPassword,
     [string] $Version    = $env:KASPA_VERSION,
     [string] $StackRepo  = $(if ($env:KASPA_STACK_REPO) { $env:KASPA_STACK_REPO } else { 'KaspaSilver/Quick-Start-Kaspa' }),
     [string] $StackRef   = $(if ($env:KASPA_STACK_REF) { $env:KASPA_STACK_REF } else { 'main' }),
@@ -205,15 +209,6 @@ function Get-LatestRelease {
     }
 }
 
-function New-RandomString {
-    param([int] $Bytes = 48)
-    $buffer = New-Object byte[] $Bytes
-    [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($buffer)
-    # Strip the base64 punctuation so the password survives copy/paste and shell
-    # quoting; 48 bytes leaves far more than the 20 characters we keep.
-    return ([Convert]::ToBase64String($buffer) -replace '[^A-Za-z0-9]', '').Substring(0, 20)
-}
-
 function New-RandomHex {
     param([int] $Bytes = 32)
     $buffer = New-Object byte[] $Bytes
@@ -267,18 +262,37 @@ SESSION_SECRET=$existingSecret
 ADMIN_PASSWORD_HASH=$existingHash
 "@
 
+# Work out the final auth state before building anything, so the warning lands
+# before the user walks away from a long build.
+$authState = 'none'
+if ($Password)          { $authState = 'set' }
+elseif ($NoPassword)    { $authState = 'cleared' }
+elseif ($existingHash)  { $authState = 'kept' }
+
+$isLoopback = $Bind -eq '127.0.0.1' -or $Bind -eq '::1' -or $Bind -eq 'localhost' -or $Bind.StartsWith('127.')
+
+if ($authState -notin @('set', 'kept') -and -not $isLoopback) {
+    Warn "The panel has no password and you asked for it on $Bind."
+    Warn "It controls the Docker daemon, so anyone who reaches port $GuiPort owns this machine."
+    Warn 'Use -Password <pass>, or -Bind 127.0.0.1 to keep it on this machine only.'
+    if (-not (Confirm-Step 'Continue anyway?')) { Die 'Aborted.' }
+}
+
 Say 'Building images'
 Invoke-Compose build manager
 
-$generated = $false
-if (-not $existingHash -or $Password) {
-    if (-not $Password) { $Password = New-RandomString; $generated = $true }
+function Write-PasswordHash {
+    param([string] $Hash)
+    $lines = [System.IO.File]::ReadAllLines($envFile) | Where-Object { $_ -notmatch '^ADMIN_PASSWORD_HASH=' }
+    Write-TextFile $envFile (($lines + "ADMIN_PASSWORD_HASH=$Hash") -join "`n")
+}
+
+if ($authState -eq 'set') {
     $hash = $Password | & docker run --rm -i $ManagerImage node lib/hash-password.js
     if ($LASTEXITCODE -ne 0 -or -not $hash) { Die 'Could not hash the admin password.' }
-    $lines = [System.IO.File]::ReadAllLines($envFile) | Where-Object { $_ -notmatch '^ADMIN_PASSWORD_HASH=' }
-    Write-TextFile $envFile (($lines + "ADMIN_PASSWORD_HASH=$hash") -join "`n")
-} else {
-    $Password = $null
+    Write-PasswordHash $hash
+} elseif ($authState -eq 'cleared') {
+    Write-PasswordHash ''
 }
 
 Invoke-Compose build kaspad
@@ -291,11 +305,17 @@ Write-Host '-------------------------------------------------' -ForegroundColor 
 Write-Host 'Your Kaspa node is running.' -ForegroundColor Green
 Write-Host ''
 Write-Host "  Control panel   http://localhost:$GuiPort"
-if ($Password) {
-    Write-Host "  Admin password  $Password"
-    if ($generated) { Write-Host '                  (generated - save it now, it is not stored in plain text)' -ForegroundColor DarkGray }
-} else {
-    Write-Host '  Admin password  (unchanged from the previous install)' -ForegroundColor DarkGray
+switch ($authState) {
+    'set'  { Write-Host '  Sign in         with the password you supplied' -ForegroundColor DarkGray }
+    'kept' { Write-Host '  Sign in         with the password from your previous install' -ForegroundColor DarkGray }
+    default {
+        Write-Host '  Sign in         not required' -ForegroundColor Green
+        if ($isLoopback) {
+            Write-Host "                  the panel is bound to $Bind, so only this machine can open it" -ForegroundColor DarkGray
+        } else {
+            Write-Host "                  WARNING: bound to $Bind with no password" -ForegroundColor Yellow
+        }
+    }
 }
 Write-Host @"
 

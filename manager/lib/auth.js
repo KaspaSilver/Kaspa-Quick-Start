@@ -9,11 +9,17 @@ const SESSION_SECRET =
         ? process.env.SESSION_SECRET
         : crypto.randomBytes(32).toString('hex');
 
-// A hash is required. Without one there is no way to tell an owner from anyone
-// who can reach the port, so the server refuses to serve the API (see server.js).
+// Optional. The panel is bound to 127.0.0.1 by default, where "can reach the
+// port" already means "is sitting at this machine", so a password buys nothing.
+// Set one (install.sh --password) when binding the panel to a real interface or
+// proxying it to a domain -- the manager holds the Docker socket, which is root
+// on the host, so an exposed panel without a password is a full compromise.
 const PASSWORD_HASH = (process.env.ADMIN_PASSWORD_HASH || '').trim();
 
 export const authConfigured = () => PASSWORD_HASH.length > 0;
+
+/** True when a caller must sign in. Mirrors authConfigured, named for intent. */
+export const authRequired = () => authConfigured();
 
 export function hashPassword(password, salt = crypto.randomBytes(16)) {
     const derived = crypto.scryptSync(password, salt, SCRYPT_KEYLEN);

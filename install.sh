@@ -24,9 +24,13 @@ STACK_DIR="${KASPA_STACK_DIR:-$HOME/.kaspa-node}"
 GUI_PORT="${KASPA_GUI_PORT:-8080}"
 HTTP_PORT="${KASPA_HTTP_PORT:-80}"
 HTTPS_PORT="${KASPA_HTTPS_PORT:-443}"
-MANAGER_BIND="${KASPA_MANAGER_BIND:-0.0.0.0}"
+# Loopback by default. The panel ships without a password, and it drives the
+# Docker socket, so binding it anywhere reachable would hand the host to whoever
+# finds the port. --password is what makes a wider bind reasonable.
+MANAGER_BIND="${KASPA_MANAGER_BIND:-127.0.0.1}"
 KASPAD_VERSION="${KASPA_VERSION:-}"
 ADMIN_PASSWORD="${KASPA_ADMIN_PASSWORD:-}"
+CLEAR_PASSWORD=0
 ASSUME_YES="${KASPA_YES:-0}"
 SKIP_DOCKER_INSTALL="${KASPA_SKIP_DOCKER_INSTALL:-0}"
 
@@ -41,6 +45,7 @@ while [ $# -gt 0 ]; do
         --https-port) HTTPS_PORT="$2"; shift 2 ;;
         --bind) MANAGER_BIND="$2"; shift 2 ;;
         --password) ADMIN_PASSWORD="$2"; shift 2 ;;
+        --no-password) CLEAR_PASSWORD=1; shift ;;
         --version) KASPAD_VERSION="$2"; shift 2 ;;
         --stack-repo) STACK_REPO="$2"; shift 2 ;;
         --stack-ref) STACK_REF="$2"; shift 2 ;;
@@ -54,8 +59,10 @@ Usage: install.sh [options]
   --gui-port <port>     Web control panel port (default: 8080)
   --http-port <port>    nginx http port (default: 80)
   --https-port <port>   nginx https port (default: 443)
-  --bind <address>      Address the panel listens on (default: 0.0.0.0)
-  --password <pass>     Admin password (default: randomly generated)
+  --bind <address>      Address the panel listens on (default: 127.0.0.1)
+  --password <pass>     Require this password to open the panel. Needed if you
+                        widen --bind or proxy the panel to a domain.
+  --no-password         Drop a password set by an earlier run
   --version <vX.Y.Z>    kaspad release to install (default: newest)
   --stack-repo <o/r>    Repo to fetch this stack from
   --stack-ref <ref>     Branch or tag of that repo
@@ -354,7 +361,6 @@ latest_release() {
 }
 
 random_hex() { head -c "${1:-32}" /dev/urandom | od -An -tx1 | tr -d ' \n'; }
-random_password() { head -c 18 /dev/urandom | base64 | tr -d '\n=+/' | cut -c1-22; }
 
 write_env() {
     local env_file="$STACK_DIR/.env"
@@ -385,18 +391,30 @@ ENVFILE
 # The hash is computed by the manager image itself so the installer and the
 # server agree on the algorithm. The password goes in over stdin so it never
 # appears in a process listing.
+write_password_hash() {
+    # sed -i differs between GNU and BSD; rewrite the file instead.
+    local tmp; tmp="$(mktemp)"
+    grep -v '^ADMIN_PASSWORD_HASH=' "$STACK_DIR/.env" > "$tmp"
+    printf 'ADMIN_PASSWORD_HASH=%s\n' "${1:-}" >> "$tmp"
+    cat "$tmp" > "$STACK_DIR/.env"
+    rm -f "$tmp"
+    chmod 600 "$STACK_DIR/.env"
+}
+
 set_password() {
     local hash
     hash="$(printf '%s' "$ADMIN_PASSWORD" \
         | $DOCKER_SUDO docker run --rm -i "$MANAGER_IMAGE" node lib/hash-password.js)" \
         || die "Could not hash the admin password."
     [ -n "$hash" ] || die "Password hashing produced no output."
-    # sed -i differs between GNU and BSD; rewrite the file instead.
-    local tmp; tmp="$(mktemp)"
-    grep -v '^ADMIN_PASSWORD_HASH=' "$STACK_DIR/.env" > "$tmp"
-    printf 'ADMIN_PASSWORD_HASH=%s\n' "$hash" >> "$tmp"
-    cat "$tmp" > "$STACK_DIR/.env"
-    rm -f "$tmp"
+    write_password_hash "$hash"
+}
+
+is_loopback_bind() {
+    case "$MANAGER_BIND" in
+        127.*|::1|localhost) return 0 ;;
+        *) return 1 ;;
+    esac
 }
 
 # ------------------------------------------------------------------- main ----
@@ -423,17 +441,31 @@ fi
 
 write_env
 
+# Work out the final auth state before building anything, so the warning lands
+# before the user walks away from a long build.
+AUTH_STATE=none
+if [ -n "$ADMIN_PASSWORD" ]; then
+    AUTH_STATE=set
+elif [ "$CLEAR_PASSWORD" = "1" ]; then
+    AUTH_STATE=cleared
+elif [ "$ENV_HAD_PASSWORD" = "1" ]; then
+    AUTH_STATE=kept
+fi
+
+if [ "$AUTH_STATE" != "set" ] && [ "$AUTH_STATE" != "kept" ] && ! is_loopback_bind; then
+    warn "The panel has no password and you asked for it on $MANAGER_BIND."
+    warn "It controls the Docker daemon, so anyone who reaches port $GUI_PORT owns this machine."
+    warn "Use --password <pass>, or --bind 127.0.0.1 to keep it on this machine only."
+    confirm "Continue anyway?" || die "Aborted."
+fi
+
 say "Building images"
 dc build manager || die "Could not build the manager image."
 
-if [ "$ENV_HAD_PASSWORD" = "0" ] || [ -n "$ADMIN_PASSWORD" ]; then
-    GENERATED=0
-    if [ -z "$ADMIN_PASSWORD" ]; then ADMIN_PASSWORD="$(random_password)"; GENERATED=1; fi
-    set_password
-else
-    GENERATED=0
-    ADMIN_PASSWORD=""
-fi
+case "$AUTH_STATE" in
+    set) set_password ;;
+    cleared) write_password_hash "" ;;
+esac
 
 dc build kaspad || die "Could not build the kaspad image."
 
@@ -445,12 +477,21 @@ dc up -d || die "Could not start the stack."
 printf '\n%s─────────────────────────────────────────────────%s\n' "$DIM" "$R"
 printf '%sYour Kaspa node is running.%s\n\n' "$GRN$B" "$R"
 printf '  Control panel   %shttp://localhost:%s%s\n' "$B" "$GUI_PORT" "$R"
-if [ -n "$ADMIN_PASSWORD" ]; then
-    printf '  Admin password  %s%s%s\n' "$B" "$ADMIN_PASSWORD" "$R"
-    [ "$GENERATED" = "1" ] && printf '                  %s(generated — save it now, it is not stored in plain text)%s\n' "$DIM" "$R"
-else
-    printf '  Admin password  %s(unchanged from the previous install)%s\n' "$DIM" "$R"
-fi
+case "$AUTH_STATE" in
+    set)
+        printf '  Sign in         %swith the password you supplied%s\n' "$DIM" "$R" ;;
+    kept)
+        printf '  Sign in         %swith the password from your previous install%s\n' "$DIM" "$R" ;;
+    *)
+        printf '  Sign in         %snot required%s\n' "$GRN" "$R"
+        if is_loopback_bind; then
+            printf '                  %sthe panel is bound to %s, so only this machine can open it%s\n' \
+                "$DIM" "$MANAGER_BIND" "$R"
+        else
+            printf '                  %sWARNING: bound to %s with no password%s\n' "$YLW" "$MANAGER_BIND" "$R"
+        fi
+        ;;
+esac
 cat <<SUMMARY
 
   Node arguments   --utxoindex is always on, plus the ports below.
