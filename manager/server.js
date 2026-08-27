@@ -26,6 +26,7 @@ import * as updater from './lib/updater.js';
 import * as bridge from './lib/bridge.js';
 import * as apps from './lib/apps.js';
 import * as kachatProxy from './lib/kachat-proxy.js';
+import * as syncProgress from './lib/sync-progress.js';
 import { nodeSnapshot, rpc } from './lib/rpc.js';
 import { jobs } from './lib/jobs.js';
 import {
@@ -153,6 +154,7 @@ async function applyNodeConfig(cfg, onLine = () => {}) {
     // The container now matches the file; remember that so a manager restart
     // does not decide the node needs recreating again.
     recordAppliedArgs();
+    syncProgress.reset();
 
     try {
         await nginx.reload();
@@ -380,6 +382,11 @@ route('GET', /^\/api\/status$/, async (req, res) => {
             dag: snapshot.dag,
             synced: snapshot.sync?.isSynced ?? snapshot.info?.isSynced ?? null,
         },
+        // Reconstructed from kaspad's log: RPC reports blockCount 0 for the
+        // whole header and UTXO-set phases, so it cannot answer "how far along".
+        sync: syncProgress.snapshot({
+            synced: Boolean(snapshot.sync?.isSynced ?? snapshot.info?.isSynced ?? false),
+        }),
         peers: { total: peers.length, inbound, outbound: peers.length - inbound },
         // Inbound peers are the honest signal that the P2P port is reachable
         // from the internet: nobody can dial in if it is closed.
@@ -1092,6 +1099,7 @@ async function bootstrap() {
         log(`could not compare kaspad against its arguments: ${err.message}`);
     }
 
+    syncProgress.start(log);
     duckdns.scheduleFromConfig(log);
 
     // Certificates are valid for 90 days; a daily attempt is what certbot's own

@@ -233,21 +233,33 @@ async function refreshStatus() {
     const synced = s.rpc.synced === true;
     $('health-dot').className = `dot ${!running ? 'bad' : synced ? 'ok' : 'warn'}`;
 
-    // Sync progress. kaspad exposes no percentage, so the usual proxy is how far
-    // block download trails header download.
-    const blocks = Number(s.rpc.dag?.blockCount ?? 0);
-    const headers = Number(s.rpc.dag?.headerCount ?? 0);
-    const pct = synced ? 100 : headers > 0 ? Math.min(99.9, (blocks / headers) * 100) : 0;
+    // Progress comes from the server, which reconstructs it from kaspad's own
+    // log. A blocks/headers ratio would read 0.0% for the entire header and
+    // UTXO-set download and then jump, which is why it is not used here.
+    const sync = s.sync;
+    const pct = synced ? 100 : (sync?.percent ?? 0);
 
-    $('sync-pct').textContent = running && s.rpc.reachable ? `${pct.toFixed(pct >= 100 ? 0 : 1)}%` : '–';
+    $('sync-pct').textContent = running ? `${pct.toFixed(pct >= 100 ? 0 : 1)}%` : '–';
     $('sync-state').textContent = !running
         ? 'node stopped'
-        : !s.rpc.reachable
+        : !s.rpc.reachable && !sync
           ? 'starting — RPC not answering yet'
-          : synced
-            ? 'synced with the network'
-            : 'syncing';
+          : (sync?.label ?? 'starting up') + (sync?.estimated ? ' (estimated)' : '');
     $('sync-bar').style.width = `${pct}%`;
+    $('sync-bar').classList.toggle('estimated', Boolean(sync?.estimated) && !synced);
+
+    const detail = $('sync-detail');
+    if (running && sync?.detail) {
+        detail.hidden = false;
+        detail.textContent = sync.detail;
+    } else if (running && sync?.lastLine && !synced) {
+        detail.hidden = false;
+        detail.textContent = sync.lastLine;
+    } else {
+        detail.hidden = true;
+    }
+
+    renderSyncSteps(sync, synced, running);
 
     $('stat-blocks').textContent = fmtNum(s.rpc.dag?.blockCount);
     $('stat-headers').textContent = fmtNum(s.rpc.dag?.headerCount);
@@ -322,6 +334,33 @@ function applyNodeGating(status) {
  * ones would remove a port's own row when you switched it off, leaving no way
  * to switch it back on.
  */
+// The whole IBD sequence, so it is obvious what has finished, what is running
+// now, and what is still to come -- rather than one number with no context.
+const SYNC_STEPS = [
+    ['connecting', 'Connecting to peers'],
+    ['proof', 'Pruning point proof'],
+    ['trusted', 'Trusted blocks'],
+    ['smt', 'Commitment state'],
+    ['headers', 'Block headers'],
+    ['utxoset', 'UTXO set'],
+    ['blocks', 'Blocks'],
+];
+
+function renderSyncSteps(sync, synced, running) {
+    const list = $('sync-steps');
+    if (!running) {
+        list.innerHTML = '';
+        return;
+    }
+    const currentIndex = synced ? SYNC_STEPS.length : SYNC_STEPS.findIndex(([key]) => key === sync?.phase);
+    list.innerHTML = SYNC_STEPS.map(([key, label], i) => {
+        const cls = synced || i < currentIndex ? 'done' : i === currentIndex ? 'current' : 'todo';
+        const mark = cls === 'done' ? '✓' : cls === 'current' ? '•' : '';
+        const pctHere = cls === 'current' && sync?.phasePercent != null ? ` ${sync.phasePercent}%` : '';
+        return `<li class="${cls}"><span class="mark">${mark}</span>${escapeHtml(label)}${pctHere}</li>`;
+    }).join('');
+}
+
 function renderPorts(s) {
     const publishedSet = new Set(s.published.map((p) => (p.container || '').split('/')[0]));
     const matrix = s.portMatrix || [];

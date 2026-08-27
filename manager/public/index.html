@@ -119,6 +119,8 @@
           <h3>Sync</h3>
           <div class="bigstat"><span id="sync-pct">–</span><small id="sync-state">connecting…</small></div>
           <div class="bar"><div id="sync-bar"></div></div>
+          <p class="sync-detail" id="sync-detail" hidden></p>
+          <ol class="sync-steps" id="sync-steps"></ol>
           <dl class="kv">
             <div><dt>Blocks</dt><dd id="stat-blocks">–</dd></div>
             <div><dt>Headers</dt><dd id="stat-headers">–</dd></div>
@@ -319,7 +321,7 @@
         <article class="card">
           <h3>
             kaspad log
-            <label class="check tail"><input type="checkbox" id="kaspadlog-follow" checked> follow</label>
+            <label class="check tail" title="Jump to the newest line as it arrives. Untick to scroll back through history without being pulled to the bottom."><input type="checkbox" id="kaspadlog-follow" checked> auto-scroll</label>
           </h3>
           <pre id="kaspadlog-view" class="logview"></pre>
         </article>
@@ -580,7 +582,7 @@
             <option value="nextcloud">nextcloud</option>
             <option value="proxy">nginx proxy</option>
           </select>
-          <label class="check tail"><input type="checkbox" id="log-follow" checked> follow</label>
+          <label class="check tail" title="Jump to the newest line as it arrives. Untick to scroll back through history without being pulled to the bottom."><input type="checkbox" id="log-follow" checked> auto-scroll</label>
         </h3>
         <pre id="log-view" class="logview"></pre>
       </article>

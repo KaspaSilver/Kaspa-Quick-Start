@@ -688,3 +688,38 @@ table.instances td:last-child { width: 40px; text-align: right; }
 
 table.ports td.toggle { width: 56px; }
 table.ports td.note { color: var(--muted); font-size: 12.5px; font-family: inherit; }
+
+/* ------------------------------------------------------------ sync detail */
+
+.sync-detail {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--muted);
+    margin: -6px 0 12px;
+    overflow-wrap: anywhere;
+}
+
+/* The UTXO set announces no total, so its slice of the bar is an estimate.
+   Stripes say so without needing a caption. */
+#sync-bar.estimated {
+    background-image: repeating-linear-gradient(
+        45deg,
+        transparent 0 6px,
+        color-mix(in srgb, var(--bg) 45%, transparent) 6px 12px
+    );
+}
+
+.sync-steps {
+    list-style: none;
+    margin: 0 0 14px;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+    font-size: 12.5px;
+}
+.sync-steps li { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.sync-steps .mark { width: 10px; display: inline-block; text-align: center; }
+.sync-steps li.done { color: var(--ok); }
+.sync-steps li.current { color: var(--text); font-weight: 600; }
+.sync-steps li.todo { opacity: 0.55; }
