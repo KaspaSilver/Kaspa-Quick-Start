@@ -292,6 +292,9 @@ async function refreshStatus() {
     }
 
     renderPorts(s);
+    if (document.activeElement !== $('bind-address')) {
+        $('bind-address').value = s.bindAddress || '0.0.0.0';
+    }
     applyNodeGating(s);
 }
 
@@ -363,47 +366,62 @@ function renderSyncSteps(sync, synced, running) {
 
 function renderPorts(s) {
     const publishedSet = new Set(s.published.map((p) => (p.container || '').split('/')[0]));
-    const matrix = s.portMatrix || [];
 
-    $('ports-body').innerHTML = matrix
+    const sw = (p, axis, on, enabled, title) =>
+        `<label class="switch" title="${escapeHtml(title)}">
+           <input type="checkbox" data-port="${p.key}" data-axis="${axis}" ${on ? 'checked' : ''} ${enabled ? '' : 'disabled'}>
+           <span class="track"></span>
+         </label>`;
+
+    $('ports-body').innerHTML = (s.portMatrix || [])
         .map((p) => {
             const live = publishedSet.has(String(p.port));
-            const state = !p.on
-                ? '<span class="tag off">off</span>'
-                : live
-                  ? '<span class="tag ok">published</span>'
-                  : '<span class="tag">applying…</span>';
+            const state = !p.listening
+                ? '<span class="tag off">not listening</span>'
+                : !p.published
+                  ? '<span class="tag">internal only</span>'
+                  : live
+                    ? '<span class="tag ok">reachable</span>'
+                    : '<span class="tag">applying…</span>';
+            const listening = p.canToggleListening
+                ? sw(p, 'listening', p.listening, true, p.listeningNote)
+                : `<span class="locked" title="${escapeHtml(p.listeningNote)}">always</span>`;
             return `<tr>
-      <td class="toggle">
-        <label class="switch" title="${escapeHtml(p.note)}">
-          <input type="checkbox" data-port-toggle="${p.key}" ${p.on ? 'checked' : ''}>
-          <span class="track"></span>
-        </label>
-      </td>
-      <td>${p.port}</td>
+      <td class="port">${p.port}</td>
       <td>${p.name}${p.required ? ' <span class="tag">needed to be public</span>' : ''}</td>
+      <td class="toggle">${listening}</td>
+      <td class="toggle">${sw(p, 'published', p.published, true, p.note)}</td>
       <td>${state}</td>
-      <td><button class="ghost" data-portcheck="${p.port}" ${p.on ? '' : 'disabled'}>Test</button></td>
+      <td><button class="ghost" data-portcheck="${p.port}" ${p.published ? '' : 'disabled'}>Test</button></td>
     </tr>`;
         })
         .join('');
 }
 
-// Flipping a switch restarts the node with that port on or off.
+// Flipping either switch restarts the node with that change applied.
 $('ports-body').addEventListener('change', async (event) => {
-    const key = event.target.dataset?.portToggle;
-    if (!key) return;
-    const enabled = event.target.checked;
+    const { port: key, axis } = event.target.dataset ?? {};
+    if (!key || !axis) return;
+    const value = event.target.checked;
     event.target.disabled = true;
     try {
-        const r = await api(`/api/ports/${key}`, { method: 'POST', body: { enabled } });
-        if (!r.unchanged) openConsole(`${enabled ? 'Enabling' : 'Disabling'} ${key}`);
+        const r = await api(`/api/ports/${key}`, { method: 'POST', body: { [axis]: value } });
+        if (!r.unchanged) openConsole(`${key}: ${axis} ${value ? 'on' : 'off'}`);
     } catch (e) {
-        // Put the switch back where it was; the node was not changed.
-        event.target.checked = !enabled;
+        // Put the switch back; the node was not changed.
+        event.target.checked = !value;
         toast(e.message, 'bad');
     } finally {
         event.target.disabled = false;
+    }
+});
+
+$('bind-apply').addEventListener('click', async () => {
+    try {
+        const r = await api('/api/ports/bind', { method: 'POST', body: { address: $('bind-address').value.trim() } });
+        if (!r.unchanged) openConsole('Changing the publish address');
+    } catch (e) {
+        toast(e.message, 'bad');
     }
 });
 
@@ -507,13 +525,6 @@ async function loadSettings() {
     const c = r.config;
 
     $('cfg-network').value = c.network;
-    $('cfg-svc-grpc').checked = c.services.grpc;
-    $('cfg-svc-borsh').checked = c.services.borsh;
-    $('cfg-expose-p2p').checked = c.expose.p2p;
-    $('cfg-expose-grpc').checked = c.expose.grpc;
-    $('cfg-expose-borsh').checked = c.expose.borsh;
-    $('cfg-expose-json').checked = c.expose.json;
-    $('cfg-bind').value = c.expose.bindAddress || '0.0.0.0';
 
     for (const flag of FLAGS) $(`cfg-flag-${flag}`).checked = Boolean(c.flags[flag]);
 
@@ -532,23 +543,11 @@ async function loadSettings() {
     $('cfg-connectpeers').value = (c.peering.connectPeers || []).join('\n');
     $('cfg-extraargs').value = (c.extraArgs || []).join('\n');
 
-    updatePortLabels(r.networks);
+    networksMeta = r.networks;
     $('args-preview').textContent = r.argsPreview.join(' \\\n  ');
 }
 
-function updatePortLabels(networks) {
-    const net = networks?.[$('cfg-network').value] ?? networks?.mainnet;
-    if (!net) return;
-    for (const cell of document.querySelectorAll('.port[data-port]')) {
-        cell.textContent = net[cell.dataset.port] ?? '–';
-    }
-}
-
 let networksMeta = null;
-$('cfg-network').addEventListener('change', async () => {
-    if (!networksMeta) networksMeta = (await api('/api/config')).networks;
-    updatePortLabels(networksMeta);
-});
 
 const lines = (id) =>
     $(id)
@@ -561,14 +560,10 @@ function collectConfig() {
     for (const flag of FLAGS) flags[flag] = $(`cfg-flag-${flag}`).checked;
     return {
         network: $('cfg-network').value,
-        services: { grpc: $('cfg-svc-grpc').checked, borsh: $('cfg-svc-borsh').checked },
-        expose: {
-            p2p: $('cfg-expose-p2p').checked,
-            grpc: $('cfg-expose-grpc').checked,
-            borsh: $('cfg-expose-borsh').checked,
-            json: $('cfg-expose-json').checked,
-            bindAddress: $('cfg-bind').value.trim() || '0.0.0.0',
-        },
+        // Owned by the Ports card, which applies immediately; pass the current
+        // values straight through so saving settings cannot revert them.
+        services: { ...currentConfig.services },
+        expose: { ...currentConfig.expose },
         flags,
         tuning: {
             logLevel: $('cfg-loglevel').value,
@@ -1254,42 +1249,90 @@ $('dd-now').addEventListener('click', async () => {
 
 // ------------------------------------------------------------------- logs ---
 
+// One tile per container, all fed by a single multiplexed EventSource. Per-tile
+// streams would need one connection each, and browsers cap concurrent
+// HTTP/1.1 connections per origin at about six -- which the status poll and the
+// job console also need.
 let logStream = null;
+const logBuffers = new Map();
+const LOG_TILE_LINES = 400;
+
+function logTile(key, label) {
+    return `<article class="log-tile" data-tile="${key}">
+      <div class="log-tile-head">
+        <span class="dot" data-tiledot="${key}"></span>
+        <span class="name">${escapeHtml(label)}</span>
+        <span class="count" data-tilecount="${key}">0</span>
+        <button type="button" data-expand="${key}" title="Expand this one to full width">⤢</button>
+        <button type="button" data-clear="${key}" title="Clear">✕</button>
+      </div>
+      <pre data-tilelog="${key}"></pre>
+    </article>`;
+}
+
+function renderLogTile(key) {
+    const pre = document.querySelector(`[data-tilelog="${key}"]`);
+    if (!pre) return;
+    const buf = logBuffers.get(key) ?? [];
+    const filter = $('log-filter').value.trim().toLowerCase();
+    const shown = filter ? buf.filter((l) => l.toLowerCase().includes(filter)) : buf;
+    pre.textContent = shown.join('\n');
+    const count = document.querySelector(`[data-tilecount="${key}"]`);
+    if (count) count.textContent = filter ? `${shown.length}/${buf.length}` : String(buf.length);
+    if ($('log-follow').checked) pre.scrollTop = pre.scrollHeight;
+}
 
 function connectLogs() {
     logStream?.close();
-    $('log-view').textContent = '';
-    const source = $('log-source').value;
-    logStream = new EventSource(`/api/logs/stream?container=${source}`);
+    logBuffers.clear();
+    const grid = $('log-grid');
+    grid.innerHTML = '<p class="empty-tile">Connecting…</p>';
+
+    logStream = new EventSource('/api/logs/stream-all');
+
+    logStream.addEventListener('containers', (event) => {
+        const { containers } = JSON.parse(event.data);
+        $('logs-note').textContent = containers.length
+            ? `${containers.length} container${containers.length === 1 ? '' : 's'} running`
+            : '';
+        grid.innerHTML = containers.length
+            ? containers.map((c) => logTile(c.key, c.label)).join('')
+            : '<p class="empty-tile">No containers are running.</p>';
+        for (const c of containers) {
+            logBuffers.set(c.key, []);
+            const dot = document.querySelector(`[data-tiledot="${c.key}"]`);
+            if (dot) dot.className = 'dot ok';
+        }
+    });
+
     logStream.addEventListener('line', (event) => {
-        const view = $('log-view');
-        view.textContent += `${JSON.parse(event.data).line}\n`;
-        if (view.textContent.length > 400_000) view.textContent = view.textContent.slice(-300_000);
-        if ($('log-follow').checked) view.scrollTop = view.scrollHeight;
+        const { key, line } = JSON.parse(event.data);
+        const buf = logBuffers.get(key);
+        if (!buf) return;
+        buf.push(line);
+        if (buf.length > LOG_TILE_LINES) buf.splice(0, buf.length - LOG_TILE_LINES);
+        renderLogTile(key);
+    });
+
+    logStream.addEventListener('error', () => {
+        for (const dot of document.querySelectorAll('[data-tiledot]')) dot.className = 'dot bad';
     });
 }
-$('log-source').addEventListener('change', connectLogs);
 
-// The Kaspad section's own log panel, separate from the all-container viewer
-// so switching sources over there cannot disturb it.
-let kaspadLogStream = null;
+$('log-filter').addEventListener('input', () => {
+    for (const key of logBuffers.keys()) renderLogTile(key);
+});
 
-function setKaspadLog(active) {
-    if (!active) {
-        kaspadLogStream?.close();
-        kaspadLogStream = null;
-        return;
+$('log-grid').addEventListener('click', (event) => {
+    const expand = event.target.dataset?.expand;
+    const clear = event.target.dataset?.clear;
+    if (expand) {
+        document.querySelector(`[data-tile="${expand}"]`)?.classList.toggle('expanded');
+    } else if (clear) {
+        logBuffers.set(clear, []);
+        renderLogTile(clear);
     }
-    if (kaspadLogStream) return;
-    const view = $('kaspadlog-view');
-    view.textContent = '';
-    kaspadLogStream = new EventSource('/api/logs/stream?container=kaspad');
-    kaspadLogStream.addEventListener('line', (event) => {
-        view.textContent += `${JSON.parse(event.data).line}\n`;
-        if (view.textContent.length > 400_000) view.textContent = view.textContent.slice(-300_000);
-        if ($('kaspadlog-follow').checked) view.scrollTop = view.scrollHeight;
-    });
-}
+});
 
 // ---------------------------------------------------------------- console ---
 

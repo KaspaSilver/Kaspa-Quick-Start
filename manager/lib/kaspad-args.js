@@ -110,75 +110,89 @@ export function renderPortsOverride(cfg) {
 
 /** The ports a user has to open on their router/firewall to go public. */
 export function publicPorts(cfg) {
-    return portMatrix(cfg).filter((entry) => entry.on).map(({ port, name, required }) => ({ port, name, required }));
+    return portMatrix(cfg)
+        .filter((e) => e.listening && e.published)
+        .map(({ port, name, required }) => ({ port, name, required }));
 }
 
 /**
- * Every port the node can offer, on or off, for the dashboard's toggles.
+ * Every port the node can offer, with both of its independent states.
  *
- * Listing only the enabled ones would be a trap: switching a port off would
- * remove its own row, leaving no way to switch it back on.
+ * There really are two, and collapsing them would cost real capability:
+ *   listening  the kaspad argument -- whether the service is bound at all,
+ *              which is what the stratum bridge (gRPC) and the KaChat indexer
+ *              (wRPC Borsh) need over the internal network;
+ *   published  whether Docker maps it to a host port, which is the only thing
+ *              that decides if the outside world can reach it.
  *
- * `canStopListening` records whether turning the toggle off can also drop the
- * kaspad argument, or only unpublish the host port:
- *   - P2P has no off switch worth having; a node without peers is not a node.
- *   - wRPC JSON is how this panel talks to the node, so its listener stays up
- *     on the internal network whatever the toggle says.
- * In both of those cases "off" still means unreachable from outside, which is
- * what this section is about.
+ * Listing off ports too is deliberate: showing only enabled ones would remove a
+ * port's own row the moment it was switched off, leaving no way back on.
  */
 export function portMatrix(cfg) {
     const p = ports(cfg);
+    const row = (key, port, name, opts) => ({
+        key,
+        port,
+        name,
+        required: Boolean(opts.required),
+        listening: opts.alwaysListening ? true : Boolean(cfg.services[key]),
+        canToggleListening: !opts.alwaysListening,
+        published: Boolean(cfg.expose[key]),
+        listeningNote: opts.listeningNote,
+        note: opts.note,
+    });
+
     return [
-        {
-            key: 'p2p',
-            port: p.p2p,
-            name: 'P2P',
+        row('p2p', p.p2p, 'P2P', {
             required: true,
-            on: Boolean(cfg.expose.p2p),
-            canStopListening: false,
-            note: 'Peers connect here. Off unpublishes the port; the node keeps talking to the peers it dials out to.',
-        },
-        {
-            key: 'grpc',
-            port: p.grpc,
-            name: 'gRPC',
-            required: false,
-            on: Boolean(cfg.expose.grpc && cfg.services.grpc),
-            canStopListening: true,
-            note: 'Wallets and tools. Off runs the node with --nogrpc and unpublishes the port.',
-        },
-        {
-            key: 'borsh',
-            port: p.borsh,
-            name: 'wRPC Borsh',
-            required: false,
-            on: Boolean(cfg.expose.borsh && cfg.services.borsh),
-            canStopListening: true,
-            note: 'Rusty/KDX style clients, and what the KaChat indexer reads. Off drops the listener and unpublishes the port.',
-        },
-        {
-            key: 'json',
-            port: p.json,
-            name: 'wRPC JSON',
-            required: false,
-            on: Boolean(cfg.expose.json),
-            canStopListening: false,
-            note: 'Browser and JSON clients. Off unpublishes the port; the listener stays on the internal network for this panel.',
-        },
+            alwaysListening: true,
+            listeningNote: 'A node without peers is not a node, so this always listens.',
+            note: 'Peers dial in here. Publish it to become a public node.',
+        }),
+        row('grpc', p.grpc, 'gRPC', {
+            listeningNote: 'Off runs the node with --nogrpc. The stratum bridge needs this on.',
+            note: 'Wallets and tools. Publishing exposes it beyond this machine.',
+        }),
+        row('borsh', p.borsh, 'wRPC Borsh', {
+            listeningNote: 'Off drops the listener. The KaChat indexer needs this on.',
+            note: 'Rusty/KDX style clients.',
+        }),
+        row('json', p.json, 'wRPC JSON', {
+            alwaysListening: true,
+            listeningNote: 'This panel talks to the node over wRPC JSON, so it always listens internally.',
+            note: 'Browser and JSON clients. Publishing exposes it beyond this machine.',
+        }),
     ];
 }
 
 /**
- * Applies a dashboard toggle to the stored config. Where a listener can be shut
- * down as well as unpublished, both move together, so "off" means the node is
- * genuinely started without that argument rather than merely firewalled.
+ * Applies a change to one port. The two states are independent controls but not
+ * independent facts: a published port that is not listening is a mapping to
+ * nothing, and publishing something implies it must be bound. Rather than let
+ * the UI offer a state the node cannot be in, the dependent value moves with it.
  */
-export function setPortEnabled(cfg, key, enabled) {
+export function setPortState(cfg, key, { listening, published } = {}) {
     const entry = portMatrix(cfg).find((e) => e.key === key);
     if (!entry) throw new Error(`Unknown port "${key}".`);
+    const changes = [];
 
-    cfg.expose[key] = enabled;
-    if (entry.canStopListening) cfg.services[key] = enabled;
-    return cfg;
+    if (listening !== undefined && entry.canToggleListening && listening !== entry.listening) {
+        cfg.services[key] = listening;
+        changes.push(listening ? `${entry.name} listener on` : `${entry.name} listener off`);
+        if (!listening && cfg.expose[key]) {
+            cfg.expose[key] = false;
+            changes.push(`${entry.name} unpublished (a published port that is not listening maps to nothing)`);
+        }
+    }
+
+    if (published !== undefined && published !== entry.published) {
+        cfg.expose[key] = published;
+        changes.push(published ? `${entry.name} published on the host` : `${entry.name} no longer published`);
+        if (published && entry.canToggleListening && !cfg.services[key]) {
+            cfg.services[key] = true;
+            changes.push(`${entry.name} listener switched on (publishing needs it bound)`);
+        }
+    }
+
+    return changes;
 }

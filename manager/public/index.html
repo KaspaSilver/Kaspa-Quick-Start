@@ -158,20 +158,31 @@
         </article>
 
         <article class="card span2">
-          <h3>Going public</h3>
+          <h3>Ports</h3>
           <p class="muted">
-            These are on by default, which is how the node starts out. Forward
-            them on your router / open them in your firewall and the node is
-            public — nothing else to configure. Switching one off restarts the
-            node without it.
+            <strong>Listening</strong> is the kaspad argument — whether the service
+            is bound at all. <strong>Public</strong> maps it to a host port, which
+            is the only thing that decides whether the outside world can reach it.
+            Both are on by default; changing either restarts the node.
           </p>
           <div class="scroll-x">
             <table class="ports">
-              <thead><tr><th></th><th>Port</th><th>Service</th><th>State</th><th></th></tr></thead>
+              <thead>
+                <tr><th>Port</th><th>Service</th><th>Listening</th><th>Public</th><th>State</th><th></th></tr>
+              </thead>
               <tbody id="ports-body"></tbody>
             </table>
           </div>
-          <p class="hint">Public IP: <code id="public-ip">…</code></p>
+          <label class="inline bindrow">
+            Publish on address
+            <input id="bind-address" size="12" value="0.0.0.0">
+            <button type="button" id="bind-apply" class="ghost">Apply</button>
+          </label>
+          <p class="hint">
+            <code>0.0.0.0</code> means any interface. Use <code>127.0.0.1</code> to
+            keep published ports on this machine only. Public IP:
+            <code id="public-ip">…</code>
+          </p>
         </article>
 
       </div>
@@ -193,47 +204,6 @@
             <p class="hint">Switching chains changes every port number and starts a separate database.</p>
           </article>
 
-          <article class="card span2">
-            <h3>RPC listeners</h3>
-            <p class="muted">
-              “Listening” binds the service inside the stack. “Published” maps it
-              to a host port so the outside world can reach it.
-            </p>
-            <table class="toggles">
-              <thead><tr><th>Service</th><th>Port</th><th>Listening</th><th>Published</th></tr></thead>
-              <tbody>
-                <tr>
-                  <td>P2P <span class="muted">(peer connections)</span></td>
-                  <td class="port" data-port="p2p">–</td>
-                  <td><span class="locked" title="A node without P2P is not a node.">always</span></td>
-                  <td><input type="checkbox" id="cfg-expose-p2p"></td>
-                </tr>
-                <tr>
-                  <td>gRPC</td>
-                  <td class="port" data-port="grpc">–</td>
-                  <td><input type="checkbox" id="cfg-svc-grpc"></td>
-                  <td><input type="checkbox" id="cfg-expose-grpc"></td>
-                </tr>
-                <tr>
-                  <td>wRPC Borsh</td>
-                  <td class="port" data-port="borsh">–</td>
-                  <td><input type="checkbox" id="cfg-svc-borsh"></td>
-                  <td><input type="checkbox" id="cfg-expose-borsh"></td>
-                </tr>
-                <tr>
-                  <td>wRPC JSON</td>
-                  <td class="port" data-port="json">–</td>
-                  <td><span class="locked" title="This control panel talks to the node over wRPC JSON.">always</span></td>
-                  <td><input type="checkbox" id="cfg-expose-json"></td>
-                </tr>
-              </tbody>
-            </table>
-            <label class="inline">
-              Publish on address
-              <input id="cfg-bind" value="0.0.0.0" size="12">
-            </label>
-            <p class="hint">Use <code>127.0.0.1</code> to keep published ports on this machine only.</p>
-          </article>
 
           <article class="card">
             <h3>Indexes &amp; flags</h3>
@@ -572,20 +542,13 @@
 
     <!-- ------------------------------------------------------------ logs -->
     <section id="tab-logs" class="tab">
-      <article class="card">
-        <h3>
-          Live log
-          <select id="log-source" class="inline-select">
-            <option value="kaspad">kaspad</option>
-            <option value="bridge">stratum bridge</option>
-            <option value="kachat">kachat indexer</option>
-            <option value="nextcloud">nextcloud</option>
-            <option value="proxy">nginx proxy</option>
-          </select>
-          <label class="check tail" title="Jump to the newest line as it arrives. Untick to scroll back through history without being pulled to the bottom."><input type="checkbox" id="log-follow" checked> auto-scroll</label>
-        </h3>
-        <pre id="log-view" class="logview"></pre>
-      </article>
+      <div class="logs-toolbar">
+        <label class="check" title="Jump to the newest line as it arrives. Untick to scroll back through history without being pulled to the bottom."><input type="checkbox" id="log-follow" checked> auto-scroll</label>
+        <input id="log-filter" placeholder="filter lines…" size="18">
+        <span class="muted" id="logs-note"></span>
+      </div>
+      <!-- One tile per container, all fed by a single multiplexed stream. -->
+      <div class="log-grid" id="log-grid"></div>
     </section>
 
     </main>

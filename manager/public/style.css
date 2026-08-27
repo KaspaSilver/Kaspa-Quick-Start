@@ -723,3 +723,74 @@ table.ports td.note { color: var(--muted); font-size: 12.5px; font-family: inher
 .sync-steps li.done { color: var(--ok); }
 .sync-steps li.current { color: var(--text); font-weight: 600; }
 .sync-steps li.todo { opacity: 0.55; }
+
+/* ------------------------------------------------------------- log grid */
+
+.logs-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+}
+.logs-toolbar input[type="text"], .logs-toolbar #log-filter { width: auto; margin: 0; }
+
+.log-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+    gap: 14px;
+    align-items: start;
+}
+
+.log-tile {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    /* Every tile the same height so the grid stays a grid as logs fill up. */
+    height: 320px;
+}
+.log-tile.expanded { grid-column: 1 / -1; height: min(70vh, 640px); }
+
+.log-tile-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--line);
+    font-size: 13px;
+    font-weight: 600;
+    background: var(--panel-2);
+}
+.log-tile-head .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log-tile-head .count { color: var(--muted); font-weight: 400; font-family: var(--mono); font-size: 11px; }
+.log-tile-head button {
+    background: none;
+    border: 0;
+    color: var(--muted);
+    padding: 2px 6px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+}
+.log-tile-head button:hover { background: var(--bg); color: var(--text); }
+
+.log-tile pre {
+    flex: 1;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    font-size: 11.5px;
+    line-height: 1.45;
+    overflow: auto;
+    background: var(--bg);
+}
+
+.log-grid .empty-tile {
+    grid-column: 1 / -1;
+    color: var(--muted);
+    font-style: italic;
+    padding: 20px;
+}

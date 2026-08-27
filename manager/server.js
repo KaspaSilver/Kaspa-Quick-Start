@@ -17,7 +17,7 @@ import {
     saveNodeConfig,
     saveProxies,
 } from './lib/store.js';
-import { buildArgs, portMatrix, ports, publicPorts, renderPortsOverride, setPortEnabled, writeArgsFile } from './lib/kaspad-args.js';
+import { buildArgs, portMatrix, ports, publicPorts, renderPortsOverride, setPortState, writeArgsFile } from './lib/kaspad-args.js';
 import * as dockerctl from './lib/dockerctl.js';
 import * as nginx from './lib/nginx.js';
 import * as certbot from './lib/certbot.js';
@@ -398,6 +398,7 @@ route('GET', /^\/api\/status$/, async (req, res) => {
         ports: ports(cfg),
         publicPorts: publicPorts(cfg),
         portMatrix: portMatrix(cfg),
+        bindAddress: cfg.expose.bindAddress || '0.0.0.0',
         published,
         disk,
         job: jobs.snapshot(),
@@ -430,32 +431,57 @@ route('PUT', /^\/api\/config$/, async (req, res) => {
 route('POST', /^\/api\/ports\/(p2p|grpc|borsh|json)$/, async (req, res, match) => {
     const key = match[1];
     const body = await readBody(req);
-    const enabled = Boolean(body.enabled);
+    const wanted = {
+        listening: typeof body.listening === 'boolean' ? body.listening : undefined,
+        published: typeof body.published === 'boolean' ? body.published : undefined,
+    };
+    if (wanted.listening === undefined && wanted.published === undefined) {
+        return fail(res, 400, 'Send listening and/or published as booleans.');
+    }
 
     const cfg = loadNodeConfig();
-    const entry = portMatrix(cfg).find((e) => e.key === key);
-    if (entry.on === enabled) return sendJson(res, 200, { ok: true, unchanged: true });
+    const before = portMatrix(cfg).find((e) => e.key === key);
 
-    // Turning Borsh off pulls the chain feed out from under the KaChat indexer,
-    // which would then sit there doing nothing. Say so instead of breaking it.
-    if (key === 'borsh' && !enabled) {
-        const appsCfg = apps.loadAppsConfig();
-        if (appsCfg.kachat.enabled) {
-            return fail(res, 409, 'The KaChat indexer is running and reads the chain over wRPC Borsh.', {
-                details: ['Switch KaChat off first, or leave this port on.'],
+    // Two services in this stack reach the node over the internal network, and
+    // turning their listener off would strand them without touching anything
+    // they can see. Refuse rather than break them silently.
+    if (wanted.listening === false) {
+        if (key === 'borsh' && apps.loadAppsConfig().kachat.enabled) {
+            return fail(res, 409, 'The KaChat indexer reads the chain over wRPC Borsh.', {
+                details: ['Switch KaChat off first, or leave this listener on.'],
+            });
+        }
+        if (key === 'grpc' && bridge.loadBridgeConfig().enabled) {
+            return fail(res, 409, 'The stratum bridge talks to the node over gRPC.', {
+                details: ['Switch mining off first, or leave this listener on.'],
             });
         }
     }
 
-    setPortEnabled(cfg, key, enabled);
-    saveNodeConfig(cfg);
+    const changes = setPortState(cfg, key, wanted);
+    if (!changes.length) return sendJson(res, 200, { ok: true, unchanged: true });
 
-    const job = jobs.start(`${enabled ? 'Enable' : 'Disable'} ${entry.name} (${entry.port})`, (onLine) => {
-        onLine(
-            enabled
-                ? `Restarting the node with ${entry.name} on.`
-                : `Restarting the node with ${entry.name} off${entry.canStopListening ? ' (listener and host port)' : ' (host port; listener stays internal)'}.`,
-        );
+    saveNodeConfig(cfg);
+    const job = jobs.start(`${before.name} (${before.port})`, (onLine) => {
+        for (const change of changes) onLine(change);
+        return applyNodeConfig(cfg, onLine);
+    });
+    sendJson(res, 202, { ok: true, jobId: job.id, changes });
+});
+
+route('POST', /^\/api\/ports\/bind$/, async (req, res) => {
+    const body = await readBody(req);
+    const address = String(body.address || '').trim();
+    if (!/^[0-9a-fA-F.:]+$/.test(address)) {
+        return fail(res, 400, 'Publish address must be an IP such as 0.0.0.0 or 127.0.0.1.');
+    }
+    const cfg = loadNodeConfig();
+    if (cfg.expose.bindAddress === address) return sendJson(res, 200, { ok: true, unchanged: true });
+
+    cfg.expose.bindAddress = address;
+    saveNodeConfig(cfg);
+    const job = jobs.start(`Publish ports on ${address}`, (onLine) => {
+        onLine(`Published ports will bind ${address}.`);
         return applyNodeConfig(cfg, onLine);
     });
     sendJson(res, 202, { ok: true, jobId: job.id });
@@ -490,6 +516,45 @@ route('GET', /^\/api\/logs\/stream$/, async (req, res, match, url) => {
     const { send, onClose } = sse(req, res);
     const stop = dockerctl.streamLogs(containerFor(url), (line) => send('line', { line }));
     onClose(stop);
+});
+
+route('GET', /^\/api\/logs\/containers$/, async (req, res) => {
+    const rows = await Promise.all(
+        dockerctl.STACK_CONTAINERS.map(async (c) => ({ ...c, state: await dockerctl.containerState(c.name) })),
+    );
+    sendJson(res, 200, { containers: rows.filter((c) => c.state.exists) });
+});
+
+/**
+ * One stream carrying every container's log, tagged by container.
+ *
+ * Deliberately multiplexed rather than one EventSource per tile: browsers allow
+ * only about six concurrent HTTP/1.1 connections per origin, so a tile each
+ * would consume the entire budget and stall the status polling that drives the
+ * rest of the panel.
+ */
+route('GET', /^\/api\/logs\/stream-all$/, async (req, res) => {
+    const present = [];
+    for (const c of dockerctl.STACK_CONTAINERS) {
+        const state = await dockerctl.containerState(c.name);
+        if (state.exists) present.push(c);
+    }
+
+    const { send, onClose } = sse(req, res);
+    send('containers', { containers: present.map(({ key, label, name }) => ({ key, label, name })) });
+
+    const stops = present.map((c) =>
+        dockerctl.streamLogs(c.name, (line) => send('line', { key: c.key, line }), { tail: 60 }),
+    );
+    onClose(() => {
+        for (const stop of stops) {
+            try {
+                stop();
+            } catch {
+                /* already exited */
+            }
+        }
+    });
 });
 
 route('GET', /^\/api\/jobs\/stream$/, async (req, res) => {

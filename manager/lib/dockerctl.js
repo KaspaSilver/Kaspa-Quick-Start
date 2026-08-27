@@ -11,6 +11,18 @@ const NEXTCLOUD_CONTAINER = process.env.NEXTCLOUD_CONTAINER || 'kaspa-node-nextc
 
 export { KASPAD_CONTAINER, PROXY_CONTAINER, BRIDGE_CONTAINER, KACHAT_CONTAINER, NEXTCLOUD_CONTAINER };
 
+/** Every container this stack can run, in the order worth reading them. */
+export const STACK_CONTAINERS = [
+    { key: 'kaspad', label: 'kaspad', name: KASPAD_CONTAINER },
+    { key: 'bridge', label: 'stratum bridge', name: BRIDGE_CONTAINER },
+    { key: 'kachat', label: 'kachat indexer', name: KACHAT_CONTAINER },
+    { key: 'kachat-db', label: 'kachat postgres', name: 'kaspa-node-kachat-db' },
+    { key: 'nextcloud', label: 'nextcloud', name: NEXTCLOUD_CONTAINER },
+    { key: 'nextcloud-db', label: 'nextcloud mariadb', name: 'kaspa-node-nextcloud-db' },
+    { key: 'proxy', label: 'nginx proxy', name: PROXY_CONTAINER },
+    { key: 'manager', label: 'control panel', name: 'kaspa-node-manager' },
+];
+
 export class CommandError extends Error {
     constructor(message, { code, stdout, stderr }) {
         super(message);
@@ -144,15 +156,17 @@ export async function publishedPorts(name) {
 
 export async function logs(name, tail = 300) {
     try {
-        const { stdout, stderr } = await docker(['logs', '--tail', String(tail), '--timestamps', name]);
+        const { stdout, stderr } = await docker(['logs', '--tail', String(tail), name]);
         return `${stdout}${stderr}`;
     } catch (err) {
         return err instanceof CommandError ? `${err.stdout || ''}${err.stderr || ''}` : String(err);
     }
 }
 
-export function streamLogs(name, onLine, { tail = 200 } = {}) {
-    const child = spawn('docker', ['logs', '--tail', String(tail), '--follow', '--timestamps', name]);
+export function streamLogs(name, onLine, { tail = 200, timestamps = false } = {}) {
+    const args = ['logs', '--tail', String(tail), '--follow'];
+    if (timestamps) args.push('--timestamps');
+    const child = spawn('docker', [...args, name]);
     let pending = '';
     const emit = (chunk) => {
         pending += chunk;
