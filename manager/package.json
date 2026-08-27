@@ -1,0 +1,14 @@
+{
+  "name": "kaspa-node-manager",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Web control panel for a one-click kaspad node: arguments, ports, reverse proxy, DuckDNS and updates.",
+  "type": "module",
+  "main": "server.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.js"
+  }
+}

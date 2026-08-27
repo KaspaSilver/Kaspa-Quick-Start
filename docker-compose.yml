@@ -1,0 +1,103 @@
+# Kaspa one-click node stack.
+#
+# This file is used by two different clients: the installer running on the host,
+# and the manager container running `docker compose` against the same stack.
+# That split decides how each path must be written:
+#
+#   volumes:       resolved by the Docker *daemon*, so they must be host paths
+#                  -> always ${STACK_DIR}/..., never relative.
+#   build.context: resolved by the *client* before upload, so it must be
+#                  relative -> ./kaspad resolves to $STACK_DIR/kaspad on the host
+#                  and to /stack/kaspad inside the manager, both correct.
+#
+# Getting either backwards produces mounts pointing at nothing.
+#
+# kaspad publishes no ports here on purpose -- the port mappings live in the
+# generated override at conf/ports.yml so the web UI can toggle them. Compose
+# concatenates `ports` across files, so the base must leave the list empty.
+
+name: kaspa-node
+
+services:
+  kaspad:
+    image: kaspa-one-click/kaspad:${KASPAD_VERSION:-v2.0.1}
+    build:
+      context: ./kaspad
+      args:
+        KASPAD_VERSION: ${KASPAD_VERSION:-v2.0.1}
+        REPO_URL: ${KASPAD_REPO_URL:-https://github.com/kaspanet/rusty-kaspa}
+    container_name: kaspa-node-kaspad
+    hostname: kaspad
+    restart: unless-stopped
+    stop_grace_period: 180s
+    volumes:
+      - kaspad-data:/data
+      - ${STACK_DIR}/conf:/conf:ro
+    networks:
+      - kaspa
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  manager:
+    image: kaspa-one-click/manager:1
+    build:
+      context: ./manager
+    container_name: kaspa-node-manager
+    hostname: manager
+    restart: unless-stopped
+    environment:
+      STACK_DIR: ${STACK_DIR}
+      COMPOSE_PROJECT_NAME: kaspa-node
+      KASPAD_SERVICE: kaspad
+      KASPAD_CONTAINER: kaspa-node-kaspad
+      PROXY_CONTAINER: kaspa-node-proxy
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:-}
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      UPSTREAM_REPO: ${UPSTREAM_REPO:-kaspanet/rusty-kaspa}
+      GUI_PORT: ${GUI_PORT:-8080}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${STACK_DIR}:/stack
+    ports:
+      - "${MANAGER_BIND:-0.0.0.0}:${GUI_PORT:-8080}:8080"
+    networks:
+      - kaspa
+    depends_on:
+      - kaspad
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  proxy:
+    image: nginx:1.27-alpine
+    container_name: kaspa-node-proxy
+    hostname: proxy
+    restart: unless-stopped
+    volumes:
+      - ${STACK_DIR}/proxy/conf.d:/etc/nginx/conf.d:ro
+      - ${STACK_DIR}/proxy/snippets:/etc/nginx/snippets:ro
+      - ${STACK_DIR}/proxy/letsencrypt:/etc/letsencrypt:ro
+      - ${STACK_DIR}/proxy/webroot:/var/www/certbot
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    networks:
+      - kaspa
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  kaspa:
+    name: kaspa-node-net
+
+volumes:
+  kaspad-data:
+    name: kaspa-node-data

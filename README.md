@@ -1,0 +1,168 @@
+# Quick Start Kaspa
+
+One command installs Docker (if needed), runs a Kaspa node with the right
+arguments, and gives you a web control panel to manage it — node settings,
+domains, HTTPS and updates.
+
+The node always runs with `--utxoindex`, and always listens on the P2P, gRPC and
+wRPC ports. **To go public you only have to open the ports on your router.**
+
+This repository is packaging only. The node itself is stock
+[kaspad](https://github.com/kaspanet/rusty-kaspa) — the installer builds its
+image from the official release archive, and the update button in the panel
+tracks releases in that same repository.
+
+---
+
+## Install
+
+### Linux / macOS
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/KaspaSilver/Quick-Start-Kaspa/main/install.sh | bash
+```
+
+### Windows (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/KaspaSilver/Quick-Start-Kaspa/main/install.ps1 | iex
+```
+
+When it finishes it prints the panel URL (`http://localhost:8080`) and a
+generated admin password. **Save the password** — only its scrypt hash is stored.
+
+### Uninstall — removes everything
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/KaspaSilver/Quick-Start-Kaspa/main/uninstall.sh | bash
+```
+
+```powershell
+irm https://raw.githubusercontent.com/KaspaSilver/Quick-Start-Kaspa/main/uninstall.ps1 | iex
+```
+
+Containers, images, the chain-data volume, the network and the install directory
+all go. Docker itself is kept unless you add `--remove-docker` / `-RemoveDocker`;
+add `--keep-data` / `-KeepData` to preserve the synced blockchain.
+
+---
+
+## Ports
+
+| Port    | What                | Open it to…                             |
+| ------- | ------------------- | --------------------------------------- |
+| `16111` | P2P                 | be a public node — this is the only one that is required |
+| `16110` | gRPC RPC            | let wallets and tools reach your node    |
+| `17110` | wRPC Borsh          | serve Rusty/KDX style clients            |
+| `18110` | wRPC JSON           | serve browser / JSON clients (off by default) |
+| `80`,`443` | nginx            | only if you use the domain / HTTPS features |
+| `8080`  | control panel       | keep this on your LAN unless you proxy it with HTTPS |
+
+Testnet-10 uses `16211 / 16210 / 17210 / 18210`; the panel switches them for you.
+
+Every listener is bound inside the stack regardless of these toggles. The
+"Published" switch controls whether Docker maps it to a host port — that is the
+line between private and public.
+
+---
+
+## What the panel does
+
+**Dashboard** — sync progress, block/header counts, DAA score, mempool, peers,
+disk usage, start/stop/restart, and a per-port reachability test. Inbound peer
+count is used as the real answer to "is my P2P port actually open?", because
+nobody can dial in if it is closed.
+
+**Node settings** — every kaspad argument worth exposing as a toggle: network,
+which RPC listeners bind and which get published, archival mode, unsafe RPC,
+UPnP, DNS seeding, log level, peer and RPC client limits, RAM scale, retention
+period, external IP, user-agent comment, explicit peers, plus a free-form field
+for anything else. It shows the exact command line before you apply it.
+
+`--utxoindex`, `--appdir` and `--yes` are added by the container entrypoint and
+cannot be switched off from the UI.
+
+**Proxy & domains** — what you would otherwise hand-write nginx config for:
+
+- point any domain at the node's wRPC/gRPC ports or at the panel itself
+- free HTTPS from Let's Encrypt, issued and auto-renewed in the background
+- websocket support (required for wRPC), http→https redirect
+- optional username/password, IP allow-lists and per-IP rate limits
+- DuckDNS: enter a subdomain and token to keep a free domain pointed here
+
+**Update node** — checks `kaspanet/rusty-kaspa` for a newer release, shows the
+release notes, and on confirmation rebuilds the kaspad image at that tag and
+restarts the container. The chain data volume is untouched, so there is no
+resync. Only the newest upstream release can be installed, and a failed build
+rolls the pinned version back.
+
+---
+
+## Layout
+
+Everything lives in `~/.kaspa-node` (`%USERPROFILE%\.kaspa-node` on Windows):
+
+```
+docker-compose.yml     the three services
+.env                   install settings + admin password hash (chmod 600)
+conf/node.json         node settings from the panel
+conf/kaspad.args       generated kaspad command line
+conf/ports.yml         generated compose override for published ports
+conf/proxies.json      proxy host definitions
+proxy/conf.d/          generated nginx config
+proxy/letsencrypt/     certificates
+kaspad/ manager/       image build contexts
+```
+
+Chain data is a named Docker volume (`kaspa-node-data`), not a bind mount —
+bind-mounting a RocksDB database into Docker Desktop is painfully slow.
+
+### Services
+
+| Service   | Image                        | Role |
+| --------- | ---------------------------- | ---- |
+| `kaspad`  | built from the release binary | the node |
+| `manager` | Node 22, zero npm deps        | control panel + Docker control plane |
+| `proxy`   | `nginx:1.27-alpine`           | domains, TLS, reverse proxying |
+
+On `linux/amd64` the kaspad image is built by downloading the official release
+archive — those binaries are static musl builds, so the image is a bare Alpine
+plus one file and builds in seconds. There is no upstream `linux/arm64` asset,
+so on arm64 the image compiles kaspad from source at the same tag instead; the
+installer warns first, and it takes 30–60 minutes.
+
+---
+
+## Installer options
+
+```
+--dir <path>          install location (default ~/.kaspa-node)
+--gui-port <port>     control panel port (default 8080)
+--http-port <port>    nginx http port (default 80)
+--https-port <port>   nginx https port (default 443)
+--bind <address>      address the panel listens on (default 0.0.0.0)
+--password <pass>     set the admin password instead of generating one
+--version <vX.Y.Z>    install a specific kaspad release
+--yes                 no prompts
+```
+
+PowerShell uses the same names as parameters: `-Dir`, `-GuiPort`, `-Password`, …
+
+Re-running the installer is safe: it upgrades the stack files and keeps your
+settings, chain data and existing password.
+
+---
+
+## Security notes
+
+- The panel is protected by a scrypt-hashed password and an HMAC session cookie.
+  It binds `0.0.0.0` so you can reach it from your LAN — use `--bind 127.0.0.1`
+  to restrict it to the machine itself, or put it behind a proxy host with HTTPS
+  and basic auth.
+- The manager container has access to the Docker socket, which is equivalent to
+  root on the host. Treat the admin password accordingly.
+- Values that end up in nginx config or on the kaspad command line are validated
+  against strict patterns; anything that does not match is rejected rather than
+  escaped.
+- `--unsaferpc` exposes RPC calls that change node state. Leave it off unless
+  you know you need it, and never combine it with a publicly published RPC port.

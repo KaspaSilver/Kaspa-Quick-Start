@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Kaspa Node Control</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%2370c7ba'/></svg>">
+</head>
+<body>
+
+<!-- ------------------------------------------------------------ sign in -->
+<section id="login" class="login hidden">
+  <form class="login-card" id="login-form">
+    <div class="brand"><span class="dot"></span> Kaspa Node Control</div>
+    <p class="muted">Sign in to manage this node.</p>
+    <label>
+      Admin password
+      <input type="password" id="login-password" autocomplete="current-password" required>
+    </label>
+    <button type="submit" class="primary">Sign in</button>
+    <p class="error" id="login-error" hidden></p>
+    <p class="hint">The password was printed by the installer. It is stored only as a scrypt hash in <code>.env</code>.</p>
+  </form>
+</section>
+
+<!-- ---------------------------------------------------------------- app -->
+<div id="app" class="hidden">
+
+  <header class="topbar">
+    <div class="brand"><span class="dot" id="health-dot"></span> Kaspa Node Control</div>
+    <nav class="tabs">
+      <button data-tab="dashboard" class="active">Dashboard</button>
+      <button data-tab="settings">Node settings</button>
+      <button data-tab="proxy">Proxy &amp; domains</button>
+      <button data-tab="logs">Logs</button>
+    </nav>
+    <div class="topbar-right">
+      <span id="version-badge" class="badge">–</span>
+      <button id="logout" class="ghost">Sign out</button>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- ------------------------------------------------------- dashboard -->
+    <section id="tab-dashboard" class="tab active">
+      <div class="grid">
+        <article class="card span2">
+          <h3>Sync</h3>
+          <div class="bigstat"><span id="sync-pct">–</span><small id="sync-state">connecting…</small></div>
+          <div class="bar"><div id="sync-bar"></div></div>
+          <dl class="kv">
+            <div><dt>Blocks</dt><dd id="stat-blocks">–</dd></div>
+            <div><dt>Headers</dt><dd id="stat-headers">–</dd></div>
+            <div><dt>DAA score</dt><dd id="stat-daa">–</dd></div>
+            <div><dt>Difficulty</dt><dd id="stat-diff">–</dd></div>
+            <div><dt>Mempool</dt><dd id="stat-mempool">–</dd></div>
+            <div><dt>UTXO index</dt><dd id="stat-utxo">–</dd></div>
+          </dl>
+        </article>
+
+        <article class="card">
+          <h3>Node</h3>
+          <dl class="kv vertical">
+            <div><dt>Container</dt><dd id="stat-container">–</dd></div>
+            <div><dt>Network</dt><dd id="stat-network">–</dd></div>
+            <div><dt>Version</dt><dd id="stat-version">–</dd></div>
+            <div><dt>Uptime</dt><dd id="stat-uptime">–</dd></div>
+            <div><dt>Chain data</dt><dd id="stat-disk">–</dd></div>
+          </dl>
+          <div class="row">
+            <button class="ghost" data-node="start">Start</button>
+            <button class="ghost" data-node="restart">Restart</button>
+            <button class="ghost danger" data-node="stop">Stop</button>
+          </div>
+        </article>
+
+        <article class="card">
+          <h3>Peers</h3>
+          <div class="bigstat"><span id="stat-peers">–</span><small>connected</small></div>
+          <dl class="kv vertical">
+            <div><dt>Inbound</dt><dd id="stat-peers-in">–</dd></div>
+            <div><dt>Outbound</dt><dd id="stat-peers-out">–</dd></div>
+          </dl>
+          <p id="p2p-verdict" class="verdict">–</p>
+        </article>
+
+        <article class="card span2">
+          <h3>Going public</h3>
+          <p class="muted">
+            The node already listens on every port below. Forward them on your
+            router / open them in your firewall and the node is public — nothing
+            else to configure.
+          </p>
+          <table class="ports"><tbody id="ports-body"></tbody></table>
+          <p class="hint">Public IP: <code id="public-ip">…</code></p>
+        </article>
+
+        <article class="card span2">
+          <h3>Node software</h3>
+          <p class="muted">
+            Checks <code id="upstream-repo">kaspanet/rusty-kaspa</code> for a newer
+            release and rebuilds the container. Chain data is kept — no resync.
+          </p>
+          <div id="update-status" class="update-status">Not checked yet.</div>
+          <div class="row">
+            <button id="check-update" class="ghost">Check for updates</button>
+            <button id="apply-update" class="primary" disabled>Update node</button>
+          </div>
+          <details id="release-notes" hidden>
+            <summary>Release notes</summary>
+            <pre id="release-notes-body"></pre>
+          </details>
+        </article>
+      </div>
+    </section>
+
+    <!-- -------------------------------------------------------- settings -->
+    <section id="tab-settings" class="tab">
+      <form id="settings-form">
+        <div class="grid">
+
+          <article class="card span2">
+            <h3>Network</h3>
+            <label class="inline">
+              Chain
+              <select id="cfg-network">
+                <option value="mainnet">Mainnet</option>
+                <option value="testnet-10">Testnet 10</option>
+              </select>
+            </label>
+            <p class="hint">Switching chains changes every port number and starts a separate database.</p>
+          </article>
+
+          <article class="card span2">
+            <h3>RPC listeners</h3>
+            <p class="muted">
+              “Listening” binds the service inside the stack. “Published” maps it
+              to a host port so the outside world can reach it.
+            </p>
+            <table class="toggles">
+              <thead><tr><th>Service</th><th>Port</th><th>Listening</th><th>Published</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>P2P <span class="muted">(peer connections)</span></td>
+                  <td class="port" data-port="p2p">–</td>
+                  <td><span class="locked" title="A node without P2P is not a node.">always</span></td>
+                  <td><input type="checkbox" id="cfg-expose-p2p"></td>
+                </tr>
+                <tr>
+                  <td>gRPC</td>
+                  <td class="port" data-port="grpc">–</td>
+                  <td><input type="checkbox" id="cfg-svc-grpc"></td>
+                  <td><input type="checkbox" id="cfg-expose-grpc"></td>
+                </tr>
+                <tr>
+                  <td>wRPC Borsh</td>
+                  <td class="port" data-port="borsh">–</td>
+                  <td><input type="checkbox" id="cfg-svc-borsh"></td>
+                  <td><input type="checkbox" id="cfg-expose-borsh"></td>
+                </tr>
+                <tr>
+                  <td>wRPC JSON</td>
+                  <td class="port" data-port="json">–</td>
+                  <td><span class="locked" title="This control panel talks to the node over wRPC JSON.">always</span></td>
+                  <td><input type="checkbox" id="cfg-expose-json"></td>
+                </tr>
+              </tbody>
+            </table>
+            <label class="inline">
+              Publish on address
+              <input id="cfg-bind" value="0.0.0.0" size="12">
+            </label>
+            <p class="hint">Use <code>127.0.0.1</code> to keep published ports on this machine only.</p>
+          </article>
+
+          <article class="card">
+            <h3>Indexes &amp; flags</h3>
+            <label class="check locked-row">
+              <input type="checkbox" checked disabled> UTXO index
+              <span class="pill">always on</span>
+            </label>
+            <label class="check"><input type="checkbox" id="cfg-flag-archival"> Archival node <span class="muted">(keeps all history, large disk)</span></label>
+            <label class="check"><input type="checkbox" id="cfg-flag-unsaferpc"> Enable unsafe RPC calls</label>
+            <label class="check"><input type="checkbox" id="cfg-flag-perfMetrics"> Performance metrics</label>
+            <label class="check"><input type="checkbox" id="cfg-flag-disableUpnp"> Disable UPnP</label>
+            <label class="check"><input type="checkbox" id="cfg-flag-noDnsSeed"> Disable DNS seeding</label>
+            <label class="check"><input type="checkbox" id="cfg-flag-enableUnsyncedMining"> Allow mining while unsynced</label>
+            <label class="check"><input type="checkbox" id="cfg-flag-sanity"> Extra sanity checks</label>
+            <label class="check"><input type="checkbox" id="cfg-flag-noLogFiles"> Do not write log files</label>
+          </article>
+
+          <article class="card">
+            <h3>Limits</h3>
+            <label class="inline">Log level
+              <select id="cfg-loglevel">
+                <option>off</option><option>error</option><option>warn</option>
+                <option selected>info</option><option>debug</option><option>trace</option>
+              </select>
+            </label>
+            <label class="inline">Outbound peers <input type="number" id="cfg-outpeers" min="1" max="1000"></label>
+            <label class="inline">Max inbound peers <input type="number" id="cfg-maxinpeers" min="0" max="10000"></label>
+            <label class="inline">Max RPC clients <input type="number" id="cfg-rpcmaxclients" min="1" max="10000"></label>
+            <label class="inline">Max tracked addresses <input type="number" id="cfg-maxtracked" min="0"></label>
+            <label class="inline">RAM scale <input type="number" id="cfg-ramscale" step="0.1" min="0.1" max="10"></label>
+            <label class="inline">Retention (days) <input type="number" id="cfg-retention" min="1" placeholder="default"></label>
+            <label class="inline">Async threads <input type="number" id="cfg-asyncthreads" min="1" placeholder="auto"></label>
+          </article>
+
+          <article class="card">
+            <h3>Peering</h3>
+            <label>External IP <input id="cfg-externalip" placeholder="auto-detected"></label>
+            <label>User agent comment <input id="cfg-uacomment" placeholder="optional"></label>
+            <label>Additional peers <textarea id="cfg-addpeers" rows="3" placeholder="one host:port per line"></textarea></label>
+            <label>Connect only to <textarea id="cfg-connectpeers" rows="2" placeholder="one host:port per line — leave empty for normal operation"></textarea></label>
+          </article>
+
+          <article class="card">
+            <h3>Extra arguments</h3>
+            <label>
+              <textarea id="cfg-extraargs" rows="4" placeholder="--some-flag&#10;--other=value"></textarea>
+            </label>
+            <p class="hint">One per line. Must look like <code>--flag</code> or <code>--flag=value</code>.</p>
+          </article>
+
+          <article class="card span2">
+            <h3>Resulting command</h3>
+            <pre id="args-preview" class="args"></pre>
+            <div class="row">
+              <button type="submit" class="primary">Apply &amp; restart node</button>
+              <button type="button" id="settings-reset" class="ghost">Discard changes</button>
+            </div>
+            <p class="error" id="settings-error" hidden></p>
+          </article>
+
+        </div>
+      </form>
+    </section>
+
+    <!-- ----------------------------------------------------------- proxy -->
+    <section id="tab-proxy" class="tab">
+      <div class="grid">
+
+        <article class="card span2">
+          <h3>DuckDNS</h3>
+          <p class="muted">Keeps a free <code>*.duckdns.org</code> name pointed at this machine's current IP.</p>
+          <label class="check"><input type="checkbox" id="dd-enabled"> Keep the record updated automatically</label>
+          <label class="inline">Subdomain <input id="dd-domains" placeholder="mynode"><span class="suffix">.duckdns.org</span></label>
+          <label class="inline">Token <input id="dd-token" type="password" placeholder="from duckdns.org"></label>
+          <label class="inline">Every <input type="number" id="dd-interval" min="5" value="5" size="4"> minutes</label>
+          <div class="row">
+            <button id="dd-save" class="primary">Save</button>
+            <button id="dd-now" class="ghost">Update now</button>
+          </div>
+          <p class="hint" id="dd-status">–</p>
+        </article>
+
+        <article class="card span2">
+          <h3>Proxy hosts</h3>
+          <p class="muted">
+            Point a domain at this machine, and nginx will forward it to the node
+            or to this panel — with HTTPS from Let's Encrypt, websocket support
+            for wRPC, optional password and IP allow-lists.
+          </p>
+          <table class="proxies">
+            <thead><tr><th>Domain</th><th>Forwards to</th><th>TLS</th><th>Extras</th><th></th></tr></thead>
+            <tbody id="proxy-body"></tbody>
+          </table>
+          <div class="row">
+            <button id="proxy-add" class="primary">Add proxy host</button>
+            <button id="proxy-reload" class="ghost">Re-apply nginx config</button>
+            <button id="proxy-renew" class="ghost">Renew certificates</button>
+          </div>
+          <p class="hint">Requires ports <strong>80</strong> and <strong>443</strong> forwarded to this machine.</p>
+        </article>
+
+      </div>
+    </section>
+
+    <!-- ------------------------------------------------------------ logs -->
+    <section id="tab-logs" class="tab">
+      <article class="card">
+        <h3>
+          Live log
+          <select id="log-source" class="inline-select">
+            <option value="kaspad">kaspad</option>
+            <option value="proxy">nginx proxy</option>
+          </select>
+          <label class="check tail"><input type="checkbox" id="log-follow" checked> follow</label>
+        </h3>
+        <pre id="log-view" class="logview"></pre>
+      </article>
+    </section>
+
+  </main>
+</div>
+
+<!-- ----------------------------------------------------------- job console -->
+<div id="console" class="console hidden">
+  <div class="console-head">
+    <strong id="console-title">Working…</strong>
+    <button id="console-close" class="ghost">Close</button>
+  </div>
+  <pre id="console-body"></pre>
+</div>
+
+<!-- ---------------------------------------------------------- proxy dialog -->
+<dialog id="proxy-dialog">
+  <form method="dialog" id="proxy-form">
+    <h3 id="proxy-dialog-title">Add proxy host</h3>
+
+    <label>Domain
+      <input id="px-domain" placeholder="mynode.duckdns.org" required>
+    </label>
+
+    <label>Forwards to
+      <select id="px-target">
+        <option value="borsh">Kaspad wRPC Borsh (17110)</option>
+        <option value="json">Kaspad wRPC JSON (18110)</option>
+        <option value="grpc">Kaspad gRPC (16110)</option>
+        <option value="manager">This control panel</option>
+        <option value="custom">Custom host:port</option>
+      </select>
+    </label>
+
+    <div id="px-custom" class="row" hidden>
+      <label>Scheme
+        <select id="px-scheme"><option>http</option><option>https</option></select>
+      </label>
+      <label>Host <input id="px-host" placeholder="127.0.0.1"></label>
+      <label>Port <input id="px-port" type="number" min="1" max="65535"></label>
+      <label class="check"><input type="checkbox" id="px-websocket"> websocket</label>
+    </div>
+
+    <fieldset>
+      <legend>HTTPS</legend>
+      <label class="check"><input type="checkbox" id="px-tls"> Get a free certificate from Let's Encrypt</label>
+      <label class="inline">Contact e-mail <input id="px-email" type="email" placeholder="you@example.com"></label>
+      <label class="check"><input type="checkbox" id="px-forcehttps" checked> Redirect http → https</label>
+      <label class="check"><input type="checkbox" id="px-staging"> Use the staging CA (for testing)</label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Access control</legend>
+      <label class="check"><input type="checkbox" id="px-auth"> Require a username and password</label>
+      <div class="row">
+        <label>User <input id="px-user" autocomplete="off"></label>
+        <label>Password <input id="px-pass" type="password" autocomplete="new-password" placeholder="unchanged"></label>
+      </div>
+      <label>Allow only these IPs / CIDRs
+        <textarea id="px-allow" rows="2" placeholder="one per line — leave empty to allow everyone"></textarea>
+      </label>
+      <label class="inline">Rate limit <input type="number" id="px-rate" min="1" placeholder="off" size="5"> req/s per IP</label>
+    </fieldset>
+
+    <label class="check"><input type="checkbox" id="px-enabled" checked> Enabled</label>
+
+    <p class="error" id="px-error" hidden></p>
+    <div class="row end">
+      <button value="cancel" class="ghost">Cancel</button>
+      <button value="save" class="primary" id="px-save">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast hidden"></div>
+
+<script type="module" src="/app.js"></script>
+</body>
+</html>
