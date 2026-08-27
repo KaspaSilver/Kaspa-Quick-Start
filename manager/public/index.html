@@ -216,9 +216,20 @@
             <label class="check"><input type="checkbox" id="cfg-flag-perfMetrics"> Performance metrics</label>
             <label class="check"><input type="checkbox" id="cfg-flag-disableUpnp"> Disable UPnP</label>
             <label class="check"><input type="checkbox" id="cfg-flag-noDnsSeed"> Disable DNS seeding</label>
-            <label class="check"><input type="checkbox" id="cfg-flag-enableUnsyncedMining"> Allow mining while unsynced</label>
+            <label class="check" title="Passes --enable-unsynced-mining. It only affects submitBlock: without it a block solved while the node is not synced is rejected with IsInIBD. It does not bypass the separate transitional-IBD guard, so during an actual initial sync submissions are still refused. kaspad documents it as mainly for testing.">
+              <input type="checkbox" id="cfg-flag-enableUnsyncedMining"> Accept submitted blocks while unsynced
+              <span class="pill warn">testing</span>
+            </label>
             <label class="check"><input type="checkbox" id="cfg-flag-sanity"> Extra sanity checks</label>
             <label class="check"><input type="checkbox" id="cfg-flag-noLogFiles"> Do not write log files</label>
+            <p class="hint">
+              “Accept submitted blocks while unsynced” is a testing flag. It lets
+              <code>submitBlock</code> through while the node is behind, but it does
+              not bypass kaspad's separate initial-sync guard, so it will not let you
+              mine during a first sync — and blocks solved against an incomplete DAG
+              would be orphaned anyway. Mining here is gated on a synced node
+              regardless.
+            </p>
           </article>
 
           <article class="card">
