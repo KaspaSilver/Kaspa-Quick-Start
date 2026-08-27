@@ -430,10 +430,24 @@
     <!-- ---------------------------------------------------------- kachat -->
     <section id="tab-kachat" class="tab">
 
+      <article class="card toggle-bar">
+        <div class="toggle-row">
+          <label class="switch" title="Start or stop the KaChat indexer.">
+            <input type="checkbox" id="kachat-enabled">
+            <span class="track"></span>
+          </label>
+          <div class="toggle-text">
+            <strong>KaChat indexer</strong>
+            <span class="muted">Reads the chain from this node and serves the KaChat APIs.</span>
+          </div>
+          <span id="kachat-state" class="tag">off</span>
+        </div>
+        <div id="kachat-notice" class="verdict" hidden></div>
+        <p class="error" id="kachat-error" hidden></p>
+      </article>
+
       <article class="card kachat-bar">
         <div class="row tight">
-          <span id="kachat-state" class="tag">off</span>
-          <label class="check"><input type="checkbox" id="kachat-enabled"> Run the KaChat indexer</label>
           <label class="inline">Branch / tag <input id="kachat-ref" size="10" value="main"></label>
           <label class="inline">Network
             <select id="kachat-network">
@@ -443,13 +457,11 @@
           </label>
           <label class="check"><input type="checkbox" id="kachat-pub-api"> publish REST 3080</label>
           <label class="check"><input type="checkbox" id="kachat-pub-chat"> publish chat 8600</label>
-          <button id="kachat-save" class="primary">Apply</button>
+          <button type="button" id="kachat-save" class="primary">Apply settings</button>
           <button id="kachat-check" class="ghost">Check for updates</button>
           <button id="kachat-update" class="ghost" disabled>Update</button>
           <button id="kachat-open" class="ghost" title="Open the dashboard in its own tab">↗</button>
         </div>
-        <div id="kachat-notice" class="verdict" hidden></div>
-        <p class="error" id="kachat-error" hidden></p>
       </article>
 
       <!--
@@ -481,19 +493,27 @@
       <div class="grid">
 
         <article class="card span2">
-          <h3>Nextcloud <span id="nextcloud-state" class="tag">off</span></h3>
-          <p class="muted">
-            Your own cloud for files, photos and video — the media and backup
-            destination KaChat can share links from. Video thumbnails and iPhone
-            HEIC previews are set up for you.
-          </p>
+          <div class="toggle-row">
+            <label class="switch" title="Start or stop Nextcloud.">
+              <input type="checkbox" id="nextcloud-enabled">
+              <span class="track"></span>
+            </label>
+            <div class="toggle-text">
+              <strong>Nextcloud</strong>
+              <span class="muted">
+                Your own cloud for files, photos and video — the media and backup
+                destination KaChat can share links from. Video thumbnails and
+                iPhone HEIC previews are set up for you.
+              </span>
+            </div>
+            <span id="nextcloud-state" class="tag">off</span>
+          </div>
           <div id="nextcloud-notice" class="verdict" hidden></div>
           <div class="row">
-            <label class="check"><input type="checkbox" id="nextcloud-enabled"> Run Nextcloud</label>
-            <button id="nextcloud-save" class="primary">Apply</button>
-            <button id="nextcloud-check" class="ghost">Check for updates</button>
-            <button id="nextcloud-update" class="ghost" disabled>Update</button>
-            <button class="ghost" data-app-action="nextcloud/restart">Restart</button>
+            <button type="button" id="nextcloud-save" class="primary">Apply settings</button>
+            <button type="button" id="nextcloud-check" class="ghost">Check for updates</button>
+            <button type="button" id="nextcloud-update" class="ghost" disabled>Update</button>
+            <button type="button" class="ghost" data-app-action="nextcloud/restart">Restart</button>
           </div>
           <p class="error" id="nextcloud-error" hidden></p>
         </article>

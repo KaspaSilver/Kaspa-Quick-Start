@@ -985,12 +985,33 @@ function collectAppConfig(name) {
 }
 
 for (const name of ['kachat', 'nextcloud']) {
+    // The switch is a power control: it takes effect on the spot, matching the
+    // one on Mining. Everything that needs an explicit Apply stays a checkbox.
+    $(`${name}-enabled`).addEventListener('change', async (event) => {
+        const enabled = event.target.checked;
+        const err = $(`${name}-error`);
+        err.hidden = true;
+        event.target.disabled = true;
+        try {
+            await api(`/api/apps/${name}`, { method: 'PUT', body: { config: { ...collectAppConfig(name), enabled } } });
+            openConsole(enabled ? `Starting ${name}` : `Stopping ${name}`);
+            setTimeout(loadApps, 2000);
+        } catch (e) {
+            // Put the switch back; nothing was started or stopped.
+            event.target.checked = !enabled;
+            err.textContent = e.message;
+            err.hidden = false;
+        } finally {
+            event.target.disabled = false;
+        }
+    });
+
     $(`${name}-save`).addEventListener('click', async () => {
         const err = $(`${name}-error`);
         err.hidden = true;
         try {
             await api(`/api/apps/${name}`, { method: 'PUT', body: { config: collectAppConfig(name) } });
-            openConsole($(`${name}-enabled`).checked ? `Starting ${name}` : `Stopping ${name}`);
+            openConsole(`Applying ${name} settings`);
             setTimeout(loadApps, 2000);
         } catch (e) {
             err.textContent = e.message;
