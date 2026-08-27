@@ -373,6 +373,51 @@
           </table>
           </div>
           </article>
+          <article class="card" id="reward-card">
+            <h3>Block reward</h3>
+            <div class="bigstat"><span id="reward-now">–</span><small>KAS per block</small></div>
+            <dl class="kv vertical">
+              <div><dt>Network emission</dt><dd id="reward-rate">–</dd></div>
+              <div><dt>Emission month</dt><dd id="reward-month">–</dd></div>
+            </dl>
+            <div class="verdict" id="reward-next">–</div>
+            <p class="hint">
+              Kaspa reduces the reward every month by 2<sup>−1/12</sup>, so twelve
+              months compound to exactly half. Figures come from the node's own
+              emission table.
+            </p>
+          </article>
+
+          <article class="card" id="earnings-card">
+            <h3>Projected earnings</h3>
+            <label class="inline">
+              Hashrate
+              <input id="earn-hashrate" type="number" min="0" step="any" size="8">
+              <select id="earn-unit">
+                <option value="1e9">GH/s</option>
+                <option value="1e12" selected>TH/s</option>
+                <option value="1e15">PH/s</option>
+              </select>
+              <button type="button" id="earn-reset" class="ghost" title="Use the hashrate your miners are actually reporting">measured</button>
+            </label>
+            <div class="grid stats" id="earn-grid">
+              <div class="stat"><span id="earn-day">–</span><small>per day</small></div>
+              <div class="stat"><span id="earn-1">–</span><small>1 month</small></div>
+              <div class="stat"><span id="earn-6">–</span><small>6 months</small></div>
+              <div class="stat"><span id="earn-12">–</span><small>12 months</small></div>
+            </div>
+            <dl class="kv vertical">
+              <div><dt>Your share of the network</dt><dd id="earn-share">–</dd></div>
+              <div><dt>Network hashrate</dt><dd id="earn-nethash">–</dd></div>
+              <div><dt>Cost of the monthly cuts</dt><dd id="earn-drag">–</dd></div>
+            </dl>
+            <p class="hint" id="earn-note">
+              What today's difficulty and reward would pay if both held, with the
+              monthly reductions applied. Not a forecast: difficulty moves, and
+              this says nothing about price.
+            </p>
+          </article>
+
           <article class="card span2" id="mining-connect" hidden>
             <h3>Point your miner here</h3>
 

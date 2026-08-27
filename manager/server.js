@@ -28,6 +28,7 @@ import * as apps from './lib/apps.js';
 import * as kachatProxy from './lib/kachat-proxy.js';
 import * as syncProgress from './lib/sync-progress.js';
 import * as network from './lib/network.js';
+import * as emission from './lib/emission.js';
 import { nodeSnapshot, rpc } from './lib/rpc.js';
 import { jobs } from './lib/jobs.js';
 import {
@@ -778,6 +779,24 @@ async function applyMiningConfig(cfg, onLine = () => {}) {
     return { enabled: true, published };
 }
 
+/**
+ * Network hashrate for the earnings maths. The bridge reports one, but it is
+ * only running when mining is on -- the node can answer directly the rest of
+ * the time, and is the more authoritative source anyway.
+ */
+async function networkHashesPerSecond(stats) {
+    const fromBridge = Number(stats?.summary?.networkHashrate ?? 0);
+    if (fromBridge > 0) return { value: fromBridge, source: 'bridge' };
+    try {
+        const r = await rpc.call('estimateNetworkHashesPerSecond', { windowSize: 1000 }, 6000);
+        const value = Number(r?.networkHashesPerSecond ?? 0);
+        if (value > 0) return { value, source: 'node' };
+    } catch {
+        /* node may still be syncing */
+    }
+    return { value: 0, source: null };
+}
+
 route('GET', /^\/api\/mining$/, async (req, res) => {
     const cfg = bridge.loadBridgeConfig();
     const [state, stats] = await Promise.all([
@@ -794,7 +813,57 @@ route('GET', /^\/api\/mining$/, async (req, res) => {
         // anything outside wants the public one through a forwarded port.
         publicIp: await duckdns.publicIp(),
         lan: await network.primaryLanAddress(),
+        ...(await miningEconomics(stats)),
     });
+});
+
+/** Block reward, the next reduction, and what today's rate would pay. */
+async function miningEconomics(stats, hashrateOverride = null) {
+    const nodeCfg = loadNodeConfig();
+    let dag = null;
+    try {
+        dag = await rpc.call('getBlockDagInfo', {}, 6000);
+    } catch {
+        return { reward: null, projection: null };
+    }
+    const daaScore = Number(dag.virtualDaaScore ?? 0);
+    if (!daaScore) return { reward: null, projection: null };
+
+    const reward = emission.rewardStatus(daaScore, nodeCfg.network);
+    const net = await networkHashesPerSecond(stats);
+    // The bridge reports worker hashrate in GH/s.
+    const measured = Number(stats?.summary?.poolHashrate ?? 0) * 1e9;
+    const hashrate = hashrateOverride ?? measured;
+
+    return {
+        reward,
+        networkHashrate: net,
+        projection:
+            hashrate > 0 && net.value > 0
+                ? {
+                      ...emission.projectEarnings({
+                          hashrate,
+                          networkHashrate: net.value,
+                          daaScore,
+                          network: nodeCfg.network,
+                      }),
+                      hashrate,
+                      measured,
+                      hypothetical: hashrateOverride !== null,
+                  }
+                : { hashrate, measured, networkHashrate: net.value, horizons: [], share: 0, perDayKas: 0 },
+    };
+}
+
+route('GET', /^\/api\/mining\/projection$/, async (req, res, match, url) => {
+    const raw = url.searchParams.get('hashrate');
+    const hashrate = raw === null ? null : Number(raw);
+    if (raw !== null && (!Number.isFinite(hashrate) || hashrate < 0 || hashrate > 1e24)) {
+        return fail(res, 400, 'Hashrate must be a positive number of hashes per second.');
+    }
+    const cfg = bridge.loadBridgeConfig();
+    const stats = cfg.enabled ? await bridge.fetchStats() : null;
+    sendJson(res, 200, await miningEconomics(stats, hashrate));
 });
 
 route('PUT', /^\/api\/mining$/, async (req, res) => {

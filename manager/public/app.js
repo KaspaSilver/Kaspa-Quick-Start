@@ -35,6 +35,14 @@ function toast(message, kind = '') {
     toastTimer = setTimeout(() => node.classList.add('hidden'), kind === 'bad' ? 8000 : 3500);
 }
 
+function debounce(fn, ms) {
+    let timer;
+    return (...args) => {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn(...args), ms);
+    };
+}
+
 const fmtNum = (n) => (n === null || n === undefined || n === '' ? '–' : Number(n).toLocaleString());
 
 // Worker names, wallets and block hashes come from whatever a miner sent, so
@@ -707,6 +715,7 @@ async function loadMining() {
 
     renderMiningState(r.container, r.stats);
     renderStratumTargets(c);
+    renderEconomics(r);
 }
 
 function renderMiningState(container, stats) {
@@ -804,6 +813,100 @@ function stratumRow(port, host, diff, note) {
       <td>${note}</td>
     </tr>`;
 }
+
+const fmtKas = (n) =>
+    !Number.isFinite(n) || n <= 0
+        ? '0'
+        : n >= 1000
+          ? Math.round(n).toLocaleString()
+          : n >= 1
+            ? n.toFixed(2)
+            : n.toFixed(4);
+
+function fmtDaysUntil(seconds) {
+    const days = seconds / 86_400;
+    if (days >= 2) return `in ${Math.round(days)} days`;
+    const hours = seconds / 3600;
+    if (hours >= 2) return `in ${Math.round(hours)} hours`;
+    return `in ${Math.max(1, Math.round(seconds / 60))} minutes`;
+}
+
+let lastEconomics = null;
+
+/** Block reward, the next reduction, and what today's rate would pay. */
+function renderEconomics(r) {
+    lastEconomics = r;
+    const reward = r.reward;
+    if (!reward) {
+        $('reward-now').textContent = '–';
+        $('reward-next').textContent = 'Waiting for the node.';
+        return;
+    }
+
+    $('reward-now').textContent = reward.currentKas.toFixed(8).replace(/0+$/, '').replace(/\.$/, '');
+    $('reward-rate').textContent = `${(reward.currentKas * reward.blocksPerSecond).toFixed(2)} KAS/s (${reward.blocksPerSecond} blocks/s)`;
+    $('reward-month').textContent = `month ${reward.month} of the deflationary phase`;
+
+    const next = reward.next;
+    $('reward-next').className = 'verdict';
+    $('reward-next').innerHTML =
+        `Next cut ${escapeHtml(fmtDaysUntil(next.secondsUntil))} — drops to ` +
+        `<strong>${next.kas.toFixed(8).replace(/0+$/, '').replace(/\.$/, '')} KAS</strong> ` +
+        `(−${next.dropPercent.toFixed(2)}%) at DAA score ${next.daaScore.toLocaleString()}.`;
+
+    renderProjection(r.projection, r.networkHashrate);
+}
+
+function renderProjection(p, net) {
+    if (!p) return;
+    // Do not fight the user while they are typing a what-if figure.
+    if (document.activeElement !== $('earn-hashrate')) {
+        const unit = Number($('earn-unit').value);
+        $('earn-hashrate').value = p.hashrate ? (p.hashrate / unit).toFixed(3).replace(/\.?0+$/, '') : '';
+    }
+
+    const byMonths = Object.fromEntries((p.horizons ?? []).map((h) => [h.months, h.kas]));
+    $('earn-day').textContent = fmtKas(p.perDayKas ?? 0);
+    $('earn-1').textContent = fmtKas(byMonths[1] ?? 0);
+    $('earn-6').textContent = fmtKas(byMonths[6] ?? 0);
+    $('earn-12').textContent = fmtKas(byMonths[12] ?? 0);
+
+    $('earn-share').textContent = p.share > 0 ? `${(p.share * 100).toPrecision(3)}%` : '–';
+    $('earn-nethash').textContent = net?.value
+        ? `${fmtRawHashrate(net.value)}${net.source ? ` (from the ${net.source})` : ''}`
+        : 'unknown';
+    $('earn-drag').textContent = p.decayDragPercent
+        ? `${p.decayDragPercent.toFixed(1)}% less over a year than a flat reward`
+        : '–';
+
+    $('earn-note').textContent =
+        p.hypothetical || (!p.measured && p.hashrate)
+            ? "Based on the hashrate you entered. What today's difficulty and reward would pay if both held, with the monthly reductions applied — not a forecast, and it says nothing about price."
+            : p.measured
+              ? "Based on your miners' reported hashrate. What today's difficulty and reward would pay if both held, with the monthly reductions applied — not a forecast, and it says nothing about price."
+              : 'Enter a hashrate to see what it would earn — no miners are reporting one yet.';
+}
+
+async function refreshProjection(hashrate) {
+    try {
+        const query = hashrate === null ? '' : `?hashrate=${encodeURIComponent(hashrate)}`;
+        const r = await api(`/api/mining/projection${query}`);
+        renderEconomics(r);
+    } catch (e) {
+        toast(e.message, 'bad');
+    }
+}
+
+const recalcProjection = () => {
+    const value = Number($('earn-hashrate').value);
+    const unit = Number($('earn-unit').value);
+    if (!Number.isFinite(value) || value < 0) return;
+    refreshProjection(value * unit);
+};
+
+$('earn-hashrate').addEventListener('input', debounce(recalcProjection, 400));
+$('earn-unit').addEventListener('change', recalcProjection);
+$('earn-reset').addEventListener('click', () => refreshProjection(null));
 
 function renderStratumTargets(cfg) {
     const lanIp = miningLan?.ip;

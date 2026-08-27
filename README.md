@@ -131,6 +131,15 @@ ASICs and miners can point at your own node instead of a pool:
 - VarDiff tuning, extranonce size, coinbase tag
 - the exact `stratum+tcp://` address to paste into each miner
 
+It also shows the current block reward, when the next monthly reduction lands
+and what it drops to, and what your hashrate would earn over 1, 6 and 12 months
+with those reductions applied. Kaspa reduces the reward every month by
+2^(-1/12), so twelve months compound to exactly half — over a year that is
+roughly 29% less than a flat reward would suggest, which is the point of showing
+it. The emission table is generated from the node's own source rather than
+transcribed, and the projection is arithmetic on current difficulty, not a
+forecast: it says nothing about price and assumes difficulty holds.
+
 Miners supply their own payout address as the stratum username
 (`kaspa:YOUR_ADDRESS.WORKERNAME`), so there is no wallet key anywhere in this
 stack. The bridge needs kaspad's gRPC listener enabled — it does not have to be
