@@ -620,6 +620,7 @@ let miningConfig = null;
 let miningTimer = null;
 let miningPublicIp = null;
 let miningLan = null;
+let miningExtraSubnets = null;
 
 // Worker hashrate arrives in GH/s (the bridge's own unit).
 function fmtHashrate(ghs) {
@@ -695,6 +696,7 @@ async function loadMining() {
     miningConfig = r.config;
     miningPublicIp = r.publicIp;
     miningLan = r.lan;
+    miningExtraSubnets = r.extraSubnets ?? '';
     const c = r.config;
 
     $('mining-enabled').checked = c.enabled;
@@ -927,6 +929,10 @@ $('earn-reset').addEventListener('click', () => refreshProjection(null));
 function renderStratumTargets(cfg) {
     const lanIp = miningLan?.ip;
     $('connect-lan-ip').textContent = lanIp ?? 'this machine';
+    $('scan-own').textContent = lanIp ? `${lanIp.split('.').slice(0, 3).join('.')}.0/24` : 'unknown';
+    if (document.activeElement !== $('scan-extra') && miningExtraSubnets !== null) {
+        $('scan-extra').value = miningExtraSubnets;
+    }
 
     $('stratum-local').innerHTML = cfg.instances
         .map((inst) =>
@@ -1003,9 +1009,16 @@ $('miner-scan').addEventListener('click', async () => {
     note.textContent = 'Scanning…';
     $('scan-results').innerHTML = '';
     try {
-        const r = await api('/api/mining/scan', { method: 'POST' });
+        const r = await api('/api/mining/scan', {
+            method: 'POST',
+            body: { extraSubnets: $('scan-extra').value.trim() },
+        });
+        miningExtraSubnets = r.extraSubnets ?? '';
         const devices = r.devices.filter((d) => !d.self);
-        note.textContent = `${r.subnet} — ${devices.length} device${devices.length === 1 ? '' : 's'} answered`;
+        note.textContent =
+            `${r.scanned.toLocaleString()} addresses in ${r.subnets.join(', ')} — ` +
+            `${devices.length} device${devices.length === 1 ? '' : 's'} answered`;
+        if (r.problems?.length) toast(r.problems[0], 'bad');
         $('scan-results').innerHTML = devices.length
             ? devices
                   .map((d) => {
@@ -1017,7 +1030,9 @@ $('miner-scan').addEventListener('click', async () => {
                               ? '<span class="tag">looks like a miner</span>'
                               : '<span class="tag off">unidentified</span>';
                       const link = d.ports.includes(80)
-                          ? `<a href="http://${d.ip}" target="_blank" rel="noreferrer noopener">open its web page ↗</a>`
+                          ? `<a href="http://${d.ip}${d.path && d.path !== '/' ? d.path : ''}" target="_blank" rel="noreferrer noopener">${
+                                d.vendor ? `open ${escapeHtml(d.vendor)} ↗` : 'open its web page ↗'
+                            }</a>`
                           : '<span class="muted">no web interface</span>';
                       const seen = d.title ? escapeHtml(d.title) : d.server ? escapeHtml(d.server) : '';
                       return `<tr>
@@ -1169,14 +1184,15 @@ function renderAppState(name, state) {
         const frame = $('kachat-frame');
         const show = enabled && running;
         shell.hidden = !show;
-        $('kachat-placeholder').hidden = show;
         if (show && !frame.src.includes(adminPath)) frame.src = adminPath;
         if (!show) frame.src = 'about:blank';
-        if (enabled && !running) {
-            $('kachat-placeholder').hidden = false;
+
+        $('kachat-open').disabled = !show;
+        if (enabled && !running && !state.blockers?.length) {
             notice.hidden = false;
             notice.className = 'verdict';
-            notice.textContent = 'The indexer container is not running yet — the first build takes a while. Watch Logs → kachat indexer.';
+            notice.textContent =
+                'Starting up — the first build compiles the indexer from source and takes a while. Watch Logs → kachat indexer.';
         }
     }
 
@@ -1184,15 +1200,19 @@ function renderAppState(name, state) {
         const link = $('nextcloud-link');
         const cfg = appsState.config.nextcloud;
         if (enabled && running && cfg.publish.web) {
+            const url = `http://${location.hostname}:${cfg.hostPort}`;
             link.hidden = false;
             link.className = 'verdict ok';
-            link.innerHTML = `Open it at <a href="http://${location.hostname}:${cfg.hostPort}" target="_blank" rel="noreferrer noopener">http://${location.hostname}:${cfg.hostPort}</a>`;
+            link.innerHTML = `<a href="${url}" target="_blank" rel="noreferrer noopener">${escapeHtml(url)} ↗</a>`;
         } else if (enabled && running) {
             link.hidden = false;
             link.className = 'verdict';
-            link.textContent = 'Running, but not published on the host. Reach it through a proxy host, or tick "Publish on the host".';
+            link.textContent =
+                'Running, but not published on the host. Reach it through a proxy host, or tick "Publish on the host" under Settings.';
         } else {
-            link.hidden = true;
+            link.hidden = false;
+            link.className = 'verdict';
+            link.textContent = enabled ? 'Starting up…' : 'Not running. Switch it on above.';
         }
 
         const build = $('nextcloud-build');

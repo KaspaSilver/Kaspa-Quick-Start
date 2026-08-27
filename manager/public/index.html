@@ -451,8 +451,18 @@
                 Sweeps this machine's subnet for devices with a web interface or a
                 miner API, and links straight to them.
               </p>
+              <label class="inline">
+                Also scan
+                <input id="scan-extra" placeholder="192.168.3.0/24, 10.0.0.50" size="26">
+              </label>
+              <p class="hint tight">
+                This machine can only work out the subnet it is on
+                (<code id="scan-own">–</code>). A miner behind your router on a
+                different subnet has to be named here — a <code>/24</code>, a
+                prefix like <code>192.168.3.*</code>, or a single address.
+              </p>
               <div class="row">
-                <button type="button" id="miner-scan" class="ghost">Scan my network</button>
+                <button type="button" id="miner-scan" class="ghost">Scan for miners</button>
                 <span class="muted" id="scan-note"></span>
               </div>
               <div class="scroll-x">
@@ -508,121 +518,177 @@
 
     <!-- ---------------------------------------------------------- kachat -->
     <section id="tab-kachat" class="tab">
+      <nav class="subnav" aria-label="KaChat">
+        <button class="subtab-btn active" data-subtab="kachat-overview">Overview</button>
+        <button class="subtab-btn" data-subtab="kachat-settings">Settings</button>
+      </nav>
 
-      <article class="card toggle-bar">
-        <div class="toggle-row">
-          <label class="switch" title="Start or stop the KaChat indexer.">
-            <input type="checkbox" id="kachat-enabled">
-            <span class="track"></span>
-          </label>
-          <div class="toggle-text">
-            <strong>KaChat indexer</strong>
-            <span class="muted">Reads the chain from this node and serves the KaChat APIs.</span>
+      <div id="sub-kachat-overview" class="subtab active">
+        <!-- What it is, before asking anyone to switch it on. -->
+        <article class="card">
+          <h3>KaChat indexer</h3>
+          <p class="muted">
+            Turns this node's chain data into the APIs every KaChat client talks
+            to — direct and group chats, broadcasts, KaPosts and mentions. Its own
+            dashboard appears below once it is running, with the same Dashboard,
+            KaPosts, Broadcasts, Chats, Group chats, Export / Import and Settings
+            tabs it always had.
+          </p>
+          <p class="hint">
+            It reads the chain from the node in this stack, so there is no second
+            sync. The first build compiles the indexer from Rust source and takes
+            a while; watch it in Logs → kachat indexer.
+          </p>
+        </article>
+
+        <article class="card toggle-bar">
+          <div class="toggle-row">
+            <label class="switch" title="Start or stop the KaChat indexer.">
+              <input type="checkbox" id="kachat-enabled">
+              <span class="track"></span>
+            </label>
+            <div class="toggle-text">
+              <strong>Run the indexer</strong>
+              <span class="muted">Starts Postgres and the indexer, and keeps them running.</span>
+            </div>
+            <span id="kachat-state" class="tag">off</span>
+            <button type="button" id="kachat-open" class="ghost" title="Open the dashboard in its own browser tab">↗</button>
           </div>
-          <span id="kachat-state" class="tag">off</span>
-        </div>
-        <div id="kachat-notice" class="verdict" hidden></div>
-        <p class="error" id="kachat-error" hidden></p>
-      </article>
+          <div id="kachat-notice" class="verdict" hidden></div>
+          <p class="error" id="kachat-error" hidden></p>
+        </article>
 
-      <article class="card kachat-bar">
-        <div class="row tight">
-          <label class="inline">Branch / tag <input id="kachat-ref" size="10" value="main"></label>
-          <label class="inline">Network
-            <select id="kachat-network">
-              <option value="mainnet">Mainnet</option>
-              <option value="testnet-10">Testnet 10</option>
-            </select>
-          </label>
-          <label class="check"><input type="checkbox" id="kachat-pub-api"> publish REST 3080</label>
-          <label class="check"><input type="checkbox" id="kachat-pub-chat"> publish chat 8600</label>
-          <button type="button" id="kachat-save" class="primary">Apply settings</button>
-          <button id="kachat-check" class="ghost">Check for updates</button>
-          <button id="kachat-update" class="ghost" disabled>Update</button>
-          <button id="kachat-open" class="ghost" title="Open the dashboard in its own tab">↗</button>
+        <!--
+          The indexer's own admin dashboard, proxied through the manager at
+          /kachat and framed here, so its tabs cannot drift out of step with it.
+        -->
+        <div class="embed-shell" id="kachat-embed-shell" hidden>
+          <iframe id="kachat-frame" title="KaChat indexer dashboard" src="about:blank"></iframe>
         </div>
-      </article>
-
-      <!--
-        The indexer's own admin dashboard, proxied through the manager at
-        /kachat and framed here. Its tabs (Dashboard, KaPosts, Broadcasts,
-        Chats, Group chats, Export / Import, Settings) are the real thing, so
-        they cannot drift out of step with the indexer.
-      -->
-      <div class="embed-shell" id="kachat-embed-shell" hidden>
-        <iframe id="kachat-frame" title="KaChat indexer dashboard" src="about:blank"></iframe>
+        <article class="card" id="kachat-placeholder" hidden></article>
       </div>
-      <article class="card" id="kachat-placeholder">
-        <h3>KaChat indexer</h3>
-        <p class="muted">
-          Turn it on above and the indexer's own dashboard appears here — the same
-          Dashboard, KaPosts, Broadcasts, Chats, Group chats, Export / Import and
-          Settings tabs it always had.
-        </p>
-        <p class="hint">
-          It reads the chain from the node in this stack, so there is no second
-          sync. The first build compiles the indexer from Rust source and takes a
-          while; watch it in Logs → kachat indexer.
-        </p>
-      </article>
+
+      <div id="sub-kachat-settings" class="subtab">
+        <div class="grid">
+          <article class="card">
+            <h3>Source</h3>
+            <label class="inline">Branch / tag <input id="kachat-ref" size="12" value="main"></label>
+            <label class="inline">Network
+              <select id="kachat-network">
+                <option value="mainnet">Mainnet</option>
+                <option value="testnet-10">Testnet 10</option>
+              </select>
+            </label>
+            <p class="hint">
+              Tracks <code>KaspaSilver/KaChat-Indexer</code>. The network must match
+              the node's, or the indexer reads a chain that is not there.
+            </p>
+          </article>
+
+          <article class="card">
+            <h3>Published ports</h3>
+            <p class="muted">
+              Both APIs are always reachable inside the stack. Publish one only if
+              clients connect from outside this machine.
+            </p>
+            <label class="check"><input type="checkbox" id="kachat-pub-api"> KaPosts REST API on 3080</label>
+            <label class="check"><input type="checkbox" id="kachat-pub-chat"> Chat indexer API on 8600</label>
+          </article>
+
+          <article class="card span2">
+            <h3>Apply and update</h3>
+            <p class="muted">
+              Changes here rebuild or restart the indexer. Its dashboard has its own
+              Settings tab for anything about the indexed data itself.
+            </p>
+            <div class="row">
+              <button type="button" id="kachat-save" class="primary">Apply settings</button>
+              <button type="button" id="kachat-check" class="ghost">Check for updates</button>
+              <button type="button" id="kachat-update" class="ghost" disabled>Update</button>
+            </div>
+          </article>
+        </div>
+      </div>
     </section>
 
     <!-- ------------------------------------------------------- nextcloud -->
     <section id="tab-nextcloud" class="tab">
-      <div class="grid">
+      <nav class="subnav" aria-label="Nextcloud">
+        <button class="subtab-btn active" data-subtab="nextcloud-overview">Overview</button>
+        <button class="subtab-btn" data-subtab="nextcloud-settings">Settings</button>
+      </nav>
 
-        <article class="card span2">
+      <div id="sub-nextcloud-overview" class="subtab active">
+        <article class="card">
+          <h3>Nextcloud</h3>
+          <p class="muted">
+            Your own cloud for files, photos and video — the media and backup
+            destination KaChat can share links from. Video thumbnails and iPhone
+            HEIC previews are configured for you, so nothing is sent to a third
+            party.
+          </p>
+        </article>
+
+        <article class="card toggle-bar">
           <div class="toggle-row">
             <label class="switch" title="Start or stop Nextcloud.">
               <input type="checkbox" id="nextcloud-enabled">
               <span class="track"></span>
             </label>
             <div class="toggle-text">
-              <strong>Nextcloud</strong>
-              <span class="muted">
-                Your own cloud for files, photos and video — the media and backup
-                destination KaChat can share links from. Video thumbnails and
-                iPhone HEIC previews are set up for you.
-              </span>
+              <strong>Run Nextcloud</strong>
+              <span class="muted">Starts Nextcloud with its database, cache and preview generator.</span>
             </div>
             <span id="nextcloud-state" class="tag">off</span>
           </div>
           <div id="nextcloud-notice" class="verdict" hidden></div>
-          <div class="row">
-            <button type="button" id="nextcloud-save" class="primary">Apply settings</button>
-            <button type="button" id="nextcloud-check" class="ghost">Check for updates</button>
-            <button type="button" id="nextcloud-update" class="ghost" disabled>Update</button>
-            <button type="button" class="ghost" data-app-action="nextcloud/restart">Restart</button>
-          </div>
           <p class="error" id="nextcloud-error" hidden></p>
         </article>
 
-        <article class="card">
-          <h3>Access</h3>
-          <label class="check"><input type="checkbox" id="nextcloud-pub-web"> Publish on the host</label>
-          <label class="inline">Port <input type="number" id="nextcloud-port" min="1024" max="65535"></label>
-          <label class="inline">Admin user <input id="nextcloud-user"></label>
-          <label>Trusted domains
-            <input id="nextcloud-domains" placeholder="localhost, cloud.example.com">
-          </label>
-          <p class="hint">
-            Add the domain here as well as in Proxy &amp; domains, or Nextcloud
-            refuses the request.
-          </p>
+        <article class="card" id="nextcloud-open-card">
+          <h3>Open it</h3>
           <div id="nextcloud-link" class="verdict" hidden></div>
-        </article>
-
-        <article class="card">
-          <h3>Source</h3>
-          <label class="inline">Branch / tag <input id="nextcloud-ref" value="main"></label>
           <p class="hint">
-            Tracks <code>KaspaSilver/KaChat-NextCloud</code>. The admin password was
-            generated at first start and is stored in <code>.env</code> as
-            <code>NEXTCLOUD_ADMIN_PASSWORD</code>.
+            First sign-in uses the admin user below and the password generated at
+            install, stored in <code>.env</code> as <code>NEXTCLOUD_ADMIN_PASSWORD</code>.
           </p>
-          <div id="nextcloud-build" class="verdict"></div>
         </article>
+      </div>
 
+      <div id="sub-nextcloud-settings" class="subtab">
+        <div class="grid">
+          <article class="card">
+            <h3>Access</h3>
+            <label class="check"><input type="checkbox" id="nextcloud-pub-web"> Publish on the host</label>
+            <label class="inline">Port <input type="number" id="nextcloud-port" min="1024" max="65535"></label>
+            <label class="inline">Admin user <input id="nextcloud-user"></label>
+            <label>Trusted domains
+              <input id="nextcloud-domains" placeholder="localhost, cloud.example.com">
+            </label>
+            <p class="hint">
+              Add a domain here as well as in Proxy &amp; domains, or Nextcloud
+              refuses the request.
+            </p>
+          </article>
+
+          <article class="card">
+            <h3>Source</h3>
+            <label class="inline">Branch / tag <input id="nextcloud-ref" value="main"></label>
+            <p class="hint">Tracks <code>KaspaSilver/KaChat-NextCloud</code>.</p>
+            <div id="nextcloud-build" class="verdict"></div>
+          </article>
+
+          <article class="card span2">
+            <h3>Apply and update</h3>
+            <p class="muted">Changes here rebuild or restart Nextcloud.</p>
+            <div class="row">
+              <button type="button" id="nextcloud-save" class="primary">Apply settings</button>
+              <button type="button" id="nextcloud-check" class="ghost">Check for updates</button>
+              <button type="button" id="nextcloud-update" class="ghost" disabled>Update</button>
+              <button type="button" class="ghost" data-app-action="nextcloud/restart">Restart</button>
+            </div>
+          </article>
+        </div>
       </div>
     </section>
 

@@ -102,16 +102,40 @@ async function identify(ip) {
             sample = body;
         }
         const haystack = `${server ?? ''} ${title ?? ''} ${sample}`.toLowerCase();
-        const vendor = /iceriver/.test(haystack)
+        let vendor = /iceriver/.test(haystack)
             ? 'IceRiver'
             : /bitmain|antminer/.test(haystack)
               ? 'Bitmain'
               : /goldshell/.test(haystack)
                 ? 'Goldshell'
                 : null;
+
+        // IceRiver's firmware names itself nowhere: no Server header, no vendor
+        // string in the markup. What it does have is a /user/login page and
+        // Chinese UI titles, checked against a real KS-series unit. Both
+        // together are specific enough; either alone is not.
+        if (!vendor && (title?.includes('用户界面') || title?.includes('登录界面'))) {
+            vendor = (await probeIceRiverLogin(ip)) ? 'IceRiver' : vendor;
+        }
+
         return { http: true, status: res.status, server, title, vendor };
     } catch {
         return { http: false, status: null, server: null, title: null, vendor: null };
+    }
+}
+
+/** Confirms the /user/login page an IceRiver serves. */
+async function probeIceRiverLogin(ip) {
+    try {
+        const res = await fetch(`http://${ip}/user/login`, {
+            signal: AbortSignal.timeout(2500),
+            headers: { 'User-Agent': 'kaspa-one-click-panel' },
+        });
+        if (!res.ok) return false;
+        const body = (await res.text()).slice(0, 4000);
+        return /登录界面|iceriver/i.test(body);
+    } catch {
+        return false;
     }
 }
 
@@ -120,17 +144,78 @@ async function identify(ip) {
 // printer or a NAS.
 export const SCAN_PORTS = [80, 4028];
 
+// Enough for a handful of /24s without the sweep taking minutes.
+const MAX_HOSTS = 4096;
+
+const ipToInt = (ip) => ip.split('.').reduce((acc, o) => acc * 256 + Number(o), 0);
+const intToIp = (n) => [n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join('.');
+
+/**
+ * Expands user-supplied targets into addresses.
+ *
+ * Accepts `192.168.3.0/24`, the shorthand `192.168.3.*` / `192.168.3.`, and a
+ * single address. A machine can only auto-discover the subnets it is attached
+ * to; anything reached through a router -- which is where a lot of miners sit --
+ * has to be named.
+ */
+export function parseTargets(input) {
+    const targets = [];
+    const problems = [];
+
+    for (const raw of String(input || '').split(/[\s,]+/).filter(Boolean)) {
+        const shorthand = /^(\d{1,3}\.\d{1,3}\.\d{1,3})(\.\*|\.|\*)?$/.exec(raw);
+        const cidr = /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\/(\d{1,2})$/.exec(raw);
+        const single = /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/.exec(raw);
+
+        if (cidr) {
+            const prefix = Number(cidr[2]);
+            if (prefix < 20 || prefix > 32) {
+                problems.push(`${raw}: only /20 to /32 are supported (a /${prefix} is too large to sweep).`);
+                continue;
+            }
+            const size = 2 ** (32 - prefix);
+            const base = ipToInt(cidr[1]) & (size === 2 ** 32 ? 0 : ~(size - 1) >>> 0);
+            for (let i = prefix === 32 ? 0 : 1; i < (prefix === 32 ? 1 : size - 1); i++) targets.push(intToIp(base + i));
+        } else if (shorthand) {
+            for (let i = 1; i <= 254; i++) targets.push(`${shorthand[1]}.${i}`);
+        } else if (single) {
+            targets.push(single[1]);
+        } else {
+            problems.push(`${raw}: not an address, a /24 like 192.168.3.0/24, or a prefix like 192.168.3.*`);
+        }
+    }
+
+    return { targets: [...new Set(targets)], problems };
+}
+
 /**
  * Sweeps the /24 the host sits on. Anything that answers is reported with what
  * it disclosed about itself -- no claim is made that a responder is a miner
  * unless it says so or is already talking to the bridge.
  */
-export async function scanLan({ base, knownMinerIps = [], timeout = 400, concurrency = 64 } = {}) {
+export async function scanLan({ base, extra = '', knownMinerIps = [], timeout = 400, concurrency = 128 } = {}) {
     const address = base ?? (await primaryLanAddress());
-    if (!address) throw new Error('Could not work out this machine\'s LAN address.');
+    if (!address && !extra) throw new Error('Could not work out this machine\'s LAN address.');
 
-    const prefix = address.ip.split('.').slice(0, 3).join('.');
-    const hosts = Array.from({ length: 254 }, (_, i) => `${prefix}.${i + 1}`);
+    const scanned = [];
+    let hosts = [];
+
+    // The subnet this machine is actually on, always.
+    if (address) {
+        const prefix = address.ip.split('.').slice(0, 3).join('.');
+        hosts = Array.from({ length: 254 }, (_, i) => `${prefix}.${i + 1}`);
+        scanned.push(`${prefix}.0/24`);
+    }
+
+    // Anything else the user named. Miners often live on a different subnet
+    // behind the router, which this machine can route to but cannot enumerate.
+    const { targets, problems } = parseTargets(extra);
+    for (const t of targets) if (!hosts.includes(t)) hosts.push(t);
+    for (const raw of String(extra || '').split(/[\s,]+/).filter(Boolean)) scanned.push(raw);
+
+    if (hosts.length > MAX_HOSTS) {
+        throw new Error(`That would sweep ${hosts.length.toLocaleString()} addresses; keep it under ${MAX_HOSTS.toLocaleString()}.`);
+    }
 
     const open = await pool(hosts, concurrency, async (ip) => {
         const results = await Promise.all(SCAN_PORTS.map((port) => probe(ip, port, timeout)));
@@ -144,7 +229,9 @@ export async function scanLan({ base, knownMinerIps = [], timeout = 400, concurr
         return {
             ...entry,
             ...info,
-            self: entry.ip === address.ip,
+            self: entry.ip === address?.ip,
+            // IceRiver's landing page is the login form.
+            path: info.vendor === 'IceRiver' ? '/user/login' : '/',
             connectedToBridge: knownMinerIps.includes(entry.ip),
             // Only 4028 or an outright vendor string is treated as evidence.
             likelyMiner: entry.ports.includes(4028) || Boolean(info.vendor) || knownMinerIps.includes(entry.ip),
@@ -152,9 +239,10 @@ export async function scanLan({ base, knownMinerIps = [], timeout = 400, concurr
     });
 
     return {
-        subnet: `${prefix}.0/24`,
-        scannedFrom: address.ip,
+        subnets: scanned,
+        problems,
+        scannedFrom: address?.ip ?? null,
         scanned: hosts.length,
-        devices: detailed.sort((a, b) => Number(b.likelyMiner) - Number(a.likelyMiner) || a.ip.localeCompare(b.ip)),
+        devices: detailed.sort((a, b) => Number(b.likelyMiner) - Number(a.likelyMiner) || ipToInt(a.ip) - ipToInt(b.ip)),
     };
 }

@@ -813,6 +813,7 @@ route('GET', /^\/api\/mining$/, async (req, res) => {
         // anything outside wants the public one through a forwarded port.
         publicIp: await duckdns.publicIp(),
         lan: await network.primaryLanAddress(),
+        extraSubnets: loadManagerConfig().scan.extraSubnets,
         ...(await miningEconomics(stats)),
     });
 });
@@ -888,11 +889,20 @@ route('PUT', /^\/api\/mining$/, async (req, res) => {
 });
 
 route('POST', /^\/api\/mining\/scan$/, async (req, res) => {
+    const body = await readBody(req);
+    const mgr = loadManagerConfig();
+    const extra = typeof body.extraSubnets === 'string' ? body.extraSubnets.trim() : mgr.scan.extraSubnets;
+
+    if (extra !== mgr.scan.extraSubnets) {
+        mgr.scan.extraSubnets = extra.slice(0, 500);
+        saveManagerConfig(mgr);
+    }
+
     try {
         const logs = await dockerctl.logs(dockerctl.BRIDGE_CONTAINER, 2000).catch(() => '');
         const knownMinerIps = await bridge.connectedMinerIps(logs);
-        const result = await network.scanLan({ knownMinerIps });
-        sendJson(res, 200, result);
+        const result = await network.scanLan({ knownMinerIps, extra });
+        sendJson(res, 200, { ...result, extraSubnets: extra });
     } catch (err) {
         fail(res, 502, err.message);
     }

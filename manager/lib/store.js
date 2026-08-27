@@ -61,6 +61,10 @@ export const DEFAULT_NODE_CONFIG = {
 export const DEFAULT_MANAGER_CONFIG = {
     duckdns: { enabled: false, domains: '', token: '', intervalMinutes: 5, lastResult: null, lastRunAt: null },
     updates: { channel: 'stable', lastCheckedAt: null, latestKnown: null, autoCheck: true },
+    // Subnets to sweep for miners besides the one this machine sits on. Miners
+    // are often on a different subnet behind the router, which cannot be
+    // discovered from here -- see network.js.
+    scan: { extraSubnets: '' },
 };
 
 // ------------------------------------------------------------------- io ----
