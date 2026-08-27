@@ -4,17 +4,20 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/KaspaSilver/Quick-Start-Kaspa/main/uninstall.sh | bash
 #
-# By default this deletes the containers, images, the chain-data volume, the
-# network and the install directory -- but leaves Docker itself alone, since
-# you may well be using it for something else. Pass --remove-docker to go
-# further, or --keep-data to preserve the synced blockchain.
+# This removes what the installer added: the containers, images, the chain-data
+# volume, the network and the install directory.
+#
+# Docker itself is deliberately never touched. It is shared machine-wide, and
+# uninstalling it would take every unrelated container, image and volume with
+# it. Remove Docker yourself if you want it gone.
+#
+# Pass --keep-data to preserve the synced blockchain.
 
 set -euo pipefail
 
 STACK_DIR="${KASPA_STACK_DIR:-$HOME/.kaspa-node}"
 ASSUME_YES="${KASPA_YES:-0}"
 KEEP_DATA=0
-REMOVE_DOCKER=0
 KEEP_BASE_IMAGES=0
 
 while [ $# -gt 0 ]; do
@@ -22,7 +25,6 @@ while [ $# -gt 0 ]; do
         --dir) STACK_DIR="$2"; shift 2 ;;
         --keep-data) KEEP_DATA=1; shift ;;
         --keep-base-images) KEEP_BASE_IMAGES=1; shift ;;
-        --remove-docker) REMOVE_DOCKER=1; shift ;;
         --yes|-y) ASSUME_YES=1; shift ;;
         --help|-h)
             cat <<'USAGE'
@@ -31,7 +33,6 @@ Usage: uninstall.sh [options]
   --dir <path>          Install directory (default: ~/.kaspa-node)
   --keep-data           Keep the synced blockchain volume
   --keep-base-images    Keep nginx / node / alpine / certbot images
-  --remove-docker       Also uninstall Docker itself
   --yes, -y             Do not ask for confirmation
 USAGE
             exit 0 ;;
@@ -120,8 +121,11 @@ if command -v docker >/dev/null 2>&1 && d info >/dev/null 2>&1; then
     say "Removing the network"
     d network rm kaspa-node-net >/dev/null 2>&1 && ok "removed network kaspa-node-net" || true
 
-    # Build cache from the kaspad image build can be several GB on arm64.
-    d builder prune -f --filter 'until=0h' >/dev/null 2>&1 || true
+    # Our images are gone by this point, so their build cache is now dangling
+    # and this reclaims it (several GB after an arm64 source build). Plain
+    # `prune` without -a leaves cache that other projects' images still
+    # reference, which is the point -- nothing unrelated gets touched.
+    d builder prune -f >/dev/null 2>&1 || true
 else
     warn "Docker is not available — skipping container, image and volume removal."
 fi
@@ -143,41 +147,5 @@ if [ -d "$STACK_DIR" ]; then
     fi
 fi
 
-# ----------------------------------------------------------------- docker ----
-
-if [ "$REMOVE_DOCKER" = "1" ]; then
-    if confirm "Really uninstall Docker itself? Anything else using Docker will stop working."; then
-        case "$(uname -s)" in
-            Linux)
-                say "Uninstalling Docker Engine"
-                if command -v apt-get >/dev/null 2>&1; then
-                    $SUDO apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin docker-ce-rootless-extras >/dev/null 2>&1 || true
-                    $SUDO apt-get autoremove -y >/dev/null 2>&1 || true
-                elif command -v dnf >/dev/null 2>&1; then
-                    $SUDO dnf remove -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >/dev/null 2>&1 || true
-                elif command -v yum >/dev/null 2>&1; then
-                    $SUDO yum remove -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >/dev/null 2>&1 || true
-                else
-                    warn "Unknown package manager — remove Docker with your distribution's tools."
-                fi
-                if confirm "Also delete /var/lib/docker (every image and volume on this machine)?"; then
-                    $SUDO rm -rf /var/lib/docker /var/lib/containerd
-                fi
-                ok "Docker Engine removed"
-                ;;
-            Darwin)
-                say "Uninstalling Docker Desktop"
-                if [ -x /Applications/Docker.app/Contents/MacOS/uninstall ]; then
-                    $SUDO /Applications/Docker.app/Contents/MacOS/uninstall || warn "The Docker uninstaller reported an error."
-                elif command -v brew >/dev/null 2>&1; then
-                    brew uninstall --cask docker || warn "brew uninstall failed."
-                else
-                    warn "Drag Docker.app to the Trash to finish removing Docker Desktop."
-                fi
-                ok "Docker Desktop removed"
-                ;;
-        esac
-    fi
-fi
-
-printf '\n%sDone.%s The Kaspa node and everything the installer added are gone.\n\n' "$GRN$B" "$R"
+printf '\n%sDone.%s Every container, image, volume and file this stack created is gone.\n' "$GRN$B" "$R"
+printf '%sDocker itself was left installed.%s\n\n' "$DIM" "$R"

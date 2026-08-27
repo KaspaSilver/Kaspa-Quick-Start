@@ -37,17 +37,35 @@ if you want to reach it from elsewhere.
 
 ### Uninstall — removes everything
 
+Same two dialects as the install above: Linux and macOS run shell scripts,
+Windows runs PowerShell. There is no single line that both understand.
+
+**Linux / macOS**
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/KaspaSilver/Quick-Start-Kaspa/main/uninstall.sh | bash
 ```
+
+**Windows (PowerShell)**
 
 ```powershell
 irm https://raw.githubusercontent.com/KaspaSilver/Quick-Start-Kaspa/main/uninstall.ps1 | iex
 ```
 
-Containers, images, the chain-data volume, the network and the install directory
-all go. Docker itself is kept unless you add `--remove-docker` / `-RemoveDocker`;
-add `--keep-data` / `-KeepData` to preserve the synced blockchain.
+Both do exactly the same thing and take the same options. Containers, images,
+the chain-data volume, the network and the install directory all go. Add
+`--keep-data` / `-KeepData` to preserve the synced blockchain.
+
+The installer also leaves a copy of both scripts in the install directory, so
+you never need the URL twice:
+
+```bash
+bash ~/.kaspa-node/uninstall.sh
+```
+
+Docker itself is never removed. It is shared machine-wide, so uninstalling it
+would destroy every unrelated container, image and volume too — if you want
+Docker gone, remove it yourself afterwards.
 
 ---
 

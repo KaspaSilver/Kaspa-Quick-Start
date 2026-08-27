@@ -5,16 +5,18 @@
 .DESCRIPTION
     irm https://raw.githubusercontent.com/KaspaSilver/Quick-Start-Kaspa/main/uninstall.ps1 | iex
 
-    Deletes the containers, images, the chain-data volume, the network and the
-    install directory. Docker Desktop itself is left alone unless you pass
-    -RemoveDocker, and the synced blockchain can be kept with -KeepData.
+    Removes what the installer added: the containers, images, the chain-data
+    volume, the network and the install directory.
+
+    Docker Desktop itself is deliberately never touched - it is shared
+    machine-wide, and removing it would take every unrelated container, image
+    and volume with it. The synced blockchain can be kept with -KeepData.
 #>
 [CmdletBinding()]
 param(
     [string] $Dir = $(if ($env:KASPA_STACK_DIR) { $env:KASPA_STACK_DIR } else { Join-Path $env:USERPROFILE '.kaspa-node' }),
     [switch] $KeepData,
     [switch] $KeepBaseImages,
-    [switch] $RemoveDocker,
     [switch] $Yes
 )
 
@@ -99,6 +101,9 @@ if ($dockerUsable) {
     & docker network rm kaspa-node-net 2>&1 | Out-Null
     if ($LASTEXITCODE -eq 0) { Ok 'removed network kaspa-node-net' }
 
+    # Our images are gone by this point, so their build cache is now dangling
+    # and this reclaims it. Without -a, cache still referenced by other
+    # projects' images is left alone.
     & docker builder prune -f 2>&1 | Out-Null
 } else {
     Warn 'Docker is not available - skipping container, image and volume removal.'
@@ -116,19 +121,7 @@ if (Test-Path $StackDir) {
     }
 }
 
-if ($RemoveDocker) {
-    if (Confirm-Step 'Really uninstall Docker Desktop? Anything else using Docker will stop working.') {
-        Say 'Uninstalling Docker Desktop'
-        if (Get-Command winget -ErrorAction SilentlyContinue) {
-            winget uninstall --exact --id Docker.DockerDesktop --silent
-            if ($LASTEXITCODE -eq 0) { Ok 'Docker Desktop removed' }
-            else { Warn 'winget could not remove Docker Desktop - use Settings > Apps.' }
-        } else {
-            Warn 'winget is not available - remove Docker Desktop from Settings > Apps.'
-        }
-    }
-}
-
 Write-Host ''
-Write-Host 'Done. The Kaspa node and everything the installer added are gone.' -ForegroundColor Green
+Write-Host 'Done. Every container, image, volume and file this stack created is gone.' -ForegroundColor Green
+Write-Host 'Docker Desktop itself was left installed.' -ForegroundColor DarkGray
 Write-Host ''
