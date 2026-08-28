@@ -1137,3 +1137,57 @@ label.stack > textarea {
 .svc-dot.ok { background: var(--ok); }
 .svc-dot.warn { background: var(--warn); }
 .svc-dot.bad { background: var(--danger); }
+
+/* A disclosure for detail that would otherwise dominate a panel: the numbers
+   worth a glance stay as tiles, the long tail folds away behind this. */
+details.more {
+    margin-top: 14px;
+    border-top: 1px solid var(--line);
+    padding-top: 12px;
+}
+details.more > summary {
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 13px;
+    list-style: none;
+}
+details.more > summary::-webkit-details-marker { display: none; }
+details.more > summary::before {
+    content: "▸";
+    display: inline-block;
+    width: 14px;
+    transition: transform 0.15s ease;
+}
+details.more[open] > summary::before { transform: rotate(90deg); }
+details.more > summary:hover { color: var(--text); }
+
+/* Many small readings, so they pack tighter than the standard kv list. */
+.kv.dense {
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 6px 16px;
+    margin-top: 12px;
+    font-size: 12.5px;
+}
+.kv.dense dt { font-size: 11px; }
+.kv.dense dd { font-size: 12.5px; }
+
+/* Eight readings that all fit on one row on a normal desktop, so the whole
+   Chats panel lands on a screen without scrolling. Scoped here: the mining and
+   node cards want the wider four-up tiles. */
+#sub-kachat-chats .grid.stats {
+    grid-template-columns: repeat(auto-fit, minmax(146px, 1fr));
+    gap: 10px;
+    margin-bottom: 0;
+}
+#sub-kachat-chats .stat { padding: 9px 11px; }
+#sub-kachat-chats .stat span { font-size: 19px; }
+
+/* The last few pixels: this panel is two sections in one card, and the default
+   spacing between them is tuned for the node card's much longer sections. */
+#sub-kachat-chats .node-section { padding-top: 12px; margin-top: 12px; }
+#sub-kachat-chats .node-section p.muted { margin-bottom: 10px; }
+#sub-kachat-chats label.stack { margin-top: 8px; }
+#sub-kachat-chats .row { margin-top: 10px; }
+#sub-kachat-chats p.hint { margin-bottom: 0; }
+#sub-kachat-chats details.more { margin-top: 10px; padding-top: 10px; }
+#sub-kachat-chats article.card { padding: 12px 18px; }

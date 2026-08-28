@@ -1600,6 +1600,19 @@ const KACHAT_CHANNELS = [
     'kaspa-hebrew',
 ];
 
+// The chat metrics worth showing as tiles, in reading order. Anything the
+// indexer reports that is not named here still appears, folded away below.
+const CHAT_HEADLINE = [
+    ['contextual_messages', 'direct messages'],
+    ['handshakes_by_sender', 'handshakes sent'],
+    ['uniq_handshakes_by_receiver', 'handshakes received'],
+    ['payments_by_sender', 'payments sent'],
+    ['uniq_payments_by_receiver', 'payments received'],
+    ['group_messages', 'group messages'],
+    ['group_controls', 'group controls'],
+    ['blocks_processed', 'blocks processed'],
+];
+
 class IndexerDown extends Error {}
 
 async function kachat(path, { method = 'GET', body, raw = false } = {}) {
@@ -1895,16 +1908,27 @@ async function loadKachatChat(kind) {
             return;
         }
         const entries = kFlatten(m);
-        grid.innerHTML = entries.length
-            ? entries
-                  .map(
-                      ([k, v]) =>
-                          `<div class="stat" title="${escapeHtml(String(v ?? ''))}"><span class="small">${escapeHtml(
-                              kMetric(v),
-                          )}</span><small>${escapeHtml(kPretty(k))}</small></div>`,
-                  )
-                  .join('')
+        const byKey = Object.fromEntries(entries);
+
+        // Tiles for what somebody actually came to look at. The rest are
+        // internal tallies, mostly zero, and go under the fold.
+        const shown = CHAT_HEADLINE.filter(([key]) => key in byKey);
+        grid.innerHTML = shown.length
+            ? shown.map(([key, label]) => kTile(label, kMetric(byKey[key]))).join('')
             : '<p class="muted">No metrics reported.</p>';
+
+        const named = new Set(CHAT_HEADLINE.map(([key]) => key));
+        const rest = entries.filter(([k]) => !named.has(k));
+        const more = $('kachat-chat-more');
+        more.hidden = rest.length === 0;
+        $('kachat-chat-rest').innerHTML = rest
+            .map(
+                ([k, v]) =>
+                    `<div title="${escapeHtml(String(v ?? ''))}"><dt>${escapeHtml(kPretty(k))}</dt><dd>${escapeHtml(
+                        kMetric(v),
+                    )}</dd></div>`,
+            )
+            .join('');
     } catch {
         tag.textContent = 'error';
         tag.className = 'tag off';
@@ -1981,6 +2005,8 @@ function renderKachatOffline() {
         $(id).innerHTML = `<p class="muted">${message}</p>`;
     }
     for (const id of ['kachat-stats', 'kachat-activity', 'kachat-bcast-tiles']) $(id).innerHTML = '';
+    // Stale counters under a fold nobody opened would outlive the indexer.
+    $('kachat-chat-more').hidden = true;
     for (const id of ['kachat-health-tag', 'kachat-chat-tag', 'kachat-group-tag', 'kachat-personal-tag']) {
         $(id).textContent = 'not running';
         $(id).className = 'tag off';

@@ -723,22 +723,18 @@
               <span id="kachat-personal-tag" class="tag">–</span>
             </div>
             <p class="muted">
-              Add your addresses and the indexer keeps only the chats and groups
-              you are part of, skipping everyone else. Leave it empty to index
-              everything, which is what a public indexer does. Saving restarts the
-              chat indexer.
+              Your addresses here and the indexer keeps only your chats and groups.
+              Leave it empty to index everything. Saving restarts the chat indexer.
             </p>
             <label class="stack">Your addresses, one per line
-              <textarea id="kachat-personal-addrs" rows="3" placeholder="kaspa:q…"></textarea>
+              <textarea id="kachat-personal-addrs" rows="2" placeholder="kaspa:q…"></textarea>
             </label>
             <div class="row">
               <button type="button" id="kachat-personal-save" class="primary">Save and apply</button>
             </div>
             <p class="hint">
-              Group capture does what it can: messages you send and control
-              messages addressed to you are stored, but catching every message in
-              a group needs membership tracking that is still to come. Once this
-              is on, use Export / Import to backfill your history.
+              Group capture is partial for now: what you send, and control messages
+              addressed to you. Use Export / Import to backfill your history.
             </p>
           </div>
 
@@ -748,11 +744,19 @@
               <span id="kachat-chat-tag" class="tag">–</span>
             </div>
             <p class="muted">
-              Encrypted one to one messaging: handshakes, direct messages and
-              payments, indexed straight from the node into its own store. These
-              numbers come live from the chat indexer.
+              Encrypted one to one messaging, read straight from your node. Live
+              from the chat indexer.
             </p>
             <div class="grid stats" id="kachat-chat-tiles"><p class="muted">Waiting for the chat indexer.</p></div>
+            <!--
+              The indexer reports thirty-odd counters, most of them internal
+              tallies sitting at zero. The ones worth a glance are tiles above;
+              the rest are here, folded away, so the panel fits on a screen.
+            -->
+            <details class="more" id="kachat-chat-more" hidden>
+              <summary>All indexer counters</summary>
+              <dl class="kv dense" id="kachat-chat-rest"></dl>
+            </details>
           </div>
         </article>
       </div>
