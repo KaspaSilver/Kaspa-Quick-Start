@@ -3101,7 +3101,10 @@ async function loadProxies() {
     // misleading: a saved host writes nginx config nothing is serving. So the
     // page says what to do rather than showing controls that cannot work.
     $('proxy-config').hidden = !on;
-    $('proxy-off').hidden = on;
+    // With nothing else on the page, a full-width card of two sentences is
+    // mostly empty space; narrowed and centred it reads as the one thing there
+    // is to do. It goes back to full width once the settings are under it.
+    $('tab-proxy').classList.toggle('alone', !on);
 
     for (const id of ['proxy-add', 'proxy-reload', 'proxy-renew']) {
         const button = $(id);

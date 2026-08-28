@@ -1237,35 +1237,28 @@
 
     <!-- ----------------------------------------------------------- proxy -->
     <section id="tab-proxy" class="tab">
-      <article class="card">
-        <h3>Proxy and domains</h3>
-        <p class="muted">
-          Gives your node a proper web address instead of an IP and a port
-          number, with free HTTPS. It needs ports 80 and 443, so it stays off
-          until you ask for it. Leave it off if something else on this machine
-          already uses those ports.
-        </p>
-      </article>
-
-      <article class="card toggle-bar">
+      <!--
+        One card: what it is, and the switch that starts it. Three stacked cards
+        for a single switch read as three separate things, and left most of the
+        page empty while it was off.
+      -->
+      <article class="card proxy-intro">
         <div class="toggle-row">
           <div class="toggle-text">
-            <strong>Run the reverse proxy</strong>
-            <span class="muted">Takes ports 80 and 443 on this machine.</span>
+            <strong>Proxy and domains</strong>
+            <span class="muted">
+              Gives your node a proper web address instead of an IP and a port
+              number, with free HTTPS.
+            </span>
           </div>
           <span id="proxy-state" class="tag">off</span>
         </div>
-        <p class="error" id="proxy-error" hidden></p>
-      </article>
-
-      <!-- Shown in place of the settings while the proxy is off. Configuring a
-           host that nothing is serving is a way to be confused later. -->
-      <article class="card" id="proxy-off" hidden>
-        <p class="muted">
-          Turn the reverse proxy on to set this up. It stays off until you want
-          it, because it claims ports 80 and 443, and a node with no domains has
-          no use for it.
+        <p class="hint">
+          It takes ports 80 and 443 on this machine, so it stays off until you
+          ask for it. Leave it off if something else here already uses them.
+          Switch it on to add domains and certificates.
         </p>
+        <p class="error" id="proxy-error" hidden></p>
       </article>
 
       <div class="grid" id="proxy-config">

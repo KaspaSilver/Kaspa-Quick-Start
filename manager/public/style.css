@@ -1404,3 +1404,10 @@ ul.plain li { margin: 8px 0; color: var(--muted); font-size: 13.5px; }
 
 /* The totals tile sits in the same grid, with no switch of its own. */
 .channel-card.total .count { color: var(--text); }
+
+/* The proxy page while it is off: one card and nothing else, so it is narrowed
+   and centred rather than stretched across a screen it has no content for. */
+#tab-proxy.alone .proxy-intro {
+    max-width: 640px;
+    margin: 0 auto;
+}
