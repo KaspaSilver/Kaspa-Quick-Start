@@ -1140,23 +1140,36 @@
 
       <div id="sub-nextcloud-settings" class="subtab">
         <div class="grid">
-          <article class="card">
-            <h3>Access</h3>
-            <label class="check"><input type="checkbox" id="nextcloud-pub-web"> Publish on the host</label>
-            <label class="inline">Port <input type="number" id="nextcloud-port" min="1024" max="65535"></label>
-            <label class="inline">Admin user <input id="nextcloud-user"></label>
-            <label>Trusted domains
-              <input id="nextcloud-domains" placeholder="localhost cloud.example.com">
-            </label>
-            <p class="hint">
-              If you give Nextcloud a domain, add it here too, separated by spaces
-              or commas. Nextcloud turns away requests for names it has not been
-              told about.
-            </p>
-          </article>
+          <!--
+            Access and Apply share the left column so Apply fills the space
+            under a short Access card, instead of waiting for the taller
+            password card beside it and leaving a hole.
+          -->
+          <div class="col">
+            <article class="card">
+              <h3>Access</h3>
+              <label class="check"><input type="checkbox" id="nextcloud-pub-web"> Publish on the host</label>
+              <label class="inline">Port <input type="number" id="nextcloud-port" min="1024" max="65535"></label>
+              <label class="inline">Admin user <input id="nextcloud-user"></label>
+              <label>Trusted domains
+                <input id="nextcloud-domains" placeholder="localhost cloud.example.com">
+              </label>
+              <p class="hint">
+                If you give Nextcloud a domain, add it here too, separated by spaces
+                or commas. Nextcloud turns away requests for names it has not been
+                told about.
+              </p>
+            </article>
+            <article class="card span2">
+              <h3>Apply</h3>
+              <p class="muted">Changes here rebuild or restart Nextcloud.</p>
+              <div class="row">
+                <button type="button" id="nextcloud-save" class="primary">Apply settings</button>
+                <button type="button" class="ghost" data-app-action="nextcloud/restart">Restart</button>
+              </div>
+            </article>
+          </div>
 
-          <!-- Half width, so it sits in the gap beside Access rather than
-               starting a new full-width row under it. -->
           <article class="card">
             <h3>Admin password</h3>
             <p class="muted">
@@ -1179,17 +1192,9 @@
               one here. Anyone already signed in stays signed in.
             </p>
           </article>
-
-          <article class="card span2">
-            <h3>Apply</h3>
-            <p class="muted">Changes here rebuild or restart Nextcloud.</p>
-            <div class="row">
-              <button type="button" id="nextcloud-save" class="primary">Apply settings</button>
-              <button type="button" class="ghost" data-app-action="nextcloud/restart">Restart</button>
-            </div>
-          </article>
         </div>
       </div>
+
       <div id="sub-nextcloud-updates" class="subtab">
         <div class="grid">
           <article class="card span2">
