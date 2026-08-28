@@ -764,8 +764,7 @@
               <span id="kachat-personal-tag" class="tag">–</span>
             </div>
             <p class="muted">
-              Your addresses here and the indexer keeps only your chats and groups.
-              Leave it empty to index everything. Saving restarts the chat indexer.
+              Keeps only your one to one chats, handshakes and payments. Empty indexes everything.
             </p>
             <label class="stack">Your addresses, one per line
               <textarea id="kachat-personal-addrs" rows="2" placeholder="kaspa:q…"></textarea>
@@ -774,8 +773,7 @@
               <button type="button" id="kachat-personal-save" class="primary">Save and apply</button>
             </div>
             <p class="hint">
-              Group capture is partial for now: what you send, and control messages
-              addressed to you. Use Export / Import to backfill your history.
+              Groups match on ids, set those under Group chats. Saving restarts the indexer.
             </p>
           </div>
 
@@ -810,9 +808,9 @@
               <span id="kachat-group-personal-tag" class="tag">–</span>
             </div>
             <p class="muted">
-              A group message says which group it belongs to with a blinded id, and
-              yours is different from every other member's. List yours and the
-              indexer keeps those groups. Leave it empty to keep all of them.
+              A group message carries a blinded id that is specific to whoever sent
+              it, so one group has one id per member. List them and the indexer
+              keeps those groups. Leave it empty to keep all of them.
             </p>
             <label class="stack">Your blinded group ids, one per line
               <textarea id="kachat-group-ids" rows="2" placeholder="64 hex characters, one per line"></textarea>
@@ -827,9 +825,10 @@
               restarts the chat indexer.
             </p>
             <p class="hint">
-              Because the id is yours alone, this keeps <strong>your</strong> messages
-              in those groups. What other members send carries their id, not yours,
-              so it is not covered. Whatever you send is always kept either way.
+              List every member's id for a group and you keep the whole conversation;
+              list only your own and you keep only what you sent. Your KaChat app
+              knows all of them, because reading a group means asking for each
+              member's id in turn. Whatever you send is kept either way.
             </p>
           </div>
 
@@ -1032,6 +1031,7 @@
       <nav class="subnav" aria-label="Nextcloud">
         <button class="subtab-btn active" data-subtab="nextcloud-overview">Overview</button>
         <button class="subtab-btn" data-subtab="nextcloud-settings">Settings</button>
+        <button class="subtab-btn" data-subtab="nextcloud-updates">Updates</button>
       </nav>
 
       <div id="sub-nextcloud-overview" class="subtab active">
@@ -1120,17 +1120,32 @@
             <h3>Source</h3>
             <label class="inline">Branch / tag <input id="nextcloud-ref" value="main"></label>
             <p class="hint">Tracks <code>KaspaSilver/KaChat-NextCloud</code>.</p>
-            <div id="nextcloud-build" class="verdict"></div>
           </article>
 
           <article class="card span2">
-            <h3>Apply and update</h3>
+            <h3>Apply</h3>
             <p class="muted">Changes here rebuild or restart Nextcloud.</p>
             <div class="row">
               <button type="button" id="nextcloud-save" class="primary">Apply settings</button>
-              <button type="button" id="nextcloud-check" class="ghost">Check for updates</button>
-              <button type="button" id="nextcloud-update" class="ghost" disabled>Update</button>
               <button type="button" class="ghost" data-app-action="nextcloud/restart">Restart</button>
+            </div>
+          </article>
+        </div>
+      </div>
+      <div id="sub-nextcloud-updates" class="subtab">
+        <div class="grid">
+          <article class="card span2">
+            <h3>Nextcloud image</h3>
+            <p class="muted">
+              Checks <code>KaspaSilver/KaChat-NextCloud</code> for commits newer
+              than the one this image was built from. Your files and database are
+              on their own volumes, so a rebuild leaves them alone.
+            </p>
+            <div id="nextcloud-build" class="verdict"></div>
+            <div id="nextcloud-update-status" class="verdict">Not checked yet.</div>
+            <div class="row">
+              <button type="button" id="nextcloud-check" class="ghost">Check for updates</button>
+              <button type="button" id="nextcloud-update" class="primary" disabled>Update</button>
             </div>
           </article>
         </div>

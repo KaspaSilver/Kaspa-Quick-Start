@@ -198,19 +198,24 @@ personal mode depends on push being set up. Option 1 is the honest default.
 
 Worth stating plainly, because it limits what the feature can promise.
 
-A blinded group id is per-(group, member). Registering **your** id for a group
-captures **your** messages in it. It does not capture what other members send,
-because their messages carry their own blinded ids, which you have no way to
-enumerate.
+**Correction to an earlier draft of this document.** It claimed other members'
+blinded ids could not be enumerated, and that the feature could therefore only
+ever capture your own group traffic. That is wrong.
 
-So "index only my groups" really means "index my own group traffic, reliably".
-Capturing a whole conversation would need every member's blinded id for that
-group — which is roster knowledge the indexer is designed not to have.
+A blinded id is per-(group, member), and `kasia-indexer/docs/GROUP_CHAT_API.md`
+is explicit about the consequence: *"KaChat must query once per known member
+because the blinded ID is sender-specific."* A client reading a group already
+holds every member's id for it, because that is the only way to read the group
+at all.
 
-If full group history for a group you are in is the actual goal, that is a
-different and much larger piece of work, and it starts with a protocol decision
-about what the indexer is allowed to know. Worth deciding which of the two you
-want before building either.
+So listing every member's id for a group keeps the whole conversation, and
+listing only your own keeps only what you sent. The feature is capable of full
+group history; what limits it is whether the operator pastes one id or all of
+them.
+
+What genuinely remains out of reach is the indexer working any of this out for
+itself. The ids come from group key material it never sees, so they always have
+to arrive from a client.
 
 ## Suggested order
 
