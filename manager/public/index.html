@@ -541,6 +541,7 @@
 
       <div id="sub-mining-settings" class="subtab">
         <div class="grid">
+          <div class="col">
           <article class="card">
           <h3>Stratum ports</h3>
           <p class="muted">
@@ -553,6 +554,25 @@
           </table>
           <div class="row"><button type="button" id="instance-add" class="ghost">Add port</button></div>
           </article>
+
+            <!--
+              Not span2: the ports card is shorter than the tuning card beside it,
+              so this drops into the gap underneath rather than starting a new
+              full-width row below both.
+            -->
+            <article class="card">
+              <h3>Apply</h3>
+              <p class="muted">
+                Port and difficulty changes need the bridge restarted to take effect.
+              </p>
+              <div class="row">
+                <button type="button" id="mining-save" class="primary">Apply &amp; restart bridge</button>
+                <button type="button" class="ghost" data-bridge="restart">Restart bridge</button>
+              </div>
+              <p class="error" id="mining-settings-error" hidden></p>
+            </article>
+          </div>
+
           <article class="card">
           <h3>Difficulty &amp; tuning</h3>
           <label class="check"><input type="checkbox" id="mining-vardiff"> Automatic difficulty (VarDiff)</label>
@@ -567,17 +587,6 @@
           <p class="error" id="mining-error" hidden></p>
           </article>
 
-          <article class="card span2">
-            <h3>Apply</h3>
-            <p class="muted">
-              Port and difficulty changes need the bridge restarted to take effect.
-            </p>
-            <div class="row">
-              <button type="button" id="mining-save" class="primary">Apply &amp; restart bridge</button>
-              <button type="button" class="ghost" data-bridge="restart">Restart bridge</button>
-            </div>
-            <p class="error" id="mining-settings-error" hidden></p>
-          </article>
         </div>
       </div>
     </section>
@@ -880,30 +889,12 @@
       <div id="sub-kachat-updates" class="subtab">
         <div class="grid">
           <article class="card span2">
-            <h3>Indexer software</h3>
+            <h3>Source and updates</h3>
             <p class="muted">
-              Checks <code>KaspaSilver/KaChat-Indexer</code> for commits newer than
-              the one this image was built from, and rebuilds if you ask it to.
-              Indexed data is kept, so there is no re-scan of the chain.
+              Tracks <code>KaspaSilver/KaChat-Indexer</code> and checks it for
+              commits newer than the one this image was built from. Indexed data is
+              kept, so there is no re-scan of the chain.
             </p>
-            <div id="kachat-build" class="verdict"></div>
-            <div id="kachat-update-status" class="verdict">Not checked yet.</div>
-            <div class="row">
-              <button type="button" id="kachat-check" class="ghost">Check for updates</button>
-              <button type="button" id="kachat-update" class="primary" disabled>Update</button>
-            </div>
-            <p class="hint">
-              A rebuild compiles the indexer from Rust source and takes a while.
-              You can watch it happen on the All logs page.
-            </p>
-          </article>
-        </div>
-      </div>
-
-      <div id="sub-kachat-settings" class="subtab">
-        <div class="grid">
-          <article class="card">
-            <h3>Source</h3>
             <label class="inline">Branch / tag <input id="kachat-ref" size="12" value="main"></label>
             <label class="inline">Network
               <select id="kachat-network">
@@ -911,12 +902,25 @@
                 <option value="testnet-10">Testnet 10</option>
               </select>
             </label>
+            <div id="kachat-build" class="verdict"></div>
+            <div id="kachat-update-status" class="verdict">Not checked yet.</div>
+            <div class="row">
+              <button type="button" id="kachat-check" class="ghost">Check for updates</button>
+              <button type="button" id="kachat-update" class="primary" disabled>Update</button>
+              <button type="button" id="kachat-rebuild" class="ghost">Rebuild from this branch</button>
+            </div>
             <p class="hint">
-              Tracks <code>KaspaSilver/KaChat-Indexer</code>. The network must match
-              the node's, or the indexer reads a chain that is not there.
+              Rebuild is what to press after changing the branch or network; Update
+              is for staying where you are. The network must match the node's, or
+              the indexer reads a chain that is not there. A rebuild compiles from
+              Rust source and takes a while, which you can follow under All logs.
             </p>
           </article>
+        </div>
+      </div>
 
+      <div id="sub-kachat-settings" class="subtab">
+        <div class="grid">
           <article class="card">
             <h3>Published ports</h3>
             <p class="muted">
@@ -1116,12 +1120,6 @@
             </p>
           </article>
 
-          <article class="card">
-            <h3>Source</h3>
-            <label class="inline">Branch / tag <input id="nextcloud-ref" value="main"></label>
-            <p class="hint">Tracks <code>KaspaSilver/KaChat-NextCloud</code>.</p>
-          </article>
-
           <article class="card span2">
             <h3>Apply</h3>
             <p class="muted">Changes here rebuild or restart Nextcloud.</p>
@@ -1135,18 +1133,24 @@
       <div id="sub-nextcloud-updates" class="subtab">
         <div class="grid">
           <article class="card span2">
-            <h3>Nextcloud image</h3>
+            <h3>Source and updates</h3>
             <p class="muted">
-              Checks <code>KaspaSilver/KaChat-NextCloud</code> for commits newer
-              than the one this image was built from. Your files and database are
-              on their own volumes, so a rebuild leaves them alone.
+              Tracks <code>KaspaSilver/KaChat-NextCloud</code> and checks it for
+              commits newer than the one this image was built from. Your files and
+              database are on their own volumes, so a rebuild leaves them alone.
             </p>
+            <label class="inline">Branch / tag <input id="nextcloud-ref" value="main"></label>
             <div id="nextcloud-build" class="verdict"></div>
             <div id="nextcloud-update-status" class="verdict">Not checked yet.</div>
             <div class="row">
               <button type="button" id="nextcloud-check" class="ghost">Check for updates</button>
               <button type="button" id="nextcloud-update" class="primary" disabled>Update</button>
+              <button type="button" id="nextcloud-rebuild" class="ghost">Rebuild from this branch</button>
             </div>
+            <p class="hint">
+              Rebuild is what to press after changing the branch. Update is for
+              staying on the branch you are already on.
+            </p>
           </article>
         </div>
       </div>

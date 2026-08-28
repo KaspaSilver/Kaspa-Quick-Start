@@ -1209,3 +1209,13 @@ details.more > summary:hover { color: var(--text); }
     gap: 10px;
     margin-bottom: 0;
 }
+
+/* A column of cards inside a grid cell. Grid rows are a uniform height, so two
+   cards stacked as separate grid items leave a gap when the card beside them is
+   taller. Nesting them in one item keeps them together. */
+.grid > .col {
+    display: grid;
+    gap: 16px;
+    align-content: start;
+    min-width: 0;
+}

@@ -1541,6 +1541,26 @@ function collectAppConfig(name) {
     };
 }
 
+/**
+ * The branch lives on the Updates tab, but Apply lives on Settings with the
+ * access fields. Rather than send someone between tabs to change a branch, this
+ * runs the same save: the whole config is sent either way, so pressing it from
+ * here is the same operation under a name that fits where it sits.
+ */
+for (const app of ['kachat', 'nextcloud']) {
+    $(`${app}-rebuild`).addEventListener('click', async () => {
+        const err = $(`${app}-error`);
+        err.hidden = true;
+        try {
+            await api(`/api/apps/${app}`, { method: 'PUT', body: { config: collectAppConfig(app) } });
+            openConsole(`Rebuilding ${SERVICE_NAMES[app]}`);
+            setTimeout(loadApps, 2000);
+        } catch (e) {
+            toast(e.message, 'bad');
+        }
+    });
+}
+
 // --- nextcloud admin password ---
 
 /**
