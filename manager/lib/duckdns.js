@@ -24,6 +24,13 @@ export const normalizeDomains = (input) =>
         .map((d) => d.trim().toLowerCase().replace(/\.duckdns\.org\.?$/, ''))
         .filter(Boolean);
 
+/**
+ * A subdomain plus a token is the whole condition for refreshing. There is no
+ * separate on switch, because a record that is not kept current is worse than
+ * no record at all -- it points at an address the machine has since lost.
+ */
+export const isConfigured = (dd) => Boolean(normalizeDomains(dd?.domains).length && dd?.token);
+
 export async function update({ domains, token, ip } = {}) {
     const cfg = loadManagerConfig();
     const list = normalizeDomains(domains ?? cfg.duckdns.domains);
@@ -61,7 +68,7 @@ export function scheduleFromConfig(log = () => {}) {
     timer = null;
 
     const cfg = loadManagerConfig();
-    if (!cfg.duckdns.enabled) return;
+    if (!isConfigured(cfg.duckdns)) return;
 
     const minutes = Math.max(5, Number(cfg.duckdns.intervalMinutes) || 5);
     const tick = () =>
