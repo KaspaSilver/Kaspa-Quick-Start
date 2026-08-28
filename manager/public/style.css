@@ -1,29 +1,55 @@
+/*
+ * Palette sampled off the Kaspa Silver banner rather than picked by eye. The
+ * background there is not grey: it is a near-black with a cyan cast (#010609),
+ * the surfaces are deep teal (#0D2023, #123E41), and the wordmark is a mint
+ * sitting around hue 172 (#7DD8CA). Keeping those relationships is what makes
+ * the panel read as the same thing as the channel.
+ */
 :root {
-    --bg: #0e1116;
-    --panel: #161b22;
-    --panel-2: #1c232c;
-    --line: #262d38;
-    --text: #e6edf3;
-    --muted: #8b98a8;
-    --accent: #70c7ba;
-    --accent-dim: #2f6f66;
-    --danger: #e5534b;
-    --warn: #d29922;
-    --ok: #3fb950;
+    --bg: #050b0d;
+    --panel: #0a1417;
+    --panel-2: #102025;
+    --line: #1a3238;
+    --text: #e6f4f2;
+    --muted: #7d9b9c;
+    --accent: #7dd8ca;
+    --accent-dim: #2e6f68;
+    /* The brighter mint of the glow ring, for things that should look lit. */
+    --accent-glow: #4fe3ce;
+
+    /* Status colours are pulled away from the accent hue on purpose. A mint
+       accent and a green "ok" next to each other are hard to tell apart, so ok
+       is warmer and danger is pushed towards coral. */
+    --danger: #ff6b62;
+    --warn: #e3a93c;
+    --ok: #46ce86;
+
     --radius: 10px;
     --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+    /* The banner's light comes from one neon ring. These are that effect, kept
+       in two strengths so it stays a highlight rather than a wash. */
+    --glow-soft: 0 0 26px -10px rgba(125, 216, 202, 0.55);
+    --glow-hard: 0 0 0 1px rgba(125, 216, 202, 0.28), 0 0 20px -6px rgba(125, 216, 202, 0.6);
 }
 
 @media (prefers-color-scheme: light) {
     :root {
-        --bg: #f4f6f8;
+        --bg: #eef3f3;
         --panel: #ffffff;
-        --panel-2: #f0f3f6;
-        --line: #d8dee6;
-        --text: #1c2128;
-        --muted: #5b6874;
-        --accent: #178c7c;
-        --accent-dim: #a9ddd6;
+        --panel-2: #e7efee;
+        --line: #cadbd9;
+        --text: #0c1a1c;
+        --muted: #55706f;
+        /* Darkened well past the banner mint: #7DD8CA on white is unreadable. */
+        --accent: #0f7d71;
+        --accent-dim: #9ad4cc;
+        --accent-glow: #0f7d71;
+        --danger: #c2372f;
+        --warn: #9a6a05;
+        --ok: #1a7f4b;
+        --glow-soft: 0 1px 3px rgba(12, 26, 28, 0.09);
+        --glow-hard: 0 0 0 1px rgba(15, 125, 113, 0.3);
     }
 }
 
@@ -1336,7 +1362,91 @@ ul.links .what { color: var(--muted); font-size: 12.5px; min-width: 74px; }
 ul.links .handle { font-family: var(--mono); }
 ul.plain li { margin: 8px 0; color: var(--muted); font-size: 13.5px; }
 
+/* A link that rides along with a heading: same baseline, deliberately quieter,
+   so it reads as "and here is where that lives" rather than as a second title. */
+.title-link {
+    margin-left: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--accent);
+    white-space: nowrap;
+}
+
+/* Two short cards stacked in one grid cell, matching the outer gap so the
+   seam is invisible. */
+.col-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-width: 0;
+}
+
+.donate-body {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    margin-top: 10px;
+}
+/* Always white behind the code, whatever the theme is doing: scanners expect
+   dark-on-light and many will not read an inverted one. The padding is the
+   quiet zone the SVG already carries, given a surface to sit on. */
+.donate-qr {
+    flex: 0 0 auto;
+    width: 132px;
+    height: 132px;
+    background: #fff;
+    border-radius: 8px;
+}
+.donate-qr svg { display: block; width: 100%; height: 100%; border-radius: 8px; }
+.donate-side {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.donate-side .copy-btn { align-self: flex-start; }
+
+@media (max-width: 620px) {
+    .donate-body { flex-direction: column; }
+}
+
+/* An address is worth nothing if it is transcribed wrong, so it is shown whole
+   rather than truncated, and one click selects all of it for the case where the
+   clipboard is unreachable (plain http on a LAN address). */
+.address-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 0;
+}
+.address-row .addr {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    user-select: all;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text);
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 9px 11px;
+}
+
 /* --------------------------------------------------------------- kassigner */
+
+/* The enclosing .grid sets align-items: start, which lets every card shrink to
+   its own text and leaves the choices looking like a ragged list. Here they are
+   a set to compare, so they get one height: stretch across the row, and
+   grid-auto-rows to carry that same height between rows. */
+#kassigner-boards {
+    align-items: stretch;
+    grid-auto-rows: 1fr;
+}
 
 /* Board cards sit inside a card, so they need their own surface to read as
    choices rather than as more of the same panel. */
@@ -1345,6 +1455,16 @@ ul.plain li { margin: 8px 0; color: var(--muted); font-size: 13.5px; }
     display: flex;
     flex-direction: column;
 }
+
+/* The placeholder is deliberately flatter than the real choices: same footprint
+   so the grid stays even, but nothing that invites a click. */
+.board-card.soon {
+    background: transparent;
+    border-style: dashed;
+    justify-content: center;
+}
+.board-card.soon h3,
+.board-card.soon p { opacity: 0.62; }
 .board-card h3 { margin-top: 0; }
 .board-card .row { margin-top: auto; }
 
@@ -1410,4 +1530,209 @@ ul.plain li { margin: 8px 0; color: var(--muted); font-size: 13.5px; }
 #tab-proxy.alone .proxy-intro {
     max-width: 640px;
     margin: 0 auto;
+}
+
+/* ==========================================================================
+   Kaspa Silver finish
+
+   Everything above is structure. This is the surface treatment that makes the
+   panel look like the channel rather than a default dark theme: one light
+   source, mint on near-black, and technical values set in mono so numbers read
+   as readings.
+
+   It sits at the end of the file deliberately, so it can lift the components
+   above it without any of them needing to know.
+   ========================================================================== */
+
+/* The banner is not a flat black. It has a glow off to one side and falls away
+   to near-black in the far corner, which is what stops it looking like a slab. */
+body {
+    background:
+        radial-gradient(1100px 620px at 12% -8%, rgba(79, 227, 206, 0.10), transparent 62%),
+        radial-gradient(900px 500px at 100% 104%, rgba(18, 62, 65, 0.30), transparent 68%),
+        var(--bg);
+    background-attachment: fixed;
+}
+
+@media (prefers-color-scheme: light) {
+    body { background: var(--bg); }
+}
+
+/* --- shell ---------------------------------------------------------------- */
+
+/* The sidebar reads as the console frame, so it sits deeper than the content
+   it is framing rather than level with it. */
+.sidebar {
+    background: linear-gradient(180deg, rgba(16, 32, 37, 0.55), rgba(5, 11, 13, 0.85));
+    border-right-color: var(--line);
+}
+
+.brand { letter-spacing: 0.01em; }
+
+/* The active row gets the light. A bar down the leading edge does more for
+   "you are here" than a background wash, and it echoes the rules that bracket
+   the banner wordmark. */
+.nav-row.active {
+    position: relative;
+    background: linear-gradient(90deg, rgba(125, 216, 202, 0.13), transparent 78%);
+    /* Clears the flat inset bar from the base rule, which would otherwise sit
+       full height behind the lit one below and read as two bars. */
+    box-shadow: none;
+}
+.nav-row.active::before {
+    content: "";
+    position: absolute;
+    inset: 4px auto 4px 0;
+    width: 2px;
+    border-radius: 0 2px 2px 0;
+    background: var(--accent);
+    box-shadow: 0 0 10px -1px var(--accent-glow);
+}
+.nav-row.active .nav-item svg { filter: drop-shadow(0 0 6px rgba(125, 216, 202, 0.55)); }
+
+/* --- surfaces ------------------------------------------------------------- */
+
+/* A one pixel highlight along the top edge. It is the cheapest way to suggest a
+   light source above the page, and it keeps cards from reading as flat blocks. */
+.card {
+    position: relative;
+    background:
+        linear-gradient(180deg, rgba(125, 216, 202, 0.035), transparent 120px),
+        var(--panel);
+    box-shadow: 0 1px 0 rgba(125, 216, 202, 0.06) inset, 0 2px 14px -10px rgba(0, 0, 0, 0.9);
+}
+
+@media (prefers-color-scheme: light) {
+    .card { background: var(--panel); box-shadow: 0 1px 2px rgba(12, 26, 28, 0.06); }
+    .sidebar { background: var(--panel); }
+    .nav-row.active { background: rgba(15, 125, 113, 0.09); }
+}
+
+/* Card titles are labels on an instrument, so they get the mono treatment the
+   banner uses for its small type. */
+.card h3 {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    opacity: 0.85;
+}
+
+.danger-zone h3 { color: var(--danger); opacity: 1; }
+
+/* --- readings ------------------------------------------------------------- */
+
+/* Keys are quiet and wide-tracked; values are mono and tabular so digits line
+   up between refreshes instead of jittering. */
+.kv dt {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.09em;
+}
+.kv dd {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+}
+
+.bigstat span {
+    font-family: var(--mono);
+    letter-spacing: -0.01em;
+    text-shadow: 0 0 22px rgba(125, 216, 202, 0.35);
+}
+
+/* The sync bar is the one thing on the page that is genuinely alive, so it is
+   the one thing that gets to glow properly. */
+.bar { background: rgba(26, 50, 56, 0.7); }
+.bar div {
+    background: linear-gradient(90deg, var(--accent-dim), var(--accent-glow));
+    box-shadow: 0 0 12px -2px var(--accent-glow);
+}
+
+/* --- controls ------------------------------------------------------------- */
+
+button.primary {
+    background: linear-gradient(180deg, var(--accent), #5ec3b4);
+    border-color: var(--accent);
+    color: #03130f;
+    box-shadow: var(--glow-soft);
+}
+button.primary:hover:not(:disabled) {
+    background: linear-gradient(180deg, var(--accent-glow), var(--accent));
+    box-shadow: 0 0 22px -6px var(--accent-glow);
+}
+
+button:hover:not(:disabled) { border-color: var(--accent-dim); }
+
+/* One visible focus treatment for everything that takes focus. Keyboard users
+   should never have to hunt for the cursor on a page this dense. */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+a:focus-visible,
+summary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 6px;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+    border-color: var(--accent-dim);
+    box-shadow: var(--glow-hard);
+    outline: none;
+}
+
+/* Values people type are almost all technical here: addresses, ports, hashes,
+   transaction ids. Mono makes them checkable at a glance. */
+input,
+select { font-family: var(--mono); font-size: 13.5px; }
+
+/* --- subtabs -------------------------------------------------------------- */
+
+.subtab-btn {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    letter-spacing: 0.04em;
+}
+.subtab-btn.active {
+    border-bottom-color: var(--accent);
+    box-shadow: 0 1px 0 var(--accent), 0 6px 14px -10px var(--accent-glow);
+}
+
+/* --- status --------------------------------------------------------------- */
+
+.tag {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.05em;
+}
+
+/* The health dots carry real meaning at a glance, so they are lit rather than
+   painted. The colours are already far apart in hue; the glow makes them
+   readable at the edge of vision too. */
+.dot.ok { box-shadow: 0 0 0 3px rgba(70, 206, 134, 0.18), 0 0 10px -1px var(--ok); }
+.dot.warn { box-shadow: 0 0 0 3px rgba(227, 169, 60, 0.18), 0 0 10px -1px var(--warn); }
+.dot.bad { box-shadow: 0 0 0 3px rgba(255, 107, 98, 0.18), 0 0 10px -1px var(--danger); }
+
+/* --- scrollbars ----------------------------------------------------------- */
+
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+}
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+    background: var(--line);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--accent-dim); background-clip: content-box; }
+
+/* Motion here is decoration, not information. */
+@media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
 }
