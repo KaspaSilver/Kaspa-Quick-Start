@@ -1017,21 +1017,19 @@
             </p>
             <label class="check"><input type="checkbox" id="kachat-pub-api"> KaPosts REST API on 3080</label>
             <label class="check"><input type="checkbox" id="kachat-pub-chat"> Chat indexer API on 8600</label>
-          </article>
-
-          <article class="card span2">
-            <h3>Apply</h3>
-            <p class="muted">
-              Changing the source or the published ports rebuilds or restarts the
-              indexer. Everything below is about the data it has already collected
-              and takes effect without a rebuild.
-            </p>
             <div class="row">
               <button type="button" id="kachat-save" class="primary">Apply settings</button>
             </div>
+            <p class="hint">
+              Publishing a port restarts the indexer. The cards below act on the
+              data it has already collected and take effect on their own.
+            </p>
           </article>
 
-          <article class="card span2">
+
+          <!-- Half width so it pairs with Published ports; the two are a similar
+               height and the row would otherwise be half empty. -->
+          <article class="card">
             <h3>How this instance presents itself</h3>
             <p class="muted">
               The name and tagline are what KaChat clients see when they connect
