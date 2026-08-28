@@ -1,6 +1,7 @@
 import { compose, imageVersion, KASPAD_CONTAINER } from './dockerctl.js';
 import { readEnvFile, updateEnvFile, loadManagerConfig, saveManagerConfig } from './store.js';
 import { rpc } from './rpc.js';
+import { loadBridgeConfig } from './bridge.js';
 
 const REPO = process.env.UPSTREAM_REPO || 'kaspanet/rusty-kaspa';
 const API = `https://api.github.com/repos/${REPO}`;
@@ -150,6 +151,29 @@ export async function applyUpdate(version, onLine = () => {}) {
         await compose(['up', '-d', '--force-recreate', 'kaspad'], { onLine, timeoutMs: 10 * 60_000 });
 
         onLine(`kaspad is now running ${version}.`);
+
+        // The stratum bridge is built from the same release archive and pinned
+        // to the same KASPAD_VERSION, so leaving it alone here would quietly
+        // leave mining on the old binary with nothing to say so. It only exists
+        // while mining is on, hence the check.
+        if (loadBridgeConfig().enabled) {
+            onLine('Rebuilding the stratum bridge, which ships in the same release...');
+            try {
+                await compose(['build', '--pull', 'bridge'], { onLine, profile: 'mining', timeoutMs: 90 * 60_000 });
+                await compose(['up', '-d', '--force-recreate', 'bridge'], {
+                    onLine,
+                    profile: 'mining',
+                    timeoutMs: 10 * 60_000,
+                });
+                onLine(`The bridge is on ${version} too.`);
+            } catch (err) {
+                // The node is already up and correct; a bridge that failed to
+                // rebuild is worth reporting but not worth undoing that.
+                onLine(`The bridge did not rebuild: ${err.message}`);
+                onLine('Mining is still on the previous version. Restarting it from the Mining tab will retry.');
+            }
+        }
+
         return { ok: true, version, previous };
     } catch (err) {
         // Put the pin back so a failed build does not leave the stack claiming a

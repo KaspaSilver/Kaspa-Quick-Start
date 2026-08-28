@@ -1048,6 +1048,9 @@ async function loadMining() {
     blockers.textContent = r.blockers.join(' ');
 
     renderMiningState(r.container, r.stats);
+    // Same release as the node, so a mismatch here means an update only got
+    // half way. Blank when mining is off and there is no container to ask.
+    $('mining-version').textContent = r.version || '';
     renderStratumTargets(c);
     renderEconomics(r);
     setNavSwitch('mining', c.enabled);
@@ -1903,15 +1906,15 @@ const KACHAT_CHANNELS = [
 
 // The chat metrics worth showing as tiles, in reading order. Anything the
 // indexer reports that is not named here still appears, folded away below.
+// Four, not eight. Eight wrapped to two rows on anything but a wide window and
+// made this the one KaChat panel that would not fit a screen. The rest are not
+// lost: everything the indexer reports that is not named here is under the fold
+// below, which is where the sent/received breakdowns and the counters live.
 const CHAT_HEADLINE = [
     ['contextual_messages', 'direct messages'],
-    ['handshakes_by_sender', 'handshakes sent'],
-    ['uniq_handshakes_by_receiver', 'handshakes received'],
-    ['payments_by_sender', 'payments sent'],
-    ['uniq_payments_by_receiver', 'payments received'],
+    ['handshakes_by_sender', 'handshakes'],
+    ['payments_by_sender', 'payments'],
     ['group_messages', 'group messages'],
-    ['group_controls', 'group controls'],
-    ['blocks_processed', 'blocks processed'],
 ];
 
 class IndexerDown extends Error {}

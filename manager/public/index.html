@@ -397,6 +397,7 @@
           <div class="node-head">
             <h3>Stratum bridge</h3>
             <span id="mining-state" class="tag">off</span>
+            <span id="mining-version" class="badge" title="The stratum bridge ships in the node's release, so this tracks the node"></span>
           </div>
           <div id="mining-blockers" class="verdict bad" hidden></div>
           <p class="error" id="mining-error" hidden></p>
@@ -849,9 +850,7 @@
               <h3>Index only your own chats</h3>
               <span id="kachat-personal-tag" class="tag">–</span>
             </div>
-            <p class="muted">
-              Keeps only your one to one chats, handshakes and payments. Empty indexes everything.
-            </p>
+            <p class="muted">Keeps only your chats. Empty indexes everything.</p>
             <label class="stack">Your addresses, one per line
               <textarea id="kachat-personal-addrs" rows="2" placeholder="kaspa:q…"></textarea>
             </label>
@@ -866,7 +865,7 @@
           <div class="toggle-row">
             <div class="toggle-text">
               <strong>Index chat and groups</strong>
-              <span class="muted">One to one and group messaging, handshakes and payments. One switch for both.</span>
+              <span class="muted">Covers groups too.</span>
             </div>
             <label class="switch"><input type="checkbox" id="kachat-tg-chat"><span class="track"></span></label>
           </div>
@@ -876,10 +875,7 @@
               <h3>Direct chats</h3>
               <span id="kachat-chat-tag" class="tag">–</span>
             </div>
-            <p class="muted">
-              Encrypted one to one messaging, read straight from your node. Live
-              from the chat indexer.
-            </p>
+            <p class="muted">Encrypted one to one messaging, live from your node.</p>
             <div class="grid stats" id="kachat-chat-tiles"><p class="muted">Waiting for the chat indexer.</p></div>
             <!--
               The indexer reports thirty-odd counters, most of them internal

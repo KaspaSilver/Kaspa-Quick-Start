@@ -855,14 +855,18 @@ async function networkHashesPerSecond(stats) {
 
 route('GET', /^\/api\/mining$/, async (req, res) => {
     const cfg = bridge.loadBridgeConfig();
-    const [state, stats] = await Promise.all([
+    const [state, stats, version] = await Promise.all([
         dockerctl.containerState(dockerctl.BRIDGE_CONTAINER),
         cfg.enabled ? bridge.fetchStats() : Promise.resolve(null),
+        dockerctl.imageVersion(dockerctl.BRIDGE_CONTAINER),
     ]);
     sendJson(res, 200, {
         config: cfg,
         container: state,
         stats,
+        // The bridge ships in the node's release, so this should always match
+        // the node. Showing it is how you would ever notice if it did not.
+        version,
         blockers: bridge.miningBlockers(cfg, loadNodeConfig()),
         readiness: await nodeReadiness(),
         // Both addresses: a miner on the same network wants the LAN one, and
