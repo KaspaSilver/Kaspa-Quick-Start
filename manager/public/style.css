@@ -865,3 +865,14 @@ table.ports td.note { color: var(--muted); font-size: 12.5px; font-family: inher
 #scan-results a { color: var(--accent); }
 
 .hint.tight { margin-top: 4px; margin-bottom: 12px; }
+
+/* The node's own card: switch and stats together at the top of Kaspad. */
+#node-card .nodestats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+}
+@media (max-width: 700px) {
+    #node-card .nodestats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

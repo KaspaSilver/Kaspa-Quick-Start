@@ -114,7 +114,29 @@
       </nav>
 
       <div id="sub-overview" class="subtab active">
-      <div class="grid">
+        <article class="card toggle-bar" id="node-card">
+          <div class="toggle-row">
+            <label class="switch" title="Start or stop the node.">
+              <input type="checkbox" id="node-enabled">
+              <span class="track"></span>
+            </label>
+            <div class="toggle-text">
+              <strong>Kaspad</strong>
+              <span class="muted">The node itself. Mining and KaChat need it running.</span>
+            </div>
+            <span id="stat-container" class="tag">–</span>
+            <button type="button" class="ghost" data-node="restart">Restart</button>
+          </div>
+          <dl class="kv nodestats">
+            <div><dt>Network</dt><dd id="stat-network">–</dd></div>
+            <div><dt>Version</dt><dd id="stat-version">–</dd></div>
+            <div><dt>Uptime</dt><dd id="stat-uptime">–</dd></div>
+            <div><dt>Chain data</dt><dd id="stat-disk">–</dd></div>
+          </dl>
+          <p class="error" id="node-error" hidden></p>
+        </article>
+
+        <div class="grid">
         <article class="card span2">
           <h3>Sync</h3>
           <div class="bigstat"><span id="sync-pct">–</span><small id="sync-state">connecting…</small></div>
@@ -131,22 +153,7 @@
           </dl>
         </article>
 
-        <article class="card">
-          <h3>Node</h3>
-          <dl class="kv vertical">
-            <div><dt>Container</dt><dd id="stat-container">–</dd></div>
-            <div><dt>Network</dt><dd id="stat-network">–</dd></div>
-            <div><dt>Version</dt><dd id="stat-version">–</dd></div>
-            <div><dt>Uptime</dt><dd id="stat-uptime">–</dd></div>
-            <div><dt>Chain data</dt><dd id="stat-disk">–</dd></div>
-          </dl>
-          <div class="row">
-            <button class="ghost" data-node="start">Start</button>
-            <button class="ghost" data-node="restart">Restart</button>
-            <button class="ghost danger" data-node="stop">Stop</button>
-          </div>
-        </article>
-
+        
         <article class="card">
           <h3>Peers</h3>
           <div class="bigstat"><span id="stat-peers">–</span><small>connected</small></div>
@@ -466,6 +473,7 @@
               </p>
               <div class="row">
                 <button type="button" id="miner-scan" class="ghost">Scan for miners</button>
+                <label class="check"><input type="checkbox" id="scan-show-all"> show everything that answered</label>
                 <span class="muted" id="scan-note"></span>
               </div>
               <div class="scroll-x">

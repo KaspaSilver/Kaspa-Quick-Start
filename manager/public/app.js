@@ -280,7 +280,11 @@ async function refreshStatus() {
     $('stat-mempool').textContent = fmtNum(s.rpc.info?.mempoolSize);
     $('stat-utxo').textContent = s.rpc.info ? (s.rpc.info.isUtxoIndexed ? 'enabled' : 'DISABLED') : '–';
 
-    $('stat-container').textContent = running ? s.container.status : s.container.status || 'absent';
+    const containerTag = $('stat-container');
+    containerTag.textContent = s.container.status || 'absent';
+    containerTag.className = `tag ${running ? 'ok' : 'off'}`;
+    // Do not fight a start or stop that is still in flight.
+    if (!$('node-enabled').disabled) $('node-enabled').checked = running;
     $('stat-network').textContent = s.rpc.dag?.networkName || s.network;
     $('stat-version').textContent = s.version?.version || '–';
     $('version-badge').textContent = s.version?.version || '–';
@@ -457,12 +461,35 @@ for (const button of document.querySelectorAll('[data-node]')) {
     button.addEventListener('click', async () => {
         try {
             await api(`/api/node/${button.dataset.node}`, { method: 'POST' });
-            openConsole(`${button.dataset.node} node`);
+            openConsole(`Restarting the node`);
         } catch (e) {
             toast(e.message, 'bad');
         }
     });
 }
+
+// The node's own switch. Everything else in the panel depends on it, so the
+// state shown always comes back from the container rather than from the click.
+$('node-enabled').addEventListener('change', async (event) => {
+    const wanted = event.target.checked;
+    const err = $('node-error');
+    err.hidden = true;
+    event.target.disabled = true;
+    try {
+        await api(`/api/node/${wanted ? 'start' : 'stop'}`, { method: 'POST' });
+        openConsole(wanted ? 'Starting the node' : 'Stopping the node');
+    } catch (e) {
+        event.target.checked = !wanted;
+        err.textContent = e.message;
+        err.hidden = false;
+    } finally {
+        // Let the next poll report what actually happened.
+        setTimeout(() => {
+            event.target.disabled = false;
+            refreshStatus();
+        }, 2500);
+    }
+});
 
 // ---------------------------------------------------------------- updates ---
 
@@ -1002,50 +1029,79 @@ document.addEventListener('click', async (event) => {
 
 // --- LAN scan ---
 
+let lastScan = null;
+
+/**
+ * Only miners are listed. A sweep turns up routers, printers and whatever else
+ * answers on port 80, and none of that is what someone came here for. The
+ * others are counted, not listed, so it is still obvious the scan worked, and
+ * "show everything" is there for the case that matters: a miner this does not
+ * recognise yet.
+ */
+function renderScan() {
+    const r = lastScan;
+    if (!r) return;
+    const showAll = $('scan-show-all').checked;
+    const answered = r.devices.filter((d) => !d.self);
+    const miners = answered.filter((d) => d.likelyMiner);
+    const shown = showAll ? answered : miners;
+    const others = answered.length - miners.length;
+
+    const found = miners.length
+        ? `Found ${miners.length} miner${miners.length === 1 ? '' : 's'}.`
+        : 'No miners found.';
+    const rest = others ? ` ${others} other device${others === 1 ? '' : 's'} answered.` : '';
+    $('scan-note').textContent =
+        `Checked ${r.scanned.toLocaleString()} addresses in ${r.subnets.join(', ')}. ${found}${rest}`;
+
+    $('scan-results').innerHTML = shown.length
+        ? shown
+              .map((d) => {
+                  const what = d.vendor
+                      ? `<span class="tag ok">${escapeHtml(d.vendor)}</span>`
+                      : d.connectedToBridge
+                        ? '<span class="tag ok">mining here</span>'
+                        : d.likelyMiner
+                          ? '<span class="tag">looks like a miner</span>'
+                          : '<span class="tag off">not a miner</span>';
+                  const link = d.ports.includes(80)
+                      ? `<a href="http://${d.ip}${d.path && d.path !== '/' ? d.path : ''}" target="_blank" rel="noreferrer noopener">${
+                            d.vendor ? `open ${escapeHtml(d.vendor)} ↗` : 'open its page ↗'
+                        }</a>`
+                      : '<span class="muted">no web page</span>';
+                  const seen = d.title ? escapeHtml(d.title) : d.server ? escapeHtml(d.server) : '';
+                  return `<tr>
+          <td class="port">${escapeHtml(d.ip)}</td>
+          <td>${link}</td>
+          <td>${what}</td>
+          <td class="muted">${seen}${seen ? ' · ' : ''}ports ${d.ports.join(', ')}</td>
+        </tr>`;
+              })
+              .join('')
+        : `<tr><td colspan="4" class="empty">${
+              others
+                  ? 'No miners here. Tick “show everything” if your miner is on this network but not being recognised.'
+                  : 'Nothing answered. If your miner is on another network, add it above.'
+          }</td></tr>`;
+}
+
+$('scan-show-all').addEventListener('change', renderScan);
+
 $('miner-scan').addEventListener('click', async () => {
     const button = $('miner-scan');
-    const note = $('scan-note');
     button.disabled = true;
-    note.textContent = 'Scanning…';
+    $('scan-note').textContent = 'Looking…';
     $('scan-results').innerHTML = '';
     try {
-        const r = await api('/api/mining/scan', {
+        lastScan = await api('/api/mining/scan', {
             method: 'POST',
             body: { extraSubnets: $('scan-extra').value.trim() },
         });
-        miningExtraSubnets = r.extraSubnets ?? '';
-        const devices = r.devices.filter((d) => !d.self);
-        note.textContent =
-            `Checked ${r.scanned.toLocaleString()} addresses in ${r.subnets.join(', ')}. ` +
-            `${devices.length} device${devices.length === 1 ? '' : 's'} answered.`;
-        if (r.problems?.length) toast(r.problems[0], 'bad');
-        $('scan-results').innerHTML = devices.length
-            ? devices
-                  .map((d) => {
-                      const what = d.vendor
-                          ? `<span class="tag ok">${escapeHtml(d.vendor)}</span>`
-                          : d.connectedToBridge
-                            ? '<span class="tag ok">mining here</span>'
-                            : d.likelyMiner
-                              ? '<span class="tag">looks like a miner</span>'
-                              : '<span class="tag off">unidentified</span>';
-                      const link = d.ports.includes(80)
-                          ? `<a href="http://${d.ip}${d.path && d.path !== '/' ? d.path : ''}" target="_blank" rel="noreferrer noopener">${
-                                d.vendor ? `open ${escapeHtml(d.vendor)} ↗` : 'open its web page ↗'
-                            }</a>`
-                          : '<span class="muted">no web interface</span>';
-                      const seen = d.title ? escapeHtml(d.title) : d.server ? escapeHtml(d.server) : '';
-                      return `<tr>
-              <td class="port">${escapeHtml(d.ip)}</td>
-              <td>${link}</td>
-              <td>${what}</td>
-              <td class="muted">${seen}${seen ? ' · ' : ''}ports ${d.ports.join(', ')}</td>
-            </tr>`;
-                  })
-                  .join('')
-            : '<tr><td colspan="4" class="empty">Nothing else answered on this subnet.</td></tr>';
+        miningExtraSubnets = lastScan.extraSubnets ?? '';
+        if (lastScan.problems?.length) toast(lastScan.problems[0], 'bad');
+        renderScan();
     } catch (e) {
-        note.textContent = '';
+        $('scan-note').textContent = '';
         toast(e.message, 'bad');
     } finally {
         button.disabled = false;
