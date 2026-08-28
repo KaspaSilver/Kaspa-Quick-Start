@@ -846,26 +846,34 @@ function renderMiningState(container, stats) {
     renderBlocks(stats.blocks);
 }
 
+/**
+ * Ten columns never fit beside the blocks table, and scrolling sideways to read
+ * a worker's own stats is worse than a denser row. Nothing is dropped: status
+ * became the dot on the name, the wallet moved to the row's tooltip where it
+ * was truncated anyway, and stale and invalid sit under the share count they
+ * describe.
+ */
 function renderWorkers(workers) {
     if (!workers.length) {
         $('workers-body').innerHTML =
-            '<tr><td colspan="10" class="empty">No miners connected yet. Point one at a stratum port below.</td></tr>';
+            '<tr><td colspan="6" class="empty">No miners connected yet. Point one at a stratum port, see Connect Your Miner.</td></tr>';
         return;
     }
     $('workers-body').innerHTML = workers
         .map((w) => {
             const status = w.status || 'offline';
-            return `<tr>
-        <td class="name">${escapeHtml(w.worker || '–')}</td>
-        <td><span class="trunc" title="${escapeHtml(w.wallet || '')}">${escapeHtml(w.wallet || '–')}</span></td>
+            const bad = (Number(w.stale) || 0) + (Number(w.invalid) || 0);
+            const title =
+                `${w.worker || 'worker'} is ${status}` +
+                (w.wallet ? `\nPaying ${w.wallet}` : '') +
+                `\n${fmtNum(w.stale)} stale, ${fmtNum(w.invalid)} invalid`;
+            return `<tr title="${escapeHtml(title)}">
+        <td class="name"><span class="dot ${status === 'online' ? 'ok' : status === 'idle' ? 'warn' : ''}"></span>${escapeHtml(w.worker || '–')}</td>
         <td>${fmtHashrate(w.hashrate)}</td>
         <td>${w.currentDifficulty ? fmtNum(Math.round(w.currentDifficulty)) : '–'}</td>
-        <td>${fmtNum(w.shares)}</td>
-        <td>${fmtNum(w.stale)}</td>
-        <td>${fmtNum(w.invalid)}</td>
+        <td>${fmtNum(w.shares)}${bad ? `<small class="sub">${fmtNum(bad)} bad</small>` : ''}</td>
         <td>${fmtNum(w.blocks)}</td>
         <td>${fmtSeconds(w.sessionUptime)}</td>
-        <td class="status-${escapeHtml(status)}">${escapeHtml(status)}</td>
       </tr>`;
         })
         .join('');
