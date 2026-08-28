@@ -105,7 +105,9 @@ export const saveAppsConfig = (cfg) => writeJson(APPS_STATE_FILE, cfg);
 
 // ------------------------------------------------------------- validation --
 
-const REF_RE = /^[A-Za-z0-9._\/-]{1,100}$/;
+// Git ref names: no "..", which is also what the panel's "something else"
+// placeholder contains, so a placeholder can never be saved as a branch.
+const REF_RE = /^(?!.*\.\.)[A-Za-z0-9._\/-]{1,100}$/;
 const DOMAIN_LIST_RE = /^[A-Za-z0-9.\-, ]{0,300}$/;
 
 export function validateAppsConfig(input) {
@@ -271,6 +273,46 @@ const ghHeaders = {
  * projects publish no releases, so the honest unit is "commits behind", not a
  * version number.
  */
+/**
+ * The branches and tags a repository actually has, so the branch to track can
+ * be picked from a list rather than typed from memory.
+ *
+ * GitHub allows sixty unauthenticated calls an hour per address, and this costs
+ * two of them, so the answer is held for a while. Refreshing is an explicit
+ * action in the panel rather than something that happens on every page load.
+ */
+const refsCache = new Map();
+const REFS_CACHE_MS = 10 * 60_000;
+
+async function ghList(url, take) {
+    const res = await fetch(url, { headers: ghHeaders, signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) {
+        const hint = res.status === 403 ? ' (GitHub rate limit, try again shortly)' : '';
+        throw new Error(`GitHub returned ${res.status}${hint}`);
+    }
+    return (await res.json()).map(take);
+}
+
+export async function listRefs(name, { force = false } = {}) {
+    const app = APPS[name];
+    if (!app) throw new Error(`Unknown app "${name}".`);
+
+    const hit = refsCache.get(name);
+    if (!force && hit && Date.now() - hit.at < REFS_CACHE_MS) return hit.value;
+
+    const base = `https://api.github.com/repos/${app.repo}`;
+    // Tags are a nice-to-have; a repository with none is normal, and a failure
+    // to list them should not cost the branches too.
+    const [branches, tags] = await Promise.all([
+        ghList(`${base}/branches?per_page=100`, (b) => b.name),
+        ghList(`${base}/tags?per_page=100`, (t) => t.name).catch(() => []),
+    ]);
+
+    const value = { repo: app.repo, branches, tags };
+    refsCache.set(name, { at: Date.now(), value });
+    return value;
+}
+
 export async function checkUpstream(name, cfg) {
     const app = APPS[name];
     if (!app) throw new Error(`Unknown app "${name}".`);

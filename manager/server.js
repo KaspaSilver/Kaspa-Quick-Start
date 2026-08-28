@@ -427,6 +427,14 @@ route('GET', /^\/api\/status$/, async (req, res) => {
     });
 });
 
+route('GET', /^\/api\/update\/releases$/, async (req, res, match, url) => {
+    try {
+        sendJson(res, 200, { releases: await updater.listReleases({ force: url.searchParams.get('force') === '1' }) });
+    } catch (err) {
+        fail(res, 502, err.message);
+    }
+});
+
 route('GET', /^\/api\/config$/, async (req, res) => {
     const cfg = loadNodeConfig();
     sendJson(res, 200, {
@@ -1148,6 +1156,14 @@ route('PUT', /^\/api\/apps\/(kachat|nextcloud)$/, async (req, res, match) => {
         }
     });
     sendJson(res, 202, { ok: true, jobId: job.id, config: cfg });
+});
+
+route('GET', /^\/api\/apps\/(kachat|nextcloud)\/refs$/, async (req, res, match, url) => {
+    try {
+        sendJson(res, 200, await apps.listRefs(match[1], { force: url.searchParams.get('force') === '1' }));
+    } catch (err) {
+        fail(res, 502, err.message);
+    }
 });
 
 route('GET', /^\/api\/apps\/nextcloud\/admin$/, async (req, res) => {

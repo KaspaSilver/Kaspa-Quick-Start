@@ -102,6 +102,38 @@ export async function checkLatest({ includePrereleases = false } = {}) {
  * The chain data lives in a named volume that is never touched, so an update is
  * a binary swap, not a resync.
  */
+/**
+ * Every release available upstream, newest first.
+ *
+ * The node is built from a release archive, not from source, so a branch is not
+ * something it can be pointed at -- there would be no zip to download. The
+ * equivalent choice here is which release to run, which also covers pinning to
+ * an older one or trying a prerelease.
+ */
+let releasesCache = { at: 0, value: null };
+const RELEASES_CACHE_MS = 10 * 60_000;
+
+export async function listReleases({ force = false } = {}) {
+    if (!force && releasesCache.value && Date.now() - releasesCache.at < RELEASES_CACHE_MS) {
+        return releasesCache.value;
+    }
+    const res = await fetch(`${API}/releases?per_page=50`, {
+        headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'kaspa-one-click-panel' },
+        signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) {
+        const hint = res.status === 403 ? ' (GitHub rate limit, try again shortly)' : '';
+        throw new Error(`GitHub returned ${res.status}${hint}`);
+    }
+    const value = (await res.json())
+        .filter((r) => !r.draft && r.tag_name)
+        .map((r) => ({ tag: r.tag_name, prerelease: Boolean(r.prerelease), publishedAt: r.published_at }))
+        .sort((a, b) => compareVersions(b.tag, a.tag));
+
+    releasesCache = { at: Date.now(), value };
+    return value;
+}
+
 export async function applyUpdate(version, onLine = () => {}) {
     if (!TAG_RE.test(version)) throw new Error(`Refusing to install "${version}": not a release tag.`);
 

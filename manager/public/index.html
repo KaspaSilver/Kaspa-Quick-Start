@@ -323,10 +323,20 @@
               is no resync.
             </p>
             <div id="update-status" class="update-status">Not checked yet.</div>
+            <label class="inline">Release
+              <select id="release-pick"><option value="">newest</option></select>
+              <button type="button" class="ghost mini" id="releases-scan" title="Look up every release this repository has published">Rescan</button>
+            </label>
             <div class="row">
               <button type="button" id="check-update" class="ghost">Check for updates</button>
               <button type="button" id="apply-update" class="primary" disabled>Update node</button>
+              <button type="button" id="install-release" class="ghost" disabled>Install the chosen release</button>
             </div>
+            <p class="hint">
+              The node is built from the release archive upstream publishes, so it
+              runs a release rather than a branch. Picking an older one here is how
+              you go back to it.
+            </p>
             <details id="release-notes" hidden>
               <summary>Release notes</summary>
               <pre id="release-notes-body"></pre>
@@ -895,7 +905,13 @@
               commits newer than the one this image was built from. Indexed data is
               kept, so there is no re-scan of the chain.
             </p>
-            <label class="inline">Branch / tag <input id="kachat-ref" size="12" value="main"></label>
+            <label class="inline">Branch / tag
+              <select id="kachat-ref"><option value="main">main</option></select>
+              <button type="button" class="ghost mini" id="kachat-refs-scan" title="Look up the branches and tags this repository has">Rescan</button>
+            </label>
+            <label class="inline" id="kachat-ref-custom-row" hidden>Ref
+              <input id="kachat-ref-custom" size="24" placeholder="branch, tag or commit">
+            </label>
             <label class="inline">Network
               <select id="kachat-network">
                 <option value="mainnet">Mainnet</option>
@@ -1139,7 +1155,13 @@
               commits newer than the one this image was built from. Your files and
               database are on their own volumes, so a rebuild leaves them alone.
             </p>
-            <label class="inline">Branch / tag <input id="nextcloud-ref" value="main"></label>
+            <label class="inline">Branch / tag
+              <select id="nextcloud-ref"><option value="main">main</option></select>
+              <button type="button" class="ghost mini" id="nextcloud-refs-scan" title="Look up the branches and tags this repository has">Rescan</button>
+            </label>
+            <label class="inline" id="nextcloud-ref-custom-row" hidden>Ref
+              <input id="nextcloud-ref-custom" size="24" placeholder="branch, tag or commit">
+            </label>
             <div id="nextcloud-build" class="verdict"></div>
             <div id="nextcloud-update-status" class="verdict">Not checked yet.</div>
             <div class="row">

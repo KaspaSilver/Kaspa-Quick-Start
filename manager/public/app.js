@@ -213,6 +213,9 @@ function selectSubtab(section, name) {
     setKaspadLog(name === 'kaspadlog');
     // A KaChat panel loads when it is opened rather than all of them upfront.
     if (name.startsWith('kachat-')) refreshKachatPanel();
+    // Same for the release list: it costs a GitHub call, so it is fetched when
+    // the tab that shows it is opened rather than on every page load.
+    if (name === 'updates') loadReleasePicker().catch(() => {});
 }
 
 for (const button of document.querySelectorAll('.subtab-btn')) {
@@ -749,6 +752,73 @@ $('apply-update').addEventListener('click', async () => {
         if (r.alreadyCurrent) return toast('Already on the newest version.', 'good');
         openConsole(`Updating to ${latestRelease.latest}`);
         $('apply-update').disabled = true;
+    } catch (e) {
+        toast(e.message, 'bad');
+    }
+});
+
+// --- release picker ---
+
+/**
+ * Which releases exist upstream, so a specific one can be installed rather than
+ * only the newest. The node is built from a release archive, so this is the
+ * equivalent of choosing a branch, and it is also how you go back to an older
+ * version after a bad one.
+ */
+async function loadReleasePicker({ force = false } = {}) {
+    const select = $('release-pick');
+    try {
+        const { releases } = await api(`/api/update/releases${force ? '?force=1' : ''}`);
+        const stable = releases.filter((r) => !r.prerelease);
+        const pre = releases.filter((r) => r.prerelease);
+        const opts = (list) => list.map((r) => `<option value="${escapeHtml(r.tag)}">${escapeHtml(r.tag)}</option>`).join('');
+        select.innerHTML =
+            '<option value="">newest release</option>' +
+            (stable.length ? `<optgroup label="Releases">${opts(stable)}</optgroup>` : '') +
+            // Prereleases are separated rather than hidden: running one is a
+            // deliberate act, not something to stumble into from a flat list.
+            (pre.length ? `<optgroup label="Prereleases">${opts(pre)}</optgroup>` : '');
+        return releases.length;
+    } catch (e) {
+        select.innerHTML = '<option value="">newest release</option>';
+        throw e;
+    }
+}
+
+$('release-pick').addEventListener('change', () => {
+    $('install-release').disabled = !$('release-pick').value;
+});
+
+$('releases-scan').addEventListener('click', async () => {
+    const button = $('releases-scan');
+    button.disabled = true;
+    try {
+        const count = await loadReleasePicker({ force: true });
+        toast(`${count} releases upstream.`);
+    } catch (e) {
+        toast(e.message, 'bad');
+    } finally {
+        button.disabled = false;
+    }
+});
+
+$('install-release').addEventListener('click', async () => {
+    const version = $('release-pick').value;
+    if (!version) return;
+    const running = latestRelease?.current;
+    if (
+        !confirm(
+            `Install kaspad ${version}?\n\n` +
+                (running ? `You are running ${running}. ` : '') +
+                'The node stops for a moment while it is built. Your chain data is kept, so there is no resync.',
+        )
+    ) {
+        return;
+    }
+    try {
+        await api('/api/update/apply', { method: 'POST', body: { version } });
+        openConsole(`Installing ${version}`);
+        $('install-release').disabled = true;
     } catch (e) {
         toast(e.message, 'bad');
     }
@@ -1447,6 +1517,7 @@ async function loadApps() {
     $('nextcloud-domains').value = c.nextcloud.trustedDomains;
     renderAppState('nextcloud', r.apps.nextcloud);
     loadNextcloudAdmin();
+    loadRefPickers();
     setNavSwitch('kachat', c.kachat.enabled);
     setNavSwitch('nextcloud', c.nextcloud.enabled);
 }
@@ -1522,18 +1593,101 @@ function renderAppState(name, state) {
     }
 }
 
+// --- branch pickers ---
+
+// Git forbids ".." in a ref name, so this can never collide with a real one.
+// A control character would also be unique, but it does not survive being
+// written into an attribute and read back, which made the option select itself
+// and then save its own placeholder as the branch.
+const REF_CUSTOM = '..custom';
+
+/** The ref an app should track: the chosen branch, or a typed one. */
+function appRef(name) {
+    const select = $(`${name}-ref`);
+    if (select.value === REF_CUSTOM) return $(`${name}-ref-custom`).value.trim() || 'main';
+    return select.value.trim() || 'main';
+}
+
+/**
+ * Fills a branch picker from whatever the repository actually has.
+ *
+ * The configured ref is always present as an option even when the scan did not
+ * return it: it might be a commit, a tag that was not listed, or a branch that
+ * has since been deleted. Dropping it would silently retarget the app on the
+ * next save.
+ */
+function fillRefPicker(name, refs, current) {
+    const select = $(`${name}-ref`);
+    const groups = [];
+    if (refs?.branches?.length) {
+        groups.push(`<optgroup label="Branches">${refs.branches.map(opt).join('')}</optgroup>`);
+    }
+    if (refs?.tags?.length) {
+        groups.push(`<optgroup label="Tags">${refs.tags.slice(0, 50).map(opt).join('')}</optgroup>`);
+    }
+    const known = [...(refs?.branches ?? []), ...(refs?.tags ?? [])];
+    if (current && !known.includes(current)) {
+        groups.unshift(`<optgroup label="In use">${opt(current)}</optgroup>`);
+    }
+    groups.push(`<option value="${REF_CUSTOM}">Something else…</option>`);
+    select.innerHTML = groups.join('');
+    select.value = current ?? 'main';
+    toggleRefCustom(name);
+}
+
+const opt = (v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`;
+
+function toggleRefCustom(name) {
+    $(`${name}-ref-custom-row`).hidden = $(`${name}-ref`).value !== REF_CUSTOM;
+}
+
+for (const name of ['kachat', 'nextcloud']) {
+    $(`${name}-ref`).addEventListener('change', () => {
+        toggleRefCustom(name);
+        if ($(`${name}-ref`).value === REF_CUSTOM) $(`${name}-ref-custom`).focus();
+    });
+
+    $(`${name}-refs-scan`).addEventListener('click', async () => {
+        const button = $(`${name}-refs-scan`);
+        button.disabled = true;
+        try {
+            const refs = await api(`/api/apps/${name}/refs?force=1`);
+            fillRefPicker(name, refs, appsState?.config?.[name]?.ref);
+            toast(`${refs.branches.length} branch${refs.branches.length === 1 ? '' : 'es'} on ${refs.repo}.`);
+        } catch (e) {
+            toast(e.message, 'bad');
+        } finally {
+            button.disabled = false;
+        }
+    });
+}
+
+/** Loads the pickers from cache when the apps page does. */
+async function loadRefPickers() {
+    for (const name of ['kachat', 'nextcloud']) {
+        const current = appsState?.config?.[name]?.ref ?? 'main';
+        try {
+            fillRefPicker(name, await api(`/api/apps/${name}/refs`), current);
+        } catch {
+            // Offline or rate limited: still offer what is configured, so the
+            // picker never comes up empty and the ref cannot be lost on save.
+            fillRefPicker(name, null, current);
+        }
+    }
+}
+
 function collectAppConfig(name) {
     if (name === 'kachat') {
         return {
             enabled: Boolean(appsState?.config.kachat.enabled),
-            ref: $('kachat-ref').value.trim() || 'main',
+            ref: appRef('kachat'),
             network: $('kachat-network').value,
             publish: { api: $('kachat-pub-api').checked, chat: $('kachat-pub-chat').checked },
         };
     }
     return {
         enabled: Boolean(appsState?.config.nextcloud.enabled),
-        ref: $('nextcloud-ref').value.trim() || 'main',
+        ref: appRef('nextcloud'),
         publish: { web: $('nextcloud-pub-web').checked },
         hostPort: Number($('nextcloud-port').value),
         adminUser: $('nextcloud-user').value.trim(),
