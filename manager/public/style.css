@@ -1260,22 +1260,11 @@ details.more > summary:hover { color: var(--text); }
     width: 22px;
     height: 22px;
     flex: 0 0 22px;
-    border-radius: 50%;
 }
+/* No border-radius: the artwork is already round, and an irregular edge is the
+   point of it. Clipping to a circle would shave exactly what makes it the
+   Kaspa mark rather than a dot. */
 
-.mark-wrap {
-    display: inline-flex;
-    border-radius: 50%;
-    flex: 0 0 auto;
-    transition: box-shadow 0.2s ease;
-}
-/* Health, as a ring rather than a second indicator competing with the logo.
-   Solid colours, not color-mix: a var() inside color-mix() does not resolve in
-   every engine, and when it fails it fails silently to transparent, which is
-   how the old dot's glow had been quietly missing. */
-.mark-wrap.ok { box-shadow: 0 0 0 2px var(--ok); }
-.mark-wrap.warn { box-shadow: 0 0 0 2px var(--warn); }
-.mark-wrap.bad { box-shadow: 0 0 0 2px var(--danger); }
 
 /* ----------------------------------------------------------- nav health */
 

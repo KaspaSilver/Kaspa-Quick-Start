@@ -379,14 +379,12 @@ async function refreshStatus() {
     try {
         s = await api('/api/status');
     } catch {
-        $('health-dot').className = 'mark-wrap bad';
         return;
     }
     lastStatus = s;
 
     const running = s.container.running;
     const synced = s.rpc.synced === true;
-    $('health-dot').className = `mark-wrap ${!running ? 'bad' : synced ? 'ok' : 'warn'}`;
 
     // Progress comes from the server, which reconstructs it from kaspad's own
     // log. A blocks/headers ratio would read 0.0% for the entire header and
