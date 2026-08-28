@@ -1347,3 +1347,34 @@ ul.plain li { margin: 8px 0; color: var(--muted); font-size: 13.5px; }
 /* The buy link sits under the choice, not beside it: it is for the person who
    has not got a board yet, and should not compete with picking one. */
 .board-card .buy { margin: 10px 0 0; }
+
+/* One row per broadcast channel: a switch, the name, and how much of it is
+   stored. The count sits with the switch so what you are turning off and how
+   much of it there is are read together. */
+.channel-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line);
+}
+.channel-row:last-child { border-bottom: 0; }
+.channel-row .name { flex: 1; min-width: 0; font-weight: 600; }
+.channel-row .count {
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+/* A channel that is stored but no longer tracked: the rows are still there, so
+   saying nothing about it would look like the count came from nowhere. */
+.channel-row.untracked .name { color: var(--muted); font-weight: 400; }
+.channel-row .drop {
+    background: none;
+    border: 0;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 6px;
+}
+.channel-row .drop:hover { background: var(--panel-2); color: var(--danger); }

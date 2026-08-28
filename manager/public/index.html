@@ -807,16 +807,27 @@
               </div>
               <label class="switch"><input type="checkbox" id="kachat-tg-broadcasts"><span class="track"></span></label>
             </div>
-          <p class="hint">
-            It is all or nothing for now. The indexer decides which rooms it
-            follows at compile time, so choosing between them, or adding your own,
-            needs a change there first.
-          </p>
         </article>
 
         <article class="card span2">
-          <h3>Channels</h3>
-          <div class="grid stats" id="kachat-bcast-tiles"></div>
+          <div class="node-head">
+            <h3>Channels</h3>
+            <span id="kachat-channels-tag" class="tag">–</span>
+          </div>
+          <p class="muted">
+            Which rooms get stored, and how much of each is here. Changes apply
+            within about fifteen seconds; nothing restarts.
+          </p>
+          <div id="kachat-channels"></div>
+          <div class="row">
+            <input id="kachat-channel-new" placeholder="add a channel, without the #" size="26" maxlength="36">
+            <button type="button" id="kachat-channel-add" class="ghost">Add channel</button>
+          </div>
+          <p class="hint">
+            Turning one off stops new messages being stored; what is already here
+            stays until you purge it under Settings. Adding one does not go back
+            and collect what it missed.
+          </p>
         </article>
 
         <article class="card span2">

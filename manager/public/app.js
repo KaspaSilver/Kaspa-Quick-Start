@@ -1886,24 +1886,6 @@ for (const button of document.querySelectorAll('[data-app-action]')) {
  * quiet "not running yet" rather than a failure.
  */
 
-// The channels upstream indexes. It is a fixed list on their side, so it is a
-// fixed list here; anything else that turns up in the counts is still shown.
-const KACHAT_CHANNELS = [
-    'kaspa',
-    'kachat-bugs',
-    'kaspa-indonesia',
-    'kaspa-czech',
-    'kaspa-german',
-    'kaspa-espanol',
-    'kaspa-francais',
-    'kaspa-portugues',
-    'kaspa-slovak',
-    'kaspa-chinese',
-    'kaspa-japanese',
-    'kaspa-korean',
-    'kaspa-hebrew',
-];
-
 // The chat metrics worth showing as tiles, in reading order. Anything the
 // indexer reports that is not named here still appears, folded away below.
 // Four, not eight. Eight wrapped to two rows on anything but a wide window and
@@ -2146,20 +2128,183 @@ async function loadKachatKaposts() {
     }
 }
 
+/**
+ * The tracked-channel list.
+ *
+ * Three states the indexer distinguishes, and the wording has to keep them
+ * apart because two of them look like "off":
+ *
+ *   key absent   -> the thirteen it ships with
+ *   key present  -> exactly that list
+ *   present, empty -> nothing at all
+ *
+ * Separately, the Index broadcasts switch decides whether any of it runs. So a
+ * full list with the switch off stores nothing either, and that is not the same
+ * as an empty list.
+ */
+let channelState = { tracked: [], defaults: [], configured: false };
+
+const CHANNEL_RE = /^[a-z0-9][a-z0-9._-]{0,35}$/;
+
 async function loadKachatBroadcasts() {
     loadKachatFeatures();
+
+    let counts = {};
+    let total = 0;
     try {
-        const s = await kachat('stats');
-        const counts = Object.fromEntries((s.bcast_by_channel || []).map((c) => [c.channel, c.count]));
-        // Anything upstream starts tracking that is not in our list still shows.
-        const names = [...new Set([...KACHAT_CHANNELS, ...Object.keys(counts)])];
-        $('kachat-bcast-tiles').innerHTML =
-            names.map((c) => kTile(`#${c}`, fmtNum(counts[c] || 0))).join('') +
-            kTile('all channels', fmtNum(s.bcast_total));
+        const stats = await kachat('stats');
+        counts = Object.fromEntries((stats.bcast_by_channel || []).map((c) => [c.channel, c.count]));
+        total = stats.bcast_total ?? 0;
     } catch {
-        $('kachat-bcast-tiles').innerHTML = '<p class="muted">Waiting for the indexer.</p>';
+        /* the list still renders; the counts are the part that is missing */
     }
 
+    try {
+        const settings = await kachat('settings');
+
+        // An indexer built before this feature answers without these fields at
+        // all. It still tracks its thirteen, in code, so reporting "none
+        // tracked" would be the opposite of the truth.
+        if (!Array.isArray(settings.available_broadcast_channels)) {
+            channelState = { tracked: [], defaults: [], configured: false, unsupported: true };
+            $('kachat-channels-tag').textContent = 'not configurable';
+            $('kachat-channels-tag').className = 'tag';
+            $('kachat-channels').innerHTML =
+                '<p class="verdict">This indexer is older than per-channel tracking, so it follows the ' +
+                'thirteen it was built with and they cannot be changed from here. Update it under the ' +
+                'Updates tab to choose between them.</p>';
+            $('kachat-channel-new').disabled = true;
+            $('kachat-channel-add').disabled = true;
+            return;
+        }
+        $('kachat-channel-new').disabled = false;
+        $('kachat-channel-add').disabled = false;
+        channelState.unsupported = false;
+        channelState.defaults = settings.available_broadcast_channels || [];
+        // "" and absent both arrive as an empty string, so the flag distinguishes
+        // "not configured" from "configured to nothing" the way the indexer does.
+        channelState.configured = typeof settings.broadcast_channels === 'string' && settings.broadcast_channels.length > 0;
+        channelState.tracked = channelState.configured
+            ? settings.broadcast_channels.split(/\s+/).filter(Boolean)
+            : [...channelState.defaults];
+    } catch {
+        $('kachat-channels').innerHTML = '<p class="muted">The indexer is not answering.</p>';
+        return;
+    }
+
+    renderChannels(counts, total);
+    renderChannelSelects();
+    await loadBroadcastRows();
+}
+
+function renderChannels(counts, total) {
+    // Anything with rows but no longer tracked still shows: the count is real
+    // and would otherwise appear from nowhere in the totals.
+    const stored = Object.keys(counts).filter((c) => !channelState.tracked.includes(c));
+    const rows = [
+        ...channelState.tracked.map((c) => ({ channel: c, tracked: true })),
+        ...stored.map((c) => ({ channel: c, tracked: false })),
+    ];
+
+    const tag = $('kachat-channels-tag');
+    if (!channelState.tracked.length) {
+        tag.textContent = 'none tracked';
+        tag.className = 'tag off';
+    } else {
+        tag.textContent = `${channelState.tracked.length} tracked`;
+        tag.className = 'tag ok';
+    }
+
+    $('kachat-channels').innerHTML =
+        rows
+            .map(
+                ({ channel, tracked }) => `<div class="channel-row${tracked ? '' : ' untracked'}">
+                  <label class="switch"><input type="checkbox" data-channel="${escapeHtml(channel)}"${
+                      tracked ? ' checked' : ''
+                  }><span class="track"></span></label>
+                  <span class="name">#${escapeHtml(channel)}</span>
+                  <span class="count">${fmtNum(counts[channel] || 0)}</span>
+                  ${
+                      channelState.defaults.includes(channel)
+                          ? ''
+                          : `<button type="button" class="drop" data-drop-channel="${escapeHtml(channel)}" title="Remove from the list">✕</button>`
+                  }
+                </div>`,
+            )
+            .join('') || '<p class="muted">No channels tracked. Nothing is being stored.</p>';
+
+    if (!channelState.tracked.length) {
+        $('kachat-channels').innerHTML +=
+            '<p class="verdict bad">Nothing is tracked, so no broadcasts are being stored at all. ' +
+            'Tick a channel, or remove every entry to go back to the ones it ships with.</p>';
+    }
+    $('kachat-channels').insertAdjacentHTML(
+        'beforeend',
+        `<p class="hint">${fmtNum(total)} stored across all channels.</p>`,
+    );
+}
+
+/** Sends the list as it now stands. No restart; the indexer picks it up. */
+async function saveChannels(message) {
+    try {
+        await kachat('settings', { method: 'POST', body: { broadcast_channels: channelState.tracked.join('\n') } });
+        channelState.configured = true;
+        toast(message);
+        loadKachatBroadcasts();
+    } catch (e) {
+        toast(e instanceof IndexerDown ? 'The indexer is not running.' : e.message, 'bad');
+        loadKachatBroadcasts();
+    }
+}
+
+$('kachat-channels').addEventListener('change', (event) => {
+    const channel = event.target.dataset?.channel;
+    if (!channel) return;
+    channelState.tracked = event.target.checked
+        ? [...channelState.tracked, channel]
+        : channelState.tracked.filter((c) => c !== channel);
+    saveChannels(event.target.checked ? `#${channel} is being stored.` : `#${channel} is no longer stored.`);
+});
+
+$('kachat-channels').addEventListener('click', (event) => {
+    const channel = event.target.dataset?.dropChannel;
+    if (!channel) return;
+    if (!confirm(`Remove #${channel} from the list?\n\nWhat is already stored stays until you purge it.`)) return;
+    channelState.tracked = channelState.tracked.filter((c) => c !== channel);
+    saveChannels(`#${channel} removed.`);
+});
+
+$('kachat-channel-add').addEventListener('click', () => {
+    const box = $('kachat-channel-new');
+    // The indexer lowercases and drops anything it does not like without saying
+    // so, which would look like the add had worked. Checked here instead.
+    const name = box.value.trim().replace(/^#/, '').toLowerCase();
+    if (!name) return;
+    if (!CHANNEL_RE.test(name)) {
+        return toast('Channel names are lowercase letters, digits, dots, dashes and underscores, up to 36 characters.', 'bad');
+    }
+    if (channelState.tracked.includes(name)) return toast(`#${name} is already on the list.`);
+
+    channelState.tracked = [...channelState.tracked, name];
+    box.value = '';
+    saveChannels(`#${name} added. It starts collecting from now on.`);
+});
+
+$('kachat-channel-new').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') $('kachat-channel-add').click();
+});
+
+/** The two channel pickers follow whatever is tracked. */
+function renderChannelSelects() {
+    const options = channelState.tracked.map((c) => `<option value="${escapeHtml(c)}">#${escapeHtml(c)}</option>`).join('');
+    const feed = $('kachat-bcast-channel');
+    const keep = feed.value;
+    feed.innerHTML = `<option value="">All channels</option>${options}`;
+    if ([...feed.options].some((o) => o.value === keep)) feed.value = keep;
+    $('kachat-purge-channel').innerHTML = options;
+}
+
+async function loadBroadcastRows() {
     const channel = $('kachat-bcast-channel').value;
     const query = channel ? `?channel=${encodeURIComponent(channel)}&limit=50` : '?limit=50';
     try {
@@ -2417,15 +2562,7 @@ function setKachatPolling(active) {
 
 // --- controls ---
 
-// Channel pickers are filled from the same list, so a channel added upstream
-// only needs adding in one place here.
-for (const id of ['kachat-bcast-channel', 'kachat-purge-channel']) {
-    const select = $(id);
-    const options = KACHAT_CHANNELS.map((c) => `<option value="${c}">#${c}</option>`).join('');
-    select.innerHTML = (id === 'kachat-bcast-channel' ? '<option value="">All channels</option>' : '') + options;
-}
-
-$('kachat-bcast-channel').addEventListener('change', loadKachatBroadcasts);
+$('kachat-bcast-channel').addEventListener('change', loadBroadcastRows);
 $('kachat-bcast-refresh').addEventListener('click', loadKachatBroadcasts);
 
 // Moderation: a dry run has to happen before the destructive button unlocks, so
