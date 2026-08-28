@@ -3078,6 +3078,13 @@ async function loadProxies() {
     badge.className = `tag ${!on ? 'off' : r.container?.running ? 'ok' : ''}`;
     setNavSwitch('proxy', on);
     setNavHealth('proxy', on ? 'ok' : 'off');
+
+    // With the proxy off, the settings are not just unusable, they are
+    // misleading: a saved host writes nginx config nothing is serving. So the
+    // page says what to do rather than showing controls that cannot work.
+    $('proxy-config').hidden = !on;
+    $('proxy-off').hidden = on;
+
     for (const id of ['proxy-add', 'proxy-reload', 'proxy-renew']) {
         const button = $(id);
         button.disabled = !on;

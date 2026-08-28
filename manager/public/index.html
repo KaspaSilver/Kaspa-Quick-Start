@@ -1259,7 +1259,17 @@
         <p class="error" id="proxy-error" hidden></p>
       </article>
 
-      <div class="grid">
+      <!-- Shown in place of the settings while the proxy is off. Configuring a
+           host that nothing is serving is a way to be confused later. -->
+      <article class="card" id="proxy-off" hidden>
+        <p class="muted">
+          Turn the reverse proxy on to set this up. It stays off until you want
+          it, because it claims ports 80 and 443, and a node with no domains has
+          no use for it.
+        </p>
+      </article>
+
+      <div class="grid" id="proxy-config">
 
         <article class="card span2">
           <h3>DuckDNS</h3>

@@ -334,6 +334,10 @@ main {
 .tab { display: none; }
 .tab.active { display: block; }
 
+/* `hidden` has to beat `display: grid`, or hiding a grid does nothing. The log
+   tiles needed the same guard for the same reason. */
+.grid[hidden] { display: none; }
+
 .grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
