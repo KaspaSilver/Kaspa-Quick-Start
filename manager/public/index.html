@@ -816,18 +816,17 @@
           </div>
           <p class="muted">
             Which rooms get stored, and how much of each is here. Changes apply
-            within about fifteen seconds; nothing restarts.
-          </p>
-          <div id="kachat-channels"></div>
-          <div class="row">
-            <input id="kachat-channel-new" placeholder="add a channel, without the #" size="26" maxlength="36">
-            <button type="button" id="kachat-channel-add" class="ghost">Add channel</button>
-          </div>
-          <p class="hint">
-            Turning one off stops new messages being stored; what is already here
-            stays until you purge it under Settings. Adding one does not go back
+            within about fifteen seconds and nothing restarts. Turning one off
+            does not delete what it already has, and adding one does not go back
             and collect what it missed.
           </p>
+          <div class="grid stats" id="kachat-channels"></div>
+          <div class="row">
+            <input id="kachat-channel-new" placeholder="add a channel, for example kaspa-italiano" size="34" maxlength="36">
+            <button type="button" id="kachat-channel-add" class="ghost">Add</button>
+            <button type="button" id="kachat-channels-save" class="primary">Save and apply</button>
+            <span class="muted" id="kachat-channels-dirty" hidden>Not saved yet.</span>
+          </div>
         </article>
 
         <article class="card span2">

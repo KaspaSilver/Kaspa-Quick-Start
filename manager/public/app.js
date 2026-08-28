@@ -2192,102 +2192,120 @@ async function loadKachatBroadcasts() {
         return;
     }
 
+    channelState.counts = counts;
+    channelState.total = total;
+    setChannelsDirty(false);
+    document.getElementById('kachat-channels-none')?.remove();
     renderChannels(counts, total);
     renderChannelSelects();
     await loadBroadcastRows();
 }
 
 function renderChannels(counts, total) {
-    // Anything with rows but no longer tracked still shows: the count is real
-    // and would otherwise appear from nowhere in the totals.
+    // A channel with rows but no longer tracked still gets a card, switched
+    // off: the count is real and feeds the total, so dropping it would make the
+    // total look wrong.
     const stored = Object.keys(counts).filter((c) => !channelState.tracked.includes(c));
-    const rows = [
-        ...channelState.tracked.map((c) => ({ channel: c, tracked: true })),
-        ...stored.map((c) => ({ channel: c, tracked: false })),
-    ];
+    const names = [...channelState.tracked, ...stored].sort();
 
     const tag = $('kachat-channels-tag');
-    if (!channelState.tracked.length) {
-        tag.textContent = 'none tracked';
-        tag.className = 'tag off';
-    } else {
-        tag.textContent = `${channelState.tracked.length} tracked`;
-        tag.className = 'tag ok';
-    }
+    const n = channelState.tracked.length;
+    tag.textContent = n ? `${n} channel${n === 1 ? '' : 's'} indexed` : 'none indexed';
+    tag.className = `tag ${n ? 'ok' : 'off'}`;
+
+    const card = (name) => {
+        const on = channelState.tracked.includes(name);
+        // Only a channel the indexer does not ship with can be removed outright;
+        // the default thirteen are switched off instead, so the list it came
+        // with stays recoverable.
+        const removable = !channelState.defaults.includes(name);
+        return `<div class="channel-card${on ? '' : ' off'}${on ? '' : ' untracked'}">
+          <div class="head">
+            <span class="name" title="#${escapeHtml(name)}">#${escapeHtml(name)}</span>
+            ${removable ? `<button type="button" class="drop" data-drop-channel="${escapeHtml(name)}" title="Remove from the list">✕</button>` : ''}
+            <label class="switch"><input type="checkbox" data-channel="${escapeHtml(name)}"${on ? ' checked' : ''}><span class="track"></span></label>
+          </div>
+          <div class="count">${fmtNum(counts[name] || 0)}</div>
+        </div>`;
+    };
 
     $('kachat-channels').innerHTML =
-        rows
-            .map(
-                ({ channel, tracked }) => `<div class="channel-row${tracked ? '' : ' untracked'}">
-                  <label class="switch"><input type="checkbox" data-channel="${escapeHtml(channel)}"${
-                      tracked ? ' checked' : ''
-                  }><span class="track"></span></label>
-                  <span class="name">#${escapeHtml(channel)}</span>
-                  <span class="count">${fmtNum(counts[channel] || 0)}</span>
-                  ${
-                      channelState.defaults.includes(channel)
-                          ? ''
-                          : `<button type="button" class="drop" data-drop-channel="${escapeHtml(channel)}" title="Remove from the list">✕</button>`
-                  }
-                </div>`,
-            )
-            .join('') || '<p class="muted">No channels tracked. Nothing is being stored.</p>';
+        names.map(card).join('') +
+        `<div class="channel-card total">
+           <div class="head"><span class="name">Total broadcasts</span></div>
+           <div class="count">${fmtNum(total)}</div>
+         </div>`;
 
     if (!channelState.tracked.length) {
-        $('kachat-channels').innerHTML +=
-            '<p class="verdict bad">Nothing is tracked, so no broadcasts are being stored at all. ' +
-            'Tick a channel, or remove every entry to go back to the ones it ships with.</p>';
+        $('kachat-channels').insertAdjacentHTML(
+            'afterend',
+            '<p class="verdict bad" id="kachat-channels-none">Nothing is tracked, so no broadcasts are being stored at all.</p>',
+        );
     }
-    $('kachat-channels').insertAdjacentHTML(
-        'beforeend',
-        `<p class="hint">${fmtNum(total)} stored across all channels.</p>`,
-    );
+}
+
+/** Marks the list as changed but not yet sent. */
+function setChannelsDirty(dirty) {
+    channelState.dirty = dirty;
+    $('kachat-channels-dirty').hidden = !dirty;
 }
 
 /** Sends the list as it now stands. No restart; the indexer picks it up. */
-async function saveChannels(message) {
+async function saveChannels() {
     try {
         await kachat('settings', { method: 'POST', body: { broadcast_channels: channelState.tracked.join('\n') } });
         channelState.configured = true;
-        toast(message);
+        setChannelsDirty(false);
+        toast(
+            channelState.tracked.length
+                ? `${channelState.tracked.length} channels indexed. Live within about fifteen seconds.`
+                : 'No channels tracked, so nothing is being stored.',
+            channelState.tracked.length ? '' : 'bad',
+        );
         loadKachatBroadcasts();
     } catch (e) {
         toast(e instanceof IndexerDown ? 'The indexer is not running.' : e.message, 'bad');
-        loadKachatBroadcasts();
     }
 }
 
+$('kachat-channels-save').addEventListener('click', saveChannels);
+
+// Toggling and removing change the list on screen; nothing is sent until Save
+// and apply, which is why the unsaved marker exists.
 $('kachat-channels').addEventListener('change', (event) => {
     const channel = event.target.dataset?.channel;
     if (!channel) return;
     channelState.tracked = event.target.checked
         ? [...channelState.tracked, channel]
         : channelState.tracked.filter((c) => c !== channel);
-    saveChannels(event.target.checked ? `#${channel} is being stored.` : `#${channel} is no longer stored.`);
+    setChannelsDirty(true);
+    renderChannels(channelState.counts, channelState.total);
 });
 
 $('kachat-channels').addEventListener('click', (event) => {
     const channel = event.target.dataset?.dropChannel;
     if (!channel) return;
-    if (!confirm(`Remove #${channel} from the list?\n\nWhat is already stored stays until you purge it.`)) return;
     channelState.tracked = channelState.tracked.filter((c) => c !== channel);
-    saveChannels(`#${channel} removed.`);
+    setChannelsDirty(true);
+    renderChannels(channelState.counts, channelState.total);
 });
 
 $('kachat-channel-add').addEventListener('click', () => {
     const box = $('kachat-channel-new');
-    // The indexer lowercases and drops anything it does not like without saying
-    // so, which would look like the add had worked. Checked here instead.
+    // The indexer lowercases and silently drops anything it does not like, so a
+    // bad name would look added and never appear. Checked before it goes in.
     const name = box.value.trim().replace(/^#/, '').toLowerCase();
     if (!name) return;
     if (!CHANNEL_RE.test(name)) {
-        return toast('Channel names are lowercase letters, digits, dots, dashes and underscores, up to 36 characters.', 'bad');
+        return toast('Lowercase letters, digits, dots, dashes and underscores, up to 36 characters.', 'bad');
     }
     if (channelState.tracked.includes(name)) return toast(`#${name} is already on the list.`);
 
     channelState.tracked = [...channelState.tracked, name];
     box.value = '';
-    saveChannels(`#${name} added. It starts collecting from now on.`);
+    setChannelsDirty(true);
+    renderChannels(channelState.counts, channelState.total);
+    toast(`#${name} added. Save and apply to start collecting it.`);
 });
 
 $('kachat-channel-new').addEventListener('keydown', (event) => {

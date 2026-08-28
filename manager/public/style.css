@@ -1352,33 +1352,55 @@ ul.plain li { margin: 8px 0; color: var(--muted); font-size: 13.5px; }
    has not got a board yet, and should not compete with picking one. */
 .board-card .buy { margin: 10px 0 0; }
 
-/* One row per broadcast channel: a switch, the name, and how much of it is
-   stored. The count sits with the switch so what you are turning off and how
-   much of it there is are read together. */
-.channel-row {
+/* One card per broadcast channel: the name and its switch on top, the stored
+   count underneath. Same tile as the stats grids elsewhere, so a channel reads
+   as a number you can also turn off. */
+#kachat-channels { grid-template-columns: repeat(auto-fit, minmax(178px, 1fr)); }
+
+.channel-card {
+    background: var(--panel-2);
+    border-radius: 8px;
+    padding: 12px 14px;
+    min-width: 0;
+}
+.channel-card .head {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 8px 0;
-    border-bottom: 1px solid var(--line);
+    gap: 10px;
+    margin-bottom: 8px;
 }
-.channel-row:last-child { border-bottom: 0; }
-.channel-row .name { flex: 1; min-width: 0; font-weight: 600; }
-.channel-row .count {
+.channel-card .name {
+    flex: 1;
+    min-width: 0;
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
     color: var(--muted);
-    font-family: var(--mono);
-    font-size: 12px;
-    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
 }
-/* A channel that is stored but no longer tracked: the rows are still there, so
-   saying nothing about it would look like the count came from nowhere. */
-.channel-row.untracked .name { color: var(--muted); font-weight: 400; }
-.channel-row .drop {
+.channel-card .count {
+    font-size: 22px;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    color: var(--accent);
+}
+/* Off reads as off at a glance, not just by the switch position. */
+.channel-card.off .count { color: var(--muted); }
+
+/* Stored but no longer tracked. The rows are real, so hiding it would make the
+   total look wrong; the marker says why it is there with its switch off. */
+.channel-card.untracked { border: 1px dashed var(--line); }
+
+.channel-card .drop {
     background: none;
     border: 0;
     color: var(--muted);
     cursor: pointer;
-    padding: 2px 6px;
-    border-radius: 6px;
+    padding: 0 2px;
+    font-size: 12px;
 }
-.channel-row .drop:hover { background: var(--panel-2); color: var(--danger); }
+.channel-card .drop:hover { color: var(--danger); }
+
+/* The totals tile sits in the same grid, with no switch of its own. */
+.channel-card.total .count { color: var(--text); }
