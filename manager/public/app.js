@@ -2572,46 +2572,61 @@ $('dd-now').addEventListener('click', async () => {
 
 // ------------------------------------------------------------------- logs ---
 
-// Log text size. One setting for every log view, so zooming in one place does
-// not leave the others unreadable, and it survives a reload.
+// Log text size, kept per view. Each log is read for its own reasons -- one
+// gets skimmed for a single line, another gets stared at -- so a size that
+// suits one is rarely the size that suits the next.
 const LOG_ZOOM_KEY = 'kaspa-node-log-size';
 const LOG_SIZE_MIN = 9;
 const LOG_SIZE_MAX = 22;
 const LOG_SIZE_DEFAULT = 11.5;
+const LOG_SIZE_STEP = 1.5;
 
-function logSize() {
-    const stored = Number(localStorage.getItem(LOG_ZOOM_KEY));
+const logSizeKey = (view) => `${LOG_ZOOM_KEY}:${view}`;
+
+function logSize(view) {
+    const stored = Number(localStorage.getItem(logSizeKey(view)));
     return Number.isFinite(stored) && stored >= LOG_SIZE_MIN && stored <= LOG_SIZE_MAX ? stored : LOG_SIZE_DEFAULT;
 }
 
-function applyLogSize(size) {
+/**
+ * Sets the size on the view's own element, so the variable resolves for that
+ * subtree only. The buttons that drive it disable at the ends of the range.
+ */
+function applyLogSize(view, size) {
     const clamped = Math.min(LOG_SIZE_MAX, Math.max(LOG_SIZE_MIN, size));
-    document.documentElement.style.setProperty('--log-size', `${clamped}px`);
+    const nodes = document.querySelectorAll(`[data-logview="${view}"]`);
+    // One id, one view. Styling every match keeps this correct even if a view
+    // id is ever reused, instead of silently resizing whichever came first.
+    for (const node of nodes) node.style.setProperty('--log-size', `${clamped}px`);
     try {
-        localStorage.setItem(LOG_ZOOM_KEY, String(clamped));
+        localStorage.setItem(logSizeKey(view), String(clamped));
     } catch {
         /* private browsing: the size just will not persist */
     }
-    for (const button of document.querySelectorAll('[data-zoom]')) {
+    for (const button of document.querySelectorAll(`[data-zoom][data-zoom-view="${view}"]`)) {
         const step = Number(button.dataset.zoom);
         button.disabled = step < 0 ? clamped <= LOG_SIZE_MIN : clamped >= LOG_SIZE_MAX;
     }
     return clamped;
 }
 
+/** Re-applies a stored size to a view, for tiles that are created later. */
+function restoreLogSize(view) {
+    applyLogSize(view, logSize(view));
+}
+
 document.addEventListener('click', (event) => {
-    const step = event.target.dataset?.zoom;
-    if (step === undefined) return;
-    // Keep whatever is pinned to the bottom pinned after the text resizes.
-    const views = [...document.querySelectorAll('.logview, .log-tile pre')];
-    const atBottom = views.map((v) => v.scrollHeight - v.scrollTop - v.clientHeight < 4);
-    applyLogSize(logSize() + Number(step) * 1.5);
-    views.forEach((v, i) => {
-        if (atBottom[i]) v.scrollTop = v.scrollHeight;
-    });
+    const button = event.target.closest?.('[data-zoom][data-zoom-view]');
+    if (!button) return;
+    const view = button.dataset.zoomView;
+    const node = document.querySelector(`[data-logview="${view}"]`);
+    // Keep a view that is pinned to the bottom pinned after the text resizes.
+    const atBottom = node ? node.scrollHeight - node.scrollTop - node.clientHeight < 4 : false;
+    applyLogSize(view, logSize(view) + Number(button.dataset.zoom) * LOG_SIZE_STEP);
+    if (node && atBottom) node.scrollTop = node.scrollHeight;
 });
 
-applyLogSize(logSize());
+restoreLogSize('kaspad');
 
 // One tile per container, all fed by a single multiplexed EventSource. Per-tile
 // streams would need one connection each, and browsers cap concurrent
@@ -2627,10 +2642,11 @@ function logTile(key, label) {
         <span class="dot" data-tiledot="${key}"></span>
         <span class="name">${escapeHtml(label)}</span>
         <span class="count" data-tilecount="${key}">0</span>
+        <span class="zoom" role="group" aria-label="Text size"><button type="button" class="zoom-btn" data-zoom="-1" data-zoom-view="tile:${key}" title="Smaller text">−</button><button type="button" class="zoom-btn" data-zoom="1" data-zoom-view="tile:${key}" title="Larger text">+</button></span>
         <button type="button" data-expand="${key}" title="Expand this one to full width">⤢</button>
         <button type="button" data-clear="${key}" title="Clear">✕</button>
       </div>
-      <pre data-tilelog="${key}"></pre>
+      <pre data-tilelog="${key}" data-logview="tile:${key}"></pre>
     </article>`;
 }
 
@@ -2701,6 +2717,8 @@ function connectLogs() {
             : '<p class="empty-tile">No containers are running.</p>';
         for (const c of containers) {
             logBuffers.set(c.key, []);
+            // The tile was just recreated, so its stored size needs reapplying.
+            restoreLogSize(`tile:${c.key}`);
             const dot = document.querySelector(`[data-tiledot="${c.key}"]`);
             if (dot) dot.className = 'dot ok';
         }

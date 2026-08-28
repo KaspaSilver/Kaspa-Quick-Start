@@ -998,12 +998,11 @@ table.ports td.note { color: var(--muted); font-size: 12.5px; font-family: inher
 
 /* ------------------------------------------------------------- log zoom */
 
-:root { --log-size: 11.5px; }
-
-/* Every log view reads from one variable so the +/- buttons move them all. */
+/* The fallback, for a view whose size has not been set yet. Each view carries
+   its own --log-size inline, so zooming one leaves the rest where they were. */
 .logview,
 .log-tile pre {
-    font-size: var(--log-size);
+    font-size: var(--log-size, 11.5px);
 }
 
 .zoom {
@@ -1191,3 +1190,8 @@ details.more > summary:hover { color: var(--text); }
 #sub-kachat-chats p.hint { margin-bottom: 0; }
 #sub-kachat-chats details.more { margin-top: 10px; padding-top: 10px; }
 #sub-kachat-chats article.card { padding: 12px 18px; }
+
+/* The tile header is crowded, so its zoom control is smaller than the one on a
+   full-width log and loses its border. */
+.log-tile-head .zoom { border: 0; }
+.log-tile-head .zoom .zoom-btn { padding: 2px 5px; font-size: 12px; }

@@ -339,10 +339,10 @@
         <article class="card">
           <h3>
             kaspad log
-            <span class="zoom" role="group" aria-label="Log text size"><button type="button" class="zoom-btn" data-zoom="-1" title="Smaller text" aria-label="Smaller log text">−</button><button type="button" class="zoom-btn" data-zoom="1" title="Larger text" aria-label="Larger log text">+</button></span>
+            <span class="zoom" role="group" aria-label="Log text size"><button type="button" class="zoom-btn" data-zoom="-1" data-zoom-view="kaspad" title="Smaller text" aria-label="Smaller log text">−</button><button type="button" class="zoom-btn" data-zoom="1" data-zoom-view="kaspad" title="Larger text" aria-label="Larger log text">+</button></span>
             <label class="check tail" title="Jump to the newest line as it arrives. Untick to scroll back through history without being pulled to the bottom."><input type="checkbox" id="kaspadlog-follow" checked> auto-scroll</label>
           </h3>
-          <pre id="kaspadlog-view" class="logview"></pre>
+          <pre id="kaspadlog-view" class="logview" data-logview="kaspad"></pre>
         </article>
       </div>
     </section>
@@ -1079,7 +1079,6 @@
       <div class="logs-toolbar">
         <label class="check" title="Jump to the newest line as it arrives. Untick to scroll back through history without being pulled to the bottom."><input type="checkbox" id="log-follow" checked> auto-scroll</label>
         <input id="log-filter" placeholder="filter lines…" size="18">
-        <span class="zoom" role="group" aria-label="Log text size"><button type="button" class="zoom-btn" data-zoom="-1" title="Smaller text" aria-label="Smaller log text">−</button><button type="button" class="zoom-btn" data-zoom="1" title="Larger text" aria-label="Larger log text">+</button></span>
         <span class="muted" id="logs-note"></span>
       </div>
       <!-- One tile per container, all fed by a single multiplexed stream. -->
