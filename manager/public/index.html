@@ -380,6 +380,42 @@
             <p class="hint" id="m-unreachable" hidden></p>
           </div>
 
+          <div class="node-section" id="earnings-section">
+            <h3>Projected earnings</h3>
+              <label class="inline">
+                Hashrate
+                <input id="earn-hashrate" type="number" min="0" step="any" size="8">
+                <select id="earn-unit">
+                  <option value="1e9">GH/s</option>
+                  <option value="1e12" selected>TH/s</option>
+                  <option value="1e15">PH/s</option>
+                </select>
+                <button type="button" id="earn-reset" class="ghost">Use my miners</button>
+                <span class="tag" id="earn-source">–</span>
+              </label>
+              <p class="hint tight">
+                Type any hashrate to see what it would earn. <strong>Use my miners</strong>
+                puts the figure your connected miners are reporting back in the box.
+              </p>
+              <div class="grid stats" id="earn-grid">
+                <div class="stat"><span id="earn-day">–</span><small>per day</small></div>
+                <div class="stat"><span id="earn-1">–</span><small>1 month</small></div>
+                <div class="stat"><span id="earn-6">–</span><small>6 months</small></div>
+                <div class="stat"><span id="earn-12">–</span><small>12 months</small></div>
+              </div>
+              <dl class="kv vertical">
+                <div><dt>Your share of the network</dt><dd id="earn-share">–</dd></div>
+                <div><dt>Network hashrate</dt><dd id="earn-nethash">–</dd></div>
+                <div><dt>Cost of the monthly cuts</dt><dd id="earn-drag">–</dd></div>
+              </dl>
+              <p class="hint" id="earn-note">
+                This is what you would earn if difficulty and the reward stayed where they
+                are today, with the monthly drops taken into account. It is not a
+                prediction. Difficulty changes, and this says nothing about what Kaspa
+                is worth.
+              </p>
+          </div>
+
           <div class="mining-tables">
             <div class="mining-col" id="mining-workers-card" hidden>
               <h3>Workers</h3>
@@ -408,46 +444,7 @@
           </div>
         </article>
 
-        <div class="grid">
-
-          <article class="card" id="earnings-card">
-            <h3>Projected earnings</h3>
-            <label class="inline">
-              Hashrate
-              <input id="earn-hashrate" type="number" min="0" step="any" size="8">
-              <select id="earn-unit">
-                <option value="1e9">GH/s</option>
-                <option value="1e12" selected>TH/s</option>
-                <option value="1e15">PH/s</option>
-              </select>
-              <button type="button" id="earn-reset" class="ghost">Use my miners</button>
-              <span class="tag" id="earn-source">–</span>
-            </label>
-            <p class="hint tight">
-              Type any hashrate to see what it would earn. <strong>Use my miners</strong>
-              puts the figure your connected miners are reporting back in the box.
-            </p>
-            <div class="grid stats" id="earn-grid">
-              <div class="stat"><span id="earn-day">–</span><small>per day</small></div>
-              <div class="stat"><span id="earn-1">–</span><small>1 month</small></div>
-              <div class="stat"><span id="earn-6">–</span><small>6 months</small></div>
-              <div class="stat"><span id="earn-12">–</span><small>12 months</small></div>
-            </div>
-            <dl class="kv vertical">
-              <div><dt>Your share of the network</dt><dd id="earn-share">–</dd></div>
-              <div><dt>Network hashrate</dt><dd id="earn-nethash">–</dd></div>
-              <div><dt>Cost of the monthly cuts</dt><dd id="earn-drag">–</dd></div>
-            </dl>
-            <p class="hint" id="earn-note">
-              This is what you would earn if difficulty and the reward stayed where they
-              are today, with the monthly drops taken into account. It is not a
-              prediction. Difficulty changes, and this says nothing about what Kaspa
-              is worth.
-            </p>
-          </article>
-
-          
-        </div>
+        
       </div>
 
       <div id="sub-mining-connect" class="subtab">
