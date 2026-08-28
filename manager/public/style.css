@@ -997,8 +997,18 @@ table.ports td.note { color: var(--muted); font-size: 12.5px; font-family: inher
 
 /* State moved from its own column to a dot beside the port number: the row's
    tooltip carries the wording, which half a card has no room for. */
-.node-ports .ports .port { display: flex; align-items: center; gap: 7px; }
-.node-ports .ports .dot { width: 7px; height: 7px; box-shadow: none; flex: 0 0 7px; }
+/* The dot is laid out inline, not by making the cell a flex container:
+   display:flex on a <td> takes it out of the table's row model, which is what
+   broke the row separators into short offset segments. */
+.node-ports .ports td.port { white-space: nowrap; }
+.node-ports .ports td.port .dot {
+    width: 7px;
+    height: 7px;
+    box-shadow: none;
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: 7px;
+}
 .node-ports .ports .dot.warn { background: var(--warn); }
 
 /* ------------------------------------------------------------- log zoom */

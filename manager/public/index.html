@@ -203,14 +203,15 @@
               </table>
             </div>
             <label class="inline bindrow">
-              Publish on address
-              <input id="bind-address" size="12" value="0.0.0.0">
-              <button type="button" id="bind-apply" class="ghost">Apply</button>
+              Publish on
+              <select id="bind-address">
+                <option value="0.0.0.0">0.0.0.0 (any network)</option>
+                <option value="127.0.0.1">127.0.0.1 (this machine only)</option>
+              </select>
             </label>
             <p class="hint">
-              <code>0.0.0.0</code> means any interface. Use <code>127.0.0.1</code> to
-              keep published ports on this machine only. Public IP:
-              <code id="public-ip">…</code>
+              Choose which machines can reach the published ports. Changing this
+              restarts the node. Public IP: <code id="public-ip">…</code>
             </p>
             </div>
           </div>

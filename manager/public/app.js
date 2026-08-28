@@ -370,8 +370,15 @@ async function refreshStatus() {
     }
 
     renderPorts(s);
-    if (document.activeElement !== $('bind-address')) {
-        $('bind-address').value = s.bindAddress || '0.0.0.0';
+    const bind = $('bind-address');
+    if (document.activeElement !== bind && !bind.disabled) {
+        const address = s.bindAddress || '0.0.0.0';
+        // An address set by hand earlier is kept as an option rather than
+        // silently switched to one of the two on the list.
+        if (![...bind.options].some((o) => o.value === address)) {
+            bind.add(new Option(`${address} (set manually)`, address));
+        }
+        bind.value = address;
     }
     applyNodeGating(s);
 }
@@ -503,12 +510,21 @@ $('ports-body').addEventListener('change', async (event) => {
     }
 });
 
-$('bind-apply').addEventListener('click', async () => {
+// Applies on selection, like the port switches beside it, rather than pairing
+// a two-option list with an Apply button.
+$('bind-address').addEventListener('change', async (event) => {
+    const address = event.target.value;
+    event.target.disabled = true;
     try {
-        const r = await api('/api/ports/bind', { method: 'POST', body: { address: $('bind-address').value.trim() } });
-        if (!r.unchanged) openConsole('Changing the publish address');
+        const r = await api('/api/ports/bind', { method: 'POST', body: { address } });
+        if (!r.unchanged) openConsole(`Publishing ports on ${address}`);
     } catch (e) {
         toast(e.message, 'bad');
+        refreshStatus();
+    } finally {
+        setTimeout(() => {
+            event.target.disabled = false;
+        }, 2500);
     }
 });
 
