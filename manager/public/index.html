@@ -104,10 +104,12 @@
       </div>
 
       <p class="nav-group-title">System</p>
-      <button class="nav-item" data-tab="logs" title="All logs">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8zM14 3v5h5M9 13h6M9 17h4"/></svg>
-        <span class="label">All logs</span>
-      </button>
+      <div class="nav-row">
+        <button class="nav-item" data-tab="logs" title="All logs">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8zM14 3v5h5M9 13h6M9 17h4"/></svg>
+          <span class="label">All logs</span>
+        </button>
+      </div>
     </nav>
 
     <div class="sidebar-foot">
@@ -144,56 +146,45 @@
       </nav>
 
       <div id="sub-overview" class="subtab active">
-        <article class="card toggle-bar" id="node-card">
-          <div class="toggle-row">
-            <label class="switch" title="Start or stop the node.">
-              <input type="checkbox" id="node-enabled">
-              <span class="track"></span>
-            </label>
-            <div class="toggle-text">
-              <strong>Kaspad</strong>
-              <span class="muted">The node itself. Mining and KaChat need it running.</span>
-            </div>
+        <article class="card span2" id="node-card">
+          <div class="node-head">
+            <h3>Kaspad</h3>
             <span id="stat-container" class="tag">–</span>
             <button type="button" class="ghost" data-node="restart">Restart</button>
           </div>
+
           <dl class="kv nodestats">
             <div><dt>Network</dt><dd id="stat-network">–</dd></div>
             <div><dt>Version</dt><dd id="stat-version">–</dd></div>
             <div><dt>Uptime</dt><dd id="stat-uptime">–</dd></div>
             <div><dt>Chain data</dt><dd id="stat-disk">–</dd></div>
           </dl>
-          <p class="error" id="node-error" hidden></p>
+
+          <div class="node-section">
+            <div class="bigstat"><span id="sync-pct">–</span><small id="sync-state">connecting…</small></div>
+            <div class="bar"><div id="sync-bar"></div></div>
+            <p class="sync-detail" id="sync-detail" hidden></p>
+            <ol class="sync-steps" id="sync-steps"></ol>
+            <dl class="kv">
+              <div><dt>Blocks</dt><dd id="stat-blocks">–</dd></div>
+              <div><dt>Headers</dt><dd id="stat-headers">–</dd></div>
+              <div><dt>DAA score</dt><dd id="stat-daa">–</dd></div>
+              <div><dt>Difficulty</dt><dd id="stat-diff">–</dd></div>
+              <div><dt>Mempool</dt><dd id="stat-mempool">–</dd></div>
+              <div><dt>UTXO index</dt><dd id="stat-utxo">–</dd></div>
+            </dl>
+          </div>
+
+          <div class="node-section peers-section">
+            <div class="peers-line">
+              <span class="peers-count"><strong id="stat-peers">–</strong> peers connected</span>
+              <span class="muted"><span id="stat-peers-in">–</span> in, <span id="stat-peers-out">–</span> out</span>
+            </div>
+            <p id="p2p-verdict" class="verdict">–</p>
+          </div>
         </article>
 
         <div class="grid">
-        <article class="card span2">
-          <h3>Sync</h3>
-          <div class="bigstat"><span id="sync-pct">–</span><small id="sync-state">connecting…</small></div>
-          <div class="bar"><div id="sync-bar"></div></div>
-          <p class="sync-detail" id="sync-detail" hidden></p>
-          <ol class="sync-steps" id="sync-steps"></ol>
-          <dl class="kv">
-            <div><dt>Blocks</dt><dd id="stat-blocks">–</dd></div>
-            <div><dt>Headers</dt><dd id="stat-headers">–</dd></div>
-            <div><dt>DAA score</dt><dd id="stat-daa">–</dd></div>
-            <div><dt>Difficulty</dt><dd id="stat-diff">–</dd></div>
-            <div><dt>Mempool</dt><dd id="stat-mempool">–</dd></div>
-            <div><dt>UTXO index</dt><dd id="stat-utxo">–</dd></div>
-          </dl>
-        </article>
-
-        
-        <article class="card">
-          <h3>Peers</h3>
-          <div class="bigstat"><span id="stat-peers">–</span><small>connected</small></div>
-          <dl class="kv vertical">
-            <div><dt>Inbound</dt><dd id="stat-peers-in">–</dd></div>
-            <div><dt>Outbound</dt><dd id="stat-peers-out">–</dd></div>
-          </dl>
-          <p id="p2p-verdict" class="verdict">–</p>
-        </article>
-
         <article class="card span2">
           <h3>Ports</h3>
           <p class="muted">

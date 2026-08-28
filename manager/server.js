@@ -41,6 +41,16 @@ import {
     verifyPassword,
 } from './lib/auth.js';
 
+// This panel's own version, not the node's. kaspad's version is reported
+// separately on the Kaspad page, where it belongs.
+const PANEL_VERSION = (() => {
+    try {
+        return JSON.parse(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'package.json'), 'utf8')).version;
+    } catch {
+        return '1.0.0';
+    }
+})();
+
 const PORT = Number(process.env.PORT || 8080);
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'public');
 const KASPAD_SERVICE = process.env.KASPAD_SERVICE || 'kaspad';
@@ -331,6 +341,7 @@ route(
             // password or proxy-level basic auth is in place.
             required: authRequired(),
             authenticated: !authRequired() || isAuthenticated(req),
+            panelVersion: PANEL_VERSION,
         }),
     { auth: false },
 );

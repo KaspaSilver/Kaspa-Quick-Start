@@ -131,6 +131,8 @@ function selectTab(name) {
     for (const item of document.querySelectorAll('.nav-item')) {
         const active = item.dataset.tab === name;
         item.classList.toggle('active', active);
+        // The row carries the highlight so it wraps the switch too.
+        item.closest('.nav-row')?.classList.toggle('active', active);
         if (active) title = el('.label', item).textContent;
     }
     for (const tab of document.querySelectorAll('.tab')) {
@@ -345,12 +347,9 @@ async function refreshStatus() {
     const containerTag = $('stat-container');
     containerTag.textContent = s.container.status || 'absent';
     containerTag.className = `tag ${running ? 'ok' : 'off'}`;
-    // Do not fight a start or stop that is still in flight.
-    if (!$('node-enabled').disabled) $('node-enabled').checked = running;
     setNavSwitch('node', running);
     $('stat-network').textContent = s.rpc.dag?.networkName || s.network;
     $('stat-version').textContent = s.version?.version || '–';
-    $('version-badge').textContent = s.version?.version || '–';
     $('stat-uptime').textContent = running ? fmtDuration(s.container.startedAt) : '–';
     $('stat-disk').textContent = fmtBytes(s.disk?.size);
 
@@ -540,28 +539,6 @@ for (const button of document.querySelectorAll('[data-node]')) {
     });
 }
 
-// The node's own switch. Everything else in the panel depends on it, so the
-// state shown always comes back from the container rather than from the click.
-$('node-enabled').addEventListener('change', async (event) => {
-    const wanted = event.target.checked;
-    const err = $('node-error');
-    err.hidden = true;
-    event.target.disabled = true;
-    try {
-        await api(`/api/node/${wanted ? 'start' : 'stop'}`, { method: 'POST' });
-        openConsole(wanted ? 'Starting the node' : 'Stopping the node');
-    } catch (e) {
-        event.target.checked = !wanted;
-        err.textContent = e.message;
-        err.hidden = false;
-    } finally {
-        // Let the next poll report what actually happened.
-        setTimeout(() => {
-            event.target.disabled = false;
-            refreshStatus();
-        }, 2500);
-    }
-});
 
 // ---------------------------------------------------------------- updates ---
 
@@ -1889,6 +1866,7 @@ function connectJobs() {
 
 api('/api/session')
     .then((s) => {
+        if (s.panelVersion) $('version-badge').textContent = `v${s.panelVersion}`;
         // No password set: skip the sign-in screen entirely and say why, so the
         // absence of a login prompt reads as a decision rather than a bug.
         $('logout').hidden = !s.required;

@@ -184,10 +184,11 @@ body {
     display: flex;
     align-items: center;
     gap: 11px;
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     padding: 9px 10px;
     border: 0;
-    border-radius: 8px;
+    border-radius: 8px 0 0 8px;
     background: none;
     color: var(--muted);
     font: inherit;
@@ -197,13 +198,25 @@ body {
     white-space: nowrap;
 }
 .nav-item svg { width: 18px; height: 18px; flex: 0 0 18px; }
-.nav-item:hover { background: var(--panel-2); color: var(--text); }
-.nav-item.active {
+.nav-item.active { color: var(--text); }
+.nav-item.active svg { color: var(--accent); }
+
+/* Highlighting the row rather than the button keeps the switch inside the
+   selected surface; on the button alone it looked detached from its entry. */
+.nav-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-right: 8px;
+    border-radius: 8px;
+}
+.nav-row:hover { background: var(--panel-2); }
+.nav-row:hover .nav-item { color: var(--text); }
+.nav-row.active {
     background: color-mix(in srgb, var(--accent) 14%, transparent);
-    color: var(--text);
     box-shadow: inset 2px 0 0 var(--accent);
 }
-.nav-item.active svg { color: var(--accent); }
+.nav-row:has(.nav-item.locked):hover { background: none; }
 
 .sidebar-foot {
     border-top: 1px solid var(--line);
@@ -881,18 +894,13 @@ table.ports td.note { color: var(--muted); font-size: 12.5px; font-family: inher
 
 /* The nav entry and its switch are siblings, not nested: a checkbox inside a
    button is invalid, and the button would swallow the clicks meant for it. */
-.nav-row {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-}
-.nav-row .nav-item { flex: 1; min-width: 0; }
-
 .switch.mini {
     width: 30px;
     height: 17px;
     flex: 0 0 30px;
-    margin-right: 6px;
+    /* Optical centring: the switch is shorter than the row's text line, so it
+       needs no nudging vertically, only breathing room from the edge. */
+    margin: 0;
 }
 .switch.mini .track::before { width: 11px; height: 11px; left: 2px; }
 .switch.mini input:checked + .track::before { transform: translate(13px, -50%); }
@@ -902,4 +910,44 @@ table.ports td.note { color: var(--muted); font-size: 12.5px; font-family: inher
 .sidebar.collapsed .switch.mini { display: none; }
 @media (max-width: 860px) {
     .sidebar.collapsed .switch.mini { display: inline-block; }
+}
+
+/* --------------------------------------------------- the node's single card */
+
+.node-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+.node-head h3 { margin: 0; flex: 0 0 auto; }
+.node-head .tag { margin-right: auto; }
+
+#node-card .nodestats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--line);
+}
+
+/* Each block of the card is one idea: what it is, how far along, who it talks
+   to. The rules keep them apart without needing three separate cards. */
+.node-section {
+    padding-top: 16px;
+    margin-top: 16px;
+    border-top: 1px solid var(--line);
+}
+.node-section:first-of-type { border-top: 0; margin-top: 0; }
+#node-card .nodestats + .node-section { border-top: 0; margin-top: 0; }
+
+.peers-line {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+}
+.peers-count strong { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; }
+
+@media (max-width: 760px) {
+    #node-card .nodestats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
