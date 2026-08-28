@@ -876,3 +876,30 @@ table.ports td.note { color: var(--muted); font-size: 12.5px; font-family: inher
 @media (max-width: 700px) {
     #node-card .nodestats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* ------------------------------------------------- sidebar service switches */
+
+/* The nav entry and its switch are siblings, not nested: a checkbox inside a
+   button is invalid, and the button would swallow the clicks meant for it. */
+.nav-row {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+.nav-row .nav-item { flex: 1; min-width: 0; }
+
+.switch.mini {
+    width: 30px;
+    height: 17px;
+    flex: 0 0 30px;
+    margin-right: 6px;
+}
+.switch.mini .track::before { width: 11px; height: 11px; left: 2px; }
+.switch.mini input:checked + .track::before { transform: translate(13px, -50%); }
+.switch.mini input:disabled + .track { opacity: 0.3; }
+
+/* No room for them on the icon rail, and nothing to label them with. */
+.sidebar.collapsed .switch.mini { display: none; }
+@media (max-width: 860px) {
+    .sidebar.collapsed .switch.mini { display: inline-block; }
+}

@@ -171,6 +171,68 @@ for (const button of document.querySelectorAll('.subtab-btn')) {
 const activeSubtab = (tab) =>
     document.querySelector(`#tab-${tab} .subtab-btn.active`)?.dataset.subtab ?? null;
 
+// --- service switches in the sidebar ---
+
+const navSwitch = (service) => document.querySelector(`[data-service="${service}"]`);
+
+/**
+ * Reflects a service's real state onto its sidebar switch. Never called from a
+ * click: the switches show what the containers are doing, so a failed start
+ * cannot leave one sitting in the wrong position.
+ */
+function setNavSwitch(service, on, { disabled = false, reason = '' } = {}) {
+    const input = navSwitch(service);
+    if (!input || input.dataset.busy === '1') return;
+    input.checked = Boolean(on);
+    input.disabled = disabled;
+    const label = input.closest('.switch');
+    if (label) label.title = disabled && reason ? reason : label.getAttribute('aria-title') || label.title;
+}
+
+// Each service is switched on in whatever way its own API expects.
+const SERVICE_ACTIONS = {
+    node: (on) => api(`/api/node/${on ? 'start' : 'stop'}`, { method: 'POST' }),
+    mining: (on) => api('/api/mining', { method: 'PUT', body: { config: { ...collectMiningConfig(), enabled: on } } }),
+    kachat: (on) => api('/api/apps/kachat', { method: 'PUT', body: { config: { ...collectAppConfig('kachat'), enabled: on } } }),
+    nextcloud: (on) =>
+        api('/api/apps/nextcloud', { method: 'PUT', body: { config: { ...collectAppConfig('nextcloud'), enabled: on } } }),
+    proxy: (on) => api('/api/proxy/enabled', { method: 'POST', body: { enabled: on } }),
+};
+
+const SERVICE_NAMES = {
+    node: 'the node',
+    mining: 'mining',
+    kachat: 'the KaChat indexer',
+    nextcloud: 'Nextcloud',
+    proxy: 'the reverse proxy',
+};
+
+for (const input of document.querySelectorAll('[data-service]')) {
+    input.addEventListener('change', async () => {
+        const service = input.dataset.service;
+        const wanted = input.checked;
+        input.dataset.busy = '1';
+        input.disabled = true;
+        try {
+            await SERVICE_ACTIONS[service](wanted);
+            openConsole(`${wanted ? 'Starting' : 'Stopping'} ${SERVICE_NAMES[service]}`);
+        } catch (e) {
+            input.checked = !wanted;
+            toast(e.message, 'bad');
+        } finally {
+            // Hold the switch until the next poll can report what really happened.
+            setTimeout(() => {
+                input.dataset.busy = '0';
+                input.disabled = false;
+                refreshStatus();
+                loadMining();
+                loadApps();
+                loadProxies();
+            }, 2500);
+        }
+    });
+}
+
 // --- collapse (wide screens) ---
 
 function setCollapsed(collapsed) {
@@ -285,6 +347,7 @@ async function refreshStatus() {
     containerTag.className = `tag ${running ? 'ok' : 'off'}`;
     // Do not fight a start or stop that is still in flight.
     if (!$('node-enabled').disabled) $('node-enabled').checked = running;
+    setNavSwitch('node', running);
     $('stat-network').textContent = s.rpc.dag?.networkName || s.network;
     $('stat-version').textContent = s.version?.version || '–';
     $('version-badge').textContent = s.version?.version || '–';
@@ -329,6 +392,15 @@ function applyNodeGating(status) {
           : !status?.rpc?.reachable
             ? 'The node is still starting up.'
             : 'The node is still catching up. This unlocks once it is done.';
+
+    for (const service of ['mining', 'kachat']) {
+        const input = navSwitch(service);
+        if (input && input.dataset.busy !== '1') {
+            input.disabled = !ready;
+            const label = input.closest('.switch');
+            if (label) label.title = ready ? `Start or stop ${SERVICE_NAMES[service]}` : lockReason;
+        }
+    }
 
     for (const item of document.querySelectorAll('.nav-item[data-requires-node]')) {
         item.classList.toggle('locked', !ready);
@@ -745,6 +817,7 @@ async function loadMining() {
     renderMiningState(r.container, r.stats);
     renderStratumTargets(c);
     renderEconomics(r);
+    setNavSwitch('mining', c.enabled);
 }
 
 function renderMiningState(container, stats) {
@@ -1215,6 +1288,8 @@ async function loadApps() {
     $('nextcloud-user').value = c.nextcloud.adminUser;
     $('nextcloud-domains').value = c.nextcloud.trustedDomains;
     renderAppState('nextcloud', r.apps.nextcloud);
+    setNavSwitch('kachat', c.kachat.enabled);
+    setNavSwitch('nextcloud', c.nextcloud.enabled);
 }
 
 function renderAppState(name, state) {
@@ -1395,6 +1470,7 @@ async function loadProxies() {
     const badge = $('proxy-state');
     badge.textContent = !on ? 'off' : r.container?.running ? 'running' : r.container?.status || 'starting';
     badge.className = `tag ${!on ? 'off' : r.container?.running ? 'ok' : ''}`;
+    setNavSwitch('proxy', on);
     for (const id of ['proxy-add', 'proxy-reload', 'proxy-renew']) {
         const button = $(id);
         button.disabled = !on;
