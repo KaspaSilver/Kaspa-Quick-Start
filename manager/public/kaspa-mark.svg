@@ -1,15 +1,17 @@
 <!--
-  The Kaspa mark. Drawn here rather than linked so the panel keeps working with
-  no network and nothing external to fetch.
+  The Kaspa mark: an irregular teal blob with the dark K sitting off-centre,
+  its chevron pointing into the upright.
 
-  If you want the official artwork exactly, replace this file: everything refers
-  to it by name, so nothing else has to change.
+  Drawn here rather than fetched, so the panel needs nothing external and works
+  with no network. Replace this file to use different artwork; it is referenced
+  by name and nothing else has to change.
 -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Kaspa">
-  <circle cx="32" cy="32" r="32" fill="#70C7BA"/>
-  <!-- Stem on the right, both arms opening to the left. -->
-  <path fill="#FFFFFF"
-        d="M36.4 14.5h8.1v35h-8.1z"/>
-  <path fill="#FFFFFF"
-        d="M38.6 32 22.4 14.5h11.3L47.9 32 33.7 49.5H22.4z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" role="img" aria-label="Kaspa">
+  <path fill="#6FC7B9" d="M96.0,38.5 C105.1,38.4 115.3,43.5 123.5,48.4 C131.7,53.2 140.9,59.6 145.4,67.5 C149.8,75.4 150.1,86.5 150.0,96.0 C149.9,105.5 149.5,116.5 144.9,124.2 C140.4,132.0 130.9,137.8 122.8,142.3 C114.6,146.9 105.0,151.4 96.0,151.5 C87.0,151.6 77.0,147.7 68.7,143.2 C60.5,138.7 51.3,132.4 46.6,124.5 C42.0,116.6 40.9,105.4 41.0,96.0 C41.1,86.6 42.8,75.8 47.5,68.0 C52.2,60.2 60.9,54.2 69.0,49.2 C77.1,44.3 86.9,38.6 96.0,38.5 Z"/>
+  <g fill="#161616">
+    <!-- The upright, tapering very slightly and kinked where the arms meet it. -->
+    <path d="M99.5,65.5 113.0,63.5 115.5,95.5 113.0,128.5 99.5,126.5 102.5,95.5 Z"/>
+    <!-- Both arms, meeting at a point on the upright. -->
+    <path d="M71.5,78.5 83.0,67.5 116.5,95.5 83.0,124.0 71.5,113.0 100.0,95.5 Z"/>
+  </g>
 </svg>
