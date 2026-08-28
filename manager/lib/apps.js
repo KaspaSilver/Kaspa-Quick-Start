@@ -155,8 +155,14 @@ export function validateAppsConfig(input) {
     else cfg.nextcloud.adminUser = user;
 
     const domains = String(n.trustedDomains ?? 'localhost').trim();
-    if (!DOMAIN_LIST_RE.test(domains)) errors.push('Trusted domains must be a comma-separated list of hostnames.');
-    else cfg.nextcloud.trustedDomains = domains || 'localhost';
+    if (!DOMAIN_LIST_RE.test(domains)) {
+        errors.push('Trusted domains may only contain hostnames, separated by spaces or commas.');
+    } else {
+        // Stored space separated whatever was typed. NEXTCLOUD_TRUSTED_DOMAINS is
+        // read by a shell `for` loop over an unquoted variable, so it splits on
+        // whitespace and a comma would stay stuck to the hostname before it.
+        cfg.nextcloud.trustedDomains = domains.split(/[\s,]+/).filter(Boolean).join(' ') || 'localhost';
+    }
 
     return { cfg, errors };
 }
@@ -349,4 +355,80 @@ export function summarizeError(error) {
 
     const trimmed = pick.length > 240 ? `${pick.slice(0, 237)}...` : pick;
     return trimmed.endsWith('.') ? trimmed : `${trimmed}.`;
+}
+
+// ------------------------------------------------------- nextcloud runtime --
+
+/**
+ * Nextcloud settings that only take effect at install time.
+ *
+ * The image reads NEXTCLOUD_TRUSTED_DOMAINS once, inside the branch that runs
+ * the first-time install. Change the value afterwards and nothing happens: the
+ * container is already installed, so that branch never runs again. The panel
+ * would look like it had applied a setting it had not.
+ *
+ * The same is true of the admin password, which is only used to create the
+ * account. Both are therefore applied with `occ` against the running container,
+ * which is what the install would have done.
+ *
+ * Everything here needs the container up. A stopped Nextcloud simply defers:
+ * whatever is in the config is applied the next time this runs.
+ */
+export const NEXTCLOUD_CONTAINER = APPS.nextcloud.container;
+
+/** Runs an `occ` command as the web user inside the Nextcloud container. */
+function occArgs(args, { env = {} } = {}) {
+    const envFlags = Object.keys(env).flatMap((k) => ['-e', `${k}=${env[k]}`]);
+    return ['exec', '-u', 'www-data', ...envFlags, NEXTCLOUD_CONTAINER, 'php', 'occ', ...args];
+}
+
+/**
+ * Rewrites the trusted-domain list to match the config.
+ *
+ * Indices are positional, so the list is written from 0 upward and anything
+ * left over from a longer previous list is removed. Without that, shortening
+ * the list would leave the dropped names still trusted.
+ */
+export async function syncTrustedDomains(docker, cfg, onLine = () => {}) {
+    const wanted = String(cfg.nextcloud.trustedDomains || 'localhost')
+        .split(/[\s,]+/)
+        .filter(Boolean);
+    if (!wanted.length) return;
+
+    for (const [i, domain] of wanted.entries()) {
+        await docker(occArgs(['config:system:set', 'trusted_domains', String(i), '--value', domain]));
+    }
+    // Clear stale trailing entries. `occ` exits non-zero once there is nothing
+    // at an index, which is the signal to stop rather than an error.
+    for (let i = wanted.length; i < wanted.length + 10; i++) {
+        try {
+            await docker(occArgs(['config:system:delete', 'trusted_domains', String(i)]));
+        } catch {
+            break;
+        }
+    }
+    onLine(`Trusted domains: ${wanted.join(', ')}`);
+}
+
+/** The admin account's name and password, as the panel needs to show them. */
+export function nextcloudAdmin() {
+    const env = readEnvFile();
+    return {
+        user: env.NEXTCLOUD_ADMIN_USER || 'admin',
+        password: env.NEXTCLOUD_ADMIN_PASSWORD || '',
+    };
+}
+
+/**
+ * Changes the admin password on the running instance and records the new one.
+ *
+ * `occ` takes it from the environment rather than an argument, so it never
+ * appears in the container's process list.
+ */
+export async function setNextcloudAdminPassword(docker, password) {
+    const { user } = nextcloudAdmin();
+    await docker(occArgs(['user:resetpassword', '--password-from-env', user], { env: { OC_PASS: password } }), {
+        timeoutMs: 120_000,
+    });
+    updateEnvFile({ NEXTCLOUD_ADMIN_PASSWORD: password });
 }

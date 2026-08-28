@@ -1056,6 +1056,18 @@ async function applyAppConfig(name, cfg, onLine = () => {}) {
         onLine(`Could not record the upstream commit: ${err.message}`);
     }
 
+    // Nextcloud reads its trusted domains only while installing, so a change
+    // made later has to be applied to the running instance or it silently does
+    // nothing. Failure here is worth reporting but not worth failing the job:
+    // the container is up either way.
+    if (name === 'nextcloud') {
+        try {
+            await apps.syncTrustedDomains(dockerctl.docker, cfg, onLine);
+        } catch (err) {
+            onLine(`Could not update the trusted domains: ${err.message}`);
+        }
+    }
+
     onLine(`${app.label} is up.`);
     return { enabled: true };
 }
@@ -1136,6 +1148,33 @@ route('PUT', /^\/api\/apps\/(kachat|nextcloud)$/, async (req, res, match) => {
         }
     });
     sendJson(res, 202, { ok: true, jobId: job.id, config: cfg });
+});
+
+route('GET', /^\/api\/apps\/nextcloud\/admin$/, async (req, res) => {
+    // The panel is bound to loopback and this is the same value sitting in the
+    // stack's .env, so showing it here reveals nothing a local user could not
+    // already read. It is the only way to reach a fresh install.
+    sendJson(res, 200, apps.nextcloudAdmin());
+});
+
+route('POST', /^\/api\/apps\/nextcloud\/admin\/password$/, async (req, res) => {
+    const body = await readBody(req);
+    const password = String(body.password ?? '');
+
+    // Nextcloud's own minimum is 10 characters. Checking here means a bad one is
+    // refused before the container is touched, rather than after a failed occ run.
+    if (password.length < 10) return fail(res, 400, 'The password needs to be at least 10 characters.');
+    if (password.length > 200) return fail(res, 400, 'That password is too long.');
+
+    const state = await dockerctl.containerState(apps.APPS.nextcloud.container);
+    if (!state.running) return fail(res, 409, 'Nextcloud is not running, so its password cannot be changed yet.');
+
+    try {
+        await apps.setNextcloudAdminPassword(dockerctl.docker, password);
+        sendJson(res, 200, { ok: true });
+    } catch (err) {
+        fail(res, 500, `Nextcloud refused the change: ${err.message}`);
+    }
 });
 
 route('GET', /^\/api\/apps\/(kachat|nextcloud)\/check$/, async (req, res, match) => {

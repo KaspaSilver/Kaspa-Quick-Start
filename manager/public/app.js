@@ -1446,6 +1446,7 @@ async function loadApps() {
     $('nextcloud-user').value = c.nextcloud.adminUser;
     $('nextcloud-domains').value = c.nextcloud.trustedDomains;
     renderAppState('nextcloud', r.apps.nextcloud);
+    loadNextcloudAdmin();
     setNavSwitch('kachat', c.kachat.enabled);
     setNavSwitch('nextcloud', c.nextcloud.enabled);
 }
@@ -1539,6 +1540,64 @@ function collectAppConfig(name) {
         trustedDomains: $('nextcloud-domains').value.trim(),
     };
 }
+
+// --- nextcloud admin password ---
+
+/**
+ * The install-time password, shown because there is nowhere else to find it
+ * short of reading the stack's .env by hand. Masked until asked for, so it is
+ * not left sitting on screen.
+ */
+async function loadNextcloudAdmin() {
+    try {
+        const r = await api('/api/apps/nextcloud/admin');
+        $('nextcloud-pass').value = r.password || '';
+        $('nextcloud-pass').placeholder = r.password ? '' : 'not set yet';
+    } catch {
+        /* the card is only useful once the stack has been installed */
+    }
+}
+
+$('nextcloud-pass-show').addEventListener('click', () => {
+    const box = $('nextcloud-pass');
+    const hidden = box.type === 'password';
+    box.type = hidden ? 'text' : 'password';
+    $('nextcloud-pass-show').textContent = hidden ? 'Hide' : 'Show';
+});
+
+$('nextcloud-pass-copy').addEventListener('click', async () => {
+    const value = $('nextcloud-pass').value;
+    if (!value) return toast('There is no password to copy yet.', 'bad');
+    try {
+        await navigator.clipboard.writeText(value);
+        toast('Password copied.');
+    } catch {
+        // Clipboard access needs a secure context, which plain http on another
+        // machine is not. Selecting it is then the only way to get at it.
+        $('nextcloud-pass').type = 'text';
+        $('nextcloud-pass').select();
+        toast('Could not reach the clipboard, so it is selected instead.', 'bad');
+    }
+});
+
+$('nextcloud-pass-save').addEventListener('click', async () => {
+    const box = $('nextcloud-pass-new');
+    const password = box.value;
+    if (password.length < 10) return toast('Nextcloud needs at least 10 characters.', 'bad');
+
+    const button = $('nextcloud-pass-save');
+    button.disabled = true;
+    try {
+        await api('/api/apps/nextcloud/admin/password', { method: 'POST', body: { password } });
+        box.value = '';
+        toast('Password changed.');
+        loadNextcloudAdmin();
+    } catch (e) {
+        toast(e.message, 'bad');
+    } finally {
+        button.disabled = false;
+    }
+});
 
 for (const name of ['kachat', 'nextcloud']) {
     // The switch is a power control: it takes effect on the spot, matching the

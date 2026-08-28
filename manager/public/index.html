@@ -1035,36 +1035,45 @@
       </nav>
 
       <div id="sub-nextcloud-overview" class="subtab active">
-        <article class="card">
-          <h3>Nextcloud</h3>
-          <p class="muted">
-            Your own cloud for files, photos and video. It is where KaChat can
-            share media from and back chats up to, so none of it passes through
-            anyone else's servers. Video thumbnails and iPhone HEIC previews are
-            already set up for you.
-          </p>
-        </article>
-
-        <article class="card toggle-bar">
-          <div class="toggle-row">
-            <div class="toggle-text">
-              <strong>Run Nextcloud</strong>
-              <span class="muted">Starts Nextcloud with its database, cache and preview generator.</span>
+        <div class="grid">
+          <!-- Left: running it, and getting into it. -->
+          <article class="card">
+            <div class="toggle-row">
+              <div class="toggle-text">
+                <strong>Run Nextcloud</strong>
+                <span class="muted">Starts Nextcloud with its database, cache and preview generator.</span>
+              </div>
+              <span id="nextcloud-state" class="tag">off</span>
             </div>
-            <span id="nextcloud-state" class="tag">off</span>
-          </div>
-          <div id="nextcloud-notice" class="verdict" hidden></div>
-          <p class="error" id="nextcloud-error" hidden></p>
-        </article>
+            <div id="nextcloud-notice" class="verdict" hidden></div>
+            <p class="error" id="nextcloud-error" hidden></p>
 
-        <article class="card" id="nextcloud-open-card">
-          <h3>Open it</h3>
-          <div id="nextcloud-link" class="verdict" hidden></div>
-          <p class="hint">
-            First sign-in uses the admin user below and the password generated at
-            install, stored in <code>.env</code> as <code>NEXTCLOUD_ADMIN_PASSWORD</code>.
-          </p>
-        </article>
+            <div class="node-section" id="nextcloud-open-card">
+              <h3>Open it</h3>
+              <div id="nextcloud-link" class="verdict" hidden></div>
+              <p class="hint">
+                Sign in as the admin user with the password generated when it was
+                installed. Both are on the Settings tab, where you can also change
+                the password.
+              </p>
+            </div>
+          </article>
+
+          <!-- Right: what it is, for anyone who has not switched it on yet. -->
+          <article class="card">
+            <h3>Nextcloud</h3>
+            <p class="muted">
+              Your own cloud for files, photos and video. It is where KaChat can
+              share media from and back chats up to, so none of it passes through
+              anyone else's servers. Video thumbnails and iPhone HEIC previews are
+              already set up for you.
+            </p>
+            <p class="hint">
+              It runs alongside the node with its own database and cache, and stays
+              off until you switch it on. Nothing else in this stack depends on it.
+            </p>
+          </article>
+        </div>
       </div>
 
       <div id="sub-nextcloud-settings" class="subtab">
@@ -1075,11 +1084,35 @@
             <label class="inline">Port <input type="number" id="nextcloud-port" min="1024" max="65535"></label>
             <label class="inline">Admin user <input id="nextcloud-user"></label>
             <label>Trusted domains
-              <input id="nextcloud-domains" placeholder="localhost, cloud.example.com">
+              <input id="nextcloud-domains" placeholder="localhost cloud.example.com">
             </label>
             <p class="hint">
-              If you give Nextcloud a domain, add it here too. Nextcloud turns away
-              requests for names it has not been told about.
+              If you give Nextcloud a domain, add it here too, separated by spaces
+              or commas. Nextcloud turns away requests for names it has not been
+              told about.
+            </p>
+          </article>
+
+          <article class="card span2">
+            <h3>Admin password</h3>
+            <p class="muted">
+              Generated when Nextcloud was installed. This is the password for the
+              admin user above, and the panel is the only place it is shown.
+            </p>
+            <div class="row">
+              <input id="nextcloud-pass" type="password" size="26" readonly>
+              <button type="button" id="nextcloud-pass-show" class="ghost">Show</button>
+              <button type="button" id="nextcloud-pass-copy" class="ghost">Copy</button>
+            </div>
+            <label class="stack">Change it
+              <span class="row">
+                <input id="nextcloud-pass-new" type="password" size="26" placeholder="at least 10 characters">
+                <button type="button" id="nextcloud-pass-save" class="primary">Set new password</button>
+              </span>
+            </label>
+            <p class="hint">
+              This changes it inside Nextcloud straight away and remembers the new
+              one here. Anyone already signed in stays signed in.
             </p>
           </article>
 
