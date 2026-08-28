@@ -34,19 +34,21 @@ export const FIRMWARE_DIR = path.join(CONF_DIR, 'kassigner-firmware');
  * and the autofocus one is mounted flipped, so it needs its own image; it is a
  * variant of the same board rather than a third board.
  */
+// Order matters: this is the order the cards appear in.
 export const BOARDS = {
-    waveshare: {
-        label: 'Waveshare ESP32-S3-Touch-LCD-2',
-        blurb: 'The board the firmware is built for by default. 2 inch touch screen with a camera module.',
-        asset: 'waveshare',
-        hashKey: 'Waveshare',
-        variant: { key: 'waveshare-af', label: 'Mine has the autofocus camera module', asset: 'waveshare-af', hashKey: 'Waveshare-AF' },
-    },
     m5stack: {
         label: 'M5Stack CoreS3 Lite',
-        blurb: 'The alternative board. Its reset button doubles as the BOOT button when reflashing.',
+        blurb: 'Its reset button doubles as the BOOT button when reflashing.',
         asset: 'm5stack',
         hashKey: 'M5Stack',
+        buy: { url: 'https://shop.m5stack.com/products/m5stack-cores3-lite', label: 'M5Stack store' },
+    },
+    waveshare: {
+        label: 'Waveshare ESP32-S3-Touch-LCD-2',
+        blurb: 'A 2 inch touch screen with a camera module, which the firmware is built for by default.',
+        asset: 'waveshare',
+        hashKey: 'Waveshare',
+        buy: { url: 'https://www.waveshare.com/esp32-s3-touch-lcd-2.htm', label: 'Waveshare store' },
     },
 };
 

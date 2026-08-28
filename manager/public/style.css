@@ -1315,3 +1315,7 @@ ul.plain li { margin: 8px 0; color: var(--muted); font-size: 13.5px; }
 }
 .board-card h3 { margin-top: 0; }
 .board-card .row { margin-top: auto; }
+
+/* The buy link sits under the choice, not beside it: it is for the person who
+   has not got a board yet, and should not compete with picking one. */
+.board-card .buy { margin: 10px 0 0; }

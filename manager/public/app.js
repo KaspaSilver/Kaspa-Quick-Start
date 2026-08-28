@@ -2727,23 +2727,18 @@ function renderKassignerBoards() {
             ([key, b]) => `<article class="card board-card" data-board="${escapeHtml(key)}">
               <h3>${escapeHtml(b.label)}</h3>
               <p class="muted">${escapeHtml(b.blurb)}</p>
+              <div class="row"><button type="button" class="primary" data-pick-board="${escapeHtml(key)}">This is mine</button></div>
               ${
-                  b.variant
-                      ? `<label class="check"><input type="checkbox" data-variant="${escapeHtml(key)}"> ${escapeHtml(b.variant.label)}</label>`
+                  b.buy
+                      ? `<p class="hint buy">Do not have one? <a href="${escapeHtml(b.buy.url)}" target="_blank" rel="noreferrer noopener">${escapeHtml(b.buy.label)} ↗</a></p>`
                       : ''
               }
-              <div class="row"><button type="button" class="primary" data-pick-board="${escapeHtml(key)}">This is mine</button></div>
             </article>`,
         )
         .join('');
 }
 
-/** The asset name differs for the autofocus Waveshare, which is a checkbox. */
-function boardAsset(key) {
-    const board = kassignerBoards[key];
-    const variantOn = document.querySelector(`[data-variant="${key}"]`)?.checked;
-    return variantOn && board.variant ? board.variant.asset : board.asset;
-}
+const boardAsset = (key) => kassignerBoards[key].asset;
 
 $('kassigner-boards').addEventListener('click', (event) => {
     const key = event.target.dataset?.pickBoard;
