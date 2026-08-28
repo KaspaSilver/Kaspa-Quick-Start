@@ -2820,10 +2820,29 @@ $('kassigner-devices').addEventListener('click', async (event) => {
     ) {
         return;
     }
+    const panel = $('kassigner-flash');
+    const state = $('kassigner-flash-state');
+    panel.hidden = false;
+    state.textContent = 'working';
+    state.className = 'tag';
+    for (const b of document.querySelectorAll('[data-flash]')) b.disabled = true;
+
+    claimJob('Write firmware', {
+        el: $('kassigner-log'),
+        state,
+        onEnd: (job) => {
+            state.textContent = job.status === 'succeeded' ? 'done' : 'failed';
+            state.className = `tag ${job.status === 'succeeded' ? 'ok' : 'off'}`;
+            for (const b of document.querySelectorAll('[data-flash]')) b.disabled = false;
+        },
+    });
+
     try {
         await api('/api/kassigner/flash', { method: 'POST', body: { port, board: chosenBoard.asset, image: 'full' } });
-        openConsole(`Writing firmware to ${port}`);
     } catch (e) {
+        inlineJob = null;
+        panel.hidden = true;
+        for (const b of document.querySelectorAll('[data-flash]')) b.disabled = false;
         toast(e.message, 'bad');
     }
 });
@@ -3382,19 +3401,60 @@ function appendConsole(line) {
     body.scrollTop = body.scrollHeight;
 }
 
+/**
+ * A job that renders on its own page rather than in the console overlay.
+ *
+ * Flashing is watched from the screen you started it on: you have a board in
+ * your hand and the port you picked is on that screen, so throwing a modal over
+ * it hides the context you need if something goes wrong.
+ */
+let inlineJob = null;
+
+function claimJob(namePrefix, { el, state, onEnd }) {
+    inlineJob = { namePrefix, el, state, onEnd };
+    el.textContent = '';
+}
+
+function inlineJobHandles(name) {
+    return inlineJob && String(name || '').startsWith(inlineJob.namePrefix);
+}
+
+function appendInline(line) {
+    const el = inlineJob.el;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    el.textContent += `${line}\n`;
+    if (atBottom) el.scrollTop = el.scrollHeight;
+}
+
 function connectJobs() {
     jobStream?.close();
     jobStream = new EventSource('/api/jobs/stream');
     jobStream.addEventListener('snapshot', (event) => {
         const job = JSON.parse(event.data);
         if (job.status !== 'running') return;
+        if (inlineJobHandles(job.name)) return;
         openConsole(job.name);
         $('console-body').textContent = `${job.lines.join('\n')}\n`;
     });
-    jobStream.addEventListener('start', (event) => openConsole(JSON.parse(event.data).name));
-    jobStream.addEventListener('line', (event) => appendConsole(JSON.parse(event.data).line));
+    jobStream.addEventListener('start', (event) => {
+        const job = JSON.parse(event.data);
+        if (inlineJobHandles(job.name)) return;
+        openConsole(job.name);
+    });
+    jobStream.addEventListener('line', (event) => {
+        const { line } = JSON.parse(event.data);
+        if (inlineJob) return appendInline(line);
+        appendConsole(line);
+    });
     jobStream.addEventListener('end', (event) => {
         const job = JSON.parse(event.data);
+        if (inlineJob) {
+            appendInline(job.status === 'succeeded' ? '\n✓ Done.' : `\n✗ Failed: ${job.error}`);
+            inlineJob.onEnd?.(job);
+            inlineJob = null;
+            refreshStatus();
+            return;
+        }
         appendConsole(job.status === 'succeeded' ? '\n✓ Done.' : `\n✗ Failed: ${job.error}`);
         toast(job.status === 'succeeded' ? `${job.name}: done` : `${job.name}: failed`, job.status === 'succeeded' ? 'good' : 'bad');
         refreshStatus();

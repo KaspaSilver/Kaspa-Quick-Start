@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { CONF_DIR, hostPath } from './paths.js';
+import { CONF_DIR, STACK_LOCAL, hostPath } from './paths.js';
 import { docker } from './dockerctl.js';
 
 /**
@@ -304,7 +304,14 @@ export async function ensureEsptool(onLine = () => {}) {
         /* not built yet */
     }
     onLine('Building the flashing tool (once)...');
-    await docker(['build', '-t', ESPTOOL_IMAGE, hostPath('kassigner')], { onLine, timeoutMs: 15 * 60_000 });
+    // The build context is read by the docker CLI, which is in this container,
+    // so it takes the local path. The volume mount below is resolved by the
+    // daemon instead and has to be the host's. Mixing them up is the easiest
+    // way to break this stack, which is why paths.js keeps them apart.
+    await docker(['build', '-t', ESPTOOL_IMAGE, path.join(STACK_LOCAL, 'kassigner')], {
+        onLine,
+        timeoutMs: 15 * 60_000,
+    });
 }
 
 const PORT_RE = /^\/dev\/tty(ACM|USB)\d+$/;
@@ -344,6 +351,10 @@ export async function flash({ port, board, image = 'full', onLine = () => {} }) 
             '-v',
             `${hostPath('conf/kassigner-firmware')}:/fw:ro`,
             ESPTOOL_IMAGE,
+            // `python -m esptool`, which is how the project's own README
+            // invokes it. The package installs `esptool.py`, not `esptool`.
+            'python',
+            '-m',
             'esptool',
             '--chip',
             'esp32s3',

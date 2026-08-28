@@ -1323,6 +1323,16 @@
             <span class="muted" id="kassigner-detect-note"></span>
           </div>
           <div id="kassigner-devices"></div>
+
+          <!-- The write reports here rather than in the console overlay, so the
+               screen you started from is the screen you watch it on. -->
+          <div id="kassigner-flash" hidden>
+            <div class="node-head">
+              <h3>Writing firmware</h3>
+              <span id="kassigner-flash-state" class="tag">working</span>
+            </div>
+            <pre id="kassigner-log" class="logview"></pre>
+          </div>
         </article>
       </div>
 
