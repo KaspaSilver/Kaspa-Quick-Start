@@ -238,7 +238,10 @@ export async function detectDevices() {
                 'alpine:3.21',
                 'sh',
                 '-c',
-                'ls -l /dev/serial/by-id/ 2>/dev/null; echo "---"; ls /dev/ttyACM* /dev/ttyUSB* 2>/dev/null',
+                // `exit 0` at the end on purpose: with nothing plugged in both
+                // globs fail and the shell would exit non-zero, turning "no
+                // device yet" into an error when it is the expected state.
+                'ls -l /dev/serial/by-id/ 2>/dev/null; echo "---"; ls /dev/ttyACM* /dev/ttyUSB* 2>/dev/null; exit 0',
             ],
             { timeoutMs: 30_000 },
         );

@@ -95,6 +95,18 @@
         </label>
       </div>
 
+      <div class="nav-row">
+        <button class="nav-item" data-tab="kassigner" title="KasSigner">
+          <span class="nav-dot" data-health="kassigner"></span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="2.5" width="14" height="19" rx="2.5"/><path d="M9 6.5h6M12 17.5h.01"/></svg>
+          <span class="label">KasSigner</span>
+        </button>
+        <label class="switch mini" title="Download and verify the signing device firmware">
+          <input type="checkbox" data-service="kassigner" aria-label="Download and verify the KasSigner firmware">
+          <span class="track"></span>
+        </label>
+      </div>
+
       <p class="nav-group-title">Network</p>
       <div class="nav-row">
         <button class="nav-item" data-tab="proxy" title="Proxy &amp; domains">
@@ -1262,6 +1274,85 @@
       </div>
       <!-- One tile per container, all fed by a single multiplexed stream. -->
       <div class="log-grid" id="log-grid"></div>
+    </section>
+
+    <!-- -------------------------------------------------------- kassigner -->
+    <!--
+      KasSigner is a device, not a service. Nothing here runs in the background:
+      the firmware is fetched and checked once, and the rest of this page writes
+      it to a board over USB and gets out of the way.
+    -->
+    <section id="tab-kassigner" class="tab">
+      <nav class="subnav" aria-label="KasSigner">
+        <button class="subtab-btn active" data-subtab="kassigner-setup">Setup</button>
+        <button class="subtab-btn" data-subtab="kassigner-updates">Updates</button>
+      </nav>
+
+      <div id="sub-kassigner-setup" class="subtab active">
+        <article class="card toggle-bar">
+          <div class="toggle-row">
+            <div class="toggle-text">
+              <strong>KasSigner</strong>
+              <span class="muted">
+                An air-gapped device that holds your keys offline and signs by
+                QR code. Switching this on downloads the firmware and checks
+                every image against the hash the project publishes.
+              </span>
+            </div>
+            <span id="kassigner-state" class="tag">off</span>
+          </div>
+          <div id="kassigner-notice" class="verdict" hidden></div>
+        </article>
+
+        <!-- Step one: which board. -->
+        <article class="card span2" id="kassigner-step-board">
+          <h3>Which device do you have?</h3>
+          <div class="grid" id="kassigner-boards"></div>
+        </article>
+
+        <!-- Step two: plug it in and find it. -->
+        <article class="card span2" id="kassigner-step-plug" hidden>
+          <div class="node-head">
+            <h3>Plug it in</h3>
+            <span id="kassigner-board-chosen" class="tag"></span>
+            <button type="button" id="kassigner-back" class="ghost">Choose a different device</button>
+          </div>
+          <p class="muted" id="kassigner-plug-hint"></p>
+          <div class="row">
+            <button type="button" id="kassigner-detect" class="primary">Look for it</button>
+            <span class="muted" id="kassigner-detect-note"></span>
+          </div>
+          <div id="kassigner-devices"></div>
+        </article>
+      </div>
+
+      <div id="sub-kassigner-updates" class="subtab">
+        <div class="grid">
+          <article class="card span2">
+            <h3>Firmware</h3>
+            <p class="muted">
+              Tracks <code>InKasWeRust/KasSigner</code>. Each release publishes a
+              SHA-256 for every image, and nothing is written to a device unless
+              the download matches it.
+            </p>
+            <label class="inline">Release
+              <select id="kassigner-release"><option value="">newest</option></select>
+              <button type="button" class="ghost mini" id="kassigner-releases-scan" title="Look up every release">Rescan</button>
+            </label>
+            <div id="kassigner-build" class="verdict"></div>
+            <div id="kassigner-update-status" class="verdict">Not checked yet.</div>
+            <div class="row">
+              <button type="button" id="kassigner-check" class="ghost">Check for updates</button>
+              <button type="button" id="kassigner-fetch" class="primary">Download and verify</button>
+            </div>
+            <p class="hint">
+              This only refreshes the copy held here. Putting a new version on a
+              device is a flash, which you start from Setup with the board plugged
+              in.
+            </p>
+          </article>
+        </div>
+      </div>
     </section>
 
     <!-- ---------------------------------------------------------- support -->

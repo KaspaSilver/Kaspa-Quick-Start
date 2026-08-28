@@ -1314,3 +1314,15 @@ ul.links li:last-child { border-bottom: 0; }
 ul.links .what { color: var(--muted); font-size: 12.5px; min-width: 74px; }
 ul.links .handle { font-family: var(--mono); }
 ul.plain li { margin: 8px 0; color: var(--muted); font-size: 13.5px; }
+
+/* --------------------------------------------------------------- kassigner */
+
+/* Board cards sit inside a card, so they need their own surface to read as
+   choices rather than as more of the same panel. */
+.board-card {
+    background: var(--panel-2);
+    display: flex;
+    flex-direction: column;
+}
+.board-card h3 { margin-top: 0; }
+.board-card .row { margin-top: auto; }

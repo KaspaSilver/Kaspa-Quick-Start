@@ -85,6 +85,7 @@ function showApp() {
     loadProxies();
     loadMining();
     loadApps();
+    loadKassigner();
     loadDuckDns();
     connectJobs();
     connectLogs();
@@ -216,6 +217,7 @@ function selectSubtab(section, name) {
     // Same for the release list: it costs a GitHub call, so it is fetched when
     // the tab that shows it is opened rather than on every page load.
     if (name === 'updates') loadReleasePicker().catch(() => {});
+    if (name === 'kassigner-updates') loadKassignerReleases().catch(() => {});
 }
 
 for (const button of document.querySelectorAll('.subtab-btn')) {
@@ -269,6 +271,7 @@ function setNavSwitch(service, on, { disabled = false, reason = '' } = {}) {
 const SERVICE_ACTIONS = {
     node: (on) => api(`/api/node/${on ? 'start' : 'stop'}`, { method: 'POST' }),
     mining: (on) => api('/api/mining', { method: 'PUT', body: { config: { ...collectMiningConfig(), enabled: on } } }),
+    kassigner: (on) => api('/api/kassigner', { method: 'PUT', body: { enabled: on } }),
     kachat: (on) => api('/api/apps/kachat', { method: 'PUT', body: { config: { ...collectAppConfig('kachat'), enabled: on } } }),
     nextcloud: (on) =>
         api('/api/apps/nextcloud', { method: 'PUT', body: { config: { ...collectAppConfig('nextcloud'), enabled: on } } }),
@@ -279,6 +282,7 @@ const SERVICE_NAMES = {
     node: 'the node',
     mining: 'mining',
     kachat: 'the KaChat indexer',
+    kassigner: 'KasSigner',
     nextcloud: 'Nextcloud',
     proxy: 'the reverse proxy',
 };
@@ -303,6 +307,7 @@ for (const input of document.querySelectorAll('[data-service]')) {
                 refreshStatus();
                 loadMining();
                 loadApps();
+                loadKassigner();
                 loadProxies();
             }, 2500);
         }
@@ -2676,6 +2681,217 @@ $('tab-kachat').addEventListener('click', async (event) => {
     }
 });
 
+// -------------------------------------------------------------- kassigner ---
+
+/**
+ * KasSigner is a device rather than a service, so this page is a sequence
+ * instead of a dashboard: pick the board, plug it in, find it, write to it.
+ *
+ * Nothing runs in the background and nothing here holds a key. The firmware is
+ * downloaded and hash-checked by the manager, and the write happens in a
+ * throwaway container with only that one serial port passed into it.
+ */
+let kassignerState = null;
+let kassignerBoards = {};
+let chosenBoard = null;
+
+async function loadKassigner() {
+    const r = await api('/api/kassigner');
+    kassignerState = r.state;
+    kassignerBoards = r.boards;
+
+    const on = Boolean(r.state.enabled);
+    const tag = $('kassigner-state');
+    tag.textContent = on ? r.state.release || 'ready' : 'off';
+    tag.className = `tag ${on ? 'ok' : 'off'}`;
+    setNavSwitch('kassigner', on);
+    setNavHealth('kassigner', on ? 'ok' : 'off');
+
+    const notice = $('kassigner-notice');
+    notice.hidden = on;
+    if (!on) {
+        notice.className = 'verdict';
+        notice.textContent = 'Switch it on to download the firmware and check it. Nothing is written to a device until you ask.';
+    }
+
+    $('kassigner-build').textContent = r.state.verifiedAt
+        ? `${r.state.release} verified on ${new Date(r.state.verifiedAt).toLocaleString()}`
+        : 'Nothing downloaded yet.';
+
+    renderKassignerBoards();
+    // Choosing a board only makes sense once the firmware is actually here.
+    $('kassigner-step-board').hidden = !on;
+}
+
+function renderKassignerBoards() {
+    $('kassigner-boards').innerHTML = Object.entries(kassignerBoards)
+        .map(
+            ([key, b]) => `<article class="card board-card" data-board="${escapeHtml(key)}">
+              <h3>${escapeHtml(b.label)}</h3>
+              <p class="muted">${escapeHtml(b.blurb)}</p>
+              ${
+                  b.variant
+                      ? `<label class="check"><input type="checkbox" data-variant="${escapeHtml(key)}"> ${escapeHtml(b.variant.label)}</label>`
+                      : ''
+              }
+              <div class="row"><button type="button" class="primary" data-pick-board="${escapeHtml(key)}">This is mine</button></div>
+            </article>`,
+        )
+        .join('');
+}
+
+/** The asset name differs for the autofocus Waveshare, which is a checkbox. */
+function boardAsset(key) {
+    const board = kassignerBoards[key];
+    const variantOn = document.querySelector(`[data-variant="${key}"]`)?.checked;
+    return variantOn && board.variant ? board.variant.asset : board.asset;
+}
+
+$('kassigner-boards').addEventListener('click', (event) => {
+    const key = event.target.dataset?.pickBoard;
+    if (!key) return;
+    chosenBoard = { key, asset: boardAsset(key), label: kassignerBoards[key].label };
+
+    $('kassigner-step-board').hidden = true;
+    $('kassigner-step-plug').hidden = false;
+    $('kassigner-board-chosen').textContent = chosenBoard.label;
+    $('kassigner-plug-hint').textContent =
+        key === 'm5stack'
+            ? 'Connect it over USB. If it has been used before, hold the reset button while plugging it in so it comes up ready to be written to.'
+            : 'Connect it over USB. If it has been used before, hold the BOOT button while plugging it in so it comes up ready to be written to.';
+    $('kassigner-devices').innerHTML = '';
+    $('kassigner-detect-note').textContent = '';
+});
+
+$('kassigner-back').addEventListener('click', () => {
+    chosenBoard = null;
+    $('kassigner-step-plug').hidden = true;
+    $('kassigner-step-board').hidden = false;
+});
+
+$('kassigner-detect').addEventListener('click', async () => {
+    const button = $('kassigner-detect');
+    button.disabled = true;
+    $('kassigner-detect-note').textContent = 'Looking at the USB ports…';
+    try {
+        const { devices } = await api('/api/kassigner/devices');
+        renderKassignerDevices(devices);
+        $('kassigner-detect-note').textContent = devices.length
+            ? `${devices.length} serial device${devices.length === 1 ? '' : 's'} found.`
+            : 'Nothing there yet.';
+    } catch (e) {
+        $('kassigner-detect-note').textContent = '';
+        toast(e.message, 'bad');
+    } finally {
+        button.disabled = false;
+    }
+});
+
+function renderKassignerDevices(devices) {
+    const box = $('kassigner-devices');
+    if (!devices.length) {
+        box.innerHTML =
+            '<p class="verdict">No serial device is connected. Check the cable is a data cable rather than charge-only, ' +
+            'and that the board is in download mode.</p>';
+        return;
+    }
+    box.innerHTML = `<div class="scroll-x"><table class="blocks">
+        <thead><tr><th>Port</th><th>What it says it is</th><th></th></tr></thead>
+        <tbody>${devices
+            .map(
+                (d) => `<tr>
+                  <td class="mono">${escapeHtml(d.port)}</td>
+                  <td class="muted">${escapeHtml(d.id || 'no identifier')}${
+                      d.looksLikeEsp32 ? ' <span class="tag ok">looks right</span>' : ''
+                  }</td>
+                  <td><button type="button" class="primary" data-flash="${escapeHtml(d.port)}">Write firmware</button></td>
+                </tr>`,
+            )
+            .join('')}</tbody></table></div>
+        <p class="hint">
+          Writing replaces everything on the board. It does not touch a seed,
+          because a KasSigner never stores one: keys live in RAM and are gone at
+          power-off.
+        </p>`;
+}
+
+$('kassigner-devices').addEventListener('click', async (event) => {
+    const port = event.target.dataset?.flash;
+    if (!port || !chosenBoard) return;
+    if (
+        !confirm(
+            `Write KasSigner ${kassignerState?.release || ''} to ${port}?\n\n` +
+                `Board: ${chosenBoard.label}\n\n` +
+                'Everything currently on the device is replaced. The image was checked against the hash the project publishes.',
+        )
+    ) {
+        return;
+    }
+    try {
+        await api('/api/kassigner/flash', { method: 'POST', body: { port, board: chosenBoard.asset, image: 'full' } });
+        openConsole(`Writing firmware to ${port}`);
+    } catch (e) {
+        toast(e.message, 'bad');
+    }
+});
+
+// --- updates ---
+
+async function loadKassignerReleases({ force = false } = {}) {
+    const select = $('kassigner-release');
+    const { releases } = await api(`/api/kassigner/releases${force ? '?force=1' : ''}`);
+    const stable = releases.filter((r) => !r.prerelease);
+    const pre = releases.filter((r) => r.prerelease);
+    const opts = (list) => list.map((r) => `<option value="${escapeHtml(r.tag)}">${escapeHtml(r.tag)}</option>`).join('');
+    select.innerHTML =
+        '<option value="">newest release</option>' +
+        (stable.length ? `<optgroup label="Releases">${opts(stable)}</optgroup>` : '') +
+        (pre.length ? `<optgroup label="Prereleases">${opts(pre)}</optgroup>` : '');
+    if (kassignerState?.release) select.value = kassignerState.release;
+    return releases;
+}
+
+$('kassigner-releases-scan').addEventListener('click', async () => {
+    try {
+        const r = await loadKassignerReleases({ force: true });
+        toast(`${r.length} releases upstream.`);
+    } catch (e) {
+        toast(e.message, 'bad');
+    }
+});
+
+$('kassigner-check').addEventListener('click', async () => {
+    const status = $('kassigner-update-status');
+    status.className = 'verdict';
+    status.textContent = 'Checking GitHub…';
+    try {
+        const releases = await loadKassignerReleases({ force: true });
+        const newest = releases.find((r) => !r.prerelease) ?? releases[0];
+        const have = kassignerState?.release;
+        if (!have) {
+            status.textContent = `${newest.tag} is the newest release. Nothing is downloaded here yet.`;
+        } else if (have === newest.tag) {
+            status.className = 'verdict ok';
+            status.textContent = `You have ${have}, which is the newest.`;
+        } else {
+            status.className = 'verdict bad';
+            status.textContent = `${newest.tag} is out, and you have ${have}.`;
+        }
+    } catch (e) {
+        status.className = 'verdict bad';
+        status.textContent = e.message;
+    }
+});
+
+$('kassigner-fetch').addEventListener('click', async () => {
+    try {
+        await api('/api/kassigner', { method: 'PUT', body: { enabled: true, tag: $('kassigner-release').value || null } });
+        openConsole('Fetching KasSigner firmware');
+    } catch (e) {
+        toast(e.message, 'bad');
+    }
+});
+
 // ---------------------------------------------------------------- proxies ---
 
 let proxies = [];
@@ -3192,6 +3408,7 @@ function connectJobs() {
         loadProxies();
         loadMining();
         loadApps();
+        loadKassigner();
     });
 }
 

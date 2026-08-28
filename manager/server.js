@@ -30,6 +30,7 @@ import * as syncProgress from './lib/sync-progress.js';
 import * as network from './lib/network.js';
 import * as emission from './lib/emission.js';
 import * as pruning from './lib/pruning.js';
+import * as kassigner from './lib/kassigner.js';
 import { nodeSnapshot, rpc } from './lib/rpc.js';
 import { jobs } from './lib/jobs.js';
 import {
@@ -1079,6 +1080,58 @@ async function applyAppConfig(name, cfg, onLine = () => {}) {
     onLine(`${app.label} is up.`);
     return { enabled: true };
 }
+
+// ---------------------------------------------------------------- kassigner --
+
+route('GET', /^\/api\/kassigner$/, async (req, res) => {
+    const state = kassigner.loadState();
+    sendJson(res, 200, {
+        state,
+        repo: kassigner.REPO,
+        boards: kassigner.BOARDS,
+    });
+});
+
+/** Switching it on fetches every image and checks each against its hash. */
+route('PUT', /^\/api\/kassigner$/, async (req, res) => {
+    const body = await readBody(req);
+    if (!body.enabled) {
+        kassigner.disable();
+        return sendJson(res, 200, { ok: true, state: kassigner.loadState() });
+    }
+    const job = jobs.start('Fetch and verify KasSigner firmware', (onLine) =>
+        kassigner.prepare(body.tag || null, onLine),
+    );
+    sendJson(res, 202, { ok: true, jobId: job.id });
+});
+
+route('GET', /^\/api\/kassigner\/releases$/, async (req, res, match, url) => {
+    try {
+        const releases = await kassigner.listReleases({ force: url.searchParams.get('force') === '1' });
+        sendJson(res, 200, { releases: releases.map(({ tag, prerelease, publishedAt }) => ({ tag, prerelease, publishedAt })) });
+    } catch (err) {
+        fail(res, 502, err.message);
+    }
+});
+
+route('GET', /^\/api\/kassigner\/devices$/, async (req, res) => {
+    try {
+        sendJson(res, 200, { devices: await kassigner.detectDevices() });
+    } catch (err) {
+        fail(res, 500, err.message);
+    }
+});
+
+route('POST', /^\/api\/kassigner\/flash$/, async (req, res) => {
+    const body = await readBody(req);
+    const state = kassigner.loadState();
+    if (!state.enabled) return fail(res, 409, 'Switch KasSigner on first, so the firmware is downloaded and checked.');
+
+    const job = jobs.start(`Write firmware to ${body.port}`, (onLine) =>
+        kassigner.flash({ port: body.port, board: body.board, image: body.image || 'full', onLine }),
+    );
+    sendJson(res, 202, { ok: true, jobId: job.id });
+});
 
 route('GET', /^\/api\/apps$/, async (req, res) => {
     const cfg = apps.loadAppsConfig();
