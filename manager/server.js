@@ -1074,6 +1074,7 @@ route('GET', /^\/api\/apps$/, async (req, res) => {
             published,
             build: apps.readBuildRecord(name),
             blockers: apps.appBlockers(name, cfg, nodeCfg),
+            lastRun: apps.readLastRun(name),
         };
     }
     sendJson(res, 200, { config: cfg, apps: state, adminPath: kachatProxy.MOUNT, readiness: await nodeReadiness() });
@@ -1101,10 +1102,36 @@ route('PUT', /^\/api\/apps\/(kachat|nextcloud)$/, async (req, res, match) => {
     if (blockers.length) return fail(res, 409, `${apps.APPS[name].label} cannot start yet.`, { details: blockers });
 
     apps.saveAppsConfig(cfg);
-    const job = jobs.start(
-        `${cfg[name].enabled ? 'Start' : 'Stop'} ${apps.APPS[name].label}`,
-        (onLine) => applyAppConfig(name, cfg, onLine),
-    );
+    const job = jobs.start(`${cfg[name].enabled ? 'Start' : 'Stop'} ${apps.APPS[name].label}`, async (onLine) => {
+        // Remember how this turned out. The job itself only lives in memory, so
+        // without a record on disk a failed build is indistinguishable from one
+        // that is still running as soon as the manager restarts.
+        apps.writeLastRun(name, { ok: null, error: null, enabled: cfg[name].enabled });
+
+        // Docker's own error says which build step died but not why; the reason
+        // is a line the compiler printed further up, which only ever appears in
+        // the streamed output. Keeping the tail of it means the panel can say
+        // something more useful than "exit code 101".
+        const output = [];
+        const capture = (line) => {
+            output.push(line);
+            if (output.length > 400) output.shift();
+            onLine(line);
+        };
+
+        try {
+            const result = await applyAppConfig(name, cfg, capture);
+            apps.writeLastRun(name, { ok: true, error: null, enabled: cfg[name].enabled });
+            return result;
+        } catch (err) {
+            apps.writeLastRun(name, {
+                ok: false,
+                error: `${output.join('\n')}\n${err.message}`,
+                enabled: cfg[name].enabled,
+            });
+            throw err;
+        }
+    });
     sendJson(res, 202, { ok: true, jobId: job.id, config: cfg });
 });
 

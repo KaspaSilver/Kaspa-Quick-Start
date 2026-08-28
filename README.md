@@ -83,9 +83,9 @@ Docker gone, remove it yourself afterwards.
 | `5555`  | stratum             | only if you mine, and only for miners outside this machine |
 | `3080`  | KaPosts REST API    | only if KaChat clients connect from outside this machine |
 | `8600`  | chat indexer API    | as above |
-| `8080`  | Nextcloud           | only if you reach Nextcloud without a proxy host |
+| `8081`  | Nextcloud           | only if you reach Nextcloud without a proxy host |
 | `80`,`443` | reverse proxy    | only if you switch the proxy on for domains / HTTPS |
-| `8080`  | control panel       | bound to `127.0.0.1` — do not forward it |
+| `8080`  | control panel       | bound to `127.0.0.1`, so do not forward it |
 
 Testnet-10 uses `16211 / 16210 / 17210 / 18210`; the panel switches them for you.
 

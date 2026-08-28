@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { CONF_DIR } from './paths.js';
-import { readJson, writeJson, updateEnvFile, readEnvFile } from './store.js';
+import { readJson, writeJson, updateEnvFile, readEnvFile, NETWORKS } from './store.js';
 
 /**
  * The optional applications that ride along with the node: the KaChat indexer
@@ -59,13 +59,48 @@ export const DEFAULT_APPS_CONFIG = {
         enabled: false,
         ref: 'main',
         publish: { web: true },
-        hostPort: 8080,
+        // Not 8080. That is this panel's own port, and Docker refuses to start a
+        // container whose published port is already taken, so a Nextcloud left
+        // on 8080 could never come up.
+        hostPort: 8081,
         adminUser: 'admin',
         trustedDomains: 'localhost',
     },
 };
 
-export const loadAppsConfig = () => readJson(APPS_STATE_FILE, DEFAULT_APPS_CONFIG);
+/**
+ * Host ports the stack already publishes, so Nextcloud cannot be pointed at one
+ * of them. Docker's own error for this arrives long after the button was
+ * pressed and reads like an internal fault, which is no help at all when the
+ * fix is simply to pick another number.
+ */
+export function reservedHostPorts() {
+    const panel = Number(process.env.PORT || 8080);
+    const ports = new Map([
+        [panel, 'this control panel'],
+        [80, 'the reverse proxy'],
+        [443, 'the reverse proxy'],
+        [5555, 'the stratum bridge'],
+    ]);
+    for (const [name, net] of Object.entries(NETWORKS)) {
+        for (const key of ['p2p', 'grpc', 'borsh', 'json']) {
+            ports.set(net[key], `the node on ${name}`);
+        }
+    }
+    return ports;
+}
+
+export function loadAppsConfig() {
+    const cfg = readJson(APPS_STATE_FILE, DEFAULT_APPS_CONFIG);
+    // Earlier versions defaulted Nextcloud to 8080, which is this panel's port,
+    // so it could never start. Move those forward rather than leaving somebody
+    // with a saved setting that only fails.
+    if (cfg.nextcloud && reservedHostPorts().has(Number(cfg.nextcloud.hostPort))) {
+        cfg.nextcloud.hostPort = DEFAULT_APPS_CONFIG.nextcloud.hostPort;
+    }
+    return cfg;
+}
+
 export const saveAppsConfig = (cfg) => writeJson(APPS_STATE_FILE, cfg);
 
 // ------------------------------------------------------------- validation --
@@ -102,9 +137,18 @@ export function validateAppsConfig(input) {
 
     cfg.nextcloud.publish = { web: n.publish?.web !== false };
 
-    const port = Number(n.hostPort ?? 8080);
-    if (!Number.isInteger(port) || port < 1024 || port > 65535) errors.push('Nextcloud port must be between 1024 and 65535.');
-    else cfg.nextcloud.hostPort = port;
+    const port = Number(n.hostPort ?? DEFAULT_APPS_CONFIG.nextcloud.hostPort);
+    const taken = reservedHostPorts().get(port);
+    if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+        errors.push('Nextcloud port must be between 1024 and 65535.');
+    } else if (taken && cfg.nextcloud.publish.web) {
+        errors.push(
+            `Port ${port} is already used by ${taken}, so Nextcloud cannot start on it. Pick another one, ` +
+                `for example ${port + 1}.`,
+        );
+    } else {
+        cfg.nextcloud.hostPort = port;
+    }
 
     const user = String(n.adminUser ?? 'admin').trim();
     if (!/^[A-Za-z0-9._-]{1,64}$/.test(user)) errors.push('Nextcloud admin user is invalid.');
@@ -259,4 +303,50 @@ export function readBuildRecord(name) {
 
 export function writeBuildRecord(name, record) {
     writeJson(buildRecordFile(name), record);
+}
+
+/**
+ * How the last attempt to start or stop an app turned out.
+ *
+ * Without this, an app whose build failed looks exactly like one that is still
+ * building: switched on, no container, and a panel that says "starting up"
+ * forever. The job that failed is in memory only, so it is gone the moment the
+ * manager restarts, and the reason for the failure goes with it.
+ */
+const lastRunFile = (name) => path.join(CONF_DIR, `${name}-lastrun.json`);
+
+export function readLastRun(name) {
+    return readJson(lastRunFile(name), { ok: null, error: null, at: null, enabled: null });
+}
+
+export function writeLastRun(name, record) {
+    writeJson(lastRunFile(name), { ...record, error: summarizeError(record.error), at: new Date().toISOString() });
+}
+
+/**
+ * Picks the one line worth showing out of a failed build.
+ *
+ * A broken `docker compose build` reports itself with a page of context: the
+ * Dockerfile excerpt, the layer graph, the numbered step. The sentence that
+ * says what actually went wrong is somewhere in the middle, so it gets found
+ * and the rest is left to the log.
+ */
+export function summarizeError(error) {
+    if (!error) return null;
+    const lines = String(error)
+        .split('\n')
+        // BuildKit stamps every line with its step number and a timestamp
+        // ("#25 6.607 error: ..."), which hides the start of the real message.
+        .map((l) => l.trim().replace(/^#\d+\s+[\d.]+\s+/, ''))
+        .filter(Boolean);
+
+    const pick =
+        // A compiler or tool saying why, which is the most useful thing there is.
+        lines.find((l) => /^error(\[[^\]]+\])?:/i.test(l)) ??
+        // BuildKit's summary of which step died.
+        lines.find((l) => l.startsWith('failed to solve:')) ??
+        lines[0];
+
+    const trimmed = pick.length > 240 ? `${pick.slice(0, 237)}...` : pick;
+    return trimmed.endsWith('.') ? trimmed : `${trimmed}.`;
 }

@@ -1362,6 +1362,18 @@ async function loadApps() {
     setNavSwitch('nextcloud', c.nextcloud.enabled);
 }
 
+/**
+ * The message for an app that is switched on but has no container. Saying
+ * "starting up" is right while it is still working and wrong once it has given
+ * up, and a build that fails leaves exactly that second state behind, so the
+ * outcome of the last attempt is what decides which one you get.
+ */
+function startFailure(state) {
+    if (state.lastRun?.ok !== false) return null;
+    const reason = (state.lastRun.error || '').trim();
+    return `Could not start. ${reason ? `${reason} ` : ''}The full output is under All logs; switching it off and on again retries.`;
+}
+
 function renderAppState(name, state) {
     const badge = $(`${name}-state`);
     const running = state.container?.running;
@@ -1391,8 +1403,10 @@ function renderAppState(name, state) {
         $('kachat-open').disabled = !show;
         if (enabled && !running && !state.blockers?.length) {
             notice.hidden = false;
-            notice.className = 'verdict';
+            const failure = startFailure(state);
+            notice.className = failure ? 'verdict bad' : 'verdict';
             notice.textContent =
+                failure ??
                 'Starting up. The first build compiles the indexer from source, which takes a while. You can watch it under All logs.';
         }
     }
@@ -1411,9 +1425,10 @@ function renderAppState(name, state) {
             link.textContent =
                 'Running, but not published on the host. Reach it through a proxy host, or tick "Publish on the host" under Settings.';
         } else {
+            const failure = enabled ? startFailure(state) : null;
             link.hidden = false;
-            link.className = 'verdict';
-            link.textContent = enabled ? 'Starting up…' : 'Not running. Switch it on above.';
+            link.className = failure ? 'verdict bad' : 'verdict';
+            link.textContent = failure ?? (enabled ? 'Starting up…' : 'Not running. Switch it on above.');
         }
 
         const build = $('nextcloud-build');
