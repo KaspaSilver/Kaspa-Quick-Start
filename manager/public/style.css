@@ -1219,3 +1219,85 @@ details.more > summary:hover { color: var(--text); }
     align-content: start;
     min-width: 0;
 }
+
+/* ------------------------------------------------------------------ mark */
+
+/* The Kaspa mark, which also reports node health. It replaced a coloured dot,
+   and that dot was the only place the panel said at a glance whether the node
+   was up, so the state moved onto the ring around the mark rather than being
+   dropped. */
+.mark {
+    display: inline-flex;
+    width: 22px;
+    height: 22px;
+    flex: 0 0 22px;
+}
+.mark svg { width: 100%; height: 100%; }
+
+/* The sidebar's blanket svg rule strokes everything and fills nothing, which is
+   right for the line icons and wrong for a logo. */
+.sidebar .mark svg circle,
+.mark svg circle {
+    fill: var(--accent);
+    stroke: none;
+}
+.sidebar .mark svg path,
+.mark svg path {
+    fill: none;
+    stroke: var(--bg);
+    stroke-width: 2.1;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.mark-wrap {
+    display: inline-flex;
+    border-radius: 50%;
+    flex: 0 0 auto;
+    transition: box-shadow 0.2s ease;
+}
+/* Health, as a ring rather than a second indicator competing with the logo.
+   Solid colours, not color-mix: a var() inside color-mix() does not resolve in
+   every engine, and when it fails it fails silently to transparent, which is
+   how the old dot's glow had been quietly missing. */
+.mark-wrap.ok { box-shadow: 0 0 0 2px var(--ok); }
+.mark-wrap.warn { box-shadow: 0 0 0 2px var(--warn); }
+.mark-wrap.bad { box-shadow: 0 0 0 2px var(--danger); }
+
+/* ----------------------------------------------------------- nav health */
+
+/* One dot per destination: green running, amber running but not right yet, red
+   switched on and not there. A service that is deliberately off gets a hollow
+   dot, because "off" is not a fault and should not look like one. */
+.nav-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex: 0 0 7px;
+    margin-right: 1px;
+    background: transparent;
+    border: 1px solid var(--line);
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+.nav-dot.ok { background: var(--ok); border-color: var(--ok); }
+.nav-dot.warn { background: var(--warn); border-color: var(--warn); }
+.nav-dot.bad { background: var(--danger); border-color: var(--danger); }
+/* Sections that are not a service have nothing to report. */
+.nav-dot.none { visibility: hidden; }
+
+.sidebar.collapsed .nav-dot { display: none; }
+
+/* ------------------------------------------------------------- support */
+
+ul.links, ul.plain { list-style: none; margin: 10px 0 0; padding: 0; }
+ul.links li {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--line);
+}
+ul.links li:last-child { border-bottom: 0; }
+ul.links .what { color: var(--muted); font-size: 12.5px; min-width: 74px; }
+ul.links .handle { font-family: var(--mono); }
+ul.plain li { margin: 8px 0; color: var(--muted); font-size: 13.5px; }

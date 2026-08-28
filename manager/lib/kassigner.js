@@ -1,0 +1,343 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { CONF_DIR, hostPath } from './paths.js';
+import { docker } from './dockerctl.js';
+
+/**
+ * KasSigner: an air-gapped signing device, not a service.
+ *
+ * Everything else in this stack is a container that runs. This is a tool that
+ * writes firmware to a board over USB and then gets out of the way, so there is
+ * nothing here to keep running and nothing to expose. "Switched on" means the
+ * firmware has been fetched and checked, so a device can be set up offline
+ * afterwards.
+ *
+ * The device holds keys. That shapes two decisions:
+ *
+ *   - only signed production images are offered. The unsigned set exists so a
+ *     build can be reproduced and compared, which is not what flashing is for.
+ *   - a download is never written to a board until its SHA-256 matches the hash
+ *     the release notes publish. No hash, no flash, with no way to skip it from
+ *     the panel.
+ */
+
+export const REPO = 'InKasWeRust/KasSigner';
+const API = `https://api.github.com/repos/${REPO}`;
+const ghHeaders = { Accept: 'application/vnd.github+json', 'User-Agent': 'kaspa-one-click-panel' };
+
+export const STATE_FILE = path.join(CONF_DIR, 'kassigner.json');
+export const FIRMWARE_DIR = path.join(CONF_DIR, 'kassigner-firmware');
+
+/**
+ * The boards the firmware is built for. Waveshare ships with two camera modules
+ * and the autofocus one is mounted flipped, so it needs its own image; it is a
+ * variant of the same board rather than a third board.
+ */
+export const BOARDS = {
+    waveshare: {
+        label: 'Waveshare ESP32-S3-Touch-LCD-2',
+        blurb: 'The board the firmware is built for by default. 2 inch touch screen with a camera module.',
+        asset: 'waveshare',
+        hashKey: 'Waveshare',
+        variant: { key: 'waveshare-af', label: 'Mine has the autofocus camera module', asset: 'waveshare-af', hashKey: 'Waveshare-AF' },
+    },
+    m5stack: {
+        label: 'M5Stack CoreS3 Lite',
+        blurb: 'The alternative board. Its reset button doubles as the BOOT button when reflashing.',
+        asset: 'm5stack',
+        hashKey: 'M5Stack',
+    },
+};
+
+/** Which image, and where it is written. Straight from the project's README. */
+export const IMAGES = {
+    // A blank or unknown board gets the lot: bootloader, partition table, app.
+    full: { suffix: '-full', offset: '0x0', label: 'complete firmware' },
+    // An already-set-up board only needs the application replaced.
+    app: { suffix: '', offset: '0x10000', label: 'application only' },
+};
+
+const readState = () => {
+    try {
+        return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+    } catch {
+        return { enabled: false, release: null, verifiedAt: null, images: {} };
+    }
+};
+const writeState = (s) => {
+    fs.mkdirSync(CONF_DIR, { recursive: true });
+    fs.writeFileSync(STATE_FILE, `${JSON.stringify(s, null, 2)}\n`);
+};
+
+export const loadState = readState;
+
+// ------------------------------------------------------------- upstream ----
+
+/**
+ * Pulls the published SHA-256 table out of a release's notes.
+ *
+ * The notes group the twelve hashes under Signed/Unsigned and then App-only/
+ * Full-flash, with one board per line. Nothing machine readable is published
+ * alongside them, so the table is read as it is written.
+ */
+export function parseHashes(body) {
+    const out = {};
+    let signed = null;
+    let kind = null;
+
+    for (const raw of String(body || '').split('\n')) {
+        const line = raw.trim();
+        if (/^\*\*Signed\*\*/i.test(line)) signed = true;
+        else if (/^\*\*Unsigned\*\*/i.test(line)) signed = false;
+        else if (/^App-only/i.test(line)) kind = 'app';
+        else if (/^Full-flash/i.test(line)) kind = 'full';
+
+        const m = /^([A-Za-z0-9-]+):\s+([0-9a-f]{64})$/.exec(line);
+        if (m && signed !== null && kind) {
+            out[`${signed ? 'signed' : 'unsigned'}:${kind}:${m[1]}`] = m[2];
+        }
+    }
+    return out;
+}
+
+let releaseCache = { at: 0, value: null };
+const RELEASE_CACHE_MS = 10 * 60_000;
+
+export async function listReleases({ force = false } = {}) {
+    if (!force && releaseCache.value && Date.now() - releaseCache.at < RELEASE_CACHE_MS) return releaseCache.value;
+
+    const res = await fetch(`${API}/releases?per_page=20`, { headers: ghHeaders, signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) {
+        throw new Error(`GitHub returned ${res.status}${res.status === 403 ? ' (rate limit, try again shortly)' : ''}`);
+    }
+    const value = (await res.json())
+        .filter((r) => !r.draft)
+        .map((r) => ({
+            tag: r.tag_name,
+            prerelease: Boolean(r.prerelease),
+            publishedAt: r.published_at,
+            hashes: parseHashes(r.body),
+            assets: Object.fromEntries(r.assets.map((a) => [a.name, a.browser_download_url])),
+        }));
+
+    releaseCache = { at: Date.now(), value };
+    return value;
+}
+
+export async function findRelease(tag) {
+    const releases = await listReleases();
+    const wanted = tag ? releases.find((r) => r.tag === tag) : releases.find((r) => !r.prerelease) ?? releases[0];
+    if (!wanted) throw new Error(`No KasSigner release found${tag ? ` for ${tag}` : ''}.`);
+    return wanted;
+}
+
+// ------------------------------------------------------------- firmware ----
+
+const assetName = (board, image) => `kassigner-${board}${IMAGES[image].suffix}.bin`;
+const localPath = (tag, board, image) => path.join(FIRMWARE_DIR, tag, assetName(board, image));
+
+const sha256 = (file) =>
+    new Promise((resolve, reject) => {
+        const hash = crypto.createHash('sha256');
+        fs.createReadStream(file)
+            .on('data', (d) => hash.update(d))
+            .on('end', () => resolve(hash.digest('hex')))
+            .on('error', reject);
+    });
+
+/**
+ * Fetches one image and checks it against the published hash.
+ *
+ * A file that does not match is deleted rather than kept: leaving it on disk
+ * invites a later run from finding it, assuming it is fine because it is there,
+ * and writing it to a device that holds keys.
+ */
+export async function fetchImage(release, boardAsset, image, hashKey, onLine = () => {}) {
+    const expected = release.hashes[`signed:${image}:${hashKey}`];
+    if (!expected) {
+        throw new Error(`${release.tag} does not publish a hash for the signed ${image} image, so it will not be used.`);
+    }
+
+    const file = localPath(release.tag, boardAsset, image);
+    if (fs.existsSync(file) && (await sha256(file)) === expected) {
+        onLine(`${path.basename(file)} already here and verified.`);
+        return { file, sha256: expected, cached: true };
+    }
+
+    const url = release.assets[assetName(boardAsset, image)];
+    if (!url) throw new Error(`${release.tag} has no ${assetName(boardAsset, image)}.`);
+
+    onLine(`Downloading ${assetName(boardAsset, image)}...`);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const res = await fetch(url, { headers: { 'User-Agent': ghHeaders['User-Agent'] }, signal: AbortSignal.timeout(300_000) });
+    if (!res.ok) throw new Error(`Download failed with ${res.status}.`);
+    fs.writeFileSync(file, Buffer.from(await res.arrayBuffer()));
+
+    const actual = await sha256(file);
+    if (actual !== expected) {
+        fs.unlinkSync(file);
+        throw new Error(
+            `${assetName(boardAsset, image)} does not match the hash in the release notes. Expected ${expected.slice(0, 16)}…, ` +
+                `got ${actual.slice(0, 16)}…. The file has been deleted and nothing was written to any device.`,
+        );
+    }
+    onLine(`${path.basename(file)} verified against the release notes.`);
+    return { file, sha256: actual, cached: false };
+}
+
+/** Fetches and verifies every image for every board, which is what "on" means. */
+export async function prepare(tag, onLine = () => {}) {
+    const release = await findRelease(tag);
+    onLine(`KasSigner ${release.tag}, published ${new Date(release.publishedAt).toLocaleDateString()}.`);
+
+    const targets = [];
+    for (const board of Object.values(BOARDS)) {
+        targets.push({ asset: board.asset, hashKey: board.hashKey });
+        if (board.variant) targets.push({ asset: board.variant.asset, hashKey: board.variant.hashKey });
+    }
+
+    const images = {};
+    for (const t of targets) {
+        for (const image of Object.keys(IMAGES)) {
+            const r = await fetchImage(release, t.asset, image, t.hashKey, onLine);
+            images[`${t.asset}:${image}`] = { sha256: r.sha256, file: r.file };
+        }
+    }
+
+    const state = { ...readState(), enabled: true, release: release.tag, verifiedAt: new Date().toISOString(), images };
+    writeState(state);
+    onLine(`All ${Object.keys(images).length} images verified. A device can be set up now.`);
+    return state;
+}
+
+export function disable() {
+    writeState({ ...readState(), enabled: false });
+}
+
+// --------------------------------------------------------------- device ----
+
+/**
+ * Serial ports the host can see.
+ *
+ * The manager is in a container, so it cannot look at the host's devices
+ * directly. Bind-mounting /dev into a throwaway container is how everything
+ * else in here reaches the host, and it works for this too. /dev/serial/by-id
+ * is what identifies a board: the symlink names carry the USB manufacturer and
+ * product, so an ESP32-S3 announces itself without needing to parse sysfs,
+ * which Docker overlays with its own anyway.
+ */
+export async function detectDevices() {
+    try {
+        const { stdout } = await docker(
+            [
+                'run',
+                '--rm',
+                '-v',
+                '/dev:/dev:ro',
+                'alpine:3.21',
+                'sh',
+                '-c',
+                'ls -l /dev/serial/by-id/ 2>/dev/null; echo "---"; ls /dev/ttyACM* /dev/ttyUSB* 2>/dev/null',
+            ],
+            { timeoutMs: 30_000 },
+        );
+
+        const [byIdBlock, plainBlock] = stdout.split('---');
+        const devices = new Map();
+
+        for (const line of (byIdBlock || '').split('\n')) {
+            // "usb-Espressif_USB_JTAG_serial_debug_unit_XX-if00 -> ../../ttyACM0"
+            const m = /(\S+)\s+->\s+.*\/(tty\w+)/.exec(line);
+            if (!m) continue;
+            const id = m[1];
+            devices.set(`/dev/${m[2]}`, {
+                port: `/dev/${m[2]}`,
+                id,
+                // The board is inferred from what the USB descriptor says, which
+                // is a hint for the UI, not something the flash depends on.
+                looksLikeEsp32: /espressif|usb.?jtag|cp210|ch34|ch910|silicon.?labs/i.test(id),
+            });
+        }
+        for (const line of (plainBlock || '').split('\n')) {
+            const port = line.trim();
+            if (port && !devices.has(port)) devices.set(port, { port, id: null, looksLikeEsp32: null });
+        }
+
+        return [...devices.values()];
+    } catch (err) {
+        throw new Error(`Could not look at the host's USB ports: ${err.message}`);
+    }
+}
+
+// ---------------------------------------------------------------- flash ----
+
+export const ESPTOOL_IMAGE = 'kaspa-one-click/esptool:1';
+
+/** Builds the little esptool image, once. */
+export async function ensureEsptool(onLine = () => {}) {
+    try {
+        await docker(['image', 'inspect', ESPTOOL_IMAGE], { timeoutMs: 30_000 });
+        return;
+    } catch {
+        /* not built yet */
+    }
+    onLine('Building the flashing tool (once)...');
+    await docker(['build', '-t', ESPTOOL_IMAGE, hostPath('kassigner')], { onLine, timeoutMs: 15 * 60_000 });
+}
+
+const PORT_RE = /^\/dev\/tty(ACM|USB)\d+$/;
+
+/**
+ * Writes an image to a board.
+ *
+ * The port is checked against a strict pattern before it reaches a command
+ * line: it arrives from a browser, and everything else here treats it as
+ * untrusted. The image is re-hashed immediately beforehand, so a file that
+ * changed after it was verified cannot be written.
+ */
+export async function flash({ port, board, image = 'full', onLine = () => {} }) {
+    if (!PORT_RE.test(port)) throw new Error(`"${port}" is not a serial port this can write to.`);
+
+    const state = readState();
+    const entry = state.images?.[`${board}:${image}`];
+    if (!entry) throw new Error('That firmware has not been downloaded yet. Switch KasSigner on first.');
+
+    const actual = await sha256(entry.file);
+    if (actual !== entry.sha256) {
+        throw new Error('The firmware on disk no longer matches the hash it was verified against. Nothing was written.');
+    }
+
+    await ensureEsptool(onLine);
+
+    const { offset, label } = IMAGES[image];
+    onLine(`Writing the ${label} for ${board} to ${port} at ${offset}.`);
+    onLine(`SHA-256 ${actual}`);
+
+    await docker(
+        [
+            'run',
+            '--rm',
+            '--device',
+            `${port}:${port}`,
+            '-v',
+            `${hostPath('conf/kassigner-firmware')}:/fw:ro`,
+            ESPTOOL_IMAGE,
+            'esptool',
+            '--chip',
+            'esp32s3',
+            '--port',
+            port,
+            '--baud',
+            '460800',
+            'write_flash',
+            offset,
+            `/fw/${path.relative(FIRMWARE_DIR, entry.file)}`,
+        ],
+        { onLine, timeoutMs: 20 * 60_000 },
+    );
+
+    onLine('Done. The board reboots into the firmware on its own.');
+    onLine('A released build closes its USB port a second or two after booting. That is the firmware working, not a failed write.');
+    return { ok: true, port, board, image, sha256: actual };
+}

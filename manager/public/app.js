@@ -235,6 +235,27 @@ const navSwitch = (service) => document.querySelector(`[data-service="${service}
  * click: the switches show what the containers are doing, so a failed start
  * cannot leave one sitting in the wrong position.
  */
+/**
+ * The health dot beside a destination.
+ *
+ * Three states carry meaning and a fourth deliberately does not: a service you
+ * switched off is not broken, so it gets a hollow dot rather than a red one.
+ * Red is reserved for "you asked for this and it is not there", which is the
+ * only case worth walking over to look at.
+ */
+function setNavHealth(tab, state) {
+    const dot = document.querySelector(`.nav-dot[data-health="${tab}"]`);
+    if (!dot) return;
+    dot.className = `nav-dot ${state ?? ''}`.trim();
+    dot.title = {
+        ok: 'Running normally',
+        warn: 'Running, but not fully ready',
+        bad: 'Switched on, but not running',
+        off: 'Switched off',
+        none: '',
+    }[state] ?? '';
+}
+
 function setNavSwitch(service, on, { disabled = false, reason = '' } = {}) {
     const input = navSwitch(service);
     if (!input || input.dataset.busy === '1') return;
@@ -353,14 +374,14 @@ async function refreshStatus() {
     try {
         s = await api('/api/status');
     } catch {
-        $('health-dot').className = 'dot bad';
+        $('health-dot').className = 'mark-wrap bad';
         return;
     }
     lastStatus = s;
 
     const running = s.container.running;
     const synced = s.rpc.synced === true;
-    $('health-dot').className = `dot ${!running ? 'bad' : synced ? 'ok' : 'warn'}`;
+    $('health-dot').className = `mark-wrap ${!running ? 'bad' : synced ? 'ok' : 'warn'}`;
 
     // Progress comes from the server, which reconstructs it from kaspad's own
     // log. A blocks/headers ratio would read 0.0% for the entire header and
@@ -401,6 +422,7 @@ async function refreshStatus() {
     containerTag.textContent = s.container.status || 'absent';
     containerTag.className = `tag ${running ? 'ok' : 'off'}`;
     setNavSwitch('node', running);
+    setNavHealth('kaspad', !running ? 'bad' : synced ? 'ok' : 'warn');
     $('stat-network').textContent = s.rpc.dag?.networkName || s.network;
     $('stat-version').textContent = s.version?.version || '–';
     $('stat-uptime').textContent = running ? fmtDuration(s.container.startedAt) : '–';
@@ -1026,6 +1048,7 @@ async function loadMining() {
     renderStratumTargets(c);
     renderEconomics(r);
     setNavSwitch('mining', c.enabled);
+    setNavHealth('mining', !c.enabled ? 'off' : r.container?.running ? 'ok' : 'bad');
 }
 
 function renderMiningState(container, stats) {
@@ -1520,6 +1543,10 @@ async function loadApps() {
     loadRefPickers();
     setNavSwitch('kachat', c.kachat.enabled);
     setNavSwitch('nextcloud', c.nextcloud.enabled);
+    for (const [app, tab] of [['kachat', 'kachat'], ['nextcloud', 'nextcloud']]) {
+        const running = Boolean(r.apps[app]?.container?.running);
+        setNavHealth(tab, !c[app].enabled ? 'off' : running ? 'ok' : 'bad');
+    }
 }
 
 /**
@@ -2664,6 +2691,7 @@ async function loadProxies() {
     badge.textContent = !on ? 'off' : r.container?.running ? 'running' : r.container?.status || 'starting';
     badge.className = `tag ${!on ? 'off' : r.container?.running ? 'ok' : ''}`;
     setNavSwitch('proxy', on);
+    setNavHealth('proxy', on ? 'ok' : 'off');
     for (const id of ['proxy-add', 'proxy-reload', 'proxy-renew']) {
         const button = $(id);
         button.disabled = !on;
@@ -2948,6 +2976,11 @@ document.addEventListener('click', (event) => {
 });
 
 restoreLogSize('kaspad');
+
+// Neither of these is a service, so their dots stay hollow rather than implying
+// a state they cannot have.
+setNavHealth('logs', 'none');
+setNavHealth('support', 'none');
 
 // One tile per container, all fed by a single multiplexed EventSource. Per-tile
 // streams would need one connection each, and browsers cap concurrent
