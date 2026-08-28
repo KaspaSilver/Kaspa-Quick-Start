@@ -1875,6 +1875,7 @@ async function loadKachatBroadcasts() {
 async function loadKachatChat(kind) {
     const tag = $(kind === 'group' ? 'kachat-group-tag' : 'kachat-chat-tag');
     const grid = $(kind === 'group' ? 'kachat-group-tiles' : 'kachat-chat-tiles');
+    if (kind === 'chat') loadKachatPersonal();
     try {
         const d = await kachat('chat-metrics');
         if (!d.reachable) {
@@ -1911,6 +1912,26 @@ async function loadKachatChat(kind) {
     }
 }
 
+/**
+ * The personal-indexing card, which lives on the Chats panel rather than in
+ * Settings: it decides whose chats get stored, so it belongs next to them.
+ */
+async function loadKachatPersonal() {
+    try {
+        const s = await kachat('settings');
+        const box = $('kachat-personal-addrs');
+        // This panel re-reads every few seconds; do not overwrite an address
+        // somebody is halfway through typing.
+        if (document.activeElement !== box) box.value = s.personal_addresses || '';
+
+        const tag = $('kachat-personal-tag');
+        tag.textContent = s.personal_mode ? 'only your chats' : 'indexing everything';
+        tag.className = `tag ${s.personal_mode ? 'ok' : ''}`;
+    } catch {
+        /* the chat stats above already say the indexer is not answering */
+    }
+}
+
 async function loadKachatSettings() {
     try {
         const s = await kachat('settings');
@@ -1920,14 +1941,9 @@ async function loadKachatSettings() {
         $('kachat-tg-kaposts').checked = Boolean(s.feature_kaposts);
         $('kachat-tg-broadcasts').checked = Boolean(s.feature_broadcasts);
         $('kachat-tg-chat').checked = Boolean(s.chat_indexer);
-        $('kachat-personal-addrs').value = s.personal_addresses || '';
         $('kachat-operator-addr').value = s.kaposts_operator_address || '';
         $('kachat-kap-personal').checked = Boolean(s.kaposts_personal_mode);
         $('kachat-kap-personal-body').hidden = !s.kaposts_personal_mode;
-
-        const tag = $('kachat-personal-tag');
-        tag.textContent = s.personal_mode ? 'only your chats' : 'indexing everything';
-        tag.className = `tag ${s.personal_mode ? 'ok' : ''}`;
     } catch {
         /* the container settings above still work without the indexer */
     }
@@ -1938,10 +1954,12 @@ async function saveKachatSettings(patch, message) {
     try {
         await kachat('settings', { method: 'POST', body: patch });
         toast(message);
-        loadKachatSettings();
+        // Reload whichever panel is open: these settings are spread across
+        // Chats and Settings, so refreshing one by name would miss the other.
+        refreshKachatPanel();
     } catch (e) {
         toast(e instanceof IndexerDown ? 'The indexer is not running.' : e.message, 'bad');
-        loadKachatSettings();
+        refreshKachatPanel();
     }
 }
 

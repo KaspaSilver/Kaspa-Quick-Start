@@ -724,6 +724,30 @@
           </p>
           <div class="grid stats" id="kachat-chat-tiles"><p class="muted">Waiting for the chat indexer.</p></div>
         </article>
+        <article class="card span2">
+          <div class="node-head">
+            <h3>Index only your own chats</h3>
+            <span id="kachat-personal-tag" class="tag">–</span>
+          </div>
+          <p class="muted">
+            Add your addresses and the indexer keeps only the chats and groups
+            you are part of, skipping everyone else. Leave it empty to index
+            everything, which is what a public indexer does. Saving restarts the
+            chat indexer.
+          </p>
+          <label class="stack">Your addresses, one per line
+            <textarea id="kachat-personal-addrs" rows="3" placeholder="kaspa:q…"></textarea>
+          </label>
+          <div class="row">
+            <button type="button" id="kachat-personal-save" class="primary">Save and apply</button>
+          </div>
+          <p class="hint">
+            Group capture does what it can: messages you send and control
+            messages addressed to you are stored, but catching every message in
+            a group needs membership tracking that is still to come. Once this
+            is on, use Export / Import to backfill your history.
+          </p>
+        </article>
       </div>
 
       <div id="sub-kachat-groups" class="subtab">
@@ -855,31 +879,6 @@
               </div>
               <label class="switch"><input type="checkbox" id="kachat-tg-chat"><span class="track"></span></label>
             </div>
-          </article>
-
-          <article class="card span2">
-            <div class="node-head">
-              <h3>Index only your own chats</h3>
-              <span id="kachat-personal-tag" class="tag">–</span>
-            </div>
-            <p class="muted">
-              Add your addresses and the indexer keeps only the chats and groups
-              you are part of, skipping everyone else. Leave it empty to index
-              everything, which is what a public indexer does. Saving restarts the
-              chat indexer.
-            </p>
-            <label class="stack">Your addresses, one per line
-              <textarea id="kachat-personal-addrs" rows="3" placeholder="kaspa:q…"></textarea>
-            </label>
-            <div class="row">
-              <button type="button" id="kachat-personal-save" class="primary">Save and apply</button>
-            </div>
-            <p class="hint">
-              Group capture does what it can: messages you send and control
-              messages addressed to you are stored, but catching every message in
-              a group needs membership tracking that is still to come. Once this
-              is on, use Export / Import to backfill your history.
-            </p>
           </article>
 
           <article class="card span2 danger-zone">
