@@ -41,7 +41,7 @@ Everything on that network is part of this stack.
 
 These are copies, so they do not follow upstream. **If the indexer stops working
 after an update, check these against `docker/kachat/app/` in KaChat-Indexer
-first** — a new argument added upstream will simply be missing here, with no
+first**. A new argument added upstream will simply be missing here, with no
 error to say so.
 
 The long-term fix is upstream honouring `DB_HOST` and an admin bind variable

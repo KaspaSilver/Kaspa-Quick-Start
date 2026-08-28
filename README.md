@@ -1,19 +1,19 @@
 # Quick Start Kaspa
 
 One command installs Docker (if needed), runs a Kaspa node with the right
-arguments, and gives you a web control panel to manage it — node settings,
+arguments, and gives you a web control panel to manage it: node settings,
 domains, HTTPS and updates.
 
 The node always runs with `--utxoindex`, and always listens on the P2P, gRPC and
 wRPC ports. **To go public you only have to open the ports on your router.**
 A stratum bridge is included, so miners and ASICs can point straight at your
-node — with a dashboard for hashrate, workers and blocks found. The
+node, with a dashboard for hashrate, workers and blocks found. The
 [KaChat indexer](https://github.com/KaspaSilver/KaChat-Indexer) and
 [Nextcloud](https://github.com/KaspaSilver/KaChat-NextCloud) can be switched on
 from the same panel, each tracking its own repository.
 
 This repository is packaging only. The node itself is stock
-[kaspad](https://github.com/kaspanet/rusty-kaspa) — the installer builds its
+[kaspad](https://github.com/kaspanet/rusty-kaspa). The installer builds its
 image from the official release archive, and the update button in the panel
 tracks releases in that same repository.
 
@@ -38,7 +38,7 @@ login: the panel is bound to `127.0.0.1`, so only this machine can open it.
 See [Opening the panel to other machines](#opening-the-panel-to-other-machines)
 if you want to reach it from elsewhere.
 
-### Uninstall — removes everything
+### Uninstall, which removes everything
 
 Same two dialects as the install above: Linux and macOS run shell scripts,
 Windows runs PowerShell. There is no single line that both understand.
@@ -67,7 +67,7 @@ bash ~/.kaspa-node/uninstall.sh
 ```
 
 Docker itself is never removed. It is shared machine-wide, so uninstalling it
-would destroy every unrelated container, image and volume too — if you want
+would destroy every unrelated container, image and volume too. If you want
 Docker gone, remove it yourself afterwards.
 
 ---
@@ -91,7 +91,7 @@ when that is genuinely what you want.
 
 | Port    | What                | Open it to…                             |
 | ------- | ------------------- | --------------------------------------- |
-| `16111` | P2P                 | be a public node — this is the only one that is required |
+| `16111` | P2P                 | be a public node. The only one that is required |
 | `16110` | gRPC RPC            | let wallets and tools reach your node    |
 | `17110` | wRPC Borsh          | serve Rusty/KDX style clients            |
 | `18110` | wRPC JSON           | serve browser / JSON clients (off by default) |
@@ -105,19 +105,19 @@ when that is genuinely what you want.
 Testnet-10 uses `16211 / 16210 / 17210 / 18210`; the panel switches them for you.
 
 Every listener is bound inside the stack regardless of these toggles. The
-"Published" switch controls whether Docker maps it to a host port — that is the
+"Published" switch controls whether Docker maps it to a host port, which is the
 line between private and public.
 
 ---
 
 ## What the panel does
 
-**Dashboard** — sync progress, block/header counts, DAA score, mempool, peers,
+**Dashboard.** Sync progress, block/header counts, DAA score, mempool, peers,
 disk usage, start/stop/restart, and a per-port reachability test. Inbound peer
 count is used as the real answer to "is my P2P port actually open?", because
 nobody can dial in if it is closed.
 
-**Node settings** — every kaspad argument worth exposing as a toggle: network,
+**Node settings.** Every kaspad argument worth exposing as a toggle: network,
 which RPC listeners bind and which get published, archival mode, unsafe RPC,
 UPnP, DNS seeding, log level, peer and RPC client limits, RAM scale, retention
 period, external IP, user-agent comment, explicit peers, plus a free-form field
@@ -126,7 +126,7 @@ for anything else. It shows the exact command line before you apply it.
 `--utxoindex`, `--appdir` and `--yes` are added by the container entrypoint and
 cannot be switched off from the UI.
 
-**Proxy & domains** — off by default, because it claims ports 80 and 443 and a
+**Proxy and domains.** Off by default, because it claims ports 80 and 443 and a
 node with no domains has no use for it. Switch it on and you get what you would
 otherwise hand-write nginx config for:
 
@@ -136,7 +136,7 @@ otherwise hand-write nginx config for:
 - optional username/password, IP allow-lists and per-IP rate limits
 - DuckDNS: enter a subdomain and token to keep a free domain pointed here
 
-**Mining** — switches on the stratum bridge that ships with rusty-kaspa, so
+**Mining.** Switches on the stratum bridge that ships with rusty-kaspa, so
 ASICs and miners can point at your own node instead of a pool:
 
 - pool hashrate, active workers, blocks found and accepted shares at a glance
@@ -151,7 +151,7 @@ ASICs and miners can point at your own node instead of a pool:
 It also shows the current block reward, when the next monthly reduction lands
 and what it drops to, and what your hashrate would earn over 1, 6 and 12 months
 with those reductions applied. Kaspa reduces the reward every month by
-2^(-1/12), so twelve months compound to exactly half — over a year that is
+2^(-1/12), so twelve months compound to exactly half. Over a year that is
 roughly 29% less than a flat reward would suggest, which is the point of showing
 it. The emission table is generated from the node's own source rather than
 transcribed, and the projection is arithmetic on current difficulty, not a
@@ -159,20 +159,20 @@ forecast: it says nothing about price and assumes difficulty holds.
 
 Miners supply their own payout address as the stratum username
 (`kaspa:YOUR_ADDRESS.WORKERNAME`), so there is no wallet key anywhere in this
-stack. The bridge needs kaspad's gRPC listener enabled — it does not have to be
-published — and the panel says so if it is off.
+stack. The bridge needs kaspad's gRPC listener enabled, though it does not have to
+be published, and the panel says so if it is off.
 
 The bridge container only exists while mining is on: it sits behind a compose
 profile, so a normal node install never starts a stratum server.
 
 **Mining** and **KaChat** stay greyed out in the sidebar until the node is
-running *and* synced. Both read live chain data — a stratum server on a syncing
+running *and* synced. Both read live chain data, and a stratum server on a syncing
 node hands miners stale work, and the indexer would index a chain that is not
 there yet. The API refuses to enable them for the same reason, so the greying is
 a courtesy rather than the actual rule. Nextcloud is never gated; it has nothing
 to do with the chain.
 
-**KaChat** — runs the [KaChat indexer](https://github.com/KaspaSilver/KaChat-Indexer)
+**KaChat-Indexer.** Runs the [KaChat indexer](https://github.com/KaspaSilver/KaChat-Indexer)
 and gives you the whole thing here: Overview, KaPosts, Broadcasts, Chats, Group
 chats, Export / Import and Settings, built into this panel rather than framed
 from somewhere else. The indexer is the engine and this is the interface to it,
@@ -189,10 +189,16 @@ own container.
 The first build compiles the indexer from Rust source and takes a while; follow
 it under Logs → kachat indexer.
 
-**Nextcloud** — your own cloud for the files, photos and video KaChat shares and
+**KaChat-Desktop.** The KaChat client itself, served from this machine instead
+of a website. Switch it on and open the address it gives you in a browser. It is
+a browser app, so accounts and settings live in the browser you open it with,
+and it talks to whichever node and indexer you point it at from inside the app.
+It does not wait for this node to sync, because it does not have to.
+
+**Nextcloud.** Your own cloud for the files, photos and video KaChat shares and
 backs up, from [KaChat-NextCloud](https://github.com/KaspaSilver/KaChat-NextCloud).
 Video thumbnails (ffmpeg) and iPhone HEIC previews (Imaginary) are configured for
-you. Publish it on a port, or give it a domain and HTTPS under Proxy & domains —
+you. Publish it on a port, or give it a domain and HTTPS under Proxy and domains,
 remember to add that domain to its trusted-domains list too, or Nextcloud will
 refuse the request.
 
@@ -201,7 +207,7 @@ honest question is how far the branch you track has moved: the panel compares th
 commit your running image was built from against the newest commit on that
 branch, and rebuilds on request.
 
-**Update node** — checks `kaspanet/rusty-kaspa` for a newer release, shows the
+**Update node.** Checks `kaspanet/rusty-kaspa` for a newer release, shows the
 release notes, and on confirmation rebuilds the kaspad image at that tag and
 restarts the container. The chain data volume is untouched, so there is no
 resync. Only the newest upstream release can be installed, and a failed build
@@ -231,7 +237,7 @@ proxy/letsencrypt/     certificates
 kaspad/ manager/       image build contexts
 ```
 
-Chain data is a named Docker volume (`kaspa-node-data`), not a bind mount —
+Chain data is a named Docker volume (`kaspa-node-data`), not a bind mount,
 bind-mounting a RocksDB database into Docker Desktop is painfully slow.
 
 ### Services
@@ -246,7 +252,7 @@ bind-mounting a RocksDB database into Docker Desktop is painfully slow.
 | `nextcloud` + db/redis/imaginary | `nextcloud:stable` + ffmpeg | private cloud (only when Nextcloud is on) |
 
 On `linux/amd64` the kaspad image is built by downloading the official release
-archive — those binaries are static musl builds, so the image is a bare Alpine
+archive. Those binaries are static musl builds, so the image is a bare Alpine
 plus one file and builds in seconds. There is no upstream `linux/arm64` asset,
 so on arm64 the image compiles kaspad from source at the same tag instead; the
 installer warns first, and it takes 30–60 minutes.
@@ -277,7 +283,7 @@ settings, chain data and existing password.
 ## Opening the panel to other machines
 
 The panel drives the Docker socket, which is root on the host. Without a
-password, anything that can reach port 8080 owns the machine — which is exactly
+password, anything that can reach port 8080 owns the machine, which is exactly
 why the default bind is loopback. To reach it from elsewhere, set a password
 first:
 
@@ -304,7 +310,7 @@ password is set or that host has its own basic auth.
 
 - The panel has no password by default and is bound to `127.0.0.1`, so reaching
   the port already means sitting at the machine. Those two defaults belong
-  together — see below before changing either.
+  together, so see below before changing either.
 - The manager container has access to the Docker socket, which is equivalent to
   root on the host. Treat the admin password accordingly.
 - Values that end up in nginx config or on the kaspad command line are validated

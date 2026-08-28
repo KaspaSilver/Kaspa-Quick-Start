@@ -4,7 +4,7 @@
 **Ask:** the same "only index what is mine" that 1:1 chats already have, but for groups.
 
 Everything below was read out of the repository at `main`. Nothing here has been
-built or run — treat the design as a proposal, and the file and line references
+built or run, so treat the design as a proposal and the file and line references
 as the starting points to check first.
 
 ---
@@ -12,7 +12,7 @@ as the starting points to check first.
 ## Short version
 
 Personal mode already applies to group messages. It just cannot do much with
-them, and the reason is not an oversight — the indexer genuinely cannot tell
+them, and the reason is not an oversight. The indexer genuinely cannot tell
 which group a message belongs to.
 
 The fix is smaller than it sounds, because the client already computes exactly
@@ -42,7 +42,7 @@ That gate is computed **once per transaction, before the operation type is
 known**, and it can only ever ask one question: is one of my addresses the
 sender or the primary output of this transaction?
 
-For a 1:1 message that question is exactly right — sender and receiver are the
+For a 1:1 message that question is exactly right, because sender and receiver are the
 two participants.
 
 For a group message it is nearly useless. A member posting to a group produces a
@@ -57,8 +57,8 @@ for now: what you send, and control messages addressed to you."*
 
 ## Why you cannot just look up membership
 
-The obvious fix — keep a roster of which groups you are in, then match on group
-id — does not work, because there is no group id to match on.
+The obvious fix, keeping a roster of which groups you are in and then matching
+on group id, does not work, because there is no group id to match on.
 
 `protocol/src/operation.rs:87`:
 
@@ -71,7 +71,7 @@ pub struct SealedGroupMessageV1<'a> {
 
 `INDEXER_NOTIFICATIONS_REFERENCE.md:76` says what that is:
 
-> `blinded_group_id` — hex; the **per-(group,member)** blinded id the message was addressed to
+> `blinded_group_id`: hex; the **per-(group,member)** blinded id the message was addressed to
 
 Two things follow. The indexer never sees a real group id, and it cannot tell
 that two members' messages belong to the same group, because each member's
@@ -175,7 +175,7 @@ new field is a new box on the same card.
 ### 4. Where the operator gets the ids
 
 This is the one genuine rough edge, and it is worth being straight about it. A
-blinded group id is not something a person can read off a screen today — it is
+blinded group id is not something a person can read off a screen today. It is
 derived from group key material the KaChat client holds.
 
 Options, roughly in order of effort:
@@ -219,8 +219,8 @@ to arrive from a client.
 
 ## Suggested order
 
-1. Allowlist plus loader — self-contained, nothing else depends on it.
-2. Operation-aware gate — the only change that touches hot-path code, so land it
+1. Allowlist plus loader. Self-contained, nothing else depends on it.
+2. Operation-aware gate. The only change that touches hot-path code, so land it
    on its own where it is easy to review and revert.
 3. Admin API fields and file write.
 4. Client-side id export, or the push-registry shortcut.
