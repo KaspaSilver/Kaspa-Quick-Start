@@ -1040,3 +1040,7 @@ table.ports td.note { color: var(--muted); font-size: 12.5px; font-family: inher
 .zoom-btn + .zoom-btn { border-left: 1px solid var(--line); }
 .zoom-btn:hover:not(:disabled) { background: var(--bg); color: var(--text); }
 .zoom-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* These bars lost their switch to the sidebar, so they are a title and status
+   strip now. Without the switch leading, the text should start at the edge. */
+.toggle-bar .toggle-row > .toggle-text:first-child { margin-left: 0; }

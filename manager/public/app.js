@@ -791,7 +791,6 @@ async function loadMining() {
     miningExtraSubnets = r.extraSubnets ?? '';
     const c = r.config;
 
-    $('mining-enabled').checked = c.enabled;
     $('mining-vardiff').checked = c.varDiff;
     $('mining-spm').value = c.sharesPerMin;
     $('mining-pow2').checked = c.pow2Clamp;
@@ -1173,29 +1172,11 @@ $('miner-scan').addEventListener('click', async () => {
     }
 });
 
-$('mining-enabled').addEventListener('change', async (event) => {
-    const enabled = event.target.checked;
-    const err = $('mining-error');
-    err.hidden = true;
-    event.target.disabled = true;
-    try {
-        await api('/api/mining', { method: 'PUT', body: { config: { ...collectMiningConfig(), enabled } } });
-        openConsole(enabled ? 'Starting the stratum bridge' : 'Stopping the stratum bridge');
-        setTimeout(loadMining, 2000);
-    } catch (e) {
-        // Put the switch back; nothing was started or stopped.
-        event.target.checked = !enabled;
-        err.textContent = e.message;
-        err.hidden = false;
-    } finally {
-        event.target.disabled = false;
-    }
-});
-
 /** Everything the Settings sub-tab owns, without the on/off state. */
 function collectMiningConfig() {
     return {
-        enabled: $('mining-enabled').checked,
+        // Carried through from what is loaded; the switch lives in the sidebar.
+        enabled: Boolean(miningConfig?.enabled),
         instances: collectInstances(),
         varDiff: $('mining-vardiff').checked,
         sharesPerMin: $('mining-spm').value,
@@ -1265,7 +1246,6 @@ async function loadApps() {
     const c = r.config;
 
     // --- KaChat ---
-    $('kachat-enabled').checked = c.kachat.enabled;
     $('kachat-ref').value = c.kachat.ref;
     $('kachat-network').value = c.kachat.network;
     $('kachat-pub-api').checked = c.kachat.publish.api;
@@ -1273,7 +1253,6 @@ async function loadApps() {
     renderAppState('kachat', r.apps.kachat);
 
     // --- Nextcloud ---
-    $('nextcloud-enabled').checked = c.nextcloud.enabled;
     $('nextcloud-ref').value = c.nextcloud.ref;
     $('nextcloud-pub-web').checked = c.nextcloud.publish.web;
     $('nextcloud-port').value = c.nextcloud.hostPort;
@@ -1348,14 +1327,14 @@ function renderAppState(name, state) {
 function collectAppConfig(name) {
     if (name === 'kachat') {
         return {
-            enabled: $('kachat-enabled').checked,
+            enabled: Boolean(appsState?.config.kachat.enabled),
             ref: $('kachat-ref').value.trim() || 'main',
             network: $('kachat-network').value,
             publish: { api: $('kachat-pub-api').checked, chat: $('kachat-pub-chat').checked },
         };
     }
     return {
-        enabled: $('nextcloud-enabled').checked,
+        enabled: Boolean(appsState?.config.nextcloud.enabled),
         ref: $('nextcloud-ref').value.trim() || 'main',
         publish: { web: $('nextcloud-pub-web').checked },
         hostPort: Number($('nextcloud-port').value),
@@ -1367,25 +1346,6 @@ function collectAppConfig(name) {
 for (const name of ['kachat', 'nextcloud']) {
     // The switch is a power control: it takes effect on the spot, matching the
     // one on Mining. Everything that needs an explicit Apply stays a checkbox.
-    $(`${name}-enabled`).addEventListener('change', async (event) => {
-        const enabled = event.target.checked;
-        const err = $(`${name}-error`);
-        err.hidden = true;
-        event.target.disabled = true;
-        try {
-            await api(`/api/apps/${name}`, { method: 'PUT', body: { config: { ...collectAppConfig(name), enabled } } });
-            openConsole(enabled ? `Starting ${name}` : `Stopping ${name}`);
-            setTimeout(loadApps, 2000);
-        } catch (e) {
-            // Put the switch back; nothing was started or stopped.
-            event.target.checked = !enabled;
-            err.textContent = e.message;
-            err.hidden = false;
-        } finally {
-            event.target.disabled = false;
-        }
-    });
-
     $(`${name}-save`).addEventListener('click', async () => {
         const err = $(`${name}-error`);
         err.hidden = true;
@@ -1458,7 +1418,6 @@ async function loadProxies() {
     // Reflect whether the proxy is running before anything else: with it off,
     // adding a host would write config nothing is serving.
     const on = Boolean(r.enabled);
-    $('proxy-enabled').checked = on;
     const badge = $('proxy-state');
     badge.textContent = !on ? 'off' : r.container?.running ? 'running' : r.container?.status || 'starting';
     badge.className = `tag ${!on ? 'off' : r.container?.running ? 'ok' : ''}`;
@@ -1536,24 +1495,6 @@ $('proxy-body').addEventListener('click', async (event) => {
         } catch (e) {
             toast(e.message, 'bad');
         }
-    }
-});
-
-$('proxy-enabled').addEventListener('change', async (event) => {
-    const enabled = event.target.checked;
-    const err = $('proxy-error');
-    err.hidden = true;
-    event.target.disabled = true;
-    try {
-        const r = await api('/api/proxy/enabled', { method: 'POST', body: { enabled } });
-        if (!r.unchanged) openConsole(enabled ? 'Starting the reverse proxy' : 'Stopping the reverse proxy');
-        setTimeout(loadProxies, 2000);
-    } catch (e) {
-        event.target.checked = !enabled;
-        err.textContent = e.message;
-        err.hidden = false;
-    } finally {
-        event.target.disabled = false;
     }
 });
 

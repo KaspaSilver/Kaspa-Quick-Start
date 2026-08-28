@@ -142,6 +142,7 @@
       <nav class="subnav" aria-label="Kaspad">
         <button class="subtab-btn active" data-subtab="overview">Overview</button>
         <button class="subtab-btn" data-subtab="settings">Settings</button>
+        <button class="subtab-btn" data-subtab="updates">Updates</button>
         <button class="subtab-btn" data-subtab="kaspadlog">Log</button>
       </nav>
 
@@ -308,25 +309,29 @@
         </div>
       </form>
 
-      <div class="grid">
-        <article class="card span2">
-          <h3>Node software</h3>
-          <p class="muted">
-            Checks <code id="upstream-repo">kaspanet/rusty-kaspa</code> for a newer
-            release and rebuilds the container. Your chain data is kept, so there
-            is no resync.
-          </p>
-          <div id="update-status" class="update-status">Not checked yet.</div>
-          <div class="row">
-            <button type="button" id="check-update" class="ghost">Check for updates</button>
-            <button type="button" id="apply-update" class="primary" disabled>Update node</button>
-          </div>
-          <details id="release-notes" hidden>
-            <summary>Release notes</summary>
-            <pre id="release-notes-body"></pre>
-          </details>
-        </article>
+      
       </div>
+
+      <div id="sub-updates" class="subtab">
+        <div class="grid">
+          <article class="card span2">
+            <h3>Node software</h3>
+            <p class="muted">
+              Checks <code id="upstream-repo">kaspanet/rusty-kaspa</code> for a newer
+              release and rebuilds the container. Your chain data is kept, so there
+              is no resync.
+            </p>
+            <div id="update-status" class="update-status">Not checked yet.</div>
+            <div class="row">
+              <button type="button" id="check-update" class="ghost">Check for updates</button>
+              <button type="button" id="apply-update" class="primary" disabled>Update node</button>
+            </div>
+            <details id="release-notes" hidden>
+              <summary>Release notes</summary>
+              <pre id="release-notes-body"></pre>
+            </details>
+          </article>
+        </div>
       </div>
 
       <div id="sub-kaspadlog" class="subtab">
@@ -352,10 +357,6 @@
       <div id="sub-mining-overview" class="subtab active">
         <article class="card toggle-bar">
           <div class="toggle-row">
-            <label class="switch" title="Start or stop the stratum bridge.">
-              <input type="checkbox" id="mining-enabled">
-              <span class="track"></span>
-            </label>
             <div class="toggle-text">
               <strong>Stratum bridge</strong>
               <span class="muted">Lets ASICs and miners point at this node. Miners keep their own payout address.</span>
@@ -583,10 +584,6 @@
 
         <article class="card toggle-bar">
           <div class="toggle-row">
-            <label class="switch" title="Start or stop the KaChat indexer.">
-              <input type="checkbox" id="kachat-enabled">
-              <span class="track"></span>
-            </label>
             <div class="toggle-text">
               <strong>Run the indexer</strong>
               <span class="muted">Starts Postgres and the indexer, and keeps them running.</span>
@@ -671,10 +668,6 @@
 
         <article class="card toggle-bar">
           <div class="toggle-row">
-            <label class="switch" title="Start or stop Nextcloud.">
-              <input type="checkbox" id="nextcloud-enabled">
-              <span class="track"></span>
-            </label>
             <div class="toggle-text">
               <strong>Run Nextcloud</strong>
               <span class="muted">Starts Nextcloud with its database, cache and preview generator.</span>
@@ -746,10 +739,6 @@
 
       <article class="card toggle-bar">
         <div class="toggle-row">
-          <label class="switch" title="Start or stop the reverse proxy.">
-            <input type="checkbox" id="proxy-enabled">
-            <span class="track"></span>
-          </label>
           <div class="toggle-text">
             <strong>Run the reverse proxy</strong>
             <span class="muted">Takes ports 80 and 443 on this machine.</span>
