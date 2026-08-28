@@ -72,6 +72,21 @@ Docker gone, remove it yourself afterwards.
 
 ---
 
+## Working on this repo
+
+Generated state (`conf/`, issued certificates, `.env`) belongs to a running
+stack, not to a checkout, and `.gitignore` keeps it out. That only covers files
+nobody asked for, so there is also a hook that refuses a commit carrying a
+private key, an environment file, or a credential pasted into a tracked file.
+Turn it on once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+It reads only the lines a commit adds, and `git commit --no-verify` gets past it
+when that is genuinely what you want.
+
 ## Ports
 
 | Port    | What                | Open it to…                             |

@@ -1,0 +1,61 @@
+#!/bin/sh
+# Refuses a commit that carries a secret or a generated file.
+#
+# .gitignore only covers files nobody asked for. It cannot help with a password
+# pasted into a script that is already tracked, or with `git add -f`, and those
+# are the two ways something sensitive actually gets published.
+#
+# Enable it once per clone:
+#     git config core.hooksPath .githooks
+#
+# To get past it deliberately: git commit --no-verify
+
+fail=0
+note() {
+    [ "$fail" -eq 0 ] && printf '\nCommit refused by .githooks/pre-commit\n\n'
+    fail=1
+    printf '  %s\n' "$1"
+}
+
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$staged" ] && exit 0
+
+# --- files that should never be tracked, however they were added -------------
+for file in $staged; do
+    case "$file" in
+        .env|.env.*|*/.env|*/.env.*)
+            case "$file" in *.example) continue ;; esac
+            note "$file is an environment file; it holds generated passwords." ;;
+        *.pem|*.key|*.p12|*.pfx|id_rsa*)
+            note "$file looks like a private key or certificate." ;;
+        conf/*|*/conf/*.json|proxy/conf.d/*|proxy/letsencrypt/*)
+            note "$file is state the panel generates at runtime, not source." ;;
+    esac
+done
+
+# --- secrets pasted into tracked files ---------------------------------------
+# Only added lines are examined, so existing content cannot block a commit that
+# has nothing to do with it.
+added=$(git diff --cached --diff-filter=ACM -U0 | grep '^+' | grep -v '^+++')
+
+if printf '%s\n' "$added" | grep -qE -- '-----BEGIN [A-Z ]*PRIVATE KEY-----'; then
+    note "a private key block appears in the staged changes."
+fi
+
+# A literal assignment with a long value. Anything indirect -- an env lookup, a
+# compose interpolation, a placeholder -- is what real code looks like, so it is
+# not flagged.
+hits=$(printf '%s\n' "$added" \
+    | grep -inE "(password|passwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token)[\"']?[[:space:]]*[:=][[:space:]]*[\"']?[A-Za-z0-9/+_-]{16,}" \
+    | grep -vEi 'process\.env|\$\{|\$[A-Z_]+|env\[|getenv|example|placeholder|your[_-]|changeme|xxxx|<[a-z]|\*\*\*|hash|sha256|bcrypt|scrypt' \
+    | head -5)
+if [ -n "$hits" ]; then
+    note "a literal credential may be present:"
+    printf '%s\n' "$hits" | sed 's/^/      /'
+fi
+
+if [ "$fail" -ne 0 ]; then
+    printf '\n  If this is deliberate: git commit --no-verify\n\n'
+    exit 1
+fi
+exit 0

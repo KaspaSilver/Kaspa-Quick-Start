@@ -1,0 +1,65 @@
+# This repository is the source of the stack. A running stack keeps its state
+# somewhere else (~/.kaspa-node by default), so nothing generated belongs here.
+#
+# The risk this guards against is someone pointing STACK_DIR at a checkout, or
+# testing in place, and dropping live configuration and certificates into the
+# working tree where a `git add -A` would sweep them up.
+
+# ---------------------------------------------------------------- secrets --
+
+# Written by the installers. Holds the generated database passwords, the push
+# secret, and the panel's password hash.
+.env
+.env.*
+!.env.example
+
+# Certificates and keys, whoever put them here.
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+id_rsa*
+
+# ------------------------------------------------- generated stack state --
+
+# Everything the panel writes: node.json, proxies.json, apps.json, the kaspad
+# argument file, the port overrides, the pruning history, per-app build and
+# last-run records.
+/conf/
+
+# nginx vhosts the manager generates, issued certificates, and the ACME
+# webroot. nginx-base.conf is the template and is tracked, so it is kept.
+/proxy/*
+!/proxy/nginx-base.conf
+
+# Container data if a volume is ever bound into the checkout.
+/data/
+*.sqlite
+*.sqlite3
+
+# ------------------------------------------------------------ toolchains --
+
+node_modules/
+npm-debug.log*
+yarn-error.log*
+package-lock.json
+target/
+
+# ------------------------------------------------------------------ junk --
+
+*.log
+*.tmp
+*.bak
+*.orig
+*.rej
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
