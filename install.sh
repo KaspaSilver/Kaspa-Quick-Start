@@ -259,7 +259,7 @@ install_docker_macos() {
     fi
 
     say "Starting Docker Desktop"
-    open -a Docker || warn "Could not start Docker Desktop automatically — start it from Applications."
+    open -a Docker || warn "Could not start Docker Desktop automatically. Open it from Applications."
 }
 
 wait_for_docker() {
@@ -279,7 +279,7 @@ ensure_docker() {
         ok "Docker is already installed and running${DOCKER_SUDO:+ (via sudo)}"
     else
         if command -v docker >/dev/null 2>&1; then
-            say "Docker is installed but not responding — trying to start it"
+            say "Docker is installed but not responding, so trying to start it"
             if [ "$PLATFORM" = macos ]; then
                 open -a Docker >/dev/null 2>&1 || true
             elif command -v systemctl >/dev/null 2>&1; then
@@ -327,7 +327,7 @@ fetch_stack() {
     # Only these are replaced wholesale on a re-install. conf/ holds generated
     # state (node.json, proxies.json) and proxy/ holds issued certificates and
     # generated vhosts -- wiping either would cost the user real work.
-    for item in docker-compose.yml kaspad manager bridge kachat kassigner nextcloud uninstall.sh uninstall.ps1 README.md; do
+    for item in docker-compose.yml kaspad manager bridge kachat kachat-desktop kassigner nextcloud uninstall.sh uninstall.ps1 README.md; do
         [ -e "$src_dir/$item" ] || continue
         rm -rf "$STACK_DIR/${item:?}"
         cp -R "$src_dir/$item" "$STACK_DIR/$item"

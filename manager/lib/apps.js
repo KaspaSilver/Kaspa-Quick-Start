@@ -5,10 +5,10 @@ import { CONF_DIR } from './paths.js';
 import { readJson, writeJson, updateEnvFile, readEnvFile, NETWORKS } from './store.js';
 
 /**
- * The optional applications that ride along with the node: the KaChat indexer
- * and Nextcloud. Both are upstream projects of ours, both live behind a compose
- * profile so they do not exist until switched on, and both track a git ref that
- * the panel can move forward.
+ * The optional applications that ride along with the node: the KaChat indexer,
+ * the KaChat desktop client and Nextcloud. All are upstream projects of ours,
+ * all live behind a compose profile so they do not exist until switched on, and
+ * all track a git ref the panel can move forward.
  */
 
 export const APPS_STATE_FILE = path.join(CONF_DIR, 'apps.json');
@@ -16,7 +16,7 @@ export const APPS_PORTS_OVERRIDE = path.join(CONF_DIR, 'apps-ports.yml');
 
 export const APPS = {
     kachat: {
-        label: 'KaChat indexer',
+        label: 'KaChat-Indexer',
         repo: 'KaspaSilver/KaChat-Indexer',
         profile: 'kachat',
         services: ['kachat-db', 'kachat-app'],
@@ -31,6 +31,20 @@ export const APPS = {
         // The admin dashboard is never published: the panel proxies it instead,
         // which is also why upstream binds it to loopback.
         adminPort: 3081,
+    },
+    desktop: {
+        label: 'KaChat-Desktop',
+        repo: 'KaspaSilver/KaChat-Desktop',
+        profile: 'kachat-desktop',
+        services: ['kachat-desktop'],
+        // A browser client rather than an indexer: it talks to whichever node
+        // and indexer it is pointed at, so there is nothing local to wait for.
+        needsSyncedNode: false,
+        container: 'kaspa-node-kachat-desktop',
+        ports: {
+            web: { port: 5173, label: 'KaChat Desktop', hostPort: 5173 },
+        },
+        adminPort: null,
     },
     nextcloud: {
         label: 'Nextcloud',
@@ -54,6 +68,13 @@ export const DEFAULT_APPS_CONFIG = {
         network: 'mainnet',
         publish: { api: false, chat: false },
         fcmProjectId: '',
+    },
+    desktop: {
+        enabled: false,
+        ref: 'main',
+        // Useless unpublished: the whole point is opening it in a browser.
+        publish: { web: true },
+        hostPort: 5173,
     },
     nextcloud: {
         enabled: false,
@@ -91,11 +112,27 @@ export function reservedHostPorts() {
 }
 
 export function loadAppsConfig() {
-    const cfg = readJson(APPS_STATE_FILE, DEFAULT_APPS_CONFIG);
+    const stored = readJson(APPS_STATE_FILE, {});
+
+    // Defaults are filled in per app, not just when the whole file is missing.
+    // A file written before an app existed has no key for it, and returning
+    // that as-is hands the panel a config with a hole in it: the page that
+    // reads config.<app>.ref throws, stops before it populates the rest of the
+    // form, and the next save posts those empty fields back as if they were
+    // real. Adding an app has to be survivable by an install that predates it.
+    const cfg = structuredClone(DEFAULT_APPS_CONFIG);
+    for (const [name, defaults] of Object.entries(DEFAULT_APPS_CONFIG)) {
+        const saved = stored[name] ?? {};
+        cfg[name] = { ...defaults, ...saved };
+        // publish is a nested object, so a shallow merge would drop any key the
+        // saved copy happens not to carry.
+        if (defaults.publish) cfg[name].publish = { ...defaults.publish, ...(saved.publish ?? {}) };
+    }
+
     // Earlier versions defaulted Nextcloud to 8080, which is this panel's port,
     // so it could never start. Move those forward rather than leaving somebody
     // with a saved setting that only fails.
-    if (cfg.nextcloud && reservedHostPorts().has(Number(cfg.nextcloud.hostPort))) {
+    if (reservedHostPorts().has(Number(cfg.nextcloud.hostPort))) {
         cfg.nextcloud.hostPort = DEFAULT_APPS_CONFIG.nextcloud.hostPort;
     }
     return cfg;
@@ -129,6 +166,25 @@ export function validateAppsConfig(input) {
     const fcm = String(k.fcmProjectId ?? '').trim();
     if (fcm && !/^[a-z0-9-]{1,64}$/.test(fcm)) errors.push('FCM project id may only contain lowercase letters, digits and dashes.');
     cfg.kachat.fcmProjectId = fcm;
+
+    // --- KaChat Desktop ---
+    const d = input.desktop ?? {};
+    cfg.desktop.enabled = Boolean(d.enabled);
+    const dref = String(d.ref ?? 'main').trim();
+    if (!REF_RE.test(dref)) errors.push('KaChat Desktop branch or tag contains invalid characters.');
+    else cfg.desktop.ref = dref;
+
+    cfg.desktop.publish = { web: d.publish?.web !== false };
+
+    const dport = Number(d.hostPort ?? DEFAULT_APPS_CONFIG.desktop.hostPort);
+    const dtaken = reservedHostPorts().get(dport);
+    if (!Number.isInteger(dport) || dport < 1 || dport > 65535) {
+        errors.push('KaChat Desktop port must be a number between 1 and 65535.');
+    } else if (dtaken) {
+        errors.push(`Port ${dport} is already used by ${dtaken}. Pick another for KaChat Desktop.`);
+    } else {
+        cfg.desktop.hostPort = dport;
+    }
 
     // --- Nextcloud ---
     const n = input.nextcloud ?? {};
@@ -222,6 +278,9 @@ export function writeAppsEnv(cfg) {
         KACHAT_NETWORK: cfg.kachat.network,
         KACHAT_NODE_PORT: cfg.kachat.network === 'testnet-10' ? 17210 : 17110,
         KACHAT_FCM_PROJECT_ID: cfg.kachat.fcmProjectId,
+        // Both the image tag and the build arg, so switching refs actually
+        // rebuilds rather than re-tagging the layers already cached.
+        KACHAT_DESKTOP_REF: cfg.desktop?.ref || 'main',
         NEXTCLOUD_ADMIN_USER: cfg.nextcloud.adminUser,
         NEXTCLOUD_TRUSTED_DOMAINS: cfg.nextcloud.trustedDomains,
     });
@@ -235,7 +294,7 @@ export function renderAppsPortsOverride(cfg) {
         '# Published ports for the optional applications.',
         'services:',
     ];
-    const published = { kachat: [], nextcloud: [] };
+    const published = { kachat: [], desktop: [], nextcloud: [] };
 
     lines.push('  kachat-app:');
     lines.push('    ports:');
@@ -245,6 +304,16 @@ export function renderAppsPortsOverride(cfg) {
     if (!kachatPorts.length) lines.push('      []');
     for (const port of kachatPorts) lines.push(`      - "0.0.0.0:${port}:${port}/tcp"`);
     published.kachat = kachatPorts;
+
+    lines.push('  kachat-desktop:');
+    lines.push('    ports:');
+    if (cfg.desktop?.publish?.web) {
+        const hostPort = cfg.desktop.hostPort || 5173;
+        lines.push(`      - "0.0.0.0:${hostPort}:5173/tcp"`);
+        published.desktop = [hostPort];
+    } else {
+        lines.push('      []');
+    }
 
     lines.push('  nextcloud:');
     lines.push('    ports:');

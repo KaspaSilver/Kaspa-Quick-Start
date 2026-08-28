@@ -5,7 +5,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { CONF_DIR, ensureDirs, KASPAD_ARGS_FILE, NODE_CONFIG_FILE, PROXIES_FILE } from './lib/paths.js';
+import { CONF_DIR, ensureDirs, KASPAD_ARGS_FILE, NODE_CONFIG_FILE, PROXIES_FILE, STACK_HOST } from './lib/paths.js';
 import {
     DEFAULT_NODE_CONFIG,
     NETWORKS,
@@ -31,6 +31,7 @@ import * as network from './lib/network.js';
 import * as emission from './lib/emission.js';
 import * as pruning from './lib/pruning.js';
 import * as kassigner from './lib/kassigner.js';
+import * as selfservice from './lib/selfservice.js';
 import { nodeSnapshot, rpc } from './lib/rpc.js';
 import { jobs } from './lib/jobs.js';
 import {
@@ -413,6 +414,13 @@ route('GET', /^\/api\/status$/, async (req, res) => {
         bindAddress: cfg.expose.bindAddress || '0.0.0.0',
         published,
         disk,
+        // The volume split by what is in it. The UTXO index is worth showing on
+        // its own because it is the part pruning never touches, so it explains
+        // why the total does not drop as far as someone might expect.
+        dataSplit: breakdown && {
+            consensusBytes: breakdown.consensus ?? null,
+            utxoindexBytes: breakdown.utxoindex ?? null,
+        },
         // When the node next throws away old block data, and what the last one
         // did to the volume.
         pruning: pruning.pruningStatus({
@@ -1030,6 +1038,10 @@ route('POST', /^\/api\/mining\/(start|stop|restart)$/, async (req, res, match) =
  * containers rather than stopping them, matching how mining behaves: a stopped
  * service could otherwise be restarted by an unrelated `compose up`.
  */
+// The services built from source. The rest are stock images (databases, cache,
+// imaginary) with nothing to build, and asking compose to build them errors.
+const BUILDABLE_SERVICES = new Set(['kachat-app', 'kachat-desktop', 'nextcloud']);
+
 async function applyAppConfig(name, cfg, onLine = () => {}) {
     const app = apps.APPS[name];
     const settings = cfg[name];
@@ -1051,7 +1063,7 @@ async function applyAppConfig(name, cfg, onLine = () => {}) {
     }
 
     onLine('Building images if needed...');
-    await dockerctl.compose(['build', ...app.services.filter((sv) => sv === 'kachat-app' || sv === 'nextcloud')], {
+    await dockerctl.compose(['build', ...app.services.filter((sv) => BUILDABLE_SERVICES.has(sv))], {
         onLine,
         profile: app.profile,
         timeoutMs: 120 * 60_000,
@@ -1160,7 +1172,7 @@ route('GET', /^\/api\/apps$/, async (req, res) => {
     sendJson(res, 200, { config: cfg, apps: state, readiness: await nodeReadiness() });
 });
 
-route('PUT', /^\/api\/apps\/(kachat|nextcloud)$/, async (req, res, match) => {
+route('PUT', /^\/api\/apps\/(kachat|desktop|nextcloud)$/, async (req, res, match) => {
     const name = match[1];
     const body = await readBody(req);
 
@@ -1215,7 +1227,7 @@ route('PUT', /^\/api\/apps\/(kachat|nextcloud)$/, async (req, res, match) => {
     sendJson(res, 202, { ok: true, jobId: job.id, config: cfg });
 });
 
-route('GET', /^\/api\/apps\/(kachat|nextcloud)\/refs$/, async (req, res, match, url) => {
+route('GET', /^\/api\/apps\/(kachat|desktop|nextcloud)\/refs$/, async (req, res, match, url) => {
     try {
         sendJson(res, 200, await apps.listRefs(match[1], { force: url.searchParams.get('force') === '1' }));
     } catch (err) {
@@ -1250,7 +1262,7 @@ route('POST', /^\/api\/apps\/nextcloud\/admin\/password$/, async (req, res) => {
     }
 });
 
-route('GET', /^\/api\/apps\/(kachat|nextcloud)\/check$/, async (req, res, match) => {
+route('GET', /^\/api\/apps\/(kachat|desktop|nextcloud)\/check$/, async (req, res, match) => {
     const name = match[1];
     try {
         const upstream = await apps.checkUpstream(name, apps.loadAppsConfig());
@@ -1269,7 +1281,7 @@ route('GET', /^\/api\/apps\/(kachat|nextcloud)\/check$/, async (req, res, match)
     }
 });
 
-route('POST', /^\/api\/apps\/(kachat|nextcloud)\/update$/, async (req, res, match) => {
+route('POST', /^\/api\/apps\/(kachat|desktop|nextcloud)\/update$/, async (req, res, match) => {
     const name = match[1];
     const cfg = apps.loadAppsConfig();
     if (!cfg[name].enabled) return fail(res, 409, `${apps.APPS[name].label} is switched off.`);
@@ -1296,7 +1308,7 @@ route('POST', /^\/api\/apps\/(kachat|nextcloud)\/update$/, async (req, res, matc
     sendJson(res, 202, { ok: true, jobId: job.id });
 });
 
-route('POST', /^\/api\/apps\/(kachat|nextcloud)\/(start|stop|restart)$/, async (req, res, match) => {
+route('POST', /^\/api\/apps\/(kachat|desktop|nextcloud)\/(start|stop|restart)$/, async (req, res, match) => {
     const [, name, action] = match;
     const app = apps.APPS[name];
     const job = jobs.start(`${action} ${app.label}`, async (onLine) => {
@@ -1311,7 +1323,14 @@ route('POST', /^\/api\/apps\/(kachat|nextcloud)\/(start|stop|restart)$/, async (
 route('GET', /^\/api\/duckdns$/, async (req, res) => {
     const cfg = loadManagerConfig();
     sendJson(res, 200, {
-        duckdns: { ...cfg.duckdns, token: cfg.duckdns.token ? '********' : '' },
+        duckdns: {
+            ...cfg.duckdns,
+            token: cfg.duckdns.token ? '********' : '',
+            // Derived, not read back: a config saved before refreshing became
+            // automatic can hold enabled:false while both fields are filled in,
+            // and the scheduler goes by the fields.
+            enabled: duckdns.isConfigured(cfg.duckdns),
+        },
         publicIp: await duckdns.publicIp(),
     });
 });
@@ -1321,22 +1340,84 @@ route('PUT', /^\/api\/duckdns$/, async (req, res) => {
     const cfg = loadManagerConfig();
     const domains = duckdns.normalizeDomains(body.domains ?? cfg.duckdns.domains);
 
-    if (body.enabled && !domains.length) return fail(res, 400, 'Enter at least one DuckDNS subdomain.');
     for (const d of domains) {
         if (!/^[a-z0-9-]{1,63}$/.test(d)) return fail(res, 400, `"${d}" is not a valid DuckDNS subdomain.`);
     }
 
-    cfg.duckdns.enabled = Boolean(body.enabled);
     cfg.duckdns.domains = domains.join(',');
     // An unchanged masked token must not overwrite the stored one.
     if (typeof body.token === 'string' && body.token && !/^\*+$/.test(body.token)) cfg.duckdns.token = body.token.trim();
     cfg.duckdns.intervalMinutes = Math.max(5, Number(body.intervalMinutes) || 5);
 
-    if (cfg.duckdns.enabled && !cfg.duckdns.token) return fail(res, 400, 'A DuckDNS token is required.');
+    // Refreshing is not opt-in -- filling both fields in is the decision. Half
+    // a pair is a mistake worth naming, rather than a silent no-op to save.
+    if (domains.length && !cfg.duckdns.token) return fail(res, 400, 'A DuckDNS token is required.');
+    if (!domains.length && cfg.duckdns.token) return fail(res, 400, 'Enter at least one DuckDNS subdomain.');
+    cfg.duckdns.enabled = duckdns.isConfigured(cfg.duckdns);
 
     saveManagerConfig(cfg);
     duckdns.scheduleFromConfig(log);
     sendJson(res, 200, { ok: true, domains: domains.map((d) => `${d}.duckdns.org`) });
+});
+
+// ------------------------------------------------------------ global system --
+
+route('GET', /^\/api\/system$/, async (req, res) => {
+    sendJson(res, 200, {
+        panelVersion: PANEL_VERSION,
+        stackDir: STACK_HOST,
+        lastUpdate: selfservice.lastUpdate(),
+    });
+});
+
+route('GET', /^\/api\/system\/panel-latest$/, async (req, res, match, url) => {
+    const repo = (url.searchParams.get('repo') || 'KaspaSilver/Quick-Start-Kaspa').trim();
+    const ref = (url.searchParams.get('ref') || 'main').trim();
+    try {
+        const latest = await selfservice.latestCommit({ repo, ref });
+        const installed = selfservice.lastUpdate();
+        // Only meaningful once something has recorded which commit is installed,
+        // which is the first time this panel updates itself.
+        const known = installed?.repo === repo ? installed.sha : null;
+        sendJson(res, 200, {
+            latest,
+            installedSha: known || null,
+            upToDate: known ? known === latest.sha : null,
+            compare: known ? await selfservice.compareToInstalled({ repo, base: known, head: latest.sha }) : null,
+        });
+    } catch (err) {
+        fail(res, 400, err.message);
+    }
+});
+
+route('POST', /^\/api\/system\/panel-update$/, async (req, res) => {
+    const body = await readBody(req);
+    try {
+        const started = await selfservice.updatePanel({
+            repo: String(body.repo || 'KaspaSilver/Quick-Start-Kaspa').trim(),
+            ref: String(body.ref || 'main').trim(),
+        });
+        log(`panel update started in ${started.container}`);
+        sendJson(res, 200, started);
+    } catch (err) {
+        fail(res, 400, err.message);
+    }
+});
+
+route('POST', /^\/api\/system\/teardown$/, async (req, res) => {
+    const body = await readBody(req);
+    // Typed rather than clicked. This removes the node, its chain data and this
+    // panel, and there is no undo anywhere in the flow.
+    if (String(body.confirm || '') !== 'DELETE EVERYTHING') {
+        return fail(res, 400, 'Type DELETE EVERYTHING to confirm.');
+    }
+    try {
+        const started = await selfservice.teardown();
+        log(`teardown started in ${started.container}; this panel is about to go away`);
+        sendJson(res, 200, started);
+    } catch (err) {
+        fail(res, 400, err.message);
+    }
 });
 
 route('POST', /^\/api\/duckdns\/update$/, async (req, res) => {

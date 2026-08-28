@@ -85,7 +85,7 @@ if command -v docker >/dev/null 2>&1 && d info >/dev/null 2>&1; then
         [ -f "$STACK_DIR/conf/ports.yml" ] && compose_files+=(-f "$STACK_DIR/conf/ports.yml")
         # --profile mining makes compose aware of the stratum bridge; without
         # it the bridge container and volume are left behind as orphans.
-        down=(--profile mining --profile kachat --profile nextcloud --profile proxy down --remove-orphans --rmi local)
+        down=(--profile mining --profile kachat --profile kachat-desktop --profile nextcloud --profile proxy down --remove-orphans --rmi local)
         [ "$KEEP_DATA" = "1" ] || down+=(--volumes)
         d compose "${compose_files[@]}" --project-directory "$STACK_DIR" "${down[@]}" 2>/dev/null \
             || warn "compose down reported an error; removing objects individually."
@@ -93,7 +93,7 @@ if command -v docker >/dev/null 2>&1 && d info >/dev/null 2>&1; then
 
     say "Removing leftover containers"
     for name in kaspa-node-kaspad kaspa-node-manager kaspa-node-proxy kaspa-node-bridge \
-               kaspa-node-kachat kaspa-node-kachat-db \
+               kaspa-node-kachat kaspa-node-kachat-db kaspa-node-kachat-desktop \
                kaspa-node-nextcloud kaspa-node-nextcloud-db kaspa-node-nextcloud-redis kaspa-node-nextcloud-imaginary; do
         d rm -f "$name" >/dev/null 2>&1 && ok "removed container $name" || true
     done
@@ -133,7 +133,7 @@ if command -v docker >/dev/null 2>&1 && d info >/dev/null 2>&1; then
     # reference, which is the point -- nothing unrelated gets touched.
     d builder prune -f >/dev/null 2>&1 || true
 else
-    warn "Docker is not available — skipping container, image and volume removal."
+    warn "Docker is not available, so there are no containers, images or volumes to remove."
 fi
 
 # -------------------------------------------------------------- directory ----
@@ -149,7 +149,7 @@ if [ -d "$STACK_DIR" ]; then
         rm -rf "${STACK_DIR:?}"
         ok "removed $STACK_DIR"
     else
-        warn "$STACK_DIR does not look like a Kaspa node install — leaving it alone."
+        warn "$STACK_DIR does not look like a Kaspa node install, so leaving it alone."
     fi
 fi
 

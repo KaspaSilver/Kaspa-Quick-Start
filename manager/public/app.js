@@ -1,5 +1,15 @@
+import { qrSvg } from './qr.js';
+
 const $ = (id) => document.getElementById(id);
 const el = (sel, root = document) => root.querySelector(sel);
+
+// The QR is generated from the address already in the markup rather than from a
+// second copy of it here. There is then no way for the code and the text under
+// it to disagree, which for an address is the failure that matters.
+{
+    const shown = el('#donate-card .addr');
+    if (shown) $('donate-qr').innerHTML = qrSvg(shown.textContent.trim(), { title: 'Kaspa donation address' });
+}
 
 // ------------------------------------------------------------------- api ---
 
@@ -147,6 +157,8 @@ function selectTab(name) {
     // Same for the kaspad log: no point streaming it from another section.
     if (name !== 'kaspad') setKaspadLog(false);
     else setKaspadLog(activeSubtab('kaspad') === 'kaspadlog');
+    // Read on arrival rather than polled: nothing on it changes by itself.
+    if (name === 'global') loadGlobal().catch(() => {});
     // On the drawer layout, picking a destination should get out of the way.
     if (MOBILE()) closeDrawer();
 }
@@ -273,6 +285,8 @@ const SERVICE_ACTIONS = {
     mining: (on) => api('/api/mining', { method: 'PUT', body: { config: { ...collectMiningConfig(), enabled: on } } }),
     kassigner: (on) => api('/api/kassigner', { method: 'PUT', body: { enabled: on } }),
     kachat: (on) => api('/api/apps/kachat', { method: 'PUT', body: { config: { ...collectAppConfig('kachat'), enabled: on } } }),
+    desktop: (on) =>
+        api('/api/apps/desktop', { method: 'PUT', body: { config: { ...collectAppConfig('desktop'), enabled: on } } }),
     nextcloud: (on) =>
         api('/api/apps/nextcloud', { method: 'PUT', body: { config: { ...collectAppConfig('nextcloud'), enabled: on } } }),
     proxy: (on) => api('/api/proxy/enabled', { method: 'POST', body: { enabled: on } }),
@@ -281,7 +295,8 @@ const SERVICE_ACTIONS = {
 const SERVICE_NAMES = {
     node: 'the node',
     mining: 'mining',
-    kachat: 'the KaChat indexer',
+    kachat: 'KaChat-Indexer',
+    desktop: 'KaChat-Desktop',
     kassigner: 'KasSigner',
     nextcloud: 'Nextcloud',
     proxy: 'the reverse proxy',
@@ -430,6 +445,11 @@ async function refreshStatus() {
     $('stat-version').textContent = s.version?.version || '–';
     $('stat-uptime').textContent = running ? fmtDuration(s.container.startedAt) : '–';
     $('stat-disk').textContent = fmtBytes(s.disk?.size);
+    // The disk walk behind this is cached, so it is briefly absent on a cold
+    // start. A blank beats a zero, which would read as an empty index.
+    $('stat-utxo').textContent = Number.isFinite(s.dataSplit?.utxoindexBytes)
+        ? fmtBytes(s.dataSplit.utxoindexBytes)
+        : '–';
     renderPruning(s.pruning, running);
 
     $('stat-peers').textContent = fmtNum(s.peers.total);
@@ -1538,6 +1558,15 @@ async function loadApps() {
     $('kachat-pub-chat').checked = c.kachat.publish.chat;
     renderAppState('kachat', r.apps.kachat);
 
+    // --- KaChat Desktop ---
+    // Defaults here as well as on the server. This whole function is one long
+    // sequence of assignments, so a single missing key used to throw and leave
+    // every field below it unpopulated, which the next save then posted back as
+    // empty values. Nothing in here should be able to do that again.
+    $('desktop-ref').value = c.desktop?.ref ?? 'main';
+    $('desktop-port').value = c.desktop?.hostPort ?? 5173;
+    renderAppState('desktop', r.apps.desktop);
+
     // --- Nextcloud ---
     $('nextcloud-ref').value = c.nextcloud.ref;
     $('nextcloud-pub-web').checked = c.nextcloud.publish.web;
@@ -1548,10 +1577,11 @@ async function loadApps() {
     loadNextcloudAdmin();
     loadRefPickers();
     setNavSwitch('kachat', c.kachat.enabled);
+    setNavSwitch('desktop', c.desktop.enabled);
     setNavSwitch('nextcloud', c.nextcloud.enabled);
-    for (const [app, tab] of [['kachat', 'kachat'], ['nextcloud', 'nextcloud']]) {
+    for (const [app, tab] of [['kachat', 'kachat'], ['desktop', 'desktop'], ['nextcloud', 'nextcloud']]) {
         const running = Boolean(r.apps[app]?.container?.running);
-        setNavHealth(tab, !c[app].enabled ? 'off' : running ? 'ok' : 'bad');
+        setNavHealth(tab, !c[app]?.enabled ? 'off' : running ? 'ok' : 'bad');
     }
 }
 
@@ -1570,7 +1600,7 @@ function startFailure(state) {
 function renderAppState(name, state) {
     const badge = $(`${name}-state`);
     const running = state.container?.running;
-    const enabled = appsState.config[name].enabled;
+    const enabled = Boolean(appsState.config?.[name]?.enabled);
     badge.textContent = !enabled ? 'off' : running ? 'running' : state.container?.status || 'stopped';
     badge.className = `tag ${!enabled ? 'off' : running ? 'ok' : ''}`;
 
@@ -1620,6 +1650,33 @@ function renderAppState(name, state) {
         }
 
         const build = $('nextcloud-build');
+        build.textContent = state.build?.sha
+            ? `Built from ${String(state.build.sha).slice(0, 7)} on ${new Date(state.build.builtAt).toLocaleString()}`
+            : 'Not built yet.';
+    }
+
+    if (name === 'desktop') {
+        const link = $('desktop-link');
+        const cfg = appsState.config.desktop;
+        link.hidden = false;
+        if (enabled && running) {
+            // location.hostname rather than localhost: the panel is often open
+            // from another machine on the LAN, and localhost would send that
+            // browser to itself.
+            const url = `http://${location.hostname}:${cfg.hostPort}`;
+            link.className = 'verdict ok';
+            link.innerHTML = `<a href="${url}" target="_blank" rel="noreferrer noopener">${escapeHtml(url)} ↗</a>`;
+        } else {
+            const failure = enabled ? startFailure(state) : null;
+            link.className = failure ? 'verdict bad' : 'verdict';
+            link.textContent =
+                failure ??
+                (enabled
+                    ? 'Starting up. The first build installs the app dependencies, which takes a few minutes.'
+                    : 'Not running. Switch it on in the sidebar.');
+        }
+
+        const build = $('desktop-build');
         build.textContent = state.build?.sha
             ? `Built from ${String(state.build.sha).slice(0, 7)} on ${new Date(state.build.builtAt).toLocaleString()}`
             : 'Not built yet.';
@@ -1674,7 +1731,7 @@ function toggleRefCustom(name) {
     $(`${name}-ref-custom-row`).hidden = $(`${name}-ref`).value !== REF_CUSTOM;
 }
 
-for (const name of ['kachat', 'nextcloud']) {
+for (const name of ['kachat', 'desktop', 'nextcloud']) {
     $(`${name}-ref`).addEventListener('change', () => {
         toggleRefCustom(name);
         if ($(`${name}-ref`).value === REF_CUSTOM) $(`${name}-ref-custom`).focus();
@@ -1697,7 +1754,7 @@ for (const name of ['kachat', 'nextcloud']) {
 
 /** Loads the pickers from cache when the apps page does. */
 async function loadRefPickers() {
-    for (const name of ['kachat', 'nextcloud']) {
+    for (const name of ['kachat', 'desktop', 'nextcloud']) {
         const current = appsState?.config?.[name]?.ref ?? 'main';
         try {
             fillRefPicker(name, await api(`/api/apps/${name}/refs`), current);
@@ -1712,14 +1769,22 @@ async function loadRefPickers() {
 function collectAppConfig(name) {
     if (name === 'kachat') {
         return {
-            enabled: Boolean(appsState?.config.kachat.enabled),
+            enabled: Boolean(appsState?.config?.kachat?.enabled),
             ref: appRef('kachat'),
             network: $('kachat-network').value,
             publish: { api: $('kachat-pub-api').checked, chat: $('kachat-pub-chat').checked },
         };
     }
+    if (name === 'desktop') {
+        return {
+            enabled: Boolean(appsState?.config?.desktop?.enabled),
+            ref: appRef('desktop'),
+            publish: { web: true },
+            hostPort: Number($('desktop-port').value),
+        };
+    }
     return {
-        enabled: Boolean(appsState?.config.nextcloud.enabled),
+        enabled: Boolean(appsState?.config?.nextcloud?.enabled),
         ref: appRef('nextcloud'),
         publish: { web: $('nextcloud-pub-web').checked },
         hostPort: Number($('nextcloud-port').value),
@@ -1734,7 +1799,7 @@ function collectAppConfig(name) {
  * runs the same save: the whole config is sent either way, so pressing it from
  * here is the same operation under a name that fits where it sits.
  */
-for (const app of ['kachat', 'nextcloud']) {
+for (const app of ['kachat', 'desktop', 'nextcloud']) {
     $(`${app}-rebuild`).addEventListener('click', async () => {
         const err = $(`${app}-error`);
         err.hidden = true;
@@ -1806,7 +1871,7 @@ $('nextcloud-pass-save').addEventListener('click', async () => {
     }
 });
 
-for (const name of ['kachat', 'nextcloud']) {
+for (const name of ['kachat', 'desktop', 'nextcloud']) {
     // The switch is a power control: it takes effect on the spot, matching the
     // one on Mining. Everything that needs an explicit Apply stays a checkbox.
     $(`${name}-save`).addEventListener('click', async () => {
@@ -1814,7 +1879,7 @@ for (const name of ['kachat', 'nextcloud']) {
         err.hidden = true;
         try {
             await api(`/api/apps/${name}`, { method: 'PUT', body: { config: collectAppConfig(name) } });
-            openConsole(`Applying ${name} settings`);
+            openConsole(`Applying ${SERVICE_NAMES[name]} settings`);
             setTimeout(loadApps, 2000);
         } catch (e) {
             err.textContent = e.message;
@@ -2769,10 +2834,10 @@ $('kachat-del-content-btn').addEventListener('click', async () => {
     if (!tx) return toast('Enter a transaction id.', 'bad');
     try {
         const d = await kachat('kaposts/delete', { method: 'POST', body: { tx_id: tx } });
-        kResult('kachat-data-result', `Deleted ${d.deleted} row${d.deleted === 1 ? '' : 's'}.`);
+        kResult('kachat-kaposts-del-result', `Deleted ${d.deleted} row${d.deleted === 1 ? '' : 's'}.`);
         $('kachat-del-content').value = '';
     } catch (e) {
-        kResult('kachat-data-result', e.message, true);
+        kResult('kachat-kaposts-del-result', e.message, true);
     }
 });
 
@@ -2781,10 +2846,10 @@ $('kachat-del-bcast-btn').addEventListener('click', async () => {
     if (!tx) return toast('Enter a transaction id.', 'bad');
     try {
         const d = await kachat('broadcasts/delete', { method: 'POST', body: { tx_id: tx } });
-        kResult('kachat-data-result', `Deleted ${d.deleted} broadcast${d.deleted === 1 ? '' : 's'}.`);
+        kResult('kachat-bcast-del-result', `Deleted ${d.deleted} broadcast${d.deleted === 1 ? '' : 's'}.`);
         $('kachat-del-bcast').value = '';
     } catch (e) {
-        kResult('kachat-data-result', e.message, true);
+        kResult('kachat-bcast-del-result', e.message, true);
     }
 });
 
@@ -2793,9 +2858,9 @@ $('kachat-purge-channel-btn').addEventListener('click', async () => {
     if (!confirm(`Delete every stored broadcast in #${channel}?`)) return;
     try {
         const d = await kachat('broadcasts/delete', { method: 'POST', body: { channel } });
-        kResult('kachat-data-result', `Deleted ${d.deleted} broadcasts from #${channel}.`);
+        kResult('kachat-bcast-del-result', `Deleted ${d.deleted} broadcasts from #${channel}.`);
     } catch (e) {
-        kResult('kachat-data-result', e.message, true);
+        kResult('kachat-bcast-del-result', e.message, true);
     }
 });
 
@@ -2803,9 +2868,9 @@ $('kachat-purge-all-btn').addEventListener('click', async () => {
     if (!confirm('Delete every stored broadcast in every channel?\n\nThis cannot be undone here.')) return;
     try {
         const d = await kachat('broadcasts/delete', { method: 'POST', body: { all: true } });
-        kResult('kachat-data-result', `Deleted ${d.deleted} broadcasts.`);
+        kResult('kachat-bcast-del-result', `Deleted ${d.deleted} broadcasts.`);
     } catch (e) {
-        kResult('kachat-data-result', e.message, true);
+        kResult('kachat-bcast-del-result', e.message, true);
     }
 });
 
@@ -2814,9 +2879,9 @@ $('kachat-purge-chat-btn').addEventListener('click', async () => {
         return;
     try {
         await kachat('chat/purge', { method: 'POST' });
-        kResult('kachat-data-result', 'The chat store is empty. It will refill from the chain going forward.');
+        kResult('kachat-chat-del-result', 'The chat store is empty. It will refill from the chain going forward.');
     } catch (e) {
-        kResult('kachat-data-result', e.message, true);
+        kResult('kachat-chat-del-result', e.message, true);
     }
 });
 
@@ -2911,7 +2976,13 @@ function renderKassignerBoards() {
               }
             </article>`,
         )
-        .join('');
+        .join('') +
+        // Not a choice, so it has no button and nothing to click. It is here to
+        // answer "is this the whole list?" without anyone having to ask.
+        `<article class="card board-card soon">
+              <h3>More devices</h3>
+              <p class="muted">Coming soon. These are the boards KasSigner has firmware for today, and more are being added.</p>
+            </article>`;
 }
 
 const boardAsset = (key) => kassignerBoards[key].asset;
@@ -3295,14 +3366,19 @@ $('proxy-form').addEventListener('submit', async (event) => {
 
 async function loadDuckDns() {
     const r = await api('/api/duckdns');
-    $('dd-enabled').checked = r.duckdns.enabled;
     $('dd-domains').value = r.duckdns.domains;
     $('dd-token').value = r.duckdns.token;
     $('dd-interval').value = r.duckdns.intervalMinutes;
     $('public-ip').textContent = r.publicIp || 'unknown';
-    $('dd-status').textContent = r.duckdns.lastRunAt
-        ? `Last updated ${new Date(r.duckdns.lastRunAt).toLocaleString()}: ${r.duckdns.lastResult}`
-        : 'Never updated.';
+
+    const last = r.duckdns.lastRunAt
+        ? `Last checked ${new Date(r.duckdns.lastRunAt).toLocaleString()}: ${r.duckdns.lastResult}.`
+        : 'Not checked yet.';
+    // With nothing configured there is no refresh running, and "not checked
+    // yet" would read as a delay rather than as nothing being set up.
+    $('dd-status').textContent = r.duckdns.enabled
+        ? `${last} Rechecking every ${r.duckdns.intervalMinutes} minutes.`
+        : 'Not set up. Add a subdomain and token and it starts keeping itself current.';
 }
 
 $('dd-save').addEventListener('click', async () => {
@@ -3310,7 +3386,6 @@ $('dd-save').addEventListener('click', async () => {
         const r = await api('/api/duckdns', {
             method: 'PUT',
             body: {
-                enabled: $('dd-enabled').checked,
                 domains: $('dd-domains').value,
                 token: $('dd-token').value,
                 intervalMinutes: Number($('dd-interval').value),
@@ -3391,9 +3466,10 @@ document.addEventListener('click', (event) => {
 
 restoreLogSize('kaspad');
 
-// Neither of these is a service, so their dots stay hollow rather than implying
-// a state they cannot have.
+// None of these is a service, so their dots stay hollow rather than implying a
+// state they cannot have.
 setNavHealth('logs', 'none');
+setNavHealth('global', 'none');
 setNavHealth('support', 'none');
 
 // One tile per container, all fed by a single multiplexed EventSource. Per-tile
@@ -3664,3 +3740,131 @@ api('/api/session')
         else showLogin();
     })
     .catch(() => showLogin());
+
+// -------------------------------------------------------- global settings ---
+
+/**
+ * Both actions here replace or delete the container serving this page, so
+ * neither reports back the way every other job does. The panel does not get to
+ * see the end of its own update: the request returns as soon as a detached
+ * container has picked the work up, and the result is read out of a status file
+ * once the panel is running again.
+ */
+async function loadGlobal() {
+    const r = await api('/api/system');
+    $('global-panel-version').textContent = r.panelVersion || '–';
+    $('global-stack-dir').textContent = r.stackDir || '–';
+
+    const last = r.lastUpdate;
+    if (!last) return;
+    kResult(
+        'global-update-result',
+        last.ok
+            ? `Updated from ${last.repo}@${last.ref} at ${new Date(last.at).toLocaleString()}.`
+            : `Last update failed: ${last.error || 'no reason recorded'}`,
+        !last.ok,
+    );
+}
+
+/**
+ * Nothing here polls GitHub in the background. A control panel that phones home
+ * on a timer is a surprise, and the answer is only interesting at the moment
+ * somebody is thinking about updating.
+ */
+$('global-check-btn').addEventListener('click', async () => {
+    const button = $('global-check-btn');
+    const repo = $('global-repo').value.trim();
+    const ref = $('global-ref').value.trim();
+    button.disabled = true;
+    $('global-check-status').textContent = 'Checking…';
+    try {
+        const q = new URLSearchParams({ repo, ref });
+        const r = await api(`/api/system/panel-latest?${q}`);
+        const when = r.latest.date ? new Date(r.latest.date).toLocaleString() : 'unknown date';
+        if (r.upToDate === true) {
+            $('global-check-status').textContent = `Up to date. ${ref} is at ${r.latest.shortSha}, ${when}.`;
+        } else if (r.upToDate === false) {
+            const behind = r.compare?.behind ? `, ${r.compare.behind} commit${r.compare.behind === 1 ? '' : 's'} ahead of yours` : '';
+            $('global-check-status').textContent = `Update available: ${r.latest.shortSha}${behind}. ${r.latest.message}`;
+        } else {
+            // No recorded sha, which is every install that has not used this
+            // button yet. Saying "up to date" here would be a guess.
+            $('global-check-status').textContent =
+                `${ref} is at ${r.latest.shortSha} (${when}). This install has no recorded commit, so there is nothing to compare it against yet.`;
+        }
+    } catch (e) {
+        $('global-check-status').textContent = e.message;
+    } finally {
+        button.disabled = false;
+    }
+});
+
+$('global-update-btn').addEventListener('click', async () => {
+    const button = $('global-update-btn');
+    const repo = $('global-repo').value.trim();
+    const ref = $('global-ref').value.trim();
+    if (!confirm(`Update the panel from ${repo}@${ref}?\n\nIt will go offline for a minute or two while it rebuilds. The node keeps running.`)) return;
+
+    button.disabled = true;
+    try {
+        await api('/api/system/panel-update', { method: 'POST', body: { repo, ref } });
+        kResult('global-update-result', 'Rebuilding. This page will drop out and come back on its own.');
+        waitForPanel();
+    } catch (e) {
+        kResult('global-update-result', e.message, true);
+        button.disabled = false;
+    }
+});
+
+/**
+ * Polls until the panel answers again. The rebuild takes it away mid-request,
+ * so failures here are expected and are not worth showing until it has been
+ * gone long enough to mean something.
+ */
+function waitForPanel() {
+    const deadline = Date.now() + 10 * 60_000;
+    let wasDown = false;
+
+    const tick = async () => {
+        try {
+            const res = await fetch('/healthz', { cache: 'no-store' });
+            if (res.ok) {
+                if (wasDown) return location.reload();
+                // Still the old panel: it has not gone down yet.
+            }
+        } catch {
+            wasDown = true;
+        }
+        if (Date.now() > deadline) {
+            kResult('global-update-result', 'The panel has not come back after ten minutes. Check `docker logs kaspa-node-panel-update`.', true);
+            $('global-update-btn').disabled = false;
+            return;
+        }
+        setTimeout(tick, 3000);
+    };
+    setTimeout(tick, 4000);
+}
+
+// Nothing else in the panel is guarded like this, because nothing else deletes
+// the node, its chain data and the panel in one go.
+const TEARDOWN_PHRASE = 'DELETE EVERYTHING';
+
+$('global-teardown-confirm').addEventListener('input', (event) => {
+    $('global-teardown-btn').disabled = event.target.value.trim() !== TEARDOWN_PHRASE;
+});
+
+$('global-teardown-btn').addEventListener('click', async () => {
+    if (!confirm('Remove the node, all its data and this panel?\n\nThis cannot be undone. Docker itself stays installed.')) return;
+
+    $('global-teardown-btn').disabled = true;
+    try {
+        await api('/api/system/teardown', { method: 'POST', body: { confirm: TEARDOWN_PHRASE } });
+        kResult(
+            'global-teardown-result',
+            'Removing everything. This panel will stop responding shortly, which is what finishing looks like.',
+        );
+    } catch (e) {
+        kResult('global-teardown-result', e.message, true);
+        $('global-teardown-btn').disabled = false;
+    }
+});

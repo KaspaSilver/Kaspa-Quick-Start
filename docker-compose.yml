@@ -214,6 +214,32 @@ services:
       driver: json-file
       options: { max-size: "5m", max-file: "2" }
 
+  kachat-desktop:
+    image: kaspa-one-click/kachat-desktop:${KACHAT_DESKTOP_REF:-main}
+    build:
+      # A local context, unlike the indexer: upstream ships no Dockerfile, so
+      # ours lives in the stack and clones the source itself. Changing the ref
+      # and rebuilding is what the panel's update button does.
+      context: ./kachat-desktop
+      args:
+        KACHAT_DESKTOP_REPO: ${KACHAT_DESKTOP_REPO:-https://github.com/KaspaSilver/KaChat-Desktop.git}
+        KACHAT_DESKTOP_REF: ${KACHAT_DESKTOP_REF:-main}
+    container_name: kaspa-node-kachat-desktop
+    hostname: kachat-desktop
+    profiles: ["kachat-desktop"]
+    restart: unless-stopped
+    networks:
+      - kaspa
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5173/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options: { max-size: "5m", max-file: "2" }
+
   nextcloud:
     image: kaspa-one-click/nextcloud:1
     build:

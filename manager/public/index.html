@@ -75,13 +75,24 @@
 
       <p class="nav-group-title">Apps</p>
       <div class="nav-row">
-        <button class="nav-item locked" data-tab="kachat" data-requires-node title="KaChat indexer">
+        <button class="nav-item locked" data-tab="kachat" data-requires-node title="KaChat-Indexer">
           <span class="nav-dot" data-health="kachat"></span>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 01-9 8.4 9 9 0 01-4.2-1L3 20l1.3-4a8.2 8.2 0 01-1-4 8.4 8.4 0 018.7-8.4 8.4 8.4 0 019 8.4z"/></svg>
-          <span class="label">KaChat</span>
+          <span class="label">KaChat-Indexer</span>
         </button>
-        <label class="switch mini" title="Start or stop the KaChat indexer">
-          <input type="checkbox" data-service="kachat" aria-label="Start or stop the KaChat indexer">
+        <label class="switch mini" title="Start or stop KaChat-Indexer">
+          <input type="checkbox" data-service="kachat" aria-label="Start or stop KaChat-Indexer">
+          <span class="track"></span>
+        </label>
+      </div>
+      <div class="nav-row">
+        <button class="nav-item" data-tab="desktop" title="KaChat-Desktop">
+          <span class="nav-dot" data-health="desktop"></span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+          <span class="label">KaChat-Desktop</span>
+        </button>
+        <label class="switch mini" title="Start or stop KaChat-Desktop">
+          <input type="checkbox" data-service="desktop" aria-label="Start or stop KaChat-Desktop">
           <span class="track"></span>
         </label>
       </div>
@@ -128,6 +139,13 @@
           <span class="nav-dot" data-health="logs"></span>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8zM14 3v5h5M9 13h6M9 17h4"/></svg>
           <span class="label">All logs</span>
+        </button>
+      </div>
+      <div class="nav-row">
+        <button class="nav-item" data-tab="global" title="Global settings">
+          <span class="nav-dot" data-health="global"></span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5v.2a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.6 1.7 1.7 0 00-1.9.4l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1A1.7 1.7 0 004.7 9a1.7 1.7 0 00-.4-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>
+          <span class="label">Global settings</span>
         </button>
       </div>
       <div class="nav-row">
@@ -188,6 +206,7 @@
               <div><dt>Version</dt><dd id="stat-version">–</dd></div>
               <div><dt>Uptime</dt><dd id="stat-uptime">–</dd></div>
               <div><dt>Chain data</dt><dd id="stat-disk">–</dd></div>
+              <div><dt>UTXO set</dt><dd id="stat-utxo">–</dd></div>
               <div class="wide"><dt>Next pruning</dt><dd id="stat-pruning">–</dd></div>
             </dl>
   
@@ -528,26 +547,26 @@
                   <select id="scan-preset">
                     <option value="">Add a range…</option>
                     <optgroup label="Most routers">
-                      <option value="192.168.1.0/24">192.168.1.x — the usual default</option>
-                      <option value="192.168.0.0/24">192.168.0.x — the other usual default</option>
-                      <option value="10.0.0.0/24">10.0.0.x — many cable ISPs</option>
+                      <option value="192.168.1.0/24">192.168.1.x (the usual default)</option>
+                      <option value="192.168.0.0/24">192.168.0.x (the other usual default)</option>
+                      <option value="10.0.0.0/24">10.0.0.x (many cable ISPs)</option>
                     </optgroup>
                     <optgroup label="By brand">
-                      <option value="192.168.178.0/24">192.168.178.x — FRITZ!Box</option>
-                      <option value="192.168.50.0/24">192.168.50.x — ASUS</option>
-                      <option value="192.168.31.0/24">192.168.31.x — Xiaomi</option>
-                      <option value="192.168.8.0/24">192.168.8.x — Huawei, mobile hotspots</option>
-                      <option value="192.168.11.0/24">192.168.11.x — Buffalo</option>
-                      <option value="192.168.86.0/24">192.168.86.x — Google Nest</option>
-                      <option value="192.168.2.0/24">192.168.2.x — Belkin, SMC, some ISPs</option>
-                      <option value="10.0.1.0/24">10.0.1.x — Apple AirPort</option>
+                      <option value="192.168.178.0/24">192.168.178.x (FRITZ!Box)</option>
+                      <option value="192.168.50.0/24">192.168.50.x (ASUS)</option>
+                      <option value="192.168.31.0/24">192.168.31.x (Xiaomi)</option>
+                      <option value="192.168.8.0/24">192.168.8.x (Huawei, mobile hotspots)</option>
+                      <option value="192.168.11.0/24">192.168.11.x (Buffalo)</option>
+                      <option value="192.168.86.0/24">192.168.86.x (Google Nest)</option>
+                      <option value="192.168.2.0/24">192.168.2.x (Belkin, SMC, some ISPs)</option>
+                      <option value="10.0.1.0/24">10.0.1.x (Apple AirPort)</option>
                     </optgroup>
                     <optgroup label="Also seen">
                       <option value="192.168.10.0/24">192.168.10.x</option>
-                      <option value="192.168.100.0/24">192.168.100.x — often the modem itself</option>
+                      <option value="192.168.100.0/24">192.168.100.x (often the modem itself)</option>
                       <option value="192.168.15.0/24">192.168.15.x</option>
                       <option value="10.1.1.0/24">10.1.1.x</option>
-                      <option value="172.16.0.0/24">172.16.0.x — business gear</option>
+                      <option value="172.16.0.0/24">172.16.0.x (business gear)</option>
                     </optgroup>
                   </select>
                 </label>
@@ -652,7 +671,7 @@
         <article class="card toggle-bar">
           <div class="toggle-row">
             <div class="toggle-text">
-              <strong>KaChat indexer</strong>
+              <strong>KaChat-Indexer</strong>
               <span class="muted">
                 Turns this node's chain data into the APIs KaChat clients talk to:
                 direct and group chats, broadcasts, KaPosts and mentions. It reads
@@ -789,6 +808,22 @@
             </table>
           </div>
         </article>
+
+        <article class="card span2 danger-zone">
+          <h3>Delete KaPosts data</h3>
+          <p class="muted">
+            This removes the indexer's stored copy only. The post is still on
+            chain, and a re-index would bring it back. It happens immediately
+            and cannot be undone from here.
+          </p>
+          <label class="stack">Delete a KaPosts item by transaction id
+            <span class="row">
+              <input id="kachat-del-content" placeholder="content transaction id (hex)" size="40">
+              <button type="button" id="kachat-del-content-btn" class="danger">Delete item</button>
+            </span>
+          </label>
+          <div id="kachat-kaposts-del-result" class="verdict" hidden></div>
+        </article>
       </div>
 
       <div id="sub-kachat-broadcasts" class="subtab">
@@ -842,10 +877,33 @@
             </table>
           </div>
           <p class="hint">
-            Thirteen channels are indexed: #kaspa, #kachat-bugs and the language
-            rooms. Messages are kept for 30 days and the preview shows the first
-            200 characters.
+            Only the channels switched on above are indexed. Messages are kept
+            for 30 days and the preview shows the first 200 characters.
           </p>
+        </article>
+
+        <article class="card span2 danger-zone">
+          <h3>Delete broadcast data</h3>
+          <p class="muted">
+            These remove the indexer's stored copy only, and a re-index would
+            bring it back. They happen immediately and cannot be undone from
+            here. Switching a channel off stops new messages but leaves what is
+            already stored. Purging is how you clear that.
+          </p>
+          <label class="stack">Delete a broadcast by transaction id
+            <span class="row">
+              <input id="kachat-del-bcast" placeholder="broadcast transaction id (hex)" size="40">
+              <button type="button" id="kachat-del-bcast-btn" class="danger">Delete broadcast</button>
+            </span>
+          </label>
+          <label class="stack">Purge broadcasts by channel
+            <span class="row">
+              <select id="kachat-purge-channel"></select>
+              <button type="button" id="kachat-purge-channel-btn" class="danger">Purge channel</button>
+              <button type="button" id="kachat-purge-all-btn" class="danger">Purge every broadcast</button>
+            </span>
+          </label>
+          <div id="kachat-bcast-del-result" class="verdict" hidden></div>
         </article>
       </div>
 
@@ -897,6 +955,25 @@
               <dl class="kv dense" id="kachat-chat-rest"></dl>
             </details>
           </div>
+        </article>
+
+        <article class="card span2 danger-zone">
+          <h3>Delete chat data</h3>
+          <p class="muted">
+            This wipes every one to one message, group, handshake and payment
+            the indexer holds. It only removes the stored copy. The messages are still
+            on chain, so a re-index would bring them back.
+          </p>
+          <label class="stack">Purge the chat store
+            <span class="row">
+              <button type="button" id="kachat-purge-chat-btn" class="danger">Purge all chat data</button>
+            </span>
+          </label>
+          <p class="hint">
+            With personal mode on, the store then refills with only your own
+            data, which is how you turn a public store into a personal one.
+          </p>
+          <div id="kachat-chat-del-result" class="verdict" hidden></div>
         </article>
       </div>
 
@@ -1053,50 +1130,79 @@
             </div>
           </article>
 
-          <article class="card span2 danger-zone">
-            <h3>Delete indexed data</h3>
-            <p class="muted">
-              These remove this indexer's stored copy only, and re-indexing from
-              the chain would bring it back. They happen immediately and cannot be
-              undone from here.
-            </p>
-            <label class="stack">Delete a KaPosts item by transaction id
-              <span class="row">
-                <input id="kachat-del-content" placeholder="content transaction id (hex)" size="40">
-                <button type="button" id="kachat-del-content-btn" class="danger">Delete item</button>
-              </span>
-            </label>
-            <label class="stack">Delete a broadcast by transaction id
-              <span class="row">
-                <input id="kachat-del-bcast" placeholder="broadcast transaction id (hex)" size="40">
-                <button type="button" id="kachat-del-bcast-btn" class="danger">Delete broadcast</button>
-              </span>
-            </label>
-            <label class="stack">Purge broadcasts by channel
-              <span class="row">
-                <select id="kachat-purge-channel"></select>
-                <button type="button" id="kachat-purge-channel-btn" class="danger">Purge channel</button>
-                <button type="button" id="kachat-purge-all-btn" class="danger">Purge every broadcast</button>
-              </span>
-            </label>
-            <label class="stack">Purge the chat store
-              <span class="row">
-                <button type="button" id="kachat-purge-chat-btn" class="danger">Purge all chat data</button>
-              </span>
-            </label>
-            <p class="hint">
-              Purging the chat store wipes every one to one message, group,
-              handshake and payment. With personal mode on it then refills with
-              only your own data, which is how you turn a public store into a
-              personal one.
-            </p>
-            <div id="kachat-data-result" class="verdict" hidden></div>
-          </article>
         </div>
       </div>
     </section>
 
     <!-- ------------------------------------------------------- nextcloud -->
+    <section id="tab-desktop" class="tab">
+      <div class="subtabs">
+        <button class="subtab-btn active" data-subtab="desktop-overview">Overview</button>
+        <button class="subtab-btn" data-subtab="desktop-updates">Updates</button>
+      </div>
+
+      <div id="sub-desktop-overview" class="subtab active">
+        <div class="grid">
+          <article class="card span2">
+            <div class="node-head">
+              <h3>KaChat Desktop</h3>
+              <span id="desktop-state" class="tag">-</span>
+            </div>
+            <p class="muted">
+              The KaChat client, served from this machine instead of a website.
+              Switch it on in the sidebar and open it in a browser. It is the same
+              app as the desktop build, so accounts and settings live in the
+              browser you open it with.
+            </p>
+            <div id="desktop-notice" class="verdict" hidden></div>
+            <div id="desktop-link" class="verdict" hidden></div>
+            <label class="inline">Port
+              <input type="number" id="desktop-port" min="1" max="65535" value="5173" size="6">
+              <button type="button" id="desktop-save" class="ghost mini">Apply</button>
+            </label>
+            <p class="hint">
+              It talks to whichever node and indexer you point it at from inside
+              the app, so it does not wait for this node to finish syncing. If you
+              are running the indexer here too, point it at this machine.
+            </p>
+            <p class="error" id="desktop-error" hidden></p>
+          </article>
+        </div>
+      </div>
+
+      <div id="sub-desktop-updates" class="subtab">
+        <div class="grid">
+          <article class="card span2">
+            <h3>Source and updates</h3>
+            <p class="muted">
+              Tracks <code>KaspaSilver/KaChat-Desktop</code> and checks it for
+              commits newer than the one this image was built from. Nothing is
+              stored server side, so an update never costs you anything.
+            </p>
+            <label class="inline">Branch / tag
+              <select id="desktop-ref"><option value="main">main</option></select>
+              <button type="button" class="ghost mini" id="desktop-refs-scan" title="Look up the branches and tags this repository has">Rescan</button>
+            </label>
+            <label class="inline" id="desktop-ref-custom-row" hidden>Ref
+              <input id="desktop-ref-custom" size="24" placeholder="branch, tag or commit">
+            </label>
+            <div id="desktop-build" class="verdict"></div>
+            <div id="desktop-update-status" class="verdict">Not checked yet.</div>
+            <div class="row">
+              <button type="button" id="desktop-check" class="ghost">Check for updates</button>
+              <button type="button" id="desktop-update" class="primary" disabled>Update</button>
+              <button type="button" id="desktop-rebuild" class="ghost">Rebuild from this branch</button>
+            </div>
+            <p class="hint">
+              Rebuild is what to press after changing the branch; Update is for
+              staying where you are. It reinstalls the app's dependencies, so give
+              it a few minutes and follow it under All logs.
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
     <section id="tab-nextcloud" class="tab">
       <nav class="subnav" aria-label="Nextcloud">
         <button class="subtab-btn active" data-subtab="nextcloud-overview">Overview</button>
@@ -1264,12 +1370,16 @@
       <div class="grid" id="proxy-config">
 
         <article class="card span2">
-          <h3>DuckDNS</h3>
-          <p class="muted">Keeps a free <code>*.duckdns.org</code> name pointed at this machine's current IP.</p>
-          <label class="check"><input type="checkbox" id="dd-enabled"> Keep the record updated automatically</label>
+          <h3>DuckDNS <a class="title-link" href="https://www.duckdns.org/" target="_blank" rel="noreferrer noopener">duckdns.org ↗</a></h3>
+          <p class="muted">
+            Keeps a free <code>*.duckdns.org</code> name pointed at this
+            machine's current IP. Fill both fields in and it keeps itself current.
+            A home connection can change address at any time, so there is
+            nothing to switch on and nothing to remember.
+          </p>
           <label class="inline">Subdomain <input id="dd-domains" placeholder="mynode"><span class="suffix">.duckdns.org</span></label>
           <label class="inline">Token <input id="dd-token" type="password" placeholder="from duckdns.org"></label>
-          <label class="inline">Every <input type="number" id="dd-interval" min="5" value="5" size="4"> minutes</label>
+          <label class="inline">Check every <input type="number" id="dd-interval" min="5" value="5" size="4"> minutes</label>
           <div class="row">
             <button id="dd-save" class="primary">Save</button>
             <button id="dd-now" class="ghost">Update now</button>
@@ -1401,6 +1511,71 @@
     </section>
 
     <!-- ---------------------------------------------------------- support -->
+    <section id="tab-global" class="tab">
+      <div class="grid">
+
+        <article class="card span2">
+          <h3>Update the control panel</h3>
+          <p class="muted">
+            This updates the panel itself, not the node. It downloads the latest
+            files, rebuilds the panel image and restarts it. Your settings,
+            certificates and chain data are untouched, and the node keeps
+            running throughout.
+          </p>
+          <dl class="kv">
+            <div><dt>Installed</dt><dd id="global-panel-version">–</dd></div>
+            <div><dt>Install directory</dt><dd id="global-stack-dir">–</dd></div>
+          </dl>
+          <label class="inline">Source
+            <input id="global-repo" value="KaspaSilver/Quick-Start-Kaspa" size="30">
+          </label>
+          <label class="inline">Branch or tag
+            <input id="global-ref" value="main" size="16">
+          </label>
+          <div class="row">
+            <button id="global-check-btn" class="ghost">Check for update</button>
+            <button id="global-update-btn" class="primary">Update the panel</button>
+          </div>
+          <p class="hint" id="global-check-status">Checked against GitHub when you ask, never on its own.</p>
+          <p class="hint">
+            The panel goes offline for a minute or two while it rebuilds. This
+            page will say so and come back on its own.
+          </p>
+          <div id="global-update-result" class="verdict" hidden></div>
+        </article>
+
+        <article class="card span2 danger-zone">
+          <h3>Remove everything</h3>
+          <p class="muted">
+            Deletes every container, image, volume, network and file this stack
+            created, including the node, its chain data and this panel. Docker
+            itself is left installed, along with anything else you run on it.
+          </p>
+          <ul class="plain">
+            <li>Chain data goes with it, so a fresh install re-syncs from
+              scratch. That takes hours.</li>
+            <li>KaChat and Nextcloud data goes too, including anything stored in
+              Nextcloud.</li>
+            <li>Base images shared with your other projects are skipped
+              automatically rather than pulled out from under them.</li>
+            <li>One small helper image (<code>docker:cli</code>) is fetched to do
+              the removing, and is the one thing left behind, because it cannot
+              delete the image it is running from. Clear it with
+              <code>docker rmi docker:cli</code>.</li>
+            <li>There is no undo, and no confirmation after this one.</li>
+          </ul>
+          <label class="stack">Type <code>DELETE EVERYTHING</code> to confirm
+            <span class="row">
+              <input id="global-teardown-confirm" placeholder="DELETE EVERYTHING" size="24" autocomplete="off">
+              <button type="button" id="global-teardown-btn" class="danger" disabled>Remove everything</button>
+            </span>
+          </label>
+          <div id="global-teardown-result" class="verdict" hidden></div>
+        </article>
+
+      </div>
+    </section>
+
     <section id="tab-support" class="tab">
       <div class="grid">
         <article class="card">
@@ -1415,11 +1590,17 @@
             <li><span class="what">X</span><a href="https://x.com/kaspasilver" target="_blank" rel="noreferrer noopener">@kaspasilver ↗</a></li>
             <li><span class="what">GitHub</span><a href="https://github.com/KaspaSilver" target="_blank" rel="noreferrer noopener">KaspaSilver ↗</a></li>
             <li><span class="what">Telegram</span><a href="https://t.me/kaspasilver" target="_blank" rel="noreferrer noopener">@kaspasilver ↗</a></li>
-            <li><span class="what">Discord</span><span class="handle">kaspasilver</span></li>
+            <li><span class="what">Discord</span><a href="https://discord.gg/DeJjk4mf4B" target="_blank" rel="noreferrer noopener">Join the server ↗</a></li>
             <li><span class="what">YouTube</span><a href="https://youtube.com/@kaspasilver" target="_blank" rel="noreferrer noopener">@kaspasilver ↗</a></li>
           </ul>
         </article>
 
+        <!--
+          The right column holds two short cards stacked, so the support page
+          fills its width instead of leaving a half-card gap beside the long
+          contact list.
+        -->
+        <div class="col-stack">
         <article class="card">
           <h3>Before you write in</h3>
           <p class="muted">
@@ -1436,6 +1617,26 @@
             upstream with <code>kaspanet/rusty-kaspa</code>.
           </p>
         </article>
+
+        <article class="card" id="donate-card">
+          <h3>Donate</h3>
+          <p class="muted">
+            This panel is free and stays free. If it saved you an evening, a few
+            KAS is a kind way to say so. Entirely optional, and nothing in here works
+            differently either way.
+          </p>
+          <div class="donate-body">
+            <!-- Filled in from the address below, so the two cannot drift. -->
+            <div class="donate-qr" id="donate-qr"></div>
+            <div class="donate-side">
+              <div class="address-row">
+                <code class="addr">kaspa:qqdca4tuaq27ac58pvyqddw8mhl0jh8k8cvwg3w62tkea79a62qc57schw07m</code>
+              </div>
+              <button type="button" class="copy-btn" data-copy="kaspa:qqdca4tuaq27ac58pvyqddw8mhl0jh8k8cvwg3w62tkea79a62qc57schw07m">Copy address</button>
+            </div>
+          </div>
+        </article>
+        </div>
       </div>
     </section>
 
