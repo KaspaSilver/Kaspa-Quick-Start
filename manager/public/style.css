@@ -559,7 +559,11 @@ dialog .row label { flex: 1; min-width: 110px; }
 
 /* Wide tables scroll inside their card rather than the page. */
 .scroll-x { overflow-x: auto; }
-.scroll-x table { min-width: 720px; }
+/* Scoped to the genuinely wide tables. Applied to every table in a .scroll-x
+   it also forced the ports table to 720px, which is why that one scrolled no
+   matter how much its content was trimmed. */
+.scroll-x table.workers,
+.scroll-x table.blocks { min-width: 720px; }
 
 table.workers td, table.blocks td { font-family: var(--mono); font-size: 12.5px; }
 table.workers td.name, table.blocks td.name { font-family: inherit; font-size: 14px; }
@@ -924,13 +928,28 @@ table.ports td.note { color: var(--muted); font-size: 12.5px; font-family: inher
 .node-head .tag { margin-right: auto; }
 
 #node-card .nodestats {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 16px;
     padding-bottom: 16px;
     border-bottom: 1px solid var(--line);
 }
 
-/* Each block of the card is one idea: what it is, how far along, who it talks
-   to. The rules keep them apart without needing three separate cards. */
+/* Two columns: what the node is doing on the left, how it can be reached on
+   the right. They are separate concerns that both belong to the same node, so
+   one card with a divider beats two cards. */
+.node-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+    gap: 0 26px;
+}
+.node-col { min-width: 0; }
+.node-ports {
+    padding-left: 26px;
+    border-left: 1px solid var(--line);
+}
+
+/* Each block of the left column is one idea: what it is, how far along, who it
+   talks to. The rules keep them apart without needing separate cards. */
 .node-section {
     padding-top: 16px;
     margin-top: 16px;
@@ -938,6 +957,25 @@ table.ports td.note { color: var(--muted); font-size: 12.5px; font-family: inher
 }
 .node-section:first-of-type { border-top: 0; margin-top: 0; }
 #node-card .nodestats + .node-section { border-top: 0; margin-top: 0; }
+
+/* Half a card is not much for a six-column table. */
+.node-ports h3 { margin-top: 0; }
+.node-ports .ports { font-size: 13px; }
+.node-ports .ports th, .node-ports .ports td { padding: 7px 6px; }
+.node-ports .ports td:first-child { width: 58px; }
+.node-ports .bindrow { margin-top: 12px; }
+.node-ports .bindrow input { min-width: 90px; }
+
+@media (max-width: 1100px) {
+    .node-body { grid-template-columns: minmax(0, 1fr); }
+    .node-ports {
+        padding-left: 0;
+        border-left: 0;
+        margin-top: 16px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+    }
+}
 
 .peers-line {
     display: flex;
@@ -948,6 +986,47 @@ table.ports td.note { color: var(--muted); font-size: 12.5px; font-family: inher
 }
 .peers-count strong { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; }
 
-@media (max-width: 760px) {
-    #node-card .nodestats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 520px) {
+    #node-card .nodestats { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* The ports table lives in half a card, so it earns its width back here. */
+.node-ports .ports .tag { font-size: 10.5px; padding: 1px 5px; }
+.node-ports .ports button { padding: 4px 9px; font-size: 12px; }
+.node-ports .ports td.toggle { width: 46px; }
+
+/* State moved from its own column to a dot beside the port number: the row's
+   tooltip carries the wording, which half a card has no room for. */
+.node-ports .ports .port { display: flex; align-items: center; gap: 7px; }
+.node-ports .ports .dot { width: 7px; height: 7px; box-shadow: none; flex: 0 0 7px; }
+.node-ports .ports .dot.warn { background: var(--warn); }
+
+/* ------------------------------------------------------------- log zoom */
+
+:root { --log-size: 11.5px; }
+
+/* Every log view reads from one variable so the +/- buttons move them all. */
+.logview,
+.log-tile pre {
+    font-size: var(--log-size);
+}
+
+.zoom {
+    display: inline-flex;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    overflow: hidden;
+}
+.zoom-btn {
+    background: var(--panel-2);
+    border: 0;
+    border-radius: 0;
+    color: var(--muted);
+    padding: 3px 10px;
+    font-size: 14px;
+    line-height: 1.2;
+    cursor: pointer;
+}
+.zoom-btn + .zoom-btn { border-left: 1px solid var(--line); }
+.zoom-btn:hover:not(:disabled) { background: var(--bg); color: var(--text); }
+.zoom-btn:disabled { opacity: 0.35; cursor: not-allowed; }

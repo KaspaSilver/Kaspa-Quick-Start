@@ -464,21 +464,21 @@ function renderPorts(s) {
         .map((p) => {
             const live = publishedSet.has(String(p.port));
             const state = !p.listening
-                ? '<span class="tag off">not listening</span>'
+                ? { cls: 'off', text: 'not listening' }
                 : !p.published
-                  ? '<span class="tag">internal only</span>'
+                  ? { cls: 'warn', text: 'listening, but only reachable from inside this machine' }
                   : live
-                    ? '<span class="tag ok">reachable</span>'
-                    : '<span class="tag">applying…</span>';
+                    ? { cls: 'ok', text: 'listening and reachable from outside' }
+                    : { cls: '', text: 'applying…' };
             const listening = p.canToggleListening
                 ? sw(p, 'listening', p.listening, true, p.listeningNote)
                 : `<span class="locked" title="${escapeHtml(p.listeningNote)}">always</span>`;
-            return `<tr>
-      <td class="port">${p.port}</td>
-      <td>${p.name}${p.required ? ' <span class="tag">needed to be public</span>' : ''}</td>
+            const title = `${p.name}: ${state.text}${p.required ? '. This is the one to forward on your router to be a public node.' : ''}`;
+            return `<tr title="${escapeHtml(title)}">
+      <td class="port"><span class="dot ${state.cls}"></span>${p.port}</td>
+      <td>${escapeHtml(p.name)}${p.required ? ' <span class="tag">required</span>' : ''}</td>
       <td class="toggle">${listening}</td>
       <td class="toggle">${sw(p, 'published', p.published, true, p.note)}</td>
-      <td>${state}</td>
       <td><button class="ghost" data-portcheck="${p.port}" ${p.published ? '' : 'disabled'}>Test</button></td>
     </tr>`;
         })
@@ -805,7 +805,6 @@ function renderMiningState(container, stats) {
 
     const on = Boolean(miningConfig?.enabled);
     $('mining-live').hidden = !on;
-    $('mining-connect').hidden = !on;
     $('mining-workers-card').hidden = !on;
     $('mining-blocks-card').hidden = !on;
     if (!on) return;
@@ -1694,6 +1693,47 @@ $('dd-now').addEventListener('click', async () => {
 });
 
 // ------------------------------------------------------------------- logs ---
+
+// Log text size. One setting for every log view, so zooming in one place does
+// not leave the others unreadable, and it survives a reload.
+const LOG_ZOOM_KEY = 'kaspa-node-log-size';
+const LOG_SIZE_MIN = 9;
+const LOG_SIZE_MAX = 22;
+const LOG_SIZE_DEFAULT = 11.5;
+
+function logSize() {
+    const stored = Number(localStorage.getItem(LOG_ZOOM_KEY));
+    return Number.isFinite(stored) && stored >= LOG_SIZE_MIN && stored <= LOG_SIZE_MAX ? stored : LOG_SIZE_DEFAULT;
+}
+
+function applyLogSize(size) {
+    const clamped = Math.min(LOG_SIZE_MAX, Math.max(LOG_SIZE_MIN, size));
+    document.documentElement.style.setProperty('--log-size', `${clamped}px`);
+    try {
+        localStorage.setItem(LOG_ZOOM_KEY, String(clamped));
+    } catch {
+        /* private browsing: the size just will not persist */
+    }
+    for (const button of document.querySelectorAll('[data-zoom]')) {
+        const step = Number(button.dataset.zoom);
+        button.disabled = step < 0 ? clamped <= LOG_SIZE_MIN : clamped >= LOG_SIZE_MAX;
+    }
+    return clamped;
+}
+
+document.addEventListener('click', (event) => {
+    const step = event.target.dataset?.zoom;
+    if (step === undefined) return;
+    // Keep whatever is pinned to the bottom pinned after the text resizes.
+    const views = [...document.querySelectorAll('.logview, .log-tile pre')];
+    const atBottom = views.map((v) => v.scrollHeight - v.scrollTop - v.clientHeight < 4);
+    applyLogSize(logSize() + Number(step) * 1.5);
+    views.forEach((v, i) => {
+        if (atBottom[i]) v.scrollTop = v.scrollHeight;
+    });
+});
+
+applyLogSize(logSize());
 
 // One tile per container, all fed by a single multiplexed EventSource. Per-tile
 // streams would need one connection each, and browsers cap concurrent

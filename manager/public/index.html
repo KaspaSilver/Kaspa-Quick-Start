@@ -153,67 +153,68 @@
             <button type="button" class="ghost" data-node="restart">Restart</button>
           </div>
 
-          <dl class="kv nodestats">
-            <div><dt>Network</dt><dd id="stat-network">–</dd></div>
-            <div><dt>Version</dt><dd id="stat-version">–</dd></div>
-            <div><dt>Uptime</dt><dd id="stat-uptime">–</dd></div>
-            <div><dt>Chain data</dt><dd id="stat-disk">–</dd></div>
-          </dl>
-
-          <div class="node-section">
-            <div class="bigstat"><span id="sync-pct">–</span><small id="sync-state">connecting…</small></div>
-            <div class="bar"><div id="sync-bar"></div></div>
-            <p class="sync-detail" id="sync-detail" hidden></p>
-            <ol class="sync-steps" id="sync-steps"></ol>
-            <dl class="kv">
-              <div><dt>Blocks</dt><dd id="stat-blocks">–</dd></div>
-              <div><dt>Headers</dt><dd id="stat-headers">–</dd></div>
-              <div><dt>DAA score</dt><dd id="stat-daa">–</dd></div>
-              <div><dt>Difficulty</dt><dd id="stat-diff">–</dd></div>
-              <div><dt>Mempool</dt><dd id="stat-mempool">–</dd></div>
-              <div><dt>UTXO index</dt><dd id="stat-utxo">–</dd></div>
+          <div class="node-body">
+            <div class="node-col">
+              <dl class="kv nodestats">
+              <div><dt>Network</dt><dd id="stat-network">–</dd></div>
+              <div><dt>Version</dt><dd id="stat-version">–</dd></div>
+              <div><dt>Uptime</dt><dd id="stat-uptime">–</dd></div>
+              <div><dt>Chain data</dt><dd id="stat-disk">–</dd></div>
             </dl>
-          </div>
-
-          <div class="node-section peers-section">
-            <div class="peers-line">
-              <span class="peers-count"><strong id="stat-peers">–</strong> peers connected</span>
-              <span class="muted"><span id="stat-peers-in">–</span> in, <span id="stat-peers-out">–</span> out</span>
+  
+            <div class="node-section">
+              <div class="bigstat"><span id="sync-pct">–</span><small id="sync-state">connecting…</small></div>
+              <div class="bar"><div id="sync-bar"></div></div>
+              <p class="sync-detail" id="sync-detail" hidden></p>
+              <ol class="sync-steps" id="sync-steps"></ol>
+              <dl class="kv">
+                <div><dt>Blocks</dt><dd id="stat-blocks">–</dd></div>
+                <div><dt>Headers</dt><dd id="stat-headers">–</dd></div>
+                <div><dt>DAA score</dt><dd id="stat-daa">–</dd></div>
+                <div><dt>Difficulty</dt><dd id="stat-diff">–</dd></div>
+                <div><dt>Mempool</dt><dd id="stat-mempool">–</dd></div>
+                <div><dt>UTXO index</dt><dd id="stat-utxo">–</dd></div>
+              </dl>
             </div>
-            <p id="p2p-verdict" class="verdict">–</p>
+  
+            <div class="node-section peers-section">
+              <div class="peers-line">
+                <span class="peers-count"><strong id="stat-peers">–</strong> peers connected</span>
+                <span class="muted"><span id="stat-peers-in">–</span> in, <span id="stat-peers-out">–</span> out</span>
+              </div>
+              <p id="p2p-verdict" class="verdict">–</p>
+            </div>
+            </div>
+
+            <div class="node-col node-ports">
+              <h3>Ports</h3>
+            <p class="muted">
+              <strong>Listening</strong> means the node has that service switched on.
+              <strong>Public</strong> opens it up on this machine, and that is the
+              part that decides whether anything outside can reach it. Both start
+              out on. Changing either one restarts the node.
+            </p>
+            <div class="scroll-x">
+              <table class="ports">
+                <thead>
+                  <tr><th>Port</th><th>Service</th><th>On</th><th>Public</th><th></th></tr>
+                </thead>
+                <tbody id="ports-body"></tbody>
+              </table>
+            </div>
+            <label class="inline bindrow">
+              Publish on address
+              <input id="bind-address" size="12" value="0.0.0.0">
+              <button type="button" id="bind-apply" class="ghost">Apply</button>
+            </label>
+            <p class="hint">
+              <code>0.0.0.0</code> means any interface. Use <code>127.0.0.1</code> to
+              keep published ports on this machine only. Public IP:
+              <code id="public-ip">…</code>
+            </p>
+            </div>
           </div>
         </article>
-
-        <div class="grid">
-        <article class="card span2">
-          <h3>Ports</h3>
-          <p class="muted">
-            <strong>Listening</strong> means the node has that service switched on.
-            <strong>Public</strong> opens it up on this machine, and that is the
-            part that decides whether anything outside can reach it. Both start
-            out on. Changing either one restarts the node.
-          </p>
-          <div class="scroll-x">
-            <table class="ports">
-              <thead>
-                <tr><th>Port</th><th>Service</th><th>Listening</th><th>Public</th><th>State</th><th></th></tr>
-              </thead>
-              <tbody id="ports-body"></tbody>
-            </table>
-          </div>
-          <label class="inline bindrow">
-            Publish on address
-            <input id="bind-address" size="12" value="0.0.0.0">
-            <button type="button" id="bind-apply" class="ghost">Apply</button>
-          </label>
-          <p class="hint">
-            <code>0.0.0.0</code> means any interface. Use <code>127.0.0.1</code> to
-            keep published ports on this machine only. Public IP:
-            <code id="public-ip">…</code>
-          </p>
-        </article>
-
-      </div>
       </div>
 
       <div id="sub-settings" class="subtab">
@@ -331,6 +332,7 @@
         <article class="card">
           <h3>
             kaspad log
+            <span class="zoom" role="group" aria-label="Log text size"><button type="button" class="zoom-btn" data-zoom="-1" title="Smaller text" aria-label="Smaller log text">−</button><button type="button" class="zoom-btn" data-zoom="1" title="Larger text" aria-label="Larger log text">+</button></span>
             <label class="check tail" title="Jump to the newest line as it arrives. Untick to scroll back through history without being pulled to the bottom."><input type="checkbox" id="kaspadlog-follow" checked> auto-scroll</label>
           </h3>
           <pre id="kaspadlog-view" class="logview"></pre>
@@ -342,6 +344,7 @@
     <section id="tab-mining" class="tab">
       <nav class="subnav" aria-label="Mining">
         <button class="subtab-btn active" data-subtab="mining-overview">Overview</button>
+        <button class="subtab-btn" data-subtab="mining-connect">Connect a miner</button>
         <button class="subtab-btn" data-subtab="mining-settings">Settings</button>
       </nav>
 
@@ -453,56 +456,60 @@
             </p>
           </article>
 
-          <article class="card span2" id="mining-connect" hidden>
-            <h3>Point your miner here</h3>
-
-            <div class="connect-block">
-              <h4>On your own network</h4>
-              <p class="muted">Miners on the same network as this machine. Nothing to forward.</p>
-              <table class="ports"><tbody id="stratum-local"></tbody></table>
-            </div>
-
-            <div class="connect-block">
-              <h4>From outside</h4>
-              <p class="muted">
-                Miners elsewhere. Forward the stratum port on your router to
-                <code id="connect-lan-ip">this machine</code> first.
-              </p>
-              <table class="ports"><tbody id="stratum-public"></tbody></table>
-            </div>
-
-            <p class="hint">
-              Username is <code>kaspa:YOUR_WALLET_ADDRESS.WORKERNAME</code>, password anything.
-            </p>
-
-            <div class="connect-block">
-              <h4>Find miners on your network</h4>
-              <p class="muted">
-                Looks for anything on your network that answers, and gives you a link
-                straight to it.
-              </p>
-              <label class="inline">
-                Also scan
-                <input id="scan-extra" placeholder="192.168.3.0/24, 10.0.0.50" size="26">
-              </label>
-              <p class="hint tight">
-                This machine can only work out its own network
-                (<code id="scan-own">–</code>) by itself. If your miner sits on a
-                different one behind your router, type it here. Anything works: a
-                range like <code>192.168.3.0/24</code>, a shorthand like
-                <code>192.168.3.*</code>, or just the miner's address.
-              </p>
-              <div class="row">
-                <button type="button" id="miner-scan" class="ghost">Scan for miners</button>
-                <label class="check"><input type="checkbox" id="scan-show-all"> show everything that answered</label>
-                <span class="muted" id="scan-note"></span>
-              </div>
-              <div class="scroll-x">
-                <table class="ports"><tbody id="scan-results"></tbody></table>
-              </div>
-            </div>
-          </article>
+          
         </div>
+      </div>
+
+      <div id="sub-mining-connect" class="subtab">
+        <article class="card span2" id="mining-connect">
+              <h3>Point your miner here</h3>
+  
+              <div class="connect-block">
+                <h4>On your own network</h4>
+                <p class="muted">Miners on the same network as this machine. Nothing to forward.</p>
+                <table class="ports"><tbody id="stratum-local"></tbody></table>
+              </div>
+  
+              <div class="connect-block">
+                <h4>From outside</h4>
+                <p class="muted">
+                  Miners elsewhere. Forward the stratum port on your router to
+                  <code id="connect-lan-ip">this machine</code> first.
+                </p>
+                <table class="ports"><tbody id="stratum-public"></tbody></table>
+              </div>
+  
+              <p class="hint">
+                Username is <code>kaspa:YOUR_WALLET_ADDRESS.WORKERNAME</code>, password anything.
+              </p>
+  
+              <div class="connect-block">
+                <h4>Find miners on your network</h4>
+                <p class="muted">
+                  Looks for anything on your network that answers, and gives you a link
+                  straight to it.
+                </p>
+                <label class="inline">
+                  Also scan
+                  <input id="scan-extra" placeholder="192.168.3.0/24, 10.0.0.50" size="26">
+                </label>
+                <p class="hint tight">
+                  This machine can only work out its own network
+                  (<code id="scan-own">–</code>) by itself. If your miner sits on a
+                  different one behind your router, type it here. Anything works: a
+                  range like <code>192.168.3.0/24</code>, a shorthand like
+                  <code>192.168.3.*</code>, or just the miner's address.
+                </p>
+                <div class="row">
+                  <button type="button" id="miner-scan" class="ghost">Scan for miners</button>
+                  <label class="check"><input type="checkbox" id="scan-show-all"> show everything that answered</label>
+                  <span class="muted" id="scan-note"></span>
+                </div>
+                <div class="scroll-x">
+                  <table class="ports"><tbody id="scan-results"></tbody></table>
+                </div>
+              </div>
+            </article>
       </div>
 
       <div id="sub-mining-settings" class="subtab">
@@ -795,6 +802,7 @@
       <div class="logs-toolbar">
         <label class="check" title="Jump to the newest line as it arrives. Untick to scroll back through history without being pulled to the bottom."><input type="checkbox" id="log-follow" checked> auto-scroll</label>
         <input id="log-filter" placeholder="filter lines…" size="18">
+        <span class="zoom" role="group" aria-label="Log text size"><button type="button" class="zoom-btn" data-zoom="-1" title="Smaller text" aria-label="Smaller log text">−</button><button type="button" class="zoom-btn" data-zoom="1" title="Larger text" aria-label="Larger log text">+</button></span>
         <span class="muted" id="logs-note"></span>
       </div>
       <!-- One tile per container, all fed by a single multiplexed stream. -->
