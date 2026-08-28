@@ -480,12 +480,52 @@
                   Also scan
                   <input id="scan-extra" placeholder="192.168.3.0/24, 10.0.0.50" size="26">
                 </label>
+                <label class="inline">
+                  Common ranges
+                  <!--
+                    Private address ranges are the same everywhere; what differs
+                    is the subnet each router brand ships with. So these are
+                    labelled by what uses them, which is the part worth knowing.
+                  -->
+                  <select id="scan-preset">
+                    <option value="">Add a range…</option>
+                    <optgroup label="Most routers">
+                      <option value="192.168.1.0/24">192.168.1.x — the usual default</option>
+                      <option value="192.168.0.0/24">192.168.0.x — the other usual default</option>
+                      <option value="10.0.0.0/24">10.0.0.x — many cable ISPs</option>
+                    </optgroup>
+                    <optgroup label="By brand">
+                      <option value="192.168.178.0/24">192.168.178.x — FRITZ!Box</option>
+                      <option value="192.168.50.0/24">192.168.50.x — ASUS</option>
+                      <option value="192.168.31.0/24">192.168.31.x — Xiaomi</option>
+                      <option value="192.168.8.0/24">192.168.8.x — Huawei, mobile hotspots</option>
+                      <option value="192.168.11.0/24">192.168.11.x — Buffalo</option>
+                      <option value="192.168.86.0/24">192.168.86.x — Google Nest</option>
+                      <option value="192.168.2.0/24">192.168.2.x — Belkin, SMC, some ISPs</option>
+                      <option value="10.0.1.0/24">10.0.1.x — Apple AirPort</option>
+                    </optgroup>
+                    <optgroup label="Also seen">
+                      <option value="192.168.10.0/24">192.168.10.x</option>
+                      <option value="192.168.100.0/24">192.168.100.x — often the modem itself</option>
+                      <option value="192.168.15.0/24">192.168.15.x</option>
+                      <option value="10.1.1.0/24">10.1.1.x</option>
+                      <option value="172.16.0.0/24">172.16.0.x — business gear</option>
+                    </optgroup>
+                  </select>
+                </label>
                 <p class="hint tight">
                   This machine can only work out its own network
                   (<code id="scan-own">–</code>) by itself. If your miner sits on a
-                  different one behind your router, type it here. Anything works: a
+                  different one behind your router, add it above. Anything works: a
                   range like <code>192.168.3.0/24</code>, a shorthand like
                   <code>192.168.3.*</code>, or just the miner's address.
+                </p>
+                <p class="hint tight">
+                  Private ranges are the same the world over, so the country you are
+                  in makes no difference. What changes is the subnet your router
+                  brand ships with, which is why the list names them. If you are not
+                  sure, your router's own address is usually printed on a label
+                  underneath it.
                 </p>
                 <div class="row">
                   <button type="button" id="miner-scan" class="ghost">Scan for miners</button>

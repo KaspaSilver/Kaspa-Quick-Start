@@ -1179,7 +1179,9 @@ $('earn-reset').addEventListener('click', () => refreshProjection(null));
 function renderStratumTargets(cfg) {
     const lanIp = miningLan?.ip;
     $('connect-lan-ip').textContent = lanIp ?? 'this machine';
-    $('scan-own').textContent = lanIp ? `${lanIp.split('.').slice(0, 3).join('.')}.0/24` : 'unknown';
+    // Kept so the preset list can point out that this one is already covered.
+    ownSubnet = lanIp ? `${lanIp.split('.').slice(0, 3).join('.')}.0/24` : null;
+    $('scan-own').textContent = ownSubnet ?? 'unknown';
     if (document.activeElement !== $('scan-extra') && miningExtraSubnets !== null) {
         $('scan-extra').value = miningExtraSubnets;
     }
@@ -1308,7 +1310,35 @@ function renderScan() {
           }</td></tr>`;
 }
 
+let ownSubnet = null;
+
 $('scan-show-all').addEventListener('change', renderScan);
+
+/**
+ * The preset list adds to the box rather than replacing it, so several ranges
+ * can be picked in a row, and anything typed by hand survives. The field stays
+ * free-form because the list can only ever cover the common cases.
+ */
+$('scan-preset').addEventListener('change', (event) => {
+    const range = event.target.value;
+    event.target.selectedIndex = 0;
+    if (!range) return;
+
+    const box = $('scan-extra');
+    const already = box.value.split(/[\s,]+/).filter(Boolean);
+    if (already.includes(range)) {
+        toast(`${range} is already in the list.`);
+        return;
+    }
+    // The machine's own network is always swept, so adding it would only make
+    // the scan look like it covered more than it did.
+    if (ownSubnet && range === ownSubnet) {
+        toast('That is this machine\'s own network, which is always scanned.');
+        return;
+    }
+    box.value = [...already, range].join(', ');
+    box.focus();
+});
 
 $('miner-scan').addEventListener('click', async () => {
     const button = $('miner-scan');
