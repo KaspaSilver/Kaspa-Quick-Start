@@ -712,41 +712,48 @@
       </div>
 
       <div id="sub-kachat-chats" class="subtab">
+        <!--
+          One card, personal indexing first: it decides whose chats get stored,
+          so it reads as the setting the numbers underneath are a result of.
+        -->
         <article class="card span2">
-          <div class="node-head">
-            <h3>Direct chats</h3>
-            <span id="kachat-chat-tag" class="tag">–</span>
+          <div class="node-section">
+            <div class="node-head">
+              <h3>Index only your own chats</h3>
+              <span id="kachat-personal-tag" class="tag">–</span>
+            </div>
+            <p class="muted">
+              Add your addresses and the indexer keeps only the chats and groups
+              you are part of, skipping everyone else. Leave it empty to index
+              everything, which is what a public indexer does. Saving restarts the
+              chat indexer.
+            </p>
+            <label class="stack">Your addresses, one per line
+              <textarea id="kachat-personal-addrs" rows="3" placeholder="kaspa:q…"></textarea>
+            </label>
+            <div class="row">
+              <button type="button" id="kachat-personal-save" class="primary">Save and apply</button>
+            </div>
+            <p class="hint">
+              Group capture does what it can: messages you send and control
+              messages addressed to you are stored, but catching every message in
+              a group needs membership tracking that is still to come. Once this
+              is on, use Export / Import to backfill your history.
+            </p>
           </div>
-          <p class="muted">
-            Encrypted one to one messaging: handshakes, direct messages and
-            payments, indexed straight from the node into its own store. These
-            numbers come live from the chat indexer.
-          </p>
-          <div class="grid stats" id="kachat-chat-tiles"><p class="muted">Waiting for the chat indexer.</p></div>
-        </article>
-        <article class="card span2">
-          <div class="node-head">
-            <h3>Index only your own chats</h3>
-            <span id="kachat-personal-tag" class="tag">–</span>
+
+          <div class="node-section">
+            <div class="node-head">
+              <h3>Direct chats</h3>
+              <span id="kachat-chat-tag" class="tag">–</span>
+            </div>
+            <p class="muted">
+              Encrypted one to one messaging: handshakes, direct messages and
+              payments, indexed straight from the node into its own store. These
+              numbers come live from the chat indexer.
+            </p>
+            <div class="grid stats" id="kachat-chat-tiles"><p class="muted">Waiting for the chat indexer.</p></div>
           </div>
-          <p class="muted">
-            Add your addresses and the indexer keeps only the chats and groups
-            you are part of, skipping everyone else. Leave it empty to index
-            everything, which is what a public indexer does. Saving restarts the
-            chat indexer.
-          </p>
-          <label class="stack">Your addresses, one per line
-            <textarea id="kachat-personal-addrs" rows="3" placeholder="kaspa:q…"></textarea>
-          </label>
-          <div class="row">
-            <button type="button" id="kachat-personal-save" class="primary">Save and apply</button>
-          </div>
-          <p class="hint">
-            Group capture does what it can: messages you send and control
-            messages addressed to you are stored, but catching every message in
-            a group needs membership tracking that is still to come. Once this
-            is on, use Export / Import to backfill your history.
-          </p>
         </article>
       </div>
 
