@@ -756,9 +756,15 @@ table.ports td.note { color: var(--muted); font-size: 12.5px; font-family: inher
 
 .log-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+    /* Two at most. auto-fit packed in as many as would fit, which on a wide
+       screen meant four narrow columns of wrapped log lines, and log output is
+       long horizontal text: fewer, wider tiles read far better than more. */
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 14px;
     align-items: start;
+}
+@media (max-width: 820px) {
+    .log-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
 .log-tile {
