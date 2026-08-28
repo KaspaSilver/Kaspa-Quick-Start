@@ -3066,6 +3066,9 @@ function connectLogs() {
         $('logs-note').textContent = containers.length
             ? `${containers.length} container${containers.length === 1 ? '' : 's'} running`
             : '';
+        // The tiles are about to be replaced, so anything lifted over them is
+        // gone too; leaving the scrim would dim the page with nothing on top.
+        closeLogOverlay();
         grid.innerHTML = containers.length
             ? containers.map((c) => logTile(c.key, c.label)).join('')
             : '<p class="empty-tile">No containers are running.</p>';
@@ -3096,6 +3099,46 @@ function connectLogs() {
     });
 }
 
+/**
+ * Lifts one log out of the grid and centres it over the rest.
+ *
+ * The tile is not moved in the DOM, only positioned over everything else, so it
+ * keeps receiving the same stream it was already getting. Re-parenting it would
+ * have meant rebuilding the element and losing whatever had scrolled past.
+ */
+let logOverlay = null;
+
+function toggleLogOverlay(key) {
+    const tile = document.querySelector(`[data-tile="${key}"]`);
+    if (!tile) return;
+    if (logOverlay === key) return closeLogOverlay();
+
+    closeLogOverlay();
+    tile.classList.add('expanded');
+    logOverlay = key;
+
+    const scrim = document.createElement('div');
+    scrim.className = 'log-scrim';
+    scrim.addEventListener('click', closeLogOverlay);
+    document.body.appendChild(scrim);
+
+    // A log pinned to the bottom should still be pinned after it changes size.
+    const pre = tile.querySelector('pre');
+    if (pre) pre.scrollTop = pre.scrollHeight;
+}
+
+function closeLogOverlay() {
+    if (!logOverlay) return;
+    document.querySelector(`[data-tile="${logOverlay}"]`)?.classList.remove('expanded');
+    document.querySelector('.log-scrim')?.remove();
+    logOverlay = null;
+}
+
+// Escape closes it, which is what every other overlay on the web does.
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeLogOverlay();
+});
+
 $('log-filter').addEventListener('input', () => {
     for (const key of logBuffers.keys()) renderLogTile(key);
     updateLogSummary();
@@ -3105,7 +3148,7 @@ $('log-grid').addEventListener('click', (event) => {
     const expand = event.target.dataset?.expand;
     const clear = event.target.dataset?.clear;
     if (expand) {
-        document.querySelector(`[data-tile="${expand}"]`)?.classList.toggle('expanded');
+        toggleLogOverlay(expand);
     } else if (clear) {
         logBuffers.set(clear, []);
         renderLogTile(clear);

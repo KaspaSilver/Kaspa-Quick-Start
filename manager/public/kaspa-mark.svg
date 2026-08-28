@@ -1,0 +1,15 @@
+<!--
+  The Kaspa mark. Drawn here rather than linked so the panel keeps working with
+  no network and nothing external to fetch.
+
+  If you want the official artwork exactly, replace this file: everything refers
+  to it by name, so nothing else has to change.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Kaspa">
+  <circle cx="32" cy="32" r="32" fill="#70C7BA"/>
+  <!-- Stem on the right, both arms opening to the left. -->
+  <path fill="#FFFFFF"
+        d="M36.4 14.5h8.1v35h-8.1z"/>
+  <path fill="#FFFFFF"
+        d="M38.6 32 22.4 14.5h11.3L47.9 32 33.7 49.5H22.4z"/>
+</svg>

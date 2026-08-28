@@ -749,7 +749,33 @@ table.ports td.note { color: var(--muted); font-size: 12.5px; font-family: inher
     /* Every tile the same height so the grid stays a grid as logs fill up. */
     height: 320px;
 }
-.log-tile.expanded { grid-column: 1 / -1; height: min(70vh, 640px); }
+/* Expanded is a centred overlay, not a wider grid cell. The tile keeps its
+   place in the grid and is lifted out of it visually, so the element carries on
+   receiving its stream: no re-parenting, no reconnecting, nothing to lose. */
+.log-tile.expanded {
+    position: fixed;
+    /* Percentages, not vw: vw counts the scrollbar and the containing block for
+       a fixed element does not, so the two sides resolve against different
+       widths and it lands off-centre. */
+    inset: 6%;
+    height: auto;
+    z-index: 60;
+    box-shadow: 0 24px 70px rgb(0 0 0 / 0.55);
+}
+/* The grid still owns a slot for it, which would otherwise collapse and shuffle
+   every other tile around behind the overlay. */
+.log-tile.expanded::after {
+    content: "";
+    display: block;
+}
+
+.log-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    background: rgb(0 0 0 / 0.55);
+    backdrop-filter: blur(2px);
+}
 /* .log-tile sets display:flex, which would otherwise beat the hidden attribute. */
 .log-tile[hidden] { display: none; }
 
@@ -1226,28 +1252,15 @@ details.more > summary:hover { color: var(--text); }
    and that dot was the only place the panel said at a glance whether the node
    was up, so the state moved onto the ring around the mark rather than being
    dropped. */
+/* An <img>, not inline SVG: the sidebar strokes every svg it contains for the
+   line icons, which would repaint a logo. An image is untouched by that, and it
+   keeps the artwork in one file that can be swapped for the official one. */
 .mark {
-    display: inline-flex;
+    display: block;
     width: 22px;
     height: 22px;
     flex: 0 0 22px;
-}
-.mark svg { width: 100%; height: 100%; }
-
-/* The sidebar's blanket svg rule strokes everything and fills nothing, which is
-   right for the line icons and wrong for a logo. */
-.sidebar .mark svg circle,
-.mark svg circle {
-    fill: var(--accent);
-    stroke: none;
-}
-.sidebar .mark svg path,
-.mark svg path {
-    fill: none;
-    stroke: var(--bg);
-    stroke-width: 2.1;
-    stroke-linecap: round;
-    stroke-linejoin: round;
+    border-radius: 50%;
 }
 
 .mark-wrap {
