@@ -37,17 +37,34 @@ export const FIRMWARE_DIR = path.join(CONF_DIR, 'kassigner-firmware');
 // Order matters: this is the order the cards appear in.
 export const BOARDS = {
     m5stack: {
-        label: 'M5Stack CoreS3 Lite',
-        blurb: 'Its reset button doubles as the BOOT button when reflashing.',
+        // Named for what the shop sells, since that is what somebody matches
+        // against the board in front of them. The firmware target and the
+        // release assets still call it CoreS3 Lite.
+        label: 'M5Stack CoreS3 SE',
+        blurb: 'Built as CoreS3 Lite in the firmware. Its reset button doubles as the BOOT button when reflashing.',
         asset: 'm5stack',
         hashKey: 'M5Stack',
-        buy: { url: 'https://shop.m5stack.com/products/m5stack-cores3-lite', label: 'M5Stack store' },
+        buy: {
+            url: 'https://shop.m5stack.com/products/m5stack-cores3-se-iot-controller-w-o-battery-bottom',
+            label: 'M5Stack store',
+        },
     },
+    // The same Waveshare board twice, because the camera module decides the
+    // image. The autofocus one is mounted flipped and needs its own build, so
+    // guessing between them would leave somebody with an upside-down scanner on
+    // a device whose whole job is reading QR codes.
     waveshare: {
         label: 'Waveshare ESP32-S3-Touch-LCD-2',
-        blurb: 'A 2 inch touch screen with a camera module, which the firmware is built for by default.',
+        blurb: 'A 2 inch touch screen. Pick this one for the standard camera module.',
         asset: 'waveshare',
         hashKey: 'Waveshare',
+        buy: { url: 'https://www.waveshare.com/esp32-s3-touch-lcd-2.htm', label: 'Waveshare store' },
+    },
+    'waveshare-af': {
+        label: 'Waveshare, autofocus camera',
+        blurb: 'The same board with the autofocus module. It is mounted the other way up, so it gets its own firmware.',
+        asset: 'waveshare-af',
+        hashKey: 'Waveshare-AF',
         buy: { url: 'https://www.waveshare.com/esp32-s3-touch-lcd-2.htm', label: 'Waveshare store' },
     },
 };
@@ -196,7 +213,6 @@ export async function prepare(tag, onLine = () => {}) {
     const targets = [];
     for (const board of Object.values(BOARDS)) {
         targets.push({ asset: board.asset, hashKey: board.hashKey });
-        if (board.variant) targets.push({ asset: board.variant.asset, hashKey: board.variant.hashKey });
     }
 
     const images = {};
