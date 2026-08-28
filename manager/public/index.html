@@ -350,7 +350,7 @@
     <section id="tab-mining" class="tab">
       <nav class="subnav" aria-label="Mining">
         <button class="subtab-btn active" data-subtab="mining-overview">Overview</button>
-        <button class="subtab-btn" data-subtab="mining-connect">Connect a miner</button>
+        <button class="subtab-btn" data-subtab="mining-connect">Connect Your Miner</button>
         <button class="subtab-btn" data-subtab="mining-settings">Settings</button>
       </nav>
 
@@ -374,6 +374,8 @@
             <div><dt>Network hashrate</dt><dd id="m-nethash">–</dd></div>
             <div><dt>Network difficulty</dt><dd id="m-netdiff">–</dd></div>
             <div><dt>Bridge uptime</dt><dd id="m-uptime">–</dd></div>
+            <div><dt>Block reward</dt><dd id="m-reward">–</dd></div>
+            <div><dt>Next reward</dt><dd id="m-next-reward">–</dd></div>
             </dl>
             <p class="hint" id="m-unreachable" hidden></p>
           </div>
@@ -407,20 +409,6 @@
         </article>
 
         <div class="grid">
-          <article class="card" id="reward-card">
-            <h3>Block reward</h3>
-            <div class="bigstat"><span id="reward-now">–</span><small>KAS per block</small></div>
-            <dl class="kv vertical">
-              <div><dt>Network emission</dt><dd id="reward-rate">–</dd></div>
-              <div><dt>Emission month</dt><dd id="reward-month">–</dd></div>
-            </dl>
-            <div class="verdict" id="reward-next">–</div>
-            <p class="hint">
-              Kaspa lowers the reward a little every month rather than halving it all at
-              once, and twelve of those months add up to exactly half. These figures
-              come straight from the node's own schedule.
-            </p>
-          </article>
 
           <article class="card" id="earnings-card">
             <h3>Projected earnings</h3>
@@ -464,7 +452,7 @@
 
       <div id="sub-mining-connect" class="subtab">
         <article class="card span2" id="mining-connect">
-              <h3>Point your miner here</h3>
+              <h3>Connect Your Miner</h3>
   
               <div class="connect-block">
                 <h4>On your own network</h4>

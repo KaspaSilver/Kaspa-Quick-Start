@@ -927,25 +927,30 @@ function fmtDaysUntil(seconds) {
 let lastEconomics = null;
 
 /** Block reward, the next reduction, and what today's rate would pay. */
+const trimKas = (kas) => kas.toFixed(8).replace(/0+$/, '').replace(/\.$/, '');
+
+/**
+ * The reward sits with the other live figures now. Two numbers earn a place
+ * there: what a block pays, and what it drops to next. The emission rate, the
+ * month index and the DAA score were detail nobody needs at a glance, so they
+ * moved to the tooltip.
+ */
 function renderEconomics(r) {
     lastEconomics = r;
     const reward = r.reward;
     if (!reward) {
-        $('reward-now').textContent = '–';
-        $('reward-next').textContent = 'Waiting for the node.';
+        $('m-reward').textContent = '–';
+        $('m-next-reward').textContent = '–';
         return;
     }
 
-    $('reward-now').textContent = reward.currentKas.toFixed(8).replace(/0+$/, '').replace(/\.$/, '');
-    $('reward-rate').textContent = `${(reward.currentKas * reward.blocksPerSecond).toFixed(2)} KAS/s (${reward.blocksPerSecond} blocks/s)`;
-    $('reward-month').textContent = `month ${reward.month} of the deflationary phase`;
+    $('m-reward').textContent = `${trimKas(reward.currentKas)} KAS`;
 
     const next = reward.next;
-    $('reward-next').className = 'verdict';
-    $('reward-next').innerHTML =
-        `Next drop ${escapeHtml(fmtDaysUntil(next.secondsUntil))}, down to ` +
-        `<strong>${next.kas.toFixed(8).replace(/0+$/, '').replace(/\.$/, '')} KAS</strong> ` +
-        `(−${next.dropPercent.toFixed(2)}%) at DAA score ${next.daaScore.toLocaleString()}.`;
+    $('m-next-reward').textContent = `${trimKas(next.kas)} KAS ${fmtDaysUntil(next.secondsUntil)}`;
+    $('m-next-reward').title =
+        `A ${next.dropPercent.toFixed(2)}% drop, at DAA score ${next.daaScore.toLocaleString()}. ` +
+        `The network pays ${(reward.currentKas * reward.blocksPerSecond).toFixed(2)} KAS/s across ${reward.blocksPerSecond} blocks a second.`;
 
     renderProjection(r.projection, r.networkHashrate);
 }
