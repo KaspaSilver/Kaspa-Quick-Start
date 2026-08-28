@@ -84,7 +84,7 @@ Docker gone, remove it yourself afterwards.
 | `3080`  | KaPosts REST API    | only if KaChat clients connect from outside this machine |
 | `8600`  | chat indexer API    | as above |
 | `8080`  | Nextcloud           | only if you reach Nextcloud without a proxy host |
-| `80`,`443` | nginx            | only if you use the domain / HTTPS features |
+| `80`,`443` | reverse proxy    | only if you switch the proxy on for domains / HTTPS |
 | `8080`  | control panel       | bound to `127.0.0.1` — do not forward it |
 
 Testnet-10 uses `16211 / 16210 / 17210 / 18210`; the panel switches them for you.
@@ -111,7 +111,9 @@ for anything else. It shows the exact command line before you apply it.
 `--utxoindex`, `--appdir` and `--yes` are added by the container entrypoint and
 cannot be switched off from the UI.
 
-**Proxy & domains** — what you would otherwise hand-write nginx config for:
+**Proxy & domains** — off by default, because it claims ports 80 and 443 and a
+node with no domains has no use for it. Switch it on and you get what you would
+otherwise hand-write nginx config for:
 
 - point any domain at the node's wRPC/gRPC ports or at the panel itself
 - free HTTPS from Let's Encrypt, issued and auto-renewed in the background

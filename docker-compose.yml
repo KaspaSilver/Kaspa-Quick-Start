@@ -267,10 +267,14 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Reverse proxy for domains and HTTPS. Behind a profile like the optional
+  # apps: it claims ports 80 and 443, which is rude on a machine that may
+  # already serve something there, and a node with no domains does not need it.
   proxy:
     image: nginx:1.27-alpine
     container_name: kaspa-node-proxy
     hostname: proxy
+    profiles: ["proxy"]
     restart: unless-stopped
     volumes:
       - ${STACK_DIR}/proxy/conf.d:/etc/nginx/conf.d:ro

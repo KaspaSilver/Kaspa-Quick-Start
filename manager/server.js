@@ -158,12 +158,7 @@ async function applyNodeConfig(cfg, onLine = () => {}) {
     recordAppliedArgs();
     syncProgress.reset();
 
-    try {
-        await nginx.reload();
-        onLine('Reloaded the reverse proxy.');
-    } catch (err) {
-        onLine(`Proxy reload skipped: ${err.message}`);
-    }
+    await reloadProxyIfRunning(onLine);
 
     // The bridge's config embeds kaspad's gRPC port, which moves when the
     // network changes, and it holds a gRPC connection that a kaspad restart
@@ -621,12 +616,20 @@ route('GET', /^\/api\/proxies$/, async (req, res) => {
         auth: p.auth ? { ...p.auth, htpasswd: undefined, hasPassword: Boolean(p.auth.htpasswd) } : undefined,
         certificate: nginx.hasCertificate(p.domain),
     }));
-    sendJson(res, 200, { proxies: list, targets: nginx.TARGET_KINDS });
+    sendJson(res, 200, {
+        proxies: list,
+        targets: nginx.TARGET_KINDS,
+        enabled: proxyEnabled(),
+        container: await dockerctl.containerState(dockerctl.PROXY_CONTAINER),
+    });
 });
 
 async function saveProxyList(list, cfg, onLine) {
     saveProxies(list);
     nginx.writeAll(list, cfg);
+    // With the proxy off the files are still written, so switching it on later
+    // brings up everything that was configured meanwhile.
+    if (!proxyEnabled()) return;
     await nginx.reload();
     onLine?.('Reverse proxy reloaded.');
 }
@@ -711,6 +714,13 @@ route('POST', /^\/api\/proxies\/([a-f0-9]{12})\/certificate$/, async (req, res, 
 
     const email = String(body.email || proxy.ssl?.email || '').trim();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return fail(res, 400, 'A valid contact e-mail is required.');
+    // Let's Encrypt proves the domain by fetching a file over port 80, which
+    // nginx serves. Without it running the request can only fail.
+    if (!proxyEnabled()) {
+        return fail(res, 409, 'Turn the reverse proxy on first.', {
+            details: ["Certificates are issued by answering a request on port 80, which needs the proxy running."],
+        });
+    }
 
     const job = jobs.start(`Issue certificate for ${proxy.domain}`, async (onLine) => {
         onLine(`Requesting a certificate for ${proxy.domain} from Let's Encrypt.`);
@@ -730,7 +740,19 @@ route('POST', /^\/api\/proxies\/([a-f0-9]{12})\/certificate$/, async (req, res, 
     sendJson(res, 202, { ok: true, jobId: job.id });
 });
 
+route('POST', /^\/api\/proxy\/enabled$/, async (req, res) => {
+    const body = await readBody(req);
+    const enabled = Boolean(body.enabled);
+    if (enabled === proxyEnabled()) return sendJson(res, 200, { ok: true, unchanged: true });
+
+    const job = jobs.start(enabled ? 'Start reverse proxy' : 'Stop reverse proxy', (onLine) =>
+        applyProxyState(enabled, onLine),
+    );
+    sendJson(res, 202, { ok: true, jobId: job.id });
+});
+
 route('POST', /^\/api\/proxy\/reload$/, async (req, res) => {
+    if (!proxyEnabled()) return fail(res, 409, 'The reverse proxy is switched off.');
     try {
         nginx.writeAll(loadProxies(), loadNodeConfig());
         await nginx.reload();
@@ -817,6 +839,42 @@ route('GET', /^\/api\/mining$/, async (req, res) => {
         ...(await miningEconomics(stats)),
     });
 });
+
+const proxyEnabled = () => loadManagerConfig().proxy.enabled === true;
+
+/**
+ * Reloads nginx, unless the proxy is switched off. Several flows regenerate
+ * proxy config as a side effect of something else (a node restart, a network
+ * change); none of them should fail because a container the user chose not to
+ * run is not there.
+ */
+async function reloadProxyIfRunning(onLine = () => {}) {
+    if (!proxyEnabled()) {
+        onLine('Reverse proxy is switched off, nothing to reload.');
+        return;
+    }
+    try {
+        await nginx.reload();
+        onLine('Reloaded the reverse proxy.');
+    } catch (err) {
+        onLine(`Could not reload the reverse proxy: ${err.message}`);
+    }
+}
+
+async function applyProxyState(enabled, onLine = () => {}) {
+    const mgr = loadManagerConfig();
+    mgr.proxy.enabled = enabled;
+    saveManagerConfig(mgr);
+
+    if (!enabled) {
+        onLine('Stopping the reverse proxy and releasing ports 80 and 443.');
+        await dockerctl.compose(['rm', '-sf', 'proxy'], { onLine, profile: 'proxy', timeoutMs: 5 * 60_000 });
+        return;
+    }
+    nginx.writeAll(loadProxies(), loadNodeConfig());
+    onLine('Starting the reverse proxy on ports 80 and 443.');
+    await dockerctl.compose(['up', '-d', 'proxy'], { onLine, profile: 'proxy', timeoutMs: 5 * 60_000 });
+}
 
 /** Block reward, the next reduction, and what today's rate would pay. */
 async function miningEconomics(stats, hashrateOverride = null) {
@@ -1253,6 +1311,17 @@ async function bootstrap() {
         }
     } catch (err) {
         log(`could not compare kaspad against its arguments: ${err.message}`);
+    }
+
+    // Decide the proxy's state once, for installs that predate it being
+    // optional: if it is already running or there are hosts configured, it was
+    // wanted. Otherwise it stays off and leaves ports 80 and 443 alone.
+    const mgr = loadManagerConfig();
+    if (mgr.proxy.enabled === null) {
+        const proxyState = await dockerctl.containerState(dockerctl.PROXY_CONTAINER);
+        mgr.proxy.enabled = proxyState.running || loadProxies().length > 0;
+        saveManagerConfig(mgr);
+        log(`reverse proxy: ${mgr.proxy.enabled ? 'on (already in use)' : 'off (nothing configured)'}`);
     }
 
     syncProgress.start(log);

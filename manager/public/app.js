@@ -1331,6 +1331,20 @@ let proxies = [];
 async function loadProxies() {
     const r = await api('/api/proxies');
     proxies = r.proxies;
+
+    // Reflect whether the proxy is running before anything else: with it off,
+    // adding a host would write config nothing is serving.
+    const on = Boolean(r.enabled);
+    $('proxy-enabled').checked = on;
+    const badge = $('proxy-state');
+    badge.textContent = !on ? 'off' : r.container?.running ? 'running' : r.container?.status || 'starting';
+    badge.className = `tag ${!on ? 'off' : r.container?.running ? 'ok' : ''}`;
+    for (const id of ['proxy-add', 'proxy-reload', 'proxy-renew']) {
+        const button = $(id);
+        button.disabled = !on;
+        button.title = on ? '' : 'Turn the reverse proxy on first.';
+    }
+
     const body = $('proxy-body');
 
     if (!proxies.length) {
@@ -1398,6 +1412,24 @@ $('proxy-body').addEventListener('click', async (event) => {
         } catch (e) {
             toast(e.message, 'bad');
         }
+    }
+});
+
+$('proxy-enabled').addEventListener('change', async (event) => {
+    const enabled = event.target.checked;
+    const err = $('proxy-error');
+    err.hidden = true;
+    event.target.disabled = true;
+    try {
+        const r = await api('/api/proxy/enabled', { method: 'POST', body: { enabled } });
+        if (!r.unchanged) openConsole(enabled ? 'Starting the reverse proxy' : 'Stopping the reverse proxy');
+        setTimeout(loadProxies, 2000);
+    } catch (e) {
+        event.target.checked = !enabled;
+        err.textContent = e.message;
+        err.hidden = false;
+    } finally {
+        event.target.disabled = false;
     }
 });
 

@@ -65,6 +65,10 @@ export const DEFAULT_MANAGER_CONFIG = {
     // are often on a different subnet behind the router, which cannot be
     // discovered from here -- see network.js.
     scan: { extraSubnets: '' },
+    // The reverse proxy claims ports 80 and 443, so it stays off until someone
+    // actually wants a domain. null means "not decided yet" and is resolved
+    // once, on first boot, from whether the stack is already using it.
+    proxy: { enabled: null },
 };
 
 // ------------------------------------------------------------------- io ----

@@ -63,7 +63,7 @@ if ($dockerUsable) {
         # --profile mining makes compose aware of the stratum bridge; without
         # it the bridge container and volume are left behind as orphans.
         $down = @('--profile', 'mining', '--profile', 'kachat', '--profile', 'nextcloud',
-                  'down', '--remove-orphans', '--rmi', 'local')
+                  '--profile', 'proxy', 'down', '--remove-orphans', '--rmi', 'local')
         if (-not $KeepData) { $down += '--volumes' }
         & docker compose @files --project-directory $StackDir @down 2>&1 | Out-Null
         if ($LASTEXITCODE -ne 0) { Warn 'compose down reported an error; removing objects individually.' }

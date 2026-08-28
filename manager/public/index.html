@@ -697,6 +697,31 @@
 
     <!-- ----------------------------------------------------------- proxy -->
     <section id="tab-proxy" class="tab">
+      <article class="card">
+        <h3>Proxy and domains</h3>
+        <p class="muted">
+          Gives your node a proper web address instead of an IP and a port
+          number, with free HTTPS. It needs ports 80 and 443, so it stays off
+          until you ask for it. Leave it off if something else on this machine
+          already uses those ports.
+        </p>
+      </article>
+
+      <article class="card toggle-bar">
+        <div class="toggle-row">
+          <label class="switch" title="Start or stop the reverse proxy.">
+            <input type="checkbox" id="proxy-enabled">
+            <span class="track"></span>
+          </label>
+          <div class="toggle-text">
+            <strong>Run the reverse proxy</strong>
+            <span class="muted">Takes ports 80 and 443 on this machine.</span>
+          </div>
+          <span id="proxy-state" class="tag">off</span>
+        </div>
+        <p class="error" id="proxy-error" hidden></p>
+      </article>
+
       <div class="grid">
 
         <article class="card span2">

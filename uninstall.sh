@@ -85,7 +85,7 @@ if command -v docker >/dev/null 2>&1 && d info >/dev/null 2>&1; then
         [ -f "$STACK_DIR/conf/ports.yml" ] && compose_files+=(-f "$STACK_DIR/conf/ports.yml")
         # --profile mining makes compose aware of the stratum bridge; without
         # it the bridge container and volume are left behind as orphans.
-        down=(--profile mining --profile kachat --profile nextcloud down --remove-orphans --rmi local)
+        down=(--profile mining --profile kachat --profile nextcloud --profile proxy down --remove-orphans --rmi local)
         [ "$KEEP_DATA" = "1" ] || down+=(--volumes)
         d compose "${compose_files[@]}" --project-directory "$STACK_DIR" "${down[@]}" 2>/dev/null \
             || warn "compose down reported an error; removing objects individually."
