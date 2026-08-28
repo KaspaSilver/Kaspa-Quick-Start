@@ -598,6 +598,7 @@
         <button class="subtab-btn" data-subtab="kachat-groups">Group chats</button>
         <button class="subtab-btn" data-subtab="kachat-transfer">Export / Import</button>
         <button class="subtab-btn" data-subtab="kachat-settings">Settings</button>
+        <button class="subtab-btn" data-subtab="kachat-updates">Updates</button>
       </nav>
 
       <div id="sub-kachat-overview" class="subtab active">
@@ -877,6 +878,29 @@
         </article>
       </div>
 
+      <div id="sub-kachat-updates" class="subtab">
+        <div class="grid">
+          <article class="card span2">
+            <h3>Indexer software</h3>
+            <p class="muted">
+              Checks <code>KaspaSilver/KaChat-Indexer</code> for commits newer than
+              the one this image was built from, and rebuilds if you ask it to.
+              Indexed data is kept, so there is no re-scan of the chain.
+            </p>
+            <div id="kachat-build" class="verdict"></div>
+            <div id="kachat-update-status" class="verdict">Not checked yet.</div>
+            <div class="row">
+              <button type="button" id="kachat-check" class="ghost">Check for updates</button>
+              <button type="button" id="kachat-update" class="primary" disabled>Update</button>
+            </div>
+            <p class="hint">
+              A rebuild compiles the indexer from Rust source and takes a while.
+              You can watch it happen on the All logs page.
+            </p>
+          </article>
+        </div>
+      </div>
+
       <div id="sub-kachat-settings" class="subtab">
         <div class="grid">
           <article class="card">
@@ -905,16 +929,14 @@
           </article>
 
           <article class="card span2">
-            <h3>Apply and update</h3>
+            <h3>Apply</h3>
             <p class="muted">
-              Changing anything above rebuilds or restarts the indexer. Everything
-              below is about the data it has already collected and takes effect
-              without a rebuild.
+              Changing the source or the published ports rebuilds or restarts the
+              indexer. Everything below is about the data it has already collected
+              and takes effect without a rebuild.
             </p>
             <div class="row">
               <button type="button" id="kachat-save" class="primary">Apply settings</button>
-              <button type="button" id="kachat-check" class="ghost">Check for updates</button>
-              <button type="button" id="kachat-update" class="ghost" disabled>Update</button>
             </div>
           </article>
 

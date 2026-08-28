@@ -1487,6 +1487,11 @@ function renderAppState(name, state) {
                 failure ??
                 'Starting up. The first build compiles the indexer from source, which takes a while. You can watch it under All logs.';
         }
+
+        const build = $('kachat-build');
+        build.textContent = state.build?.sha
+            ? `Built from ${String(state.build.sha).slice(0, 7)} on ${new Date(state.build.builtAt).toLocaleString()}`
+            : 'Not built yet.';
     }
 
     if (name === 'nextcloud') {
@@ -1552,7 +1557,10 @@ for (const name of ['kachat', 'nextcloud']) {
     });
 
     $(`${name}-check`).addEventListener('click', async () => {
-        const notice = $(`${name}-notice`);
+        // Report next to the button that was pressed. KaChat's update controls
+        // live on their own tab, and its `-notice` element is on Overview, so
+        // writing there would put the answer on a page nobody is looking at.
+        const notice = $(`${name}-update-status`) ?? $(`${name}-notice`);
         notice.hidden = false;
         notice.className = 'verdict';
         notice.textContent = 'Checking GitHub…';
