@@ -352,6 +352,7 @@ async function refreshStatus() {
     $('stat-version').textContent = s.version?.version || '–';
     $('stat-uptime').textContent = running ? fmtDuration(s.container.startedAt) : '–';
     $('stat-disk').textContent = fmtBytes(s.disk?.size);
+    renderPruning(s.pruning, running);
 
     $('stat-peers').textContent = fmtNum(s.peers.total);
     $('stat-peers-in').textContent = fmtNum(s.peers.inbound);
@@ -456,6 +457,91 @@ function renderSyncSteps(sync, synced, running) {
         const pctHere = cls === 'current' && sync?.phasePercent != null ? ` ${sync.phasePercent}%` : '';
         return `<li class="${cls}"><span class="mark">${mark}</span>${escapeHtml(label)}${pctHere}</li>`;
     }).join('');
+}
+
+/**
+ * Kaspad keeps about thirty hours of block data and throws the rest away in
+ * twelve-hour steps, so "when is the next one" has an exact answer and this
+ * shows it as a countdown. How much space it gives back does not have an exact
+ * answer, so the manager measures it instead, and the wording says which of the
+ * two you are looking at.
+ */
+function renderPruning(p, running) {
+    const el = $('stat-pruning');
+    if (!el) return;
+
+    if (!running || !p?.known) {
+        el.textContent = '–';
+        el.title = running ? 'Waiting for the node to report its pruning point.' : '';
+        return;
+    }
+
+    // The block count is exact and always available, so it is the answer when
+    // there is nothing measured to beat it. A size only appears once it has
+    // actually been observed, either across a past prune or from how fast the
+    // volume is filling up now.
+    const size = p.measured && p.measured.freedBytes > 100e6 ? p.measured.freedBytes : null;
+    const note = size
+        ? `the last one gave back ${fmtByteCount(size)}`
+        : p.projected
+          ? `should give back around ${fmtByteCount(p.projected.bytes)}`
+          : `drops ${fmtNum(p.blocksPerStep)} blocks (${p.stepHours} hours of history)`;
+
+    el.innerHTML =
+        `${escapeHtml(fmtCountdown(p.secondsUntil))} <span class="muted">· ${escapeHtml(note)}</span>`;
+
+    const lines = [
+        `Kaspad keeps roughly ${p.retentionHours} hours of full block data and drops the oldest ${p.stepHours} hours at a time.`,
+        `Next step when the chain reaches blue score ${Math.round(p.firesAtBlueScore).toLocaleString()}, which is ${Math.round(p.blueScoreRemaining).toLocaleString()} away.`,
+    ];
+    if (p.projected) {
+        lines.push(
+            `Estimated from ${fmtByteCount(p.projected.observedBytes)} of growth over the last ` +
+                `${fmtCountdown(p.projected.observedSeconds).replace(/^in /, '')}, scaled to a full cycle.`,
+        );
+    }
+    if (p.measured) {
+        lines.push(
+            p.measured.freedBytes >= 0
+                ? `Last prune took ${fmtByteCount(p.measured.freedBytes)} off the volume.`
+                : `The volume read ${fmtByteCount(-p.measured.freedBytes)} larger just after the last prune, which happens when the database has not compacted the deleted blocks away yet.`,
+        );
+    }
+    el.title = lines.join('\n');
+}
+
+function fmtByteCount(bytes) {
+    const n = Math.abs(Number(bytes) || 0);
+    if (n >= 1e9) return `${(n / 1e9).toFixed(n / 1e9 >= 10 ? 0 : 1)} GB`;
+    if (n >= 1e6) return `${Math.round(n / 1e6)} MB`;
+    if (n >= 1e3) return `${Math.round(n / 1e3)} KB`;
+    return `${Math.round(n)} B`;
+}
+
+/**
+ * Hours out, this is rounded to five minutes. The estimate is never that
+ * precise, and a to-the-minute figure that shifts on every refresh reads like
+ * something is wrong when nothing is.
+ */
+function fmtCountdown(seconds) {
+    const s = Math.max(0, Math.round(Number(seconds) || 0));
+    if (s < 60) return 'any moment now';
+    if (s >= 86_400) {
+        const days = Math.round(s / 86_400);
+        return `in ${days} day${days === 1 ? '' : 's'}`;
+    }
+    // Inside the last hour the minutes matter, so they are not rounded away.
+    if (s < 3600) {
+        const mins = Math.round(s / 60);
+        return mins >= 60 ? 'in 1h' : `in ${mins}m`;
+    }
+    let h = Math.floor(s / 3600);
+    let m = Math.round((s % 3600) / 300) * 5;
+    if (m === 60) {
+        h += 1;
+        m = 0;
+    }
+    return m ? `in ${h}h ${m}m` : `in ${h}h`;
 }
 
 function renderPorts(s) {

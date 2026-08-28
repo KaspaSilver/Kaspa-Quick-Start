@@ -150,7 +150,16 @@ export const rpc = new WrpcClient();
  * show "starting" rather than an error page.
  */
 export async function nodeSnapshot() {
-    const out = { reachable: false, info: null, dag: null, sync: null, peers: null, error: null };
+    const out = {
+        reachable: false,
+        info: null,
+        dag: null,
+        sync: null,
+        peers: null,
+        sinkBlueScore: null,
+        pruningPointBlueScore: null,
+        error: null,
+    };
     try {
         out.info = await rpc.call('getInfo', {});
         out.reachable = true;
@@ -162,6 +171,7 @@ export async function nodeSnapshot() {
         ['dag', 'getBlockDagInfo'],
         ['sync', 'getSyncStatus'],
         ['peers', 'getConnectedPeerInfo'],
+        ['sinkBlueScore', 'getSinkBlueScore'],
     ];
     await Promise.all(
         optional.map(async ([key, method]) => {
@@ -172,5 +182,28 @@ export async function nodeSnapshot() {
             }
         }),
     );
+    out.pruningPointBlueScore = await pruningPointBlueScore(out.dag?.pruningPointHash);
     return out;
+}
+
+/**
+ * The pruning point's blue score, which getBlockDagInfo does not carry: it only
+ * names the block. Reading the header for it costs one extra round trip, but
+ * the pruning point only moves every twelve hours or so, so the answer is kept
+ * against its hash and the call really happens about twice a day.
+ */
+let pruningPointCache = { hash: null, blueScore: null };
+
+async function pruningPointBlueScore(hash) {
+    if (!hash) return null;
+    if (pruningPointCache.hash === hash) return pruningPointCache.blueScore;
+    try {
+        const res = await rpc.call('getBlock', { hash, includeTransactions: false });
+        const score = Number(res?.block?.header?.blueScore ?? res?.header?.blueScore);
+        if (!Number.isFinite(score)) return null;
+        pruningPointCache = { hash, blueScore: score };
+        return score;
+    } catch {
+        return null;
+    }
 }

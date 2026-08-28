@@ -934,6 +934,12 @@ table.ports td.note { color: var(--muted); font-size: 12.5px; font-family: inher
     border-bottom: 1px solid var(--line);
 }
 
+/* The pruning line carries a countdown and a sentence explaining it, so it
+   takes the full width rather than being squeezed into half a column. */
+#node-card .nodestats .wide { grid-column: 1 / -1; }
+#node-card .nodestats .wide dd { font-weight: 600; }
+#node-card .nodestats .wide dd .muted { font-weight: 400; }
+
 /* Two columns: what the node is doing on the left, how it can be reached on
    the right. They are separate concerns that both belong to the same node, so
    one card with a divider beats two cards. */

@@ -29,6 +29,7 @@ import * as kachatProxy from './lib/kachat-proxy.js';
 import * as syncProgress from './lib/sync-progress.js';
 import * as network from './lib/network.js';
 import * as emission from './lib/emission.js';
+import * as pruning from './lib/pruning.js';
 import { nodeSnapshot, rpc } from './lib/rpc.js';
 import { jobs } from './lib/jobs.js';
 import {
@@ -409,6 +410,16 @@ route('GET', /^\/api\/status$/, async (req, res) => {
         bindAddress: cfg.expose.bindAddress || '0.0.0.0',
         published,
         disk,
+        // When the node next throws away old block data, and what the last one
+        // did to the volume.
+        pruning: pruning.pruningStatus({
+            network: cfg.network,
+            sinkBlueScore: Number(snapshot.sinkBlueScore?.blueScore ?? NaN),
+            pruningPointHash: snapshot.dag?.pruningPointHash ?? null,
+            pruningPointBlueScore: Number(snapshot.pruningPointBlueScore ?? NaN),
+            diskBytes: pruning.parseSize(disk?.size),
+            synced: Boolean(snapshot.sync?.isSynced ?? snapshot.info?.isSynced ?? false),
+        }),
         job: jobs.snapshot(),
     });
 });
