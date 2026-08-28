@@ -1919,6 +1919,7 @@ async function loadKachatChat(kind) {
     const tag = $(kind === 'group' ? 'kachat-group-tag' : 'kachat-chat-tag');
     const grid = $(kind === 'group' ? 'kachat-group-tiles' : 'kachat-chat-tiles');
     if (kind === 'chat') loadKachatPersonal();
+    if (kind === 'group') loadKachatGroupPersonal();
     try {
         const d = await kachat('chat-metrics');
         if (!d.reachable) {
@@ -1986,6 +1987,30 @@ async function loadKachatPersonal() {
     }
 }
 
+/**
+ * The group allowlist, on the Group chats panel for the same reason the address
+ * list sits on Chats: it decides what gets stored there.
+ */
+async function loadKachatGroupPersonal() {
+    try {
+        const s = await kachat('settings');
+        const box = $('kachat-group-ids');
+        if (document.activeElement !== box) box.value = s.personal_group_ids || '';
+
+        const tag = $('kachat-group-personal-tag');
+        const count = (s.personal_group_ids || '').split(/\s+/).filter(Boolean).length;
+        tag.textContent = s.group_personal_mode ? `${count} group${count === 1 ? '' : 's'}` : 'all groups';
+        tag.className = `tag ${s.group_personal_mode ? 'ok' : ''}`;
+    } catch {
+        /* the stats below already report the indexer being unreachable */
+    }
+}
+
+// A blinded group id is 32 bytes as hex. The indexer silently drops anything
+// that is not, so entries are checked here first: a typo that just vanished on
+// save would look like the setting had been accepted.
+const GROUP_ID_RE = /^[0-9a-f]{64}$/i;
+
 async function loadKachatSettings() {
     try {
         const s = await kachat('settings');
@@ -2037,7 +2062,13 @@ function renderKachatOffline() {
     for (const id of ['kachat-stats', 'kachat-activity', 'kachat-bcast-tiles']) $(id).innerHTML = '';
     // Stale counters under a fold nobody opened would outlive the indexer.
     $('kachat-chat-more').hidden = true;
-    for (const id of ['kachat-health-tag', 'kachat-chat-tag', 'kachat-group-tag', 'kachat-personal-tag']) {
+    for (const id of [
+        'kachat-health-tag',
+        'kachat-chat-tag',
+        'kachat-group-tag',
+        'kachat-personal-tag',
+        'kachat-group-personal-tag',
+    ]) {
         $(id).textContent = 'not running';
         $(id).className = 'tag off';
     }
@@ -2202,6 +2233,25 @@ $('kachat-personal-save').addEventListener('click', () =>
         'Saved. The chat indexer is restarting.',
     ),
 );
+
+$('kachat-group-save').addEventListener('click', () => {
+    const entries = $('kachat-group-ids').value.split(/[\s,]+/).filter(Boolean);
+    const bad = entries.filter((id) => !GROUP_ID_RE.test(id));
+    if (bad.length) {
+        toast(
+            `${bad.length} of ${entries.length} is not a group id. They are 64 hex characters; ` +
+                `"${bad[0].slice(0, 12)}${bad[0].length > 12 ? '…' : ''}" is ${bad[0].length}.`,
+            'bad',
+        );
+        return;
+    }
+    saveKachatSettings(
+        { personal_group_ids: entries.join('\n') },
+        entries.length
+            ? `Keeping ${entries.length} group${entries.length === 1 ? '' : 's'}. The chat indexer is restarting.`
+            : 'Keeping every group. The chat indexer is restarting.',
+    );
+});
 
 // --- export and import ---
 

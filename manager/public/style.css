@@ -1195,3 +1195,17 @@ details.more > summary:hover { color: var(--text); }
    full-width log and loses its border. */
 .log-tile-head .zoom { border: 0; }
 .log-tile-head .zoom .zoom-btn { padding: 2px 5px; font-size: 12px; }
+
+/* Group chats carries the same shape as Chats: a setting above its numbers in
+   one card, so it gets the same tightening. */
+#sub-kachat-groups article.card { padding: 12px 18px; }
+#sub-kachat-groups .node-section { padding-top: 12px; margin-top: 12px; }
+#sub-kachat-groups .node-section p.muted { margin-bottom: 10px; }
+#sub-kachat-groups label.stack { margin-top: 8px; }
+#sub-kachat-groups .row { margin-top: 10px; }
+#sub-kachat-groups p.hint { margin-bottom: 0; }
+#sub-kachat-groups .grid.stats {
+    grid-template-columns: repeat(auto-fit, minmax(146px, 1fr));
+    gap: 10px;
+    margin-bottom: 0;
+}

@@ -803,15 +803,45 @@
 
       <div id="sub-kachat-groups" class="subtab">
         <article class="card span2">
-          <div class="node-head">
-            <h3>Group chats</h3>
-            <span id="kachat-group-tag" class="tag">–</span>
+          <div class="node-section">
+            <div class="node-head">
+              <h3>Index only your own groups</h3>
+              <span id="kachat-group-personal-tag" class="tag">–</span>
+            </div>
+            <p class="muted">
+              A group message says which group it belongs to with a blinded id, and
+              yours is different from every other member's. List yours and the
+              indexer keeps those groups. Leave it empty to keep all of them.
+            </p>
+            <label class="stack">Your blinded group ids, one per line
+              <textarea id="kachat-group-ids" rows="2" placeholder="64 hex characters, one per line"></textarea>
+            </label>
+            <div class="row">
+              <button type="button" id="kachat-group-save" class="primary">Save and apply</button>
+            </div>
+            <p class="hint">
+              Your KaChat app knows these ids, since it already sends them when it
+              registers for notifications. Nothing here can work them out for you:
+              they come from the group keys, which this indexer never sees. Saving
+              restarts the chat indexer.
+            </p>
+            <p class="hint">
+              Because the id is yours alone, this keeps <strong>your</strong> messages
+              in those groups. What other members send carries their id, not yours,
+              so it is not covered. Whatever you send is always kept either way.
+            </p>
           </div>
-          <p class="muted">
-            Encrypted group messaging: group messages and the control envelopes
-            that go with them, served over the group chat API.
-          </p>
-          <div class="grid stats" id="kachat-group-tiles"><p class="muted">Waiting for the chat indexer.</p></div>
+
+          <div class="node-section">
+            <div class="node-head">
+              <h3>Group chats</h3>
+              <span id="kachat-group-tag" class="tag">–</span>
+            </div>
+            <p class="muted">
+              Encrypted group messaging and the control envelopes that go with it.
+            </p>
+            <div class="grid stats" id="kachat-group-tiles"><p class="muted">Waiting for the chat indexer.</p></div>
+          </div>
         </article>
       </div>
 
