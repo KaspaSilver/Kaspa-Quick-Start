@@ -702,6 +702,24 @@
 
       <div id="sub-kachat-kaposts" class="subtab">
         <article class="card span2">
+          <div class="node-head">
+            <h3>Index KaPosts</h3>
+          </div>
+          <p class="muted">
+            Posts, replies, quotes, reposts, votes and follows. Turning this off
+            stops new ones being stored right away; the chain is untouched and
+            what you already have stays until you delete it.
+          </p>
+            <div class="toggle-row">
+              <div class="toggle-text">
+                <strong>KaPosts</strong>
+                <span class="muted">The on-chain social feed.</span>
+              </div>
+              <label class="switch"><input type="checkbox" id="kachat-tg-kaposts"><span class="track"></span></label>
+            </div>
+        </article>
+
+        <article class="card span2">
           <h3>Moderation by author</h3>
           <p class="muted">
             <strong>Remove</strong> deletes an author's rows once.
@@ -774,6 +792,28 @@
 
       <div id="sub-kachat-broadcasts" class="subtab">
         <article class="card span2">
+          <div class="node-head">
+            <h3>Index broadcasts</h3>
+          </div>
+          <p class="muted">
+            Public channel chatter. Turning this off stops new broadcasts being
+            stored right away; rows you already have stay until you delete them.
+          </p>
+            <div class="toggle-row">
+              <div class="toggle-text">
+                <strong>Broadcasts</strong>
+                <span class="muted">All thirteen curated rooms.</span>
+              </div>
+              <label class="switch"><input type="checkbox" id="kachat-tg-broadcasts"><span class="track"></span></label>
+            </div>
+          <p class="hint">
+            It is all or nothing for now. The indexer decides which rooms it
+            follows at compile time, so choosing between them, or adding your own,
+            needs a change there first.
+          </p>
+        </article>
+
+        <article class="card span2">
           <h3>Channels</h3>
           <div class="grid stats" id="kachat-bcast-tiles"></div>
         </article>
@@ -821,6 +861,14 @@
             <p class="hint">
               Groups match on ids, set those under Group chats. Saving restarts the indexer.
             </p>
+          </div>
+
+          <div class="toggle-row">
+            <div class="toggle-text">
+              <strong>Index chat and groups</strong>
+              <span class="muted">One to one and group messaging, handshakes and payments. One switch for both.</span>
+            </div>
+            <label class="switch"><input type="checkbox" id="kachat-tg-chat"><span class="track"></span></label>
           </div>
 
           <div class="node-section">
@@ -884,7 +932,8 @@
               <span id="kachat-group-tag" class="tag">–</span>
             </div>
             <p class="muted">
-              Encrypted group messaging and the control envelopes that go with it.
+              Group messaging and its control envelopes. The switch for it is on
+              the Chats tab, since one covers both.
             </p>
             <div class="grid stats" id="kachat-group-tiles"><p class="muted">Waiting for the chat indexer.</p></div>
           </div>
@@ -997,36 +1046,6 @@
             <label class="inline">Public URL <input id="kachat-set-url" type="url" placeholder="https://kaposts.duckdns.org" size="30"></label>
             <div class="row">
               <button type="button" id="kachat-set-save" class="primary">Save identity</button>
-            </div>
-          </article>
-
-          <article class="card span2">
-            <h3>What to index</h3>
-            <p class="muted">
-              Turning one off stops new matching transactions being stored right
-              away. The chain is untouched and rows you already have stay put
-              until you delete them below.
-            </p>
-            <div class="toggle-row">
-              <div class="toggle-text">
-                <strong>KaPosts</strong>
-                <span class="muted">The on-chain social feed: posts, replies, quotes, reposts, votes and follows.</span>
-              </div>
-              <label class="switch"><input type="checkbox" id="kachat-tg-kaposts"><span class="track"></span></label>
-            </div>
-            <div class="toggle-row">
-              <div class="toggle-text">
-                <strong>Broadcasts</strong>
-                <span class="muted">Public channel chatter for the thirteen curated rooms.</span>
-              </div>
-              <label class="switch"><input type="checkbox" id="kachat-tg-broadcasts"><span class="track"></span></label>
-            </div>
-            <div class="toggle-row">
-              <div class="toggle-text">
-                <strong>Chat and groups</strong>
-                <span class="muted">Encrypted one to one and group messaging, handshakes and payments.</span>
-              </div>
-              <label class="switch"><input type="checkbox" id="kachat-tg-chat"><span class="track"></span></label>
             </div>
           </article>
 

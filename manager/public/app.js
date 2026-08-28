@@ -2093,6 +2093,7 @@ async function loadKachatOverview() {
 }
 
 async function loadKachatKaposts() {
+    loadKachatFeatures();
     try {
         const rows = await kachat('moderation/recent?limit=25');
         $('kachat-recent').innerHTML = rows.length
@@ -2143,6 +2144,7 @@ async function loadKachatKaposts() {
 }
 
 async function loadKachatBroadcasts() {
+    loadKachatFeatures();
     try {
         const s = await kachat('stats');
         const counts = Object.fromEntries((s.bcast_by_channel || []).map((c) => [c.channel, c.count]));
@@ -2189,7 +2191,10 @@ async function loadKachatBroadcasts() {
 async function loadKachatChat(kind) {
     const tag = $(kind === 'group' ? 'kachat-group-tag' : 'kachat-chat-tag');
     const grid = $(kind === 'group' ? 'kachat-group-tiles' : 'kachat-chat-tiles');
-    if (kind === 'chat') loadKachatPersonal();
+    if (kind === 'chat') {
+        loadKachatPersonal();
+        loadKachatFeatures();
+    }
     if (kind === 'group') loadKachatGroupPersonal();
     try {
         const d = await kachat('chat-metrics');
@@ -2282,15 +2287,28 @@ async function loadKachatGroupPersonal() {
 // save would look like the setting had been accepted.
 const GROUP_ID_RE = /^[0-9a-f]{64}$/i;
 
+/**
+ * The three "index this" switches. They sit on the tabs they govern rather than
+ * in a settings list, so each of those tabs has to be able to read them without
+ * Settings having been opened first.
+ */
+async function loadKachatFeatures() {
+    try {
+        const s = await kachat('settings');
+        $('kachat-tg-kaposts').checked = Boolean(s.feature_kaposts);
+        $('kachat-tg-broadcasts').checked = Boolean(s.feature_broadcasts);
+        $('kachat-tg-chat').checked = Boolean(s.chat_indexer);
+    } catch {
+        /* the panel it sits on already reports the indexer being unreachable */
+    }
+}
+
 async function loadKachatSettings() {
     try {
         const s = await kachat('settings');
         $('kachat-set-name').value = s.instance_name || '';
         $('kachat-set-tagline').value = s.instance_tagline || '';
         $('kachat-set-url').value = s.instance_url || '';
-        $('kachat-tg-kaposts').checked = Boolean(s.feature_kaposts);
-        $('kachat-tg-broadcasts').checked = Boolean(s.feature_broadcasts);
-        $('kachat-tg-chat').checked = Boolean(s.chat_indexer);
         $('kachat-operator-addr').value = s.kaposts_operator_address || '';
         $('kachat-kap-personal').checked = Boolean(s.kaposts_personal_mode);
         $('kachat-kap-personal-body').hidden = !s.kaposts_personal_mode;
