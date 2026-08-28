@@ -308,7 +308,29 @@ body {
 
 /* ------------------------------------------------------------------ layout */
 
-main { padding: 20px; max-width: 1180px; margin: 0 auto; }
+/* The cap that decides how wide every page is. 1180 left a third of a large
+   monitor empty; the tables in particular had room to spare and were still
+   scrolling sideways. Raised rather than removed, because full-width prose on
+   an ultrawide is worse than the margin. */
+/* min-width: 0 is the important part. main is a flex item of .content, and a
+   flex item defaults to min-width: auto, which means it refuses to shrink below
+   its content. One wide table was therefore pushing the whole page out to the
+   cap and giving it a horizontal scrollbar, so Broadcasts and Mining rendered
+   wider than every other tab. With this, .scroll-x scrolls the table inside
+   itself the way it was always meant to. */
+main {
+    padding: 20px;
+    /* width:100% matters as much as the cap. .content is a column flex box, and
+       `margin: 0 auto` cancels the default stretch, so without a definite width
+       main sizes to its own content: one wide table pushed the whole page out
+       to the cap and gave it a horizontal scrollbar, which is why Broadcasts
+       and Mining came out wider than every other tab. With a definite width,
+       .scroll-x scrolls the table inside itself as intended. */
+    width: 100%;
+    max-width: 1480px;
+    min-width: 0;
+    margin: 0 auto;
+}
 .tab { display: none; }
 .tab.active { display: block; }
 
