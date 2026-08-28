@@ -255,7 +255,7 @@ async function refreshStatus() {
     $('sync-state').textContent = !running
         ? 'node stopped'
         : !s.rpc.reachable && !sync
-          ? 'starting — RPC not answering yet'
+          ? 'starting up, no answer from the node yet'
           : (sync?.label ?? 'starting up') + (sync?.estimated ? ' (estimated)' : '');
     $('sync-bar').style.width = `${pct}%`;
     $('sync-bar').classList.toggle('estimated', Boolean(sync?.estimated) && !synced);
@@ -294,10 +294,10 @@ async function refreshStatus() {
     const verdict = $('p2p-verdict');
     if (s.p2pReachable === true) {
         verdict.className = 'verdict ok';
-        verdict.textContent = `Reachable — ${s.peers.inbound} peer(s) dialled in, so your P2P port is open.`;
+        verdict.textContent = `Your port is open. ${s.peers.inbound} peer${s.peers.inbound === 1 ? '' : 's'} connected in from outside.`;
     } else if (s.p2pReachable === false) {
         verdict.className = 'verdict bad';
-        verdict.textContent = 'No inbound peers yet. Forward the P2P port to go public (this can take a while after a restart).';
+        verdict.textContent = 'Nobody has connected in yet. Forward the P2P port on your router to go public. It can take a while after a restart, so give it time.';
     } else {
         verdict.className = 'verdict';
         verdict.textContent = 'Waiting for peer information…';
@@ -321,17 +321,17 @@ function applyNodeGating(status) {
     lockReason = ready
         ? null
         : !status?.container?.running
-          ? 'The node is not running yet — start it on the Dashboard.'
+          ? 'The node is not running yet. Start it on the Kaspad page.'
           : !status?.rpc?.reachable
             ? 'The node is still starting up.'
-            : 'The node is still syncing — this unlocks once it has caught up.';
+            : 'The node is still catching up. This unlocks once it is done.';
 
     for (const item of document.querySelectorAll('.nav-item[data-requires-node]')) {
         item.classList.toggle('locked', !ready);
         item.setAttribute('aria-disabled', String(!ready));
         item.title = ready
             ? item.querySelector('.label').textContent
-            : `${item.querySelector('.label').textContent} — ${lockReason}`;
+            : `${item.querySelector('.label').textContent}: ${lockReason}`;
     }
 
     // If the node falls out of sync while one of these is open, do not strand
@@ -444,7 +444,7 @@ document.addEventListener('click', async (event) => {
     event.target.textContent = 'Testing…';
     try {
         const r = await api(`/api/portcheck?port=${port}`);
-        toast(`${r.ip}:${r.port} — ${r.open ? 'open' : 'closed'}. ${r.note}`, r.open ? 'good' : 'bad');
+        toast(`${r.ip}:${r.port} is ${r.open ? 'open' : 'closed'}. ${r.note}`, r.open ? 'good' : 'bad');
     } catch (e) {
         toast(e.message, 'bad');
     } finally {
@@ -486,7 +486,7 @@ $('check-update').addEventListener('click', async () => {
             }
         } else {
             status.className = 'update-status current';
-            status.textContent = `Up to date — running ${r.current || '?'}, newest release is ${r.latest}.`;
+            status.textContent = `You are up to date. Running ${r.current || '?'}, and that is the newest release.`;
         }
         if (r.notes) {
             $('release-notes').hidden = false;
@@ -736,7 +736,7 @@ function renderMiningState(container, stats) {
     if (!stats || !stats.reachable) {
         $('m-unreachable').hidden = false;
         $('m-unreachable').textContent = running
-            ? 'The bridge is starting up — stats appear once it has connected to the node.'
+            ? 'Starting up. Numbers will appear once it has connected to the node.'
             : 'The bridge container is not running.';
         return;
     }
@@ -852,7 +852,7 @@ function renderEconomics(r) {
     const next = reward.next;
     $('reward-next').className = 'verdict';
     $('reward-next').innerHTML =
-        `Next cut ${escapeHtml(fmtDaysUntil(next.secondsUntil))} — drops to ` +
+        `Next drop ${escapeHtml(fmtDaysUntil(next.secondsUntil))}, down to ` +
         `<strong>${next.kas.toFixed(8).replace(/0+$/, '').replace(/\.$/, '')} KAS</strong> ` +
         `(−${next.dropPercent.toFixed(2)}%) at DAA score ${next.daaScore.toLocaleString()}.`;
 
@@ -899,10 +899,10 @@ function renderProjection(p, net) {
 
     $('earn-note').textContent =
         p.hypothetical || (!p.measured && p.hashrate)
-            ? "Based on the hashrate you entered. What today's difficulty and reward would pay if both held, with the monthly reductions applied — not a forecast, and it says nothing about price."
+            ? "Based on the hashrate you typed in. This is what you would earn if difficulty and the reward stayed where they are today, with the monthly drops taken into account. It is not a prediction, and it says nothing about price."
             : p.measured
-              ? "Based on your miners' reported hashrate. What today's difficulty and reward would pay if both held, with the monthly reductions applied — not a forecast, and it says nothing about price."
-              : 'Enter a hashrate to see what it would earn — no miners are reporting one yet.';
+              ? "Based on what your miners are actually reporting. This is what you would earn if difficulty and the reward stayed where they are today, with the monthly drops taken into account. It is not a prediction, and it says nothing about price."
+              : 'No miners are connected yet. Type a hashrate above to see what it would earn.';
 }
 
 async function refreshProjection(hashrate) {
@@ -993,7 +993,7 @@ document.addEventListener('click', async (event) => {
     const ok = await copyText(text);
     button.textContent = ok ? 'Copied' : 'Select it';
     button.classList.toggle('copied', ok);
-    if (!ok) toast('Could not reach the clipboard — select the address and copy it manually.', 'bad');
+    if (!ok) toast('Could not copy for you. Select the address and copy it yourself.', 'bad');
     setTimeout(() => {
         button.textContent = 'Copy';
         button.classList.remove('copied');
@@ -1016,8 +1016,8 @@ $('miner-scan').addEventListener('click', async () => {
         miningExtraSubnets = r.extraSubnets ?? '';
         const devices = r.devices.filter((d) => !d.self);
         note.textContent =
-            `${r.scanned.toLocaleString()} addresses in ${r.subnets.join(', ')} — ` +
-            `${devices.length} device${devices.length === 1 ? '' : 's'} answered`;
+            `Checked ${r.scanned.toLocaleString()} addresses in ${r.subnets.join(', ')}. ` +
+            `${devices.length} device${devices.length === 1 ? '' : 's'} answered.`;
         if (r.problems?.length) toast(r.problems[0], 'bad');
         $('scan-results').innerHTML = devices.length
             ? devices
@@ -1192,7 +1192,7 @@ function renderAppState(name, state) {
             notice.hidden = false;
             notice.className = 'verdict';
             notice.textContent =
-                'Starting up — the first build compiles the indexer from source and takes a while. Watch Logs → kachat indexer.';
+                'Starting up. The first build compiles the indexer from source, which takes a while. You can watch it under All logs.';
         }
     }
 
@@ -1285,13 +1285,13 @@ for (const name of ['kachat', 'nextcloud']) {
             const r = await api(`/api/apps/${name}/check`);
             $(`${name}-update`).disabled = !r.updateAvailable;
             if (r.neverBuilt) {
-                notice.textContent = `${r.repo}@${r.ref} is at ${r.shortSha} — "${r.message}". Nothing built yet; apply to build it.`;
+                notice.textContent = `${r.repo}@${r.ref} is at ${r.shortSha}: "${r.message}". Nothing built yet, so press Apply settings to build it.`;
             } else if (r.updateAvailable) {
                 notice.className = 'verdict bad';
-                notice.textContent = `Update available: ${r.shortSha} — "${r.message}". You are running ${String(r.builtSha).slice(0, 7)}.`;
+                notice.textContent = `There is an update: ${r.shortSha}, "${r.message}". You are running ${String(r.builtSha).slice(0, 7)}.`;
             } else {
                 notice.className = 'verdict ok';
-                notice.textContent = `Up to date — running ${r.shortSha}, the newest commit on ${r.ref}.`;
+                notice.textContent = `You are up to date, running ${r.shortSha}, the newest commit on ${r.ref}.`;
             }
         } catch (e) {
             notice.className = 'verdict bad';
@@ -1520,7 +1520,7 @@ async function loadDuckDns() {
     $('dd-interval').value = r.duckdns.intervalMinutes;
     $('public-ip').textContent = r.publicIp || 'unknown';
     $('dd-status').textContent = r.duckdns.lastRunAt
-        ? `Last update ${new Date(r.duckdns.lastRunAt).toLocaleString()} — ${r.duckdns.lastResult}`
+        ? `Last updated ${new Date(r.duckdns.lastRunAt).toLocaleString()}: ${r.duckdns.lastResult}`
         : 'Never updated.';
 }
 
@@ -1535,7 +1535,7 @@ $('dd-save').addEventListener('click', async () => {
                 intervalMinutes: Number($('dd-interval').value),
             },
         });
-        toast(r.domains.length ? `Saved — ${r.domains.join(', ')}` : 'Saved.', 'good');
+        toast(r.domains.length ? `Saved. Keeping ${r.domains.join(', ')} up to date.` : 'Saved.', 'good');
         loadDuckDns();
     } catch (e) {
         toast(e.message, 'bad');

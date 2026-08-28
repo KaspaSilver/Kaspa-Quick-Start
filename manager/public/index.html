@@ -21,7 +21,7 @@
     </label>
     <button type="submit" class="primary">Sign in</button>
     <p class="error" id="login-error" hidden></p>
-    <p class="hint">The password was printed by the installer. It is stored only as a scrypt hash in <code>.env</code>.</p>
+    <p class="hint">The installer printed this password when it finished. Only a scrambled version of it is saved, so it cannot be read back out of the files.</p>
   </form>
 </section>
 
@@ -160,10 +160,10 @@
         <article class="card span2">
           <h3>Ports</h3>
           <p class="muted">
-            <strong>Listening</strong> is the kaspad argument — whether the service
-            is bound at all. <strong>Public</strong> maps it to a host port, which
-            is the only thing that decides whether the outside world can reach it.
-            Both are on by default; changing either restarts the node.
+            <strong>Listening</strong> means the node has that service switched on.
+            <strong>Public</strong> opens it up on this machine, and that is the
+            part that decides whether anything outside can reach it. Both start
+            out on. Changing either one restarts the node.
           </p>
           <div class="scroll-x">
             <table class="ports">
@@ -201,7 +201,8 @@
                 <option value="testnet-10">Testnet 10</option>
               </select>
             </label>
-            <p class="hint">Switching chains changes every port number and starts a separate database.</p>
+            <p class="hint">Switching to a different chain changes all the port numbers and starts a
+            fresh database, so your current one is left untouched.</p>
           </article>
 
 
@@ -223,12 +224,11 @@
             <label class="check"><input type="checkbox" id="cfg-flag-sanity"> Extra sanity checks</label>
             <label class="check"><input type="checkbox" id="cfg-flag-noLogFiles"> Do not write log files</label>
             <p class="hint">
-              “Accept submitted blocks while unsynced” is a testing flag. It lets
-              <code>submitBlock</code> through while the node is behind, but it does
-              not bypass kaspad's separate initial-sync guard, so it will not let you
-              mine during a first sync — and blocks solved against an incomplete DAG
-              would be orphaned anyway. Mining here is gated on a synced node
-              regardless.
+              “Accept submitted blocks while unsynced” is really only useful for
+              testing. It will not let you mine during a first sync, because the
+              node has a separate check that this setting does not switch off. Even
+              if it did, blocks found against a half-finished copy of the chain get
+              thrown away. Mining stays locked here until the node has caught up.
             </p>
           </article>
 
@@ -254,7 +254,7 @@
             <label>External IP <input id="cfg-externalip" placeholder="auto-detected"></label>
             <label>User agent comment <input id="cfg-uacomment" placeholder="optional"></label>
             <label>Additional peers <textarea id="cfg-addpeers" rows="3" placeholder="one host:port per line"></textarea></label>
-            <label>Connect only to <textarea id="cfg-connectpeers" rows="2" placeholder="one host:port per line — leave empty for normal operation"></textarea></label>
+            <label>Connect only to <textarea id="cfg-connectpeers" rows="2" placeholder="one host:port per line, leave empty for normal operation"></textarea></label>
           </article>
 
           <article class="card">
@@ -283,7 +283,8 @@
           <h3>Node software</h3>
           <p class="muted">
             Checks <code id="upstream-repo">kaspanet/rusty-kaspa</code> for a newer
-            release and rebuilds the container. Chain data is kept — no resync.
+            release and rebuilds the container. Your chain data is kept, so there
+            is no resync.
           </p>
           <div id="update-status" class="update-status">Not checked yet.</div>
           <div class="row">
@@ -382,9 +383,9 @@
             </dl>
             <div class="verdict" id="reward-next">–</div>
             <p class="hint">
-              Kaspa reduces the reward every month by 2<sup>−1/12</sup>, so twelve
-              months compound to exactly half. Figures come from the node's own
-              emission table.
+              Kaspa lowers the reward a little every month rather than halving it all at
+              once, and twelve of those months add up to exactly half. These figures
+              come straight from the node's own schedule.
             </p>
           </article>
 
@@ -417,9 +418,10 @@
               <div><dt>Cost of the monthly cuts</dt><dd id="earn-drag">–</dd></div>
             </dl>
             <p class="hint" id="earn-note">
-              What today's difficulty and reward would pay if both held, with the
-              monthly reductions applied. Not a forecast: difficulty moves, and
-              this says nothing about price.
+              This is what you would earn if difficulty and the reward stayed where they
+              are today, with the monthly drops taken into account. It is not a
+              prediction. Difficulty changes, and this says nothing about what Kaspa
+              is worth.
             </p>
           </article>
 
@@ -448,18 +450,19 @@
             <div class="connect-block">
               <h4>Find miners on your network</h4>
               <p class="muted">
-                Sweeps this machine's subnet for devices with a web interface or a
-                miner API, and links straight to them.
+                Looks for anything on your network that answers, and gives you a link
+                straight to it.
               </p>
               <label class="inline">
                 Also scan
                 <input id="scan-extra" placeholder="192.168.3.0/24, 10.0.0.50" size="26">
               </label>
               <p class="hint tight">
-                This machine can only work out the subnet it is on
-                (<code id="scan-own">–</code>). A miner behind your router on a
-                different subnet has to be named here — a <code>/24</code>, a
-                prefix like <code>192.168.3.*</code>, or a single address.
+                This machine can only work out its own network
+                (<code id="scan-own">–</code>) by itself. If your miner sits on a
+                different one behind your router, type it here. Anything works: a
+                range like <code>192.168.3.0/24</code>, a shorthand like
+                <code>192.168.3.*</code>, or just the miner's address.
               </p>
               <div class="row">
                 <button type="button" id="miner-scan" class="ghost">Scan for miners</button>
@@ -478,8 +481,8 @@
           <article class="card">
           <h3>Stratum ports</h3>
           <p class="muted">
-          One entry per listener. Give slow and fast miners different ports so
-          each starts at a sensible difficulty.
+          Add a port for each group of miners. Giving slow and fast machines their
+            own port lets each start at a difficulty that suits it.
           </p>
           <table class="instances">
           <thead><tr><th>Port</th><th>Start difficulty</th><th>Publish</th><th></th></tr></thead>
@@ -529,15 +532,15 @@
           <h3>KaChat indexer</h3>
           <p class="muted">
             Turns this node's chain data into the APIs every KaChat client talks
-            to — direct and group chats, broadcasts, KaPosts and mentions. Its own
+            to: direct and group chats, broadcasts, KaPosts and mentions. Its own
             dashboard appears below once it is running, with the same Dashboard,
             KaPosts, Broadcasts, Chats, Group chats, Export / Import and Settings
             tabs it always had.
           </p>
           <p class="hint">
-            It reads the chain from the node in this stack, so there is no second
-            sync. The first build compiles the indexer from Rust source and takes
-            a while; watch it in Logs → kachat indexer.
+            It uses the node you are already running, so nothing has to sync twice.
+            The very first start has to build the indexer from source, which takes
+            a while. You can watch it happen on the All logs page.
           </p>
         </article>
 
@@ -588,8 +591,8 @@
           <article class="card">
             <h3>Published ports</h3>
             <p class="muted">
-              Both APIs are always reachable inside the stack. Publish one only if
-              clients connect from outside this machine.
+              Both APIs already work for anything running alongside them here. Only
+              publish one if you have apps connecting from another machine.
             </p>
             <label class="check"><input type="checkbox" id="kachat-pub-api"> KaPosts REST API on 3080</label>
             <label class="check"><input type="checkbox" id="kachat-pub-chat"> Chat indexer API on 8600</label>
@@ -598,8 +601,8 @@
           <article class="card span2">
             <h3>Apply and update</h3>
             <p class="muted">
-              Changes here rebuild or restart the indexer. Its dashboard has its own
-              Settings tab for anything about the indexed data itself.
+              Changing anything here rebuilds or restarts the indexer. For settings about
+              the data it has indexed, use the Settings tab inside its own dashboard.
             </p>
             <div class="row">
               <button type="button" id="kachat-save" class="primary">Apply settings</button>
@@ -622,10 +625,10 @@
         <article class="card">
           <h3>Nextcloud</h3>
           <p class="muted">
-            Your own cloud for files, photos and video — the media and backup
-            destination KaChat can share links from. Video thumbnails and iPhone
-            HEIC previews are configured for you, so nothing is sent to a third
-            party.
+            Your own cloud for files, photos and video. It is where KaChat can
+            share media from and back chats up to, so none of it passes through
+            anyone else's servers. Video thumbnails and iPhone HEIC previews are
+            already set up for you.
           </p>
         </article>
 
@@ -666,8 +669,8 @@
               <input id="nextcloud-domains" placeholder="localhost, cloud.example.com">
             </label>
             <p class="hint">
-              Add a domain here as well as in Proxy &amp; domains, or Nextcloud
-              refuses the request.
+              If you give Nextcloud a domain, add it here too. Nextcloud turns away
+              requests for names it has not been told about.
             </p>
           </article>
 
@@ -713,9 +716,10 @@
         <article class="card span2">
           <h3>Proxy hosts</h3>
           <p class="muted">
-            Point a domain at this machine, and nginx will forward it to the node
-            or to this panel — with HTTPS from Let's Encrypt, websocket support
-            for wRPC, optional password and IP allow-lists.
+            Point a domain at this machine and it will be forwarded to the node
+            or to this panel, with free HTTPS from Let's Encrypt. Websockets work
+            (wRPC needs them), and you can add a password or limit access to
+            certain IP addresses.
           </p>
           <table class="proxies">
             <thead><tr><th>Domain</th><th>Forwards to</th><th>TLS</th><th>Extras</th><th></th></tr></thead>
@@ -800,7 +804,7 @@
         <label>Password <input id="px-pass" type="password" autocomplete="new-password" placeholder="unchanged"></label>
       </div>
       <label>Allow only these IPs / CIDRs
-        <textarea id="px-allow" rows="2" placeholder="one per line — leave empty to allow everyone"></textarea>
+        <textarea id="px-allow" rows="2" placeholder="one per line, leave empty to allow everyone"></textarea>
       </label>
       <label class="inline">Rate limit <input type="number" id="px-rate" min="1" placeholder="off" size="5"> req/s per IP</label>
     </fieldset>

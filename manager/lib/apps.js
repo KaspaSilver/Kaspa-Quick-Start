@@ -123,14 +123,14 @@ export function appBlockers(name, cfg, nodeCfg) {
     if (name === 'kachat' && cfg.kachat.enabled) {
         if (!nodeCfg.services.borsh) {
             blockers.push(
-                'The KaChat indexer reads the chain over wRPC Borsh, which is currently switched off. ' +
-                    'Enable the wRPC Borsh listener under Node settings first (it does not have to be published).',
+                'The KaChat indexer reads the chain over wRPC Borsh, and that is currently switched off. ' +
+                    'Turn the wRPC Borsh listener on under Kaspad, Ports. It does not have to be public.',
             );
         }
         if (nodeCfg.network !== cfg.kachat.network) {
             blockers.push(
-                `The indexer is set to ${cfg.kachat.network} but the node is running ${nodeCfg.network}. ` +
-                    'They have to match, otherwise the indexer reads a chain that is not there.',
+                `The indexer is set to ${cfg.kachat.network} but your node is running ${nodeCfg.network}. ` +
+                    'These need to match, otherwise the indexer looks for a chain that is not there.',
             );
         }
     }

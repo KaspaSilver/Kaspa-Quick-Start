@@ -30,7 +30,7 @@ export function validateProxy(proxy, { existing = [], panelHasPassword = true } 
     // has to be caught here rather than by the port binding.
     if (proxy.target?.kind === 'manager' && !panelHasPassword && !proxy.auth?.enabled) {
         errors.push(
-            'This panel has no admin password, so it may not be proxied to a domain. ' +
+            'This panel has no admin password, so it cannot be put on a domain. ' +
                 'Either tick "Require a username and password" for this host, or re-run the ' +
                 'installer with --password to set one.',
         );

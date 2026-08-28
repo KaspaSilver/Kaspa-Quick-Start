@@ -223,7 +223,7 @@ async function nodeReadiness() {
 
     let reason = null;
     if (!running) reason = 'The node is not running.';
-    else if (!snapshot.reachable) reason = 'The node is still starting — its RPC is not answering yet.';
+    else if (!snapshot.reachable) reason = 'The node is still starting up and is not answering yet.';
     else if (!synced) reason = 'The node is still syncing with the network.';
 
     return { running, rpcReachable: snapshot.reachable, synced, ready: running && snapshot.reachable && synced, reason };
@@ -876,7 +876,7 @@ route('PUT', /^\/api\/mining$/, async (req, res) => {
     if (cfg.enabled) {
         const readiness = await nodeReadiness();
         if (!readiness.ready) {
-            blockers.unshift(`${readiness.reason} Mining can only be switched on once the node is running and synced.`);
+            blockers.unshift(`${readiness.reason} You can switch mining on once the node is running and caught up.`);
         }
     }
     if (blockers.length) return fail(res, 409, 'Mining cannot start yet.', { details: blockers });
@@ -1015,7 +1015,7 @@ route('PUT', /^\/api\/apps\/(kachat|nextcloud)$/, async (req, res, match) => {
     if (cfg[name].enabled && apps.APPS[name].needsSyncedNode) {
         const readiness = await nodeReadiness();
         if (!readiness.ready) {
-            blockers.unshift(`${readiness.reason} ${apps.APPS[name].label} can only be switched on once the node is running and synced.`);
+            blockers.unshift(`${readiness.reason} You can switch ${apps.APPS[name].label} on once the node is running and caught up.`);
         }
     }
     if (blockers.length) return fail(res, 409, `${apps.APPS[name].label} cannot start yet.`, { details: blockers });
@@ -1152,8 +1152,8 @@ route('GET', /^\/api\/portcheck$/, async (req, res, match, url) => {
         // Home routers often refuse to route a LAN host back to their own WAN
         // address, so a negative result here is not proof the port is shut.
         note: open
-            ? 'Reachable from this machine via its public address.'
-            : 'No connection. If this node is behind a home router this can also mean the router does not support NAT hairpinning - check from an outside network too.',
+            ? 'Reachable from this machine using its public address.'
+            : 'No answer. That usually means the port is closed, but if this node is behind a home router it can also just mean the router will not loop a connection back to itself. Worth checking from another network before you change anything.',
     });
 });
 

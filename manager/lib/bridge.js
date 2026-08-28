@@ -97,8 +97,8 @@ export function miningBlockers(bridgeCfg, nodeCfg) {
     const blockers = [];
     if (bridgeCfg.enabled && !nodeCfg.services.grpc) {
         blockers.push(
-            'The stratum bridge talks to kaspad over gRPC, which is currently switched off. ' +
-                'Enable the gRPC listener under Node settings first (it does not have to be published).',
+            'The stratum bridge needs to talk to the node over gRPC, and that is currently switched off. ' +
+                'Turn the gRPC listener on under Kaspad, Ports. It does not have to be public.',
         );
     }
     return blockers;
