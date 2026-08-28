@@ -143,6 +143,15 @@ services:
       RUST_LOG: info
     volumes:
       - kachat-app-data:/app/data
+      # Upstream runs these containers with host networking, so its launch
+      # scripts hardcode localhost as the database and bind the admin API to
+      # loopback. Neither holds on a bridge network. These are the same scripts
+      # with the host pointed at the database container, and the admin API bound
+      # so the panel can reach it. See kachat/README.md for the detail.
+      - ${STACK_DIR}/kachat/run-admin.sh:/app/run-admin.sh:ro
+      - ${STACK_DIR}/kachat/run-webserver.sh:/app/run-webserver.sh:ro
+      - ${STACK_DIR}/kachat/run-processor.sh:/app/run-processor.sh:ro
+      - ${STACK_DIR}/kachat/run-ingest.sh:/app/run-ingest.sh:ro
     networks:
       - kaspa
     depends_on:

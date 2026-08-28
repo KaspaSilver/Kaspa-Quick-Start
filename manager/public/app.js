@@ -154,6 +154,52 @@ for (const item of document.querySelectorAll('.nav-item')) {
     item.addEventListener('click', () => selectTab(item.dataset.tab));
 }
 
+// --- kaspad log ---
+
+/**
+ * Streams kaspad's log into the Log sub-tab, and only while that tab is open.
+ *
+ * Browsers allow roughly six concurrent connections to one origin, and the
+ * status poll, the all-logs stream and the job console already want several of
+ * them, so this one is opened on demand and closed the moment you navigate
+ * away.
+ */
+let kaspadLogStream = null;
+const KASPAD_LOG_LINES = 2000;
+
+function setKaspadLog(active) {
+    if (!active) {
+        kaspadLogStream?.close();
+        kaspadLogStream = null;
+        return;
+    }
+    if (kaspadLogStream) return;
+
+    const view = $('kaspadlog-view');
+    view.textContent = '';
+    kaspadLogStream = new EventSource('/api/logs/stream?container=kaspad');
+
+    kaspadLogStream.addEventListener('line', (event) => {
+        const { line } = JSON.parse(event.data);
+        // Only chase the bottom when the reader is already there, so scrolling
+        // back through history is not yanked away on the next line.
+        const follow = $('kaspadlog-follow').checked;
+        const atBottom = view.scrollHeight - view.scrollTop - view.clientHeight < 40;
+
+        view.textContent += `${line}\n`;
+        // Trim from the front so a long-running node does not grow the DOM node
+        // without limit.
+        if (view.textContent.length > KASPAD_LOG_LINES * 200) {
+            view.textContent = view.textContent.split('\n').slice(-KASPAD_LOG_LINES).join('\n');
+        }
+        if (follow && atBottom) view.scrollTop = view.scrollHeight;
+    });
+
+    kaspadLogStream.addEventListener('error', () => {
+        view.textContent += '\n[the log stream dropped; reopen this tab to reconnect]\n';
+    });
+}
+
 // --- sub-tabs (panels inside one destination) ---
 
 function selectSubtab(section, name) {
@@ -1663,11 +1709,13 @@ async function loadKachatOverview() {
         $('kachat-services').innerHTML = services.length
             ? services
                   .map(
+                      // The name leads, not the status: five tiles all reading
+                      // "healthy" says nothing, and the dot carries that anyway.
                       (s) =>
                           `<div class="stat"><span class="small"><span class="svc-dot ${kDot(s.status)}"></span>${escapeHtml(
-                              kWords(s.status),
-                          )}</span><small>${escapeHtml(s.name)}${
-                              s.detail ? ` · ${escapeHtml(s.detail)}` : ''
+                              s.name,
+                          )}</span><small>${escapeHtml(kWords(s.status))}${
+                              s.detail ? `, ${escapeHtml(s.detail)}` : ''
                           }</small></div>`,
                   )
                   .join('')
@@ -1687,6 +1735,15 @@ async function loadKachatOverview() {
         }
 
         $('kachat-ingest').textContent = `${fmtNum(s.ingest_last_60m)} items`;
+
+        // The headline figures. ingest_last_60m counts transactions the block
+        // ingester stored in the last hour, so it sits at zero while the ingest
+        // is still backfilling history and only becomes a live rate once it has
+        // caught up with the tip.
+        $('kachat-hour').textContent = fmtNum(s.ingest_last_60m);
+        $('kachat-5m').textContent = fmtNum(s.ingest_last_5m);
+        $('kachat-messages').textContent = fmtNum(cm.contextual_messages ?? 0);
+        $('kachat-blocks').textContent = fmtNum(cm.blocks_processed ?? 0);
 
         $('kachat-stats').innerHTML = [
             ['posts', s.posts],
@@ -1910,7 +1967,16 @@ function renderKachatOffline() {
         $(id).textContent = 'not running';
         $(id).className = 'tag off';
     }
-    for (const id of ['kachat-lag', 'kachat-newest-tx', 'kachat-newest-content', 'kachat-ingest']) {
+    for (const id of [
+        'kachat-lag',
+        'kachat-newest-tx',
+        'kachat-newest-content',
+        'kachat-ingest',
+        'kachat-hour',
+        'kachat-5m',
+        'kachat-messages',
+        'kachat-blocks',
+    ]) {
         $(id).textContent = '–';
     }
 }

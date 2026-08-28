@@ -327,12 +327,12 @@ fetch_stack() {
     # Only these are replaced wholesale on a re-install. conf/ holds generated
     # state (node.json, proxies.json) and proxy/ holds issued certificates and
     # generated vhosts -- wiping either would cost the user real work.
-    for item in docker-compose.yml kaspad manager bridge nextcloud uninstall.sh uninstall.ps1 README.md; do
+    for item in docker-compose.yml kaspad manager bridge kachat nextcloud uninstall.sh uninstall.ps1 README.md; do
         [ -e "$src_dir/$item" ] || continue
         rm -rf "$STACK_DIR/${item:?}"
         cp -R "$src_dir/$item" "$STACK_DIR/$item"
     done
-    chmod +x "$STACK_DIR/kaspad/entrypoint.sh" "$STACK_DIR/uninstall.sh" 2>/dev/null || true
+    chmod +x "$STACK_DIR/kaspad/entrypoint.sh" "$STACK_DIR/kachat/run-admin.sh" "$STACK_DIR/uninstall.sh" 2>/dev/null || true
 
     mkdir -p "$STACK_DIR/conf" "$STACK_DIR/proxy/conf.d" "$STACK_DIR/proxy/snippets" \
              "$STACK_DIR/proxy/letsencrypt" "$STACK_DIR/proxy/webroot"
