@@ -355,58 +355,58 @@
       </nav>
 
       <div id="sub-mining-overview" class="subtab active">
-        <article class="card toggle-bar">
-          <div class="toggle-row">
-            <div class="toggle-text">
-              <strong>Stratum bridge</strong>
-              <span class="muted">Lets ASICs and miners point at this node. Miners keep their own payout address.</span>
-            </div>
+        <article class="card span2" id="mining-card">
+          <div class="node-head">
+            <h3>Stratum bridge</h3>
             <span id="mining-state" class="tag">off</span>
           </div>
           <div id="mining-blockers" class="verdict bad" hidden></div>
           <p class="error" id="mining-error" hidden></p>
+
+          <div id="mining-live" hidden>
+            <div class="grid stats">
+            <div class="stat"><span id="m-hashrate">–</span><small>pool hashrate</small></div>
+            <div class="stat"><span id="m-workers">–</span><small>active workers</small></div>
+            <div class="stat"><span id="m-blocks">–</span><small>blocks found</small></div>
+            <div class="stat"><span id="m-shares">–</span><small>shares accepted</small></div>
+            </div>
+            <dl class="kv">
+            <div><dt>Network hashrate</dt><dd id="m-nethash">–</dd></div>
+            <div><dt>Network difficulty</dt><dd id="m-netdiff">–</dd></div>
+            <div><dt>Bridge uptime</dt><dd id="m-uptime">–</dd></div>
+            </dl>
+            <p class="hint" id="m-unreachable" hidden></p>
+          </div>
+
+          <div class="mining-tables">
+            <div class="mining-col" id="mining-workers-card" hidden>
+              <h3>Workers</h3>
+              <div class="scroll-x">
+              <table class="workers">
+              <thead>
+              <tr>
+              <th>Worker</th><th>Wallet</th><th>Hashrate</th><th>Difficulty</th>
+              <th>Shares</th><th>Stale</th><th>Invalid</th><th>Blocks</th>
+              <th>Uptime</th><th>Status</th>
+              </tr>
+              </thead>
+              <tbody id="workers-body"></tbody>
+              </table>
+              </div>
+            </div>
+            <div class="mining-col" id="mining-blocks-card" hidden>
+              <h3>Recent blocks</h3>
+              <div class="scroll-x">
+              <table class="blocks">
+              <thead><tr><th>Found</th><th>Worker</th><th>Blue score</th><th>Hash</th></tr></thead>
+              <tbody id="blocks-body"></tbody>
+              </table>
+              </div>
+            </div>
+          </div>
         </article>
 
         <div class="grid">
-          <article class="card span2" id="mining-live" hidden>
-          <h3>Live</h3>
-          <div class="grid stats">
-          <div class="stat"><span id="m-hashrate">–</span><small>pool hashrate</small></div>
-          <div class="stat"><span id="m-workers">–</span><small>active workers</small></div>
-          <div class="stat"><span id="m-blocks">–</span><small>blocks found</small></div>
-          <div class="stat"><span id="m-shares">–</span><small>shares accepted</small></div>
-          </div>
-          <dl class="kv">
-          <div><dt>Network hashrate</dt><dd id="m-nethash">–</dd></div>
-          <div><dt>Network difficulty</dt><dd id="m-netdiff">–</dd></div>
-          <div><dt>Bridge uptime</dt><dd id="m-uptime">–</dd></div>
-          </dl>
-          <p class="hint" id="m-unreachable" hidden></p>
-          </article>
-          <article class="card span2" id="mining-workers-card" hidden>
-          <h3>Workers</h3>
-          <div class="scroll-x">
-          <table class="workers">
-          <thead>
-          <tr>
-          <th>Worker</th><th>Wallet</th><th>Hashrate</th><th>Difficulty</th>
-          <th>Shares</th><th>Stale</th><th>Invalid</th><th>Blocks</th>
-          <th>Uptime</th><th>Status</th>
-          </tr>
-          </thead>
-          <tbody id="workers-body"></tbody>
-          </table>
-          </div>
-          </article>
-          <article class="card span2" id="mining-blocks-card" hidden>
-          <h3>Recent blocks</h3>
-          <div class="scroll-x">
-          <table class="blocks">
-          <thead><tr><th>Found</th><th>Worker</th><th>Blue score</th><th>Hash</th></tr></thead>
-          <tbody id="blocks-body"></tbody>
-          </table>
-          </div>
-          </article>
           <article class="card" id="reward-card">
             <h3>Block reward</h3>
             <div class="bigstat"><span id="reward-now">–</span><small>KAS per block</small></div>

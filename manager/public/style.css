@@ -1044,3 +1044,33 @@ table.ports td.note { color: var(--muted); font-size: 12.5px; font-family: inher
 /* These bars lost their switch to the sidebar, so they are a title and status
    strip now. Without the switch leading, the text should start at the edge. */
 .toggle-bar .toggle-row > .toggle-text:first-child { margin-left: 0; }
+
+/* -------------------------------------------------- mining overview card */
+
+/* Live spans the card; the two tables sit side by side beneath it. */
+.mining-tables {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0 24px;
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+}
+.mining-col { min-width: 0; }
+.mining-col + .mining-col { padding-left: 24px; border-left: 1px solid var(--line); }
+.mining-col h3 { margin-top: 0; }
+
+/* Recent blocks is only four columns, so it has no business forcing a
+   scrollbar in half a card. Workers has ten and still earns one. */
+.scroll-x table.blocks { min-width: 360px; }
+
+@media (max-width: 1100px) {
+    .mining-tables { grid-template-columns: minmax(0, 1fr); }
+    .mining-col + .mining-col {
+        padding-left: 0;
+        border-left: 0;
+        margin-top: 18px;
+        padding-top: 18px;
+        border-top: 1px solid var(--line);
+    }
+}
