@@ -480,16 +480,17 @@ function renderPruning(p, running) {
         return;
     }
 
-    // The block count is exact and always available, so it is the answer when
-    // there is nothing measured to beat it. A size only appears once it has
-    // actually been observed, either across a past prune or from how fast the
-    // volume is filling up now.
-    const size = p.measured && p.measured.freedBytes > 100e6 ? p.measured.freedBytes : null;
-    const note = size
-        ? `the last one gave back ${fmtByteCount(size)}`
-        : p.projected
-          ? `should give back around ${fmtByteCount(p.projected.bytes)}`
-          : `drops ${fmtNum(p.blocksPerStep)} blocks (${p.stepHours} hours of history)`;
+    // How the size was arrived at decides how it is worded. Measured across a
+    // real prune is a fact; the other two are estimates and are not dressed up
+    // as anything more than that.
+    const phrasing = {
+        measured: (v) => `the last one freed ${v}`,
+        growth: (v) => `frees about ${v}`,
+        window: (v) => `frees roughly ${v}`,
+    };
+    const note = p.freed
+        ? phrasing[p.freed.source](fmtByteCount(p.freed.bytes))
+        : `drops ${fmtNum(p.blocksPerStep)} blocks (${p.stepHours} hours of history)`;
 
     el.innerHTML =
         `${escapeHtml(fmtCountdown(p.secondsUntil))} <span class="muted">· ${escapeHtml(note)}</span>`;
@@ -498,10 +499,19 @@ function renderPruning(p, running) {
         `Kaspad keeps roughly ${p.retentionHours} hours of full block data and drops the oldest ${p.stepHours} hours at a time.`,
         `Next step when the chain reaches blue score ${Math.round(p.firesAtBlueScore).toLocaleString()}, which is ${Math.round(p.blueScoreRemaining).toLocaleString()} away.`,
     ];
-    if (p.projected) {
+    lines.push(`It drops ${fmtNum(p.blocksPerStep)} blocks, one ${p.stepHours} hour step of history.`);
+    if (p.freed?.source === 'window' && p.estimated) {
         lines.push(
-            `Estimated from ${fmtByteCount(p.projected.observedBytes)} of growth over the last ` +
-                `${fmtCountdown(p.projected.observedSeconds).replace(/^in /, '')}, scaled to a full cycle.`,
+            `Size estimated from the ${fmtByteCount(p.consensusBytes)} of block data currently held: ` +
+                `${fmtNum(p.estimated.retainedBlocks)} blocks at about ${fmtByteCount(p.estimated.perBlock)} each. ` +
+                `This reads a little high, because the window also holds things a prune does not remove.`,
+        );
+    }
+    if (p.freed?.source === 'growth' && p.projected) {
+        lines.push(
+            `Size measured from ${fmtByteCount(p.projected.observedBytes)} of growth over the last ` +
+                `${fmtCountdown(p.projected.observedSeconds).replace(/^in /, '')}, scaled to a full cycle. ` +
+                `A settled node sheds each cycle what it took on, so the two match.`,
         );
     }
     if (p.measured) {

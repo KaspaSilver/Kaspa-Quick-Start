@@ -191,6 +191,70 @@ export async function diskUsage(volume = 'kaspa-node-data') {
     }
 }
 
+/**
+ * Exact byte counts for the parts of the node's data directory.
+ *
+ * `docker system df` reports a volume as text like "19.58GB", which is four
+ * significant figures and far too coarse to watch something grow. Walking the
+ * volume gives real bytes, and splits it where it matters:
+ *
+ *   consensus  blocks, headers and the DAG, which is what pruning drops
+ *   utxoindex  the current UTXO set, which pruning does not touch
+ *
+ * Keeping those apart is the difference between a believable figure for what a
+ * prune frees and one inflated by five gigabytes of index that is never going
+ * anywhere.
+ *
+ * The walk only stats files and takes about a quarter of a second on a 20 GB
+ * database, but it does start a container, so the answer is held for a minute.
+ */
+let breakdownCache = { at: 0, value: null };
+const BREAKDOWN_CACHE_MS = 60_000;
+
+export async function dataBreakdown({ volume = 'kaspa-node-data', force = false } = {}) {
+    if (!force && breakdownCache.value && Date.now() - breakdownCache.at < BREAKDOWN_CACHE_MS) {
+        return breakdownCache.value;
+    }
+    try {
+        const { stdout } = await docker(
+            [
+                'run',
+                '--rm',
+                '-v',
+                `${volume}:/d:ro`,
+                'alpine:3.21',
+                'sh',
+                '-c',
+                // One `du` per path, not one call with all three: busybox counts
+                // each inode once per invocation, so passing the parent
+                // alongside its own subdirectories reports the parent and
+                // nothing else.
+                //
+                // The network suffix in the path varies (kaspa-mainnet,
+                // kaspa-testnet-10), so it is matched rather than assumed.
+                'du -sb /d/*/datadir/consensus 2>/dev/null; du -sb /d/*/datadir/utxoindex 2>/dev/null; du -sb /d 2>/dev/null',
+            ],
+            { timeoutMs: 120_000 },
+        );
+
+        const seen = {};
+        for (const line of stdout.split('\n')) {
+            const m = /^(\d+)\s+(\S+)/.exec(line.trim());
+            if (!m) continue;
+            const bytes = Number(m[1]);
+            if (m[2].endsWith('/consensus')) seen.consensus = bytes;
+            else if (m[2].endsWith('/utxoindex')) seen.utxoindex = bytes;
+            else if (m[2] === '/d') seen.total = bytes;
+        }
+        if (!Number.isFinite(seen.total)) return null;
+
+        breakdownCache = { at: Date.now(), value: seen };
+        return seen;
+    } catch {
+        return null;
+    }
+}
+
 /** Reads the version baked into the running kaspad image label. */
 export async function imageVersion(name = KASPAD_CONTAINER) {
     try {

@@ -371,12 +371,14 @@ route('POST', /^\/api\/logout$/, async (req, res) => sendJson(res, 200, { ok: tr
 
 route('GET', /^\/api\/status$/, async (req, res) => {
     const cfg = loadNodeConfig();
-    const [state, snapshot, version, published, disk] = await Promise.all([
+    const [state, snapshot, version, published, disk, breakdown] = await Promise.all([
         dockerctl.containerState(dockerctl.KASPAD_CONTAINER),
         nodeSnapshot(),
         updater.runningVersion(),
         dockerctl.publishedPorts(dockerctl.KASPAD_CONTAINER),
         dockerctl.diskUsage(),
+        // Exact bytes, split into the part pruning drops and the part it does not.
+        dockerctl.dataBreakdown(),
     ]);
 
     const peers = Array.isArray(snapshot.peers?.peerInfo) ? snapshot.peers.peerInfo : [];
@@ -417,7 +419,8 @@ route('GET', /^\/api\/status$/, async (req, res) => {
             sinkBlueScore: Number(snapshot.sinkBlueScore?.blueScore ?? NaN),
             pruningPointHash: snapshot.dag?.pruningPointHash ?? null,
             pruningPointBlueScore: Number(snapshot.pruningPointBlueScore ?? NaN),
-            diskBytes: pruning.parseSize(disk?.size),
+            consensusBytes: breakdown?.consensus ?? null,
+            blockCount: Number(snapshot.dag?.blockCount ?? NaN),
             synced: Boolean(snapshot.sync?.isSynced ?? snapshot.info?.isSynced ?? false),
         }),
         job: jobs.snapshot(),

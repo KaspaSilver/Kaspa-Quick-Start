@@ -203,14 +203,14 @@ function projectRelease(cycleSeconds, synced) {
     const growth = seen.bytesNow - seen.bytesAtChange;
 
     // The database does not grow smoothly. RocksDB compacts on its own schedule,
-    // so the volume drifts up and down by tens of megabytes regardless of what
-    // the chain is doing. Two hours is enough for real growth to stand out from
-    // that drift; scaling up from less would mostly be amplifying noise, and a
-    // reading that came out flat or negative is drift with nothing underneath it.
+    // so the figure drifts up and down regardless of what the chain is doing.
+    // Half an hour of exact byte counts is enough for real growth to stand out
+    // from that drift, and a reading that came out flat or negative is drift
+    // with nothing underneath it.
     //
     // Longer than a cycle means a prune went by unseen, so the growth spans more
     // than one window and scaling it says nothing either way.
-    if (elapsed < 7200 || elapsed > cycleSeconds * 1.2 || growth <= 0) return null;
+    if (elapsed < 1800 || elapsed > cycleSeconds * 1.2 || growth <= 0) return null;
 
     return {
         bytes: growth * (cycleSeconds / elapsed),
@@ -222,6 +222,25 @@ function projectRelease(cycleSeconds, synced) {
     };
 }
 
+/**
+ * What a prune frees, worked out from what the node is holding right now.
+ *
+ * The consensus directory holds one rolling window of blocks, headers and DAG
+ * data, and a prune drops one finality step out of it. So the average cost of a
+ * block on disk, times the number of blocks in a step, is the size of what goes.
+ *
+ * This reads slightly high: the window also carries the pruning point's UTXO
+ * set and some fixed overhead that no prune removes, and both get averaged into
+ * the per-block figure. It is available the moment the node is up, though,
+ * which the growth measurement is not, so it fills the gap until there is
+ * something measured to replace it.
+ */
+function estimateFromWindow({ consensusBytes, retainedBlocks, finalityDepth }) {
+    if (!Number.isFinite(consensusBytes) || !(retainedBlocks > 0)) return null;
+    const perBlock = consensusBytes / retainedBlocks;
+    return { bytes: perBlock * finalityDepth, perBlock, retainedBlocks };
+}
+
 // ------------------------------------------------------------------ status --
 
 /**
@@ -230,7 +249,9 @@ function projectRelease(cycleSeconds, synced) {
  * @param {number} input.sinkBlueScore      from getSinkBlueScore
  * @param {string} input.pruningPointHash   from getBlockDagInfo
  * @param {number} input.pruningPointBlueScore  the pruning point header's blue score
- * @param {number} input.diskBytes          current size of the node's volume
+ * @param {number} input.consensusBytes     exact size of the consensus store,
+ *                                          which is the part pruning drops
+ * @param {number} input.blockCount         blocks held in the retained window
  * @param {boolean} input.synced            a node still catching up grows for
  *                                          reasons unrelated to pruning
  */
@@ -239,7 +260,8 @@ export function pruningStatus({
     sinkBlueScore,
     pruningPointHash,
     pruningPointBlueScore,
-    diskBytes = null,
+    consensusBytes = null,
+    blockCount = null,
     synced = false,
     now = Date.now(),
 } = {}) {
@@ -254,15 +276,26 @@ export function pruningStatus({
     };
 
     const rate = observeRate(sinkBlueScore, now);
-    recordPoint({ pruningPointHash, pruningPointBlueScore, diskBytes, network, now });
+    recordPoint({ pruningPointHash, pruningPointBlueScore, diskBytes: consensusBytes, network, now });
     const events = (history ?? readHistory()).events;
     const measured = events.length ? events[0] : null;
     const effectiveRate = rate ?? bps;
     // One full cycle is a finality step at whatever rate the chain is moving.
     const projected = projectRelease(finalityDepth / effectiveRate, synced);
+    const estimated = estimateFromWindow({ consensusBytes, retainedBlocks: blockCount, finalityDepth });
+
+    // Best answer available, and how it was arrived at, so the panel can say
+    // which without having to work it out from which fields are filled in.
+    const freed = measured && measured.freedBytes > 100e6
+        ? { bytes: measured.freedBytes, source: 'measured' }
+        : projected
+          ? { bytes: projected.bytes, source: 'growth' }
+          : estimated
+            ? { bytes: estimated.bytes, source: 'window' }
+            : null;
 
     if (!Number.isFinite(sinkBlueScore) || !Number.isFinite(pruningPointBlueScore) || pruningPointBlueScore <= 0) {
-        return { ...base, known: false, measured, projected, history: events };
+        return { ...base, known: false, measured, projected, estimated, freed, history: events };
     }
 
     // The next sample sits on the following multiple of finality_depth, and the
@@ -288,8 +321,11 @@ export function pruningStatus({
         // Whether that rate came from watching the chain or from the block rate
         // constant, so the panel can say which.
         rateMeasured: rate != null,
+        consensusBytes,
+        freed,
         measured,
         projected,
+        estimated,
         history: events,
     };
 }
