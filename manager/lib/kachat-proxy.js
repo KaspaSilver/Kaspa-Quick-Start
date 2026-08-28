@@ -1,52 +1,19 @@
 /**
- * Reverse proxy for the KaChat indexer's admin dashboard.
+ * Pass-through to the KaChat indexer's admin API.
  *
- * The dashboard is a single-page app that upstream serves at the root of its
- * own port and that calls its API with absolute paths (`fetch("/api/stats")`,
- * and one `window.location = "/api/chat-export"`). Mounting it under /kachat/
- * therefore needs those paths rewritten, otherwise every call would hit this
- * panel's own API instead.
+ * The panel used to frame upstream's own dashboard page, which meant rewriting
+ * its HTML so its absolute `/api/...` calls did not land on this panel instead.
+ * The dashboard is now built natively here, so none of that is needed: what
+ * crosses this boundary is JSON, and the panel's own KaChat screens are the
+ * only thing that calls it.
  *
- * Two mechanisms, deliberately:
- *   1. a text rewrite of the served HTML, which catches every current call
- *      including the `window.location` navigation that no fetch hook can see;
- *   2. a fetch() prefix patch, which keeps working if upstream adds a call the
- *      rewrite does not match.
- *
- * The alternative -- publishing port 3081 on the host and pointing an iframe at
- * it -- would only work when the panel is opened from the same machine, and
- * upstream binds that port to loopback precisely because it is unauthenticated.
+ * The indexer binds its admin port to loopback inside its container because it
+ * is unauthenticated, so proxying from in here is also the only way to reach it
+ * without publishing an open port on the host.
  */
 
 const ADMIN_ORIGIN = process.env.KACHAT_ADMIN_ORIGIN || 'http://kachat-app:3081';
 export const MOUNT = '/kachat';
-
-const FETCH_PATCH = `<script>
-(function () {
-  var base = ${JSON.stringify(MOUNT)};
-  var orig = window.fetch;
-  window.fetch = function (input, init) {
-    try {
-      if (typeof input === 'string' && input.indexOf('/api/') === 0) input = base + input;
-      else if (input && input.url && new URL(input.url, location.origin).pathname.indexOf('/api/') === 0) {
-        var u = new URL(input.url, location.origin);
-        input = new Request(base + u.pathname + u.search, input);
-      }
-    } catch (e) { /* fall through with the original input */ }
-    return orig.call(this, input, init);
-  };
-})();
-</script>`;
-
-function rewriteHtml(html) {
-    // Every API reference in the upstream page is the literal string "/api/…".
-    const rewritten = html.replaceAll('"/api/', `"${MOUNT}/api/`);
-    // Inject the safety net as early as possible so it is installed before the
-    // page's own script runs.
-    return rewritten.includes('<head>')
-        ? rewritten.replace('<head>', `<head>${FETCH_PATCH}`)
-        : `${FETCH_PATCH}${rewritten}`;
-}
 
 /** Headers that describe a hop, not the payload, and must not be forwarded. */
 const HOP_BY_HOP = new Set([
@@ -64,6 +31,15 @@ const HOP_BY_HOP = new Set([
 
 export async function handle(req, res, url) {
     const target = url.pathname.slice(MOUNT.length) || '/';
+
+    // Only the API is reachable. Upstream's own page is no longer served through
+    // here, and nothing else on that port should be exposed by accident.
+    if (!target.startsWith('/api/')) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Not found' }));
+        return;
+    }
+
     const upstream = `${ADMIN_ORIGIN}${target}${url.search}`;
 
     let body;
@@ -78,8 +54,8 @@ export async function handle(req, res, url) {
         response = await fetch(upstream, {
             method: req.method,
             headers: {
-                // Only pass through what the dashboard actually needs; this panel's
-                // session cookie has no business reaching the indexer.
+                // Only what the API actually needs; this panel's session cookie
+                // has no business reaching the indexer.
                 ...(req.headers['content-type'] ? { 'content-type': req.headers['content-type'] } : {}),
                 ...(req.headers.accept ? { accept: req.headers.accept } : {}),
             },
@@ -88,28 +64,16 @@ export async function handle(req, res, url) {
             signal: AbortSignal.timeout(120_000),
         });
     } catch (err) {
-        res.writeHead(502, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(
-            `<p style="font:15px system-ui;padding:24px">The KaChat indexer is not answering on ${ADMIN_ORIGIN}.<br>` +
-                `<span style="color:#8b98a8">${escapeHtml(err.message)}</span></p>`,
-        );
+        // A shape the panel can read, so every KaChat screen can say "not
+        // running yet" rather than failing to parse an error page.
+        res.writeHead(502, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: `The KaChat indexer is not answering: ${err.message}`, unreachable: true }));
         return;
     }
 
     const headers = {};
     for (const [key, value] of response.headers) {
         if (!HOP_BY_HOP.has(key.toLowerCase())) headers[key] = value;
-    }
-
-    const contentType = response.headers.get('content-type') || '';
-    if (contentType.includes('text/html')) {
-        const html = rewriteHtml(await response.text());
-        headers['content-type'] = 'text/html; charset=utf-8';
-        // Framed by the panel, so the upstream page must be allowed to render here.
-        delete headers['x-frame-options'];
-        res.writeHead(response.status, headers);
-        res.end(html);
-        return;
     }
 
     res.writeHead(response.status, headers);
@@ -123,6 +87,3 @@ export async function handle(req, res, url) {
     }
     res.end();
 }
-
-const escapeHtml = (v) =>
-    String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);

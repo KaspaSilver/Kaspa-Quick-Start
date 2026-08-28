@@ -141,6 +141,8 @@ function selectTab(name) {
     $('page-title').textContent = title;
     // Mining stats are only polled while that tab is on screen.
     setMiningPolling(name === 'mining');
+    // The KaChat panels do the same, and each one loads only itself.
+    setKachatPolling(name === 'kachat');
     // Same for the kaspad log: no point streaming it from another section.
     if (name !== 'kaspad') setKaspadLog(false);
     else setKaspadLog(activeSubtab('kaspad') === 'kaspadlog');
@@ -163,6 +165,8 @@ function selectSubtab(section, name) {
     }
     // The kaspad log only streams while it is on screen.
     setKaspadLog(name === 'kaspadlog');
+    // A KaChat panel loads when it is opened rather than all of them upfront.
+    if (name.startsWith('kachat-')) refreshKachatPanel();
 }
 
 for (const button of document.querySelectorAll('.subtab-btn')) {
@@ -1336,12 +1340,10 @@ function setMiningPolling(active) {
 // ------------------------------------------------------------------- apps ---
 
 let appsState = null;
-let adminPath = '/kachat';
 
 async function loadApps() {
     const r = await api('/api/apps');
     appsState = r;
-    adminPath = r.adminPath || '/kachat';
     const c = r.config;
 
     // --- KaChat ---
@@ -1391,16 +1393,6 @@ function renderAppState(name, state) {
     }
 
     if (name === 'kachat') {
-        // Only point the frame at the dashboard once the container is actually
-        // up, so the panel does not show a proxy error while it boots.
-        const shell = $('kachat-embed-shell');
-        const frame = $('kachat-frame');
-        const show = enabled && running;
-        shell.hidden = !show;
-        if (show && !frame.src.includes(adminPath)) frame.src = adminPath;
-        if (!show) frame.src = 'about:blank';
-
-        $('kachat-open').disabled = !show;
         if (enabled && !running && !state.blockers?.length) {
             notice.hidden = false;
             const failure = startFailure(state);
@@ -1508,8 +1500,6 @@ for (const name of ['kachat', 'nextcloud']) {
     });
 }
 
-$('kachat-open').addEventListener('click', () => window.open(adminPath, '_blank', 'noopener'));
-
 for (const button of document.querySelectorAll('[data-app-action]')) {
     button.addEventListener('click', async () => {
         try {
@@ -1520,6 +1510,703 @@ for (const button of document.querySelectorAll('[data-app-action]')) {
         }
     });
 }
+
+// ----------------------------------------------------------- kachat panel ---
+
+/**
+ * The indexer's dashboard, native to this panel.
+ *
+ * The indexer is the engine and this is the interface to it. Everything here
+ * goes through the manager's /kachat proxy, because the indexer binds its admin
+ * API to loopback inside its own container and nothing outside can dial it.
+ *
+ * Every screen has to cope with the indexer not being there: it can be switched
+ * off, still compiling on a first run, or up but not yet caught up with the
+ * chain. None of those are errors worth shouting about, so they all render as a
+ * quiet "not running yet" rather than a failure.
+ */
+
+// The channels upstream indexes. It is a fixed list on their side, so it is a
+// fixed list here; anything else that turns up in the counts is still shown.
+const KACHAT_CHANNELS = [
+    'kaspa',
+    'kachat-bugs',
+    'kaspa-indonesia',
+    'kaspa-czech',
+    'kaspa-german',
+    'kaspa-espanol',
+    'kaspa-francais',
+    'kaspa-portugues',
+    'kaspa-slovak',
+    'kaspa-chinese',
+    'kaspa-japanese',
+    'kaspa-korean',
+    'kaspa-hebrew',
+];
+
+class IndexerDown extends Error {}
+
+async function kachat(path, { method = 'GET', body, raw = false } = {}) {
+    // When the container is not there, the proxy still spends five seconds
+    // failing to resolve its hostname before giving up. We already know the
+    // answer, so do not make anyone wait for it.
+    if (appsState && !kachatRunning()) throw new IndexerDown('The indexer is not running.');
+
+    const res = await fetch(`/kachat/api/${path}`, {
+        method,
+        headers: body ? { 'Content-Type': 'application/json' } : {},
+        body: body ? JSON.stringify(body) : undefined,
+    });
+    if (res.status === 502) throw new IndexerDown('The indexer is not answering yet.');
+    if (raw) {
+        if (!res.ok) throw new Error(res.statusText);
+        return res;
+    }
+    let data = {};
+    try {
+        data = await res.json();
+    } catch {
+        /* empty body */
+    }
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    return data;
+}
+
+// --- formatting ---
+
+const kAge = (ms) => {
+    if (ms == null || ms < 0) return '–';
+    const s = Math.floor(ms / 1000);
+    if (s < 60) return `${s}s ago`;
+    if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+    if (s < 86_400) return `${Math.floor(s / 3600)}h ago`;
+    return `${Math.floor(s / 86_400)}d ago`;
+};
+const kTime = (ms) => (ms ? new Date(ms).toLocaleString() : '–');
+const kBytes = (b) => {
+    if (!b) return '–';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let i = 0;
+    let n = b;
+    while (n >= 1024 && i < units.length - 1) {
+        n /= 1024;
+        i += 1;
+    }
+    return `${n.toFixed(1)} ${units[i]}`;
+};
+const kDot = (status) =>
+    status === 'healthy' ? 'ok' : ['lagging', 'starting', 'catching_up', 'degraded'].includes(status) ? 'warn' : 'bad';
+const kWords = (s) => String(s || '').replace(/_/g, ' ');
+const kTile = (label, value, cls = '') =>
+    `<div class="stat"><span class="${cls}">${escapeHtml(String(value))}</span><small>${escapeHtml(label)}</small></div>`;
+
+/** Turns the chat indexer's nested metrics object into flat label/value pairs. */
+function kFlatten(obj, prefix = '') {
+    let out = [];
+    for (const [k, v] of Object.entries(obj || {})) {
+        const key = prefix ? `${prefix}.${k}` : k;
+        if (v && typeof v === 'object' && !Array.isArray(v)) out = out.concat(kFlatten(v, key));
+        else out.push([key, Array.isArray(v) ? v.join(', ') : v]);
+    }
+    return out;
+}
+const kPretty = (k) => String(k).replace(/[._]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
+/** Long hashes get shortened; the full value stays in the tooltip. */
+function kMetric(v) {
+    if (v === null || v === undefined || v === '') return '–';
+    if (typeof v === 'number') return v.toLocaleString();
+    const s = String(v);
+    if (/^\d+$/.test(s)) return Number(s).toLocaleString();
+    if (s.length > 20 && !s.includes(' ')) return `${s.slice(0, 10)}…${s.slice(-6)}`;
+    return s;
+}
+
+/** Shows a result box, in its "this went wrong" colours when it did. */
+function kResult(id, text, bad = false) {
+    const node = $(id);
+    node.hidden = false;
+    node.className = `verdict ${bad ? 'bad' : ''}`;
+    node.textContent = text;
+}
+
+// --- loaders ---
+
+const kachatRunning = () => Boolean(appsState?.apps?.kachat?.container?.running);
+
+async function loadKachatOverview() {
+    try {
+        const health = await kachat('health');
+        const tag = $('kachat-health-tag');
+        tag.textContent = kWords(health.status) || 'unknown';
+        tag.className = `tag ${kDot(health.status) === 'ok' ? 'ok' : kDot(health.status) === 'bad' ? 'off' : ''}`;
+        $('kachat-lag').textContent = kAge(health.node_lag_ms);
+        $('kachat-newest-tx').textContent = kTime(health.newest_transaction_time);
+        $('kachat-newest-content').textContent = kTime(health.newest_content_time);
+    } catch (e) {
+        $('kachat-health-tag').textContent = e instanceof IndexerDown ? 'not running' : 'error';
+        $('kachat-health-tag').className = 'tag off';
+    }
+
+    try {
+        const services = await kachat('services');
+        $('kachat-services').innerHTML = services.length
+            ? services
+                  .map(
+                      (s) =>
+                          `<div class="stat"><span class="small"><span class="svc-dot ${kDot(s.status)}"></span>${escapeHtml(
+                              kWords(s.status),
+                          )}</span><small>${escapeHtml(s.name)}${
+                              s.detail ? ` · ${escapeHtml(s.detail)}` : ''
+                          }</small></div>`,
+                  )
+                  .join('')
+            : '<p class="muted">No services reported.</p>';
+    } catch {
+        $('kachat-services').innerHTML = '<p class="muted">Waiting for the indexer.</p>';
+    }
+
+    try {
+        const s = await kachat('stats');
+        let cm = {};
+        try {
+            const d = await kachat('chat-metrics');
+            if (d?.reachable) cm = d.metrics || {};
+        } catch {
+            /* the chat indexer is a separate process and may lag behind */
+        }
+
+        $('kachat-ingest').textContent = `${fmtNum(s.ingest_last_60m)} items`;
+
+        $('kachat-stats').innerHTML = [
+            ['posts', s.posts],
+            ['replies', s.replies],
+            ['quotes', s.quotes],
+            ['reposts', s.reposts],
+            ['upvotes', s.upvotes],
+            ['downvotes', s.downvotes],
+            ['follows', s.follows],
+            ['blocks', s.blocks],
+            ['mentions', s.mentions],
+            ['hashtags', s.hashtags],
+        ]
+            .map(([label, v]) => kTile(label, fmtNum(v)))
+            .join('');
+
+        $('kachat-activity').innerHTML = [
+            ['direct messages', fmtNum(cm.contextual_messages ?? 0)],
+            ['handshakes', fmtNum(cm.handshakes_by_sender ?? 0)],
+            ['payments', fmtNum(cm.payments_by_sender ?? 0)],
+            ['group messages', fmtNum(cm.group_messages ?? 0)],
+            ['broadcasts, 30 days', fmtNum(s.bcast_total)],
+            ['indexed last 5 min', fmtNum(s.ingest_last_5m)],
+            ['chat store', kBytes(s.chat_store_bytes ?? 0)],
+            ['KaPosts database', kBytes(s.db_size_bytes)],
+        ]
+            .map(([label, v]) => kTile(label, v, 'small'))
+            .join('');
+    } catch {
+        $('kachat-stats').innerHTML = '';
+        $('kachat-activity').innerHTML = '';
+    }
+}
+
+async function loadKachatKaposts() {
+    try {
+        const rows = await kachat('moderation/recent?limit=25');
+        $('kachat-recent').innerHTML = rows.length
+            ? rows
+                  .map(
+                      (r) => `<tr>
+                        <td><button type="button" class="ghost mini" data-kachat-del-content="${escapeHtml(
+                            r.transaction_id,
+                        )}" title="Delete this item">✕</button></td>
+                        <td class="muted" title="${escapeHtml(kTime(r.timestamp))}">${escapeHtml(
+                            kAge(Date.now() - r.timestamp),
+                        )}</td>
+                        <td>${escapeHtml(r.content_type)}</td>
+                        <td class="mono" title="${escapeHtml(r.sender_pubkey)}">${escapeHtml(
+                            r.sender_pubkey.slice(0, 12),
+                        )}…<button type="button" class="ghost mini" data-kachat-pick="${escapeHtml(
+                            r.sender_pubkey,
+                        )}">use</button></td>
+                        <td>${escapeHtml(r.preview) || '<span class="muted">–</span>'}</td>
+                      </tr>`,
+                  )
+                  .join('')
+            : '<tr><td colspan="5" class="muted">Nothing indexed yet.</td></tr>';
+    } catch (e) {
+        $('kachat-recent').innerHTML = `<tr><td colspan="5" class="muted">${
+            e instanceof IndexerDown ? 'The indexer is not running.' : 'Could not load.'
+        }</td></tr>`;
+    }
+
+    try {
+        const rows = await kachat('kaposts/denylist');
+        $('kachat-denylist').innerHTML = rows.length
+            ? rows
+                  .map(
+                      (r) => `<tr>
+                        <td><button type="button" class="ghost mini" data-kachat-unblock="${escapeHtml(
+                            r.pubkey,
+                        )}" title="Allow this author again">✕</button></td>
+                        <td class="mono" title="${escapeHtml(r.pubkey)}">${escapeHtml(r.pubkey.slice(0, 18))}…</td>
+                        <td class="muted">${escapeHtml(kTime(r.added_at))}</td>
+                      </tr>`,
+                  )
+                  .join('')
+            : '<tr><td colspan="3" class="muted">Indexing every author.</td></tr>';
+    } catch {
+        $('kachat-denylist').innerHTML = '<tr><td colspan="3" class="muted">Could not load.</td></tr>';
+    }
+}
+
+async function loadKachatBroadcasts() {
+    try {
+        const s = await kachat('stats');
+        const counts = Object.fromEntries((s.bcast_by_channel || []).map((c) => [c.channel, c.count]));
+        // Anything upstream starts tracking that is not in our list still shows.
+        const names = [...new Set([...KACHAT_CHANNELS, ...Object.keys(counts)])];
+        $('kachat-bcast-tiles').innerHTML =
+            names.map((c) => kTile(`#${c}`, fmtNum(counts[c] || 0))).join('') +
+            kTile('all channels', fmtNum(s.bcast_total));
+    } catch {
+        $('kachat-bcast-tiles').innerHTML = '<p class="muted">Waiting for the indexer.</p>';
+    }
+
+    const channel = $('kachat-bcast-channel').value;
+    const query = channel ? `?channel=${encodeURIComponent(channel)}&limit=50` : '?limit=50';
+    try {
+        const rows = await kachat(`broadcasts${query}`);
+        $('kachat-bcast-rows').innerHTML = rows.length
+            ? rows
+                  .map(
+                      (r) => `<tr>
+                        <td><button type="button" class="ghost mini" data-kachat-del-bcast="${escapeHtml(
+                            r.tx_id,
+                        )}" title="Delete this broadcast">✕</button></td>
+                        <td class="muted" title="${escapeHtml(kTime(r.timestamp))}">${escapeHtml(
+                            kAge(Date.now() - r.timestamp),
+                        )}</td>
+                        <td>#${escapeHtml(r.channel)}</td>
+                        <td class="mono" title="${escapeHtml(r.sender_address)}">${escapeHtml(
+                            r.sender_address.slice(0, 18),
+                        )}…</td>
+                        <td>${escapeHtml(r.preview) || '<span class="muted">–</span>'}</td>
+                      </tr>`,
+                  )
+                  .join('')
+            : '<tr><td colspan="5" class="muted">Nothing here yet.</td></tr>';
+    } catch (e) {
+        $('kachat-bcast-rows').innerHTML = `<tr><td colspan="5" class="muted">${
+            e instanceof IndexerDown ? 'The indexer is not running.' : 'Could not load.'
+        }</td></tr>`;
+    }
+}
+
+/** Chats and group chats read the same endpoint, differing only in what they show. */
+async function loadKachatChat(kind) {
+    const tag = $(kind === 'group' ? 'kachat-group-tag' : 'kachat-chat-tag');
+    const grid = $(kind === 'group' ? 'kachat-group-tiles' : 'kachat-chat-tiles');
+    try {
+        const d = await kachat('chat-metrics');
+        if (!d.reachable) {
+            tag.textContent = 'not reachable';
+            tag.className = 'tag off';
+            grid.innerHTML =
+                '<p class="muted">The chat indexer is not answering. It may be switched off, still building, or catching up.</p>';
+            return;
+        }
+        tag.textContent = 'running';
+        tag.className = 'tag ok';
+        const m = d.metrics || {};
+        if (kind === 'group') {
+            grid.innerHTML =
+                kTile('group messages', fmtNum(m.group_messages ?? 0)) +
+                kTile('group controls', fmtNum(m.group_controls ?? 0));
+            return;
+        }
+        const entries = kFlatten(m);
+        grid.innerHTML = entries.length
+            ? entries
+                  .map(
+                      ([k, v]) =>
+                          `<div class="stat" title="${escapeHtml(String(v ?? ''))}"><span class="small">${escapeHtml(
+                              kMetric(v),
+                          )}</span><small>${escapeHtml(kPretty(k))}</small></div>`,
+                  )
+                  .join('')
+            : '<p class="muted">No metrics reported.</p>';
+    } catch {
+        tag.textContent = 'error';
+        tag.className = 'tag off';
+        grid.innerHTML = '<p class="muted">Could not reach the chat indexer.</p>';
+    }
+}
+
+async function loadKachatSettings() {
+    try {
+        const s = await kachat('settings');
+        $('kachat-set-name').value = s.instance_name || '';
+        $('kachat-set-tagline').value = s.instance_tagline || '';
+        $('kachat-set-url').value = s.instance_url || '';
+        $('kachat-tg-kaposts').checked = Boolean(s.feature_kaposts);
+        $('kachat-tg-broadcasts').checked = Boolean(s.feature_broadcasts);
+        $('kachat-tg-chat').checked = Boolean(s.chat_indexer);
+        $('kachat-personal-addrs').value = s.personal_addresses || '';
+        $('kachat-operator-addr').value = s.kaposts_operator_address || '';
+        $('kachat-kap-personal').checked = Boolean(s.kaposts_personal_mode);
+        $('kachat-kap-personal-body').hidden = !s.kaposts_personal_mode;
+
+        const tag = $('kachat-personal-tag');
+        tag.textContent = s.personal_mode ? 'only your chats' : 'indexing everything';
+        tag.className = `tag ${s.personal_mode ? 'ok' : ''}`;
+    } catch {
+        /* the container settings above still work without the indexer */
+    }
+}
+
+/** Settings take a partial document, so only the changed field is sent. */
+async function saveKachatSettings(patch, message) {
+    try {
+        await kachat('settings', { method: 'POST', body: patch });
+        toast(message);
+        loadKachatSettings();
+    } catch (e) {
+        toast(e instanceof IndexerDown ? 'The indexer is not running.' : e.message, 'bad');
+        loadKachatSettings();
+    }
+}
+
+/**
+ * Says the same thing everywhere when the indexer is not up: an empty table
+ * otherwise reads as "running, nothing indexed", which is a different situation
+ * and sends people looking for the wrong problem.
+ */
+function renderKachatOffline() {
+    const message = 'The indexer is not running. Switch it on under Overview.';
+    for (const [id, span] of [
+        ['kachat-recent', 5],
+        ['kachat-denylist', 3],
+        ['kachat-bcast-rows', 5],
+    ]) {
+        $(id).innerHTML = `<tr><td colspan="${span}" class="muted">${message}</td></tr>`;
+    }
+    for (const id of ['kachat-services', 'kachat-chat-tiles', 'kachat-group-tiles']) {
+        $(id).innerHTML = `<p class="muted">${message}</p>`;
+    }
+    for (const id of ['kachat-stats', 'kachat-activity', 'kachat-bcast-tiles']) $(id).innerHTML = '';
+    for (const id of ['kachat-health-tag', 'kachat-chat-tag', 'kachat-group-tag', 'kachat-personal-tag']) {
+        $(id).textContent = 'not running';
+        $(id).className = 'tag off';
+    }
+    for (const id of ['kachat-lag', 'kachat-newest-tx', 'kachat-newest-content', 'kachat-ingest']) {
+        $(id).textContent = '–';
+    }
+}
+
+/** Loads whichever KaChat panel is on screen, and only that one. */
+function refreshKachatPanel() {
+    if (!kachatRunning()) return renderKachatOffline();
+    switch (activeSubtab('kachat')) {
+        case 'kachat-overview':
+            loadKachatOverview();
+            break;
+        case 'kachat-kaposts':
+            loadKachatKaposts();
+            break;
+        case 'kachat-broadcasts':
+            loadKachatBroadcasts();
+            break;
+        case 'kachat-chats':
+            loadKachatChat('chat');
+            break;
+        case 'kachat-groups':
+            loadKachatChat('group');
+            break;
+        case 'kachat-settings':
+            loadKachatSettings();
+            break;
+        default:
+            break;
+    }
+}
+
+let kachatTimer = null;
+function setKachatPolling(active) {
+    clearInterval(kachatTimer);
+    kachatTimer = null;
+    if (active) {
+        refreshKachatPanel();
+        kachatTimer = setInterval(refreshKachatPanel, 8000);
+    }
+}
+
+// --- controls ---
+
+// Channel pickers are filled from the same list, so a channel added upstream
+// only needs adding in one place here.
+for (const id of ['kachat-bcast-channel', 'kachat-purge-channel']) {
+    const select = $(id);
+    const options = KACHAT_CHANNELS.map((c) => `<option value="${c}">#${c}</option>`).join('');
+    select.innerHTML = (id === 'kachat-bcast-channel' ? '<option value="">All channels</option>' : '') + options;
+}
+
+$('kachat-bcast-channel').addEventListener('change', loadKachatBroadcasts);
+$('kachat-bcast-refresh').addEventListener('click', loadKachatBroadcasts);
+
+// Moderation: a dry run has to happen before the destructive button unlocks, so
+// nobody deletes an author's history on a typo'd pubkey.
+$('kachat-pk').addEventListener('input', () => {
+    $('kachat-remove').disabled = true;
+    $('kachat-mod-result').hidden = true;
+});
+
+$('kachat-preview').addEventListener('click', async () => {
+    const pubkey = $('kachat-pk').value.trim();
+    if (!pubkey) return toast('Enter an author pubkey first.', 'bad');
+    try {
+        const d = await kachat('moderation/remove', { method: 'POST', body: { pubkey, dry_run: true } });
+        kResult(
+            'kachat-mod-result',
+            `Removing this author would delete ${d.total} rows: ${d.contents} content, ${d.mentions} mentions, ` +
+                `${d.votes} votes, ${d.broadcasts} broadcasts, ${d.blocks} blocks, ${d.follows} follows.`,
+        );
+        $('kachat-remove').disabled = d.total === 0;
+    } catch (e) {
+        kResult('kachat-mod-result', e.message, true);
+    }
+});
+
+$('kachat-remove').addEventListener('click', async () => {
+    const pubkey = $('kachat-pk').value.trim();
+    if (!confirm(`Permanently delete every indexed row from ${pubkey.slice(0, 16)}…?\n\nThis cannot be undone here.`)) return;
+    try {
+        const d = await kachat('moderation/remove', { method: 'POST', body: { pubkey, dry_run: false } });
+        kResult('kachat-mod-result', `Deleted ${d.total} rows.`);
+        $('kachat-remove').disabled = true;
+        loadKachatKaposts();
+    } catch (e) {
+        kResult('kachat-mod-result', e.message, true);
+    }
+});
+
+$('kachat-block').addEventListener('click', async () => {
+    const pubkey = $('kachat-pk').value.trim();
+    if (!pubkey) return toast('Enter an author pubkey first.', 'bad');
+    if (!confirm(`Block ${pubkey.slice(0, 16)}…?\n\nEverything of theirs is purged and nothing new is stored.`)) return;
+    try {
+        await kachat('kaposts/denylist/add', { method: 'POST', body: { pubkey } });
+        kResult('kachat-mod-result', 'Blocked, purged, and no longer indexed.');
+        loadKachatKaposts();
+    } catch (e) {
+        kResult('kachat-mod-result', e.message, true);
+    }
+});
+
+// Personal mode is not a stored flag: the indexer reports it on whenever an
+// operator address is set. So switching on only reveals the field, and
+// switching off is what actually writes, by clearing the address.
+$('kachat-kap-personal').addEventListener('change', (e) => {
+    $('kachat-kap-personal-body').hidden = !e.target.checked;
+    if (e.target.checked) {
+        $('kachat-operator-addr').focus();
+        return;
+    }
+    if (!confirm('Turn off KaPosts personal mode?\n\nEvery author gets indexed again. Anyone you blocked by hand stays blocked.')) {
+        e.target.checked = true;
+        $('kachat-kap-personal-body').hidden = false;
+        return;
+    }
+    saveKachatSettings({ kaposts_operator_address: '' }, 'Personal mode off.');
+});
+
+$('kachat-kap-save').addEventListener('click', () =>
+    saveKachatSettings({ kaposts_operator_address: $('kachat-operator-addr').value.trim() }, 'Address saved.'),
+);
+
+$('kachat-set-save').addEventListener('click', () =>
+    saveKachatSettings(
+        {
+            instance_name: $('kachat-set-name').value.trim(),
+            instance_tagline: $('kachat-set-tagline').value.trim(),
+            instance_url: $('kachat-set-url').value.trim(),
+        },
+        'Identity saved.',
+    ),
+);
+
+for (const [id, key, label] of [
+    ['kachat-tg-kaposts', 'feature_kaposts', 'KaPosts'],
+    ['kachat-tg-broadcasts', 'feature_broadcasts', 'Broadcasts'],
+    ['kachat-tg-chat', 'chat_indexer', 'The chat indexer'],
+]) {
+    $(id).addEventListener('change', (e) =>
+        saveKachatSettings({ [key]: e.target.checked }, `${label} ${e.target.checked ? 'on' : 'off'}.`),
+    );
+}
+
+$('kachat-personal-save').addEventListener('click', () =>
+    saveKachatSettings(
+        { personal_addresses: $('kachat-personal-addrs').value.trim() },
+        'Saved. The chat indexer is restarting.',
+    ),
+);
+
+// --- export and import ---
+
+$('kachat-export').addEventListener('click', async () => {
+    kResult('kachat-file-result', 'Building the export, which can take a moment on a large store.');
+    try {
+        const res = await kachat('chat-export', { raw: true });
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'kachat-chat-store.bin';
+        a.click();
+        URL.revokeObjectURL(url);
+        kResult('kachat-file-result', `Exported ${kBytes(blob.size)}.`);
+    } catch (e) {
+        kResult('kachat-file-result', e instanceof IndexerDown ? 'The indexer is not running.' : e.message, true);
+    }
+});
+
+$('kachat-import-file-btn').addEventListener('click', () => $('kachat-import-file').click());
+
+$('kachat-import-file').addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    kResult('kachat-file-result', `Uploading ${file.name} (${kBytes(file.size)}).`);
+    try {
+        const res = await fetch('/kachat/api/chat-import-file', { method: 'POST', body: file });
+        // Upstream answers this one in plain text, not JSON.
+        const text = (await res.text()).trim();
+        if (!res.ok) throw new Error(text || res.statusText);
+        kResult('kachat-file-result', text || 'Imported.');
+    } catch (err) {
+        kResult('kachat-file-result', err.message, true);
+    } finally {
+        // Let the same file be picked again if the first go failed.
+        e.target.value = '';
+    }
+});
+
+$('kachat-import').addEventListener('click', async () => {
+    const address = $('kachat-import-addr').value.trim();
+    if (!address) return toast('Enter an address to import.', 'bad');
+    kResult('kachat-import-result', 'Importing. This pages through the block explorer, so give it a moment.');
+    $('kachat-import').disabled = true;
+    try {
+        const d = await kachat('chat-import', { method: 'POST', body: { address } });
+        kResult(
+            'kachat-import-result',
+            d.error
+                ? `${d.error} (scanned ${d.scanned}, imported ${d.imported})`
+                : `Scanned ${fmtNum(d.scanned)} transactions over ${d.pages} pages, forwarded ${fmtNum(
+                      d.forwarded,
+                  )}, imported ${fmtNum(d.imported)}, skipped ${fmtNum(d.skipped)}.`,
+            Boolean(d.error),
+        );
+    } catch (e) {
+        kResult('kachat-import-result', e.message, true);
+    } finally {
+        $('kachat-import').disabled = false;
+    }
+});
+
+// --- deletions ---
+
+$('kachat-del-content-btn').addEventListener('click', async () => {
+    const tx = $('kachat-del-content').value.trim();
+    if (!tx) return toast('Enter a transaction id.', 'bad');
+    try {
+        const d = await kachat('kaposts/delete', { method: 'POST', body: { tx_id: tx } });
+        kResult('kachat-data-result', `Deleted ${d.deleted} row${d.deleted === 1 ? '' : 's'}.`);
+        $('kachat-del-content').value = '';
+    } catch (e) {
+        kResult('kachat-data-result', e.message, true);
+    }
+});
+
+$('kachat-del-bcast-btn').addEventListener('click', async () => {
+    const tx = $('kachat-del-bcast').value.trim();
+    if (!tx) return toast('Enter a transaction id.', 'bad');
+    try {
+        const d = await kachat('broadcasts/delete', { method: 'POST', body: { tx_id: tx } });
+        kResult('kachat-data-result', `Deleted ${d.deleted} broadcast${d.deleted === 1 ? '' : 's'}.`);
+        $('kachat-del-bcast').value = '';
+    } catch (e) {
+        kResult('kachat-data-result', e.message, true);
+    }
+});
+
+$('kachat-purge-channel-btn').addEventListener('click', async () => {
+    const channel = $('kachat-purge-channel').value;
+    if (!confirm(`Delete every stored broadcast in #${channel}?`)) return;
+    try {
+        const d = await kachat('broadcasts/delete', { method: 'POST', body: { channel } });
+        kResult('kachat-data-result', `Deleted ${d.deleted} broadcasts from #${channel}.`);
+    } catch (e) {
+        kResult('kachat-data-result', e.message, true);
+    }
+});
+
+$('kachat-purge-all-btn').addEventListener('click', async () => {
+    if (!confirm('Delete every stored broadcast in every channel?\n\nThis cannot be undone here.')) return;
+    try {
+        const d = await kachat('broadcasts/delete', { method: 'POST', body: { all: true } });
+        kResult('kachat-data-result', `Deleted ${d.deleted} broadcasts.`);
+    } catch (e) {
+        kResult('kachat-data-result', e.message, true);
+    }
+});
+
+$('kachat-purge-chat-btn').addEventListener('click', async () => {
+    if (!confirm('Wipe every message, group, handshake and payment from the chat store?\n\nThis cannot be undone here.'))
+        return;
+    try {
+        await kachat('chat/purge', { method: 'POST' });
+        kResult('kachat-data-result', 'The chat store is empty. It will refill from the chain going forward.');
+    } catch (e) {
+        kResult('kachat-data-result', e.message, true);
+    }
+});
+
+// Row buttons are created as the tables render, so they are handled from the
+// section rather than bound one by one.
+$('tab-kachat').addEventListener('click', async (event) => {
+    const button = event.target.closest('button[data-kachat-pick], button[data-kachat-unblock], button[data-kachat-del-content], button[data-kachat-del-bcast]');
+    if (!button) return;
+    const d = button.dataset;
+
+    if (d.kachatPick) {
+        $('kachat-pk').value = d.kachatPick;
+        $('kachat-remove').disabled = true;
+        selectSubtab($('tab-kachat'), 'kachat-kaposts');
+        $('kachat-pk').focus();
+        return;
+    }
+    try {
+        if (d.kachatUnblock) {
+            await kachat('kaposts/denylist/remove', { method: 'POST', body: { pubkey: d.kachatUnblock } });
+            toast('Unblocked. Their content can be indexed again.');
+            loadKachatKaposts();
+        } else if (d.kachatDelContent) {
+            if (!confirm('Delete this item from the index?')) return;
+            await kachat('kaposts/delete', { method: 'POST', body: { tx_id: d.kachatDelContent } });
+            toast('Deleted.');
+            loadKachatKaposts();
+        } else if (d.kachatDelBcast) {
+            if (!confirm('Delete this broadcast from the index?')) return;
+            await kachat('broadcasts/delete', { method: 'POST', body: { tx_id: d.kachatDelBcast } });
+            toast('Deleted.');
+            loadKachatBroadcasts();
+        }
+    } catch (e) {
+        toast(e.message, 'bad');
+    }
+});
 
 // ---------------------------------------------------------------- proxies ---
 

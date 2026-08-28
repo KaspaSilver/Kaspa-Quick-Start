@@ -579,27 +579,6 @@ table.instances td:last-child { width: 40px; text-align: right; }
 
 /* ------------------------------------------------------------------ apps */
 
-/* The KaChat tab hands almost the whole viewport to the embedded dashboard,
-   so the control strip above it stays deliberately compact. */
-.kachat-bar { margin-bottom: 12px; padding: 12px 14px; }
-.kachat-bar .row.tight { margin-top: 0; gap: 10px 14px; align-items: center; }
-.kachat-bar label { margin-bottom: 0; }
-
-.embed-shell {
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    overflow: hidden;
-    background: var(--panel);
-    height: calc(100vh - 190px);
-    min-height: 420px;
-}
-.embed-shell iframe {
-    width: 100%;
-    height: 100%;
-    border: 0;
-    display: block;
-}
-
 /* Sections that need a running, synced node. Locked until the dashboard says
    so, because starting them against a syncing node produces stale mining work
    or an indexer reading a chain that is not there yet. */
@@ -1101,3 +1080,60 @@ table.workers .sub {
         border-top: 1px solid var(--line);
     }
 }
+
+/* ---------------------------------------------------------------- kachat */
+
+/* A label with its control stacked underneath, for the ones whose wording is
+   too long to sit on a single line next to the input. */
+label.stack {
+    display: block;
+    margin: 12px 0 0;
+    font-size: 12.5px;
+    color: var(--muted);
+}
+label.stack > .row,
+label.stack > textarea {
+    margin-top: 6px;
+}
+label.stack > textarea {
+    display: block;
+    width: 100%;
+    resize: vertical;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 9px 11px;
+}
+
+/* Deleting indexed data is not undoable from here, so the card that does it
+   is marked as what it is rather than looking like every other card. */
+.danger-zone {
+    border-color: color-mix(in srgb, var(--danger) 40%, var(--line));
+}
+.danger-zone h3 {
+    color: var(--danger);
+}
+
+/* Stat tiles carrying text rather than a number: metric names and byte counts
+   do not fit at the 24px the numeric tiles use. */
+.stat span.small {
+    font-size: 15px;
+    line-height: 1.35;
+    word-break: break-word;
+}
+
+/* The status dot in front of a service name. */
+.svc-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+    background: var(--muted);
+}
+.svc-dot.ok { background: var(--ok); }
+.svc-dot.warn { background: var(--warn); }
+.svc-dot.bad { background: var(--danger); }

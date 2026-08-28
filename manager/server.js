@@ -1077,7 +1077,7 @@ route('GET', /^\/api\/apps$/, async (req, res) => {
             lastRun: apps.readLastRun(name),
         };
     }
-    sendJson(res, 200, { config: cfg, apps: state, adminPath: kachatProxy.MOUNT, readiness: await nodeReadiness() });
+    sendJson(res, 200, { config: cfg, apps: state, readiness: await nodeReadiness() });
 });
 
 route('PUT', /^\/api\/apps\/(kachat|nextcloud)$/, async (req, res, match) => {

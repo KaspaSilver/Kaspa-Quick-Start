@@ -543,51 +543,225 @@
     </section>
 
     <!-- ---------------------------------------------------------- kachat -->
+    <!--
+      The indexer's dashboard, built natively here rather than framed from
+      upstream. The indexer is the engine; this is the interface to it. Every
+      panel below talks to its admin API through the manager's /kachat proxy,
+      because that API binds to loopback inside its own container.
+    -->
     <section id="tab-kachat" class="tab">
       <nav class="subnav" aria-label="KaChat">
         <button class="subtab-btn active" data-subtab="kachat-overview">Overview</button>
+        <button class="subtab-btn" data-subtab="kachat-kaposts">KaPosts</button>
+        <button class="subtab-btn" data-subtab="kachat-broadcasts">Broadcasts</button>
+        <button class="subtab-btn" data-subtab="kachat-chats">Chats</button>
+        <button class="subtab-btn" data-subtab="kachat-groups">Group chats</button>
+        <button class="subtab-btn" data-subtab="kachat-transfer">Export / Import</button>
         <button class="subtab-btn" data-subtab="kachat-settings">Settings</button>
       </nav>
 
       <div id="sub-kachat-overview" class="subtab active">
-        <!-- What it is, before asking anyone to switch it on. -->
-        <article class="card">
-          <h3>KaChat indexer</h3>
-          <p class="muted">
-            Turns this node's chain data into the APIs every KaChat client talks
-            to: direct and group chats, broadcasts, KaPosts and mentions. Its own
-            dashboard appears below once it is running, with the same Dashboard,
-            KaPosts, Broadcasts, Chats, Group chats, Export / Import and Settings
-            tabs it always had.
-          </p>
-          <p class="hint">
-            It uses the node you are already running, so nothing has to sync twice.
-            The very first start has to build the indexer from source, which takes
-            a while. You can watch it happen on the All logs page.
-          </p>
-        </article>
-
         <article class="card toggle-bar">
           <div class="toggle-row">
             <div class="toggle-text">
-              <strong>Run the indexer</strong>
-              <span class="muted">Starts Postgres and the indexer, and keeps them running.</span>
+              <strong>KaChat indexer</strong>
+              <span class="muted">
+                Turns this node's chain data into the APIs KaChat clients talk to:
+                direct and group chats, broadcasts, KaPosts and mentions. It reads
+                the node you are already running, so nothing syncs twice.
+              </span>
             </div>
             <span id="kachat-state" class="tag">off</span>
-            <button type="button" id="kachat-open" class="ghost" title="Open the dashboard in its own browser tab">↗</button>
           </div>
           <div id="kachat-notice" class="verdict" hidden></div>
           <p class="error" id="kachat-error" hidden></p>
         </article>
 
-        <!--
-          The indexer's own admin dashboard, proxied through the manager at
-          /kachat and framed here, so its tabs cannot drift out of step with it.
-        -->
-        <div class="embed-shell" id="kachat-embed-shell" hidden>
-          <iframe id="kachat-frame" title="KaChat indexer dashboard" src="about:blank"></iframe>
-        </div>
-        <article class="card" id="kachat-placeholder" hidden></article>
+        <article class="card span2" id="kachat-live">
+          <div class="node-head">
+            <h3>Pipeline</h3>
+            <span id="kachat-health-tag" class="tag">–</span>
+          </div>
+          <dl class="kv nodestats">
+            <div><dt>Node to ingest lag</dt><dd id="kachat-lag">–</dd></div>
+            <div><dt>Newest transaction</dt><dd id="kachat-newest-tx">–</dd></div>
+            <div><dt>Newest content</dt><dd id="kachat-newest-content">–</dd></div>
+            <div><dt>Indexed last hour</dt><dd id="kachat-ingest">–</dd></div>
+          </dl>
+          <p class="hint">
+            Freshness comes from the transactions the node hands over. KaChat
+            content can lag behind that quite legitimately, because it only moves
+            when somebody actually posts.
+          </p>
+
+          <h3>Services</h3>
+          <div class="grid stats" id="kachat-services"><p class="muted">Waiting for the indexer.</p></div>
+
+          <h3>Content indexed</h3>
+          <div class="grid stats" id="kachat-stats"></div>
+
+          <h3>Activity</h3>
+          <div class="grid stats" id="kachat-activity"></div>
+        </article>
+      </div>
+
+      <div id="sub-kachat-kaposts" class="subtab">
+        <article class="card span2">
+          <h3>Moderation by author</h3>
+          <p class="muted">
+            <strong>Remove</strong> deletes an author's rows once.
+            <strong>Block</strong> also adds them to your deny list, so the indexer
+            purges everything of theirs and stores nothing from them again. The
+            chain itself never changes, only this indexer's copy of it.
+          </p>
+          <div class="row">
+            <input id="kachat-pk" placeholder="66-hex compressed pubkey (02/03…) or 64-hex x-only" size="48">
+            <button type="button" id="kachat-preview" class="ghost">Dry run</button>
+            <button type="button" id="kachat-remove" class="danger" disabled>Remove permanently</button>
+            <button type="button" id="kachat-block" class="ghost">Block and stop indexing</button>
+          </div>
+          <div id="kachat-mod-result" class="verdict" hidden></div>
+        </article>
+
+        <article class="card span2">
+          <div class="toggle-row">
+            <div class="toggle-text">
+              <strong>Personal mode</strong>
+              <span class="muted">
+                Curate this indexer with your own block list. When it is on, the
+                indexer watches the chain for blocks you publish and purges those
+                authors.
+              </span>
+            </div>
+            <label class="switch"><input type="checkbox" id="kachat-kap-personal"><span class="track"></span></label>
+          </div>
+          <div id="kachat-kap-personal-body" hidden>
+            <label class="stack">Your KaChat address or addresses, one per line
+              <textarea id="kachat-operator-addr" rows="2" placeholder="kaspa:q…"></textarea>
+            </label>
+            <div class="row">
+              <button type="button" id="kachat-kap-save" class="primary">Save address</button>
+            </div>
+            <p class="hint">
+              The indexer works out your pubkey from this and deny-lists anyone you
+              block on chain, restoring them if you unblock. That needs the KaChat
+              app to publish blocks on chain, so until then use the Block button
+              above to curate the list yourself.
+            </p>
+          </div>
+        </article>
+
+        <article class="card">
+          <h3>Blocked authors</h3>
+          <p class="muted">
+            Everyone here is purged and stays un-indexed while listed. Remove
+            someone to let their content back in; re-indexing backfills what was
+            missed.
+          </p>
+          <div class="scroll-x">
+            <table class="blocks">
+              <thead><tr><th></th><th>Author</th><th>Added</th></tr></thead>
+              <tbody id="kachat-denylist"><tr><td colspan="3" class="muted">Indexing every author.</td></tr></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card">
+          <h3>Recently indexed</h3>
+          <div class="scroll-x">
+            <table class="blocks">
+              <thead><tr><th></th><th>When</th><th>Type</th><th>Author</th><th>Preview</th></tr></thead>
+              <tbody id="kachat-recent"><tr><td colspan="5" class="muted">Nothing yet.</td></tr></tbody>
+            </table>
+          </div>
+        </article>
+      </div>
+
+      <div id="sub-kachat-broadcasts" class="subtab">
+        <article class="card span2">
+          <h3>Channels</h3>
+          <div class="grid stats" id="kachat-bcast-tiles"></div>
+        </article>
+
+        <article class="card span2">
+          <div class="node-head">
+            <h3>Recent broadcasts</h3>
+            <select id="kachat-bcast-channel"><option value="">All channels</option></select>
+            <button type="button" id="kachat-bcast-refresh" class="ghost">Refresh</button>
+          </div>
+          <div class="scroll-x">
+            <table class="blocks">
+              <thead><tr><th></th><th>When</th><th>Channel</th><th>Sender</th><th>Message</th></tr></thead>
+              <tbody id="kachat-bcast-rows"><tr><td colspan="5" class="muted">Nothing yet.</td></tr></tbody>
+            </table>
+          </div>
+          <p class="hint">
+            Thirteen channels are indexed: #kaspa, #kachat-bugs and the language
+            rooms. Messages are kept for 30 days and the preview shows the first
+            200 characters.
+          </p>
+        </article>
+      </div>
+
+      <div id="sub-kachat-chats" class="subtab">
+        <article class="card span2">
+          <div class="node-head">
+            <h3>Direct chats</h3>
+            <span id="kachat-chat-tag" class="tag">–</span>
+          </div>
+          <p class="muted">
+            Encrypted one to one messaging: handshakes, direct messages and
+            payments, indexed straight from the node into its own store. These
+            numbers come live from the chat indexer.
+          </p>
+          <div class="grid stats" id="kachat-chat-tiles"><p class="muted">Waiting for the chat indexer.</p></div>
+        </article>
+      </div>
+
+      <div id="sub-kachat-groups" class="subtab">
+        <article class="card span2">
+          <div class="node-head">
+            <h3>Group chats</h3>
+            <span id="kachat-group-tag" class="tag">–</span>
+          </div>
+          <p class="muted">
+            Encrypted group messaging: group messages and the control envelopes
+            that go with them, served over the group chat API.
+          </p>
+          <div class="grid stats" id="kachat-group-tiles"><p class="muted">Waiting for the chat indexer.</p></div>
+        </article>
+      </div>
+
+      <div id="sub-kachat-transfer" class="subtab">
+        <article class="card span2">
+          <h3>Move the whole store</h3>
+          <p class="muted">
+            Write this indexer's entire chat store to one file, or load one that
+            another indexer wrote. It copies byte for byte with no re-parsing,
+            which is the simplest way to move all your history between machines.
+          </p>
+          <div class="row">
+            <button type="button" id="kachat-export" class="ghost">Export everything</button>
+            <input type="file" id="kachat-import-file" hidden>
+            <button type="button" id="kachat-import-file-btn" class="ghost">Import from a file</button>
+          </div>
+          <div id="kachat-file-result" class="verdict" hidden></div>
+        </article>
+
+        <article class="card span2">
+          <h3>Backfill one address</h3>
+          <p class="muted">
+            Pull a wallet's direct message history out of the block explorer,
+            which is how you recover messages older than the node's pruning
+            window. Import your own address and your contacts' to rebuild both
+            sides of a conversation.
+          </p>
+          <div class="row">
+            <input id="kachat-import-addr" placeholder="kaspa:… address to import" size="42">
+            <button type="button" id="kachat-import" class="primary">Import</button>
+          </div>
+          <div id="kachat-import-result" class="verdict" hidden></div>
+        </article>
       </div>
 
       <div id="sub-kachat-settings" class="subtab">
@@ -620,14 +794,124 @@
           <article class="card span2">
             <h3>Apply and update</h3>
             <p class="muted">
-              Changing anything here rebuilds or restarts the indexer. For settings about
-              the data it has indexed, use the Settings tab inside its own dashboard.
+              Changing anything above rebuilds or restarts the indexer. Everything
+              below is about the data it has already collected and takes effect
+              without a rebuild.
             </p>
             <div class="row">
               <button type="button" id="kachat-save" class="primary">Apply settings</button>
               <button type="button" id="kachat-check" class="ghost">Check for updates</button>
               <button type="button" id="kachat-update" class="ghost" disabled>Update</button>
             </div>
+          </article>
+
+          <article class="card span2">
+            <h3>How this instance presents itself</h3>
+            <p class="muted">
+              The name and tagline are what KaChat clients see when they connect
+              to this indexer.
+            </p>
+            <label class="inline">Name <input id="kachat-set-name" placeholder="KaChat Indexer" size="24"></label>
+            <label class="inline">Tagline <input id="kachat-set-tagline" placeholder="Kaspa-native messaging and social indexer" size="36"></label>
+            <label class="inline">Public URL <input id="kachat-set-url" type="url" placeholder="https://kaposts.duckdns.org" size="30"></label>
+            <div class="row">
+              <button type="button" id="kachat-set-save" class="primary">Save identity</button>
+            </div>
+          </article>
+
+          <article class="card span2">
+            <h3>What to index</h3>
+            <p class="muted">
+              Turning one off stops new matching transactions being stored right
+              away. The chain is untouched and rows you already have stay put
+              until you delete them below.
+            </p>
+            <div class="toggle-row">
+              <div class="toggle-text">
+                <strong>KaPosts</strong>
+                <span class="muted">The on-chain social feed: posts, replies, quotes, reposts, votes and follows.</span>
+              </div>
+              <label class="switch"><input type="checkbox" id="kachat-tg-kaposts"><span class="track"></span></label>
+            </div>
+            <div class="toggle-row">
+              <div class="toggle-text">
+                <strong>Broadcasts</strong>
+                <span class="muted">Public channel chatter for the thirteen curated rooms.</span>
+              </div>
+              <label class="switch"><input type="checkbox" id="kachat-tg-broadcasts"><span class="track"></span></label>
+            </div>
+            <div class="toggle-row">
+              <div class="toggle-text">
+                <strong>Chat and groups</strong>
+                <span class="muted">Encrypted one to one and group messaging, handshakes and payments.</span>
+              </div>
+              <label class="switch"><input type="checkbox" id="kachat-tg-chat"><span class="track"></span></label>
+            </div>
+          </article>
+
+          <article class="card span2">
+            <div class="node-head">
+              <h3>Index only your own chats</h3>
+              <span id="kachat-personal-tag" class="tag">–</span>
+            </div>
+            <p class="muted">
+              Add your addresses and the indexer keeps only the chats and groups
+              you are part of, skipping everyone else. Leave it empty to index
+              everything, which is what a public indexer does. Saving restarts the
+              chat indexer.
+            </p>
+            <label class="stack">Your addresses, one per line
+              <textarea id="kachat-personal-addrs" rows="3" placeholder="kaspa:q…"></textarea>
+            </label>
+            <div class="row">
+              <button type="button" id="kachat-personal-save" class="primary">Save and apply</button>
+            </div>
+            <p class="hint">
+              Group capture does what it can: messages you send and control
+              messages addressed to you are stored, but catching every message in
+              a group needs membership tracking that is still to come. Once this
+              is on, use Export / Import to backfill your history.
+            </p>
+          </article>
+
+          <article class="card span2 danger-zone">
+            <h3>Delete indexed data</h3>
+            <p class="muted">
+              These remove this indexer's stored copy only, and re-indexing from
+              the chain would bring it back. They happen immediately and cannot be
+              undone from here.
+            </p>
+            <label class="stack">Delete a KaPosts item by transaction id
+              <span class="row">
+                <input id="kachat-del-content" placeholder="content transaction id (hex)" size="40">
+                <button type="button" id="kachat-del-content-btn" class="danger">Delete item</button>
+              </span>
+            </label>
+            <label class="stack">Delete a broadcast by transaction id
+              <span class="row">
+                <input id="kachat-del-bcast" placeholder="broadcast transaction id (hex)" size="40">
+                <button type="button" id="kachat-del-bcast-btn" class="danger">Delete broadcast</button>
+              </span>
+            </label>
+            <label class="stack">Purge broadcasts by channel
+              <span class="row">
+                <select id="kachat-purge-channel"></select>
+                <button type="button" id="kachat-purge-channel-btn" class="danger">Purge channel</button>
+                <button type="button" id="kachat-purge-all-btn" class="danger">Purge every broadcast</button>
+              </span>
+            </label>
+            <label class="stack">Purge the chat store
+              <span class="row">
+                <button type="button" id="kachat-purge-chat-btn" class="danger">Purge all chat data</button>
+              </span>
+            </label>
+            <p class="hint">
+              Purging the chat store wipes every one to one message, group,
+              handshake and payment. With personal mode on it then refills with
+              only your own data, which is how you turn a public store into a
+              personal one.
+            </p>
+            <div id="kachat-data-result" class="verdict" hidden></div>
           </article>
         </div>
       </div>

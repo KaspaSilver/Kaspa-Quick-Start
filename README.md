@@ -158,16 +158,18 @@ a courtesy rather than the actual rule. Nextcloud is never gated; it has nothing
 to do with the chain.
 
 **KaChat** — runs the [KaChat indexer](https://github.com/KaspaSilver/KaChat-Indexer)
-and embeds its own admin dashboard, so you get the exact Dashboard, KaPosts,
-Broadcasts, Chats, Group chats, Export / Import and Settings tabs it ships with,
-not a reimplementation that drifts. Switch it on, pick a branch or tag, and the
-panel builds it and keeps it running.
+and gives you the whole thing here: Overview, KaPosts, Broadcasts, Chats, Group
+chats, Export / Import and Settings, built into this panel rather than framed
+from somewhere else. The indexer is the engine and this is the interface to it,
+so moderation, deny lists, channel purges, imports and every indexer setting are
+all in the sidebar with everything else. Switch it on, pick a branch or tag, and
+the panel builds it and keeps it running.
 
 It reads the chain from the node already in this stack over wRPC Borsh, so there
 is no second node and no second sync. Upstream's bundled kaspad, Portainer and
-nginx-proxy-manager are not used — this stack already provides all three, and a
-second nginx would collide on ports 80/443. Its Postgres does run, as its own
-container.
+nginx-proxy-manager are not used, since this stack already provides all three and
+a second nginx would collide on ports 80 and 443. Its Postgres does run, as its
+own container.
 
 The first build compiles the indexer from Rust source and takes a while; follow
 it under Logs → kachat indexer.
