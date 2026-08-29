@@ -22,14 +22,15 @@ fi
 # --appdir is enforced here rather than in the args file so the UI cannot turn
 # it off, and --yes keeps kaspad from blocking on a prompt.
 #
-# --utxoindex is a setting now and arrives in the args file like any other flag.
-# kaspad has no flag for the off state, though, so "switched off" and "written
-# before this was a setting" both look like an absent line. The panel marks
-# every file it writes, and only a marked file is trusted to mean off: an
-# unmarked one belongs to an install that has been indexing all along, and
-# forcing it on there keeps that node's index rather than dropping it silently.
+# --utxoindex is a setting now, and it is read from the args file's
+# `# utxoindex-managed:` marker rather than from an argument. kaspad has no flag
+# for the off state and refuses a repeated --utxoindex, so the flag itself can
+# only ever be added here, exactly once.
+#
+# No marker means the file was written before the setting existed, by an install
+# that has been indexing all along, so the index stays on for it.
 UTXOINDEX=--utxoindex
-if [ -f "$ARGS_FILE" ] && grep -q '^# utxoindex-managed:' "$ARGS_FILE"; then
+if [ -f "$ARGS_FILE" ] && grep -q '^# utxoindex-managed: off' "$ARGS_FILE"; then
     UTXOINDEX=""
 fi
 
