@@ -12,7 +12,10 @@
 [CmdletBinding()]
 param(
     [string] $Dir        = $(if ($env:KASPA_STACK_DIR) { $env:KASPA_STACK_DIR } else { Join-Path $env:USERPROFILE '.kaspa-node' }),
-    [int]    $GuiPort    = $(if ($env:KASPA_GUI_PORT) { [int]$env:KASPA_GUI_PORT } else { 8080 }),
+    # Not 8080: that is the first port anyone reaches for when 80 belongs to
+    # something else, and a panel sitting there is in the way of the job it
+    # exists to do.
+    [int]    $GuiPort    = $(if ($env:KASPA_GUI_PORT) { [int]$env:KASPA_GUI_PORT } else { 8420 }),
     [int]    $HttpPort   = 80,
     [int]    $HttpsPort  = 443,
     # Loopback by default. The panel ships without a password, and it drives the

@@ -1403,8 +1403,19 @@
             <div class="row">
               <label class="inline">Outside http <input type="number" id="ports-http" min="1" max="65535" value="80" size="5"></label>
               <label class="inline">Outside https <input type="number" id="ports-https" min="1" max="65535" value="443" size="5"></label>
+              <span class="muted">what the internet dials</span>
+            </div>
+            <div class="row">
+              <label class="inline">On this machine <input type="number" id="ports-bind-http" min="1" max="65535" value="80" size="5"></label>
+              <label class="inline">and <input type="number" id="ports-bind-https" min="1" max="65535" value="443" size="5"></label>
+              <span class="muted">what nginx binds here, and what a forwarding rule points at</span>
               <button id="ports-save" class="ghost">Save ports</button>
             </div>
+            <p class="hint">
+              Usually the same numbers on both rows. They differ when a router
+              maps one to the other, and when it cannot, set this row to match
+              the rule. Changing what nginx binds restarts the proxy.
+            </p>
             <div class="row">
               <button id="ports-check" class="ghost">Check from outside</button>
               <span class="muted" id="ports-check-note">Asks check-host.net to try connecting to your address. It sees your public IP.</span>
@@ -1558,6 +1569,22 @@
             node, the proxy and every app keep running throughout.
           </p>
           <p class="hint" id="password-result" hidden></p>
+        </article>
+
+        <article class="card span2">
+          <h3>Panel address</h3>
+          <p class="muted" id="panel-port-state">–</p>
+          <div class="row">
+            <label class="inline">Port <input type="number" id="panel-port" min="1" max="65535" size="6"></label>
+            <button id="panel-port-save" class="ghost">Move the panel</button>
+          </div>
+          <p class="hint">
+            Worth moving if you want the reverse proxy on this port instead:
+            8080 is the usual second choice for plain http, and only one thing
+            can hold it. The panel restarts and this page follows it to the new
+            address; nothing else is affected.
+          </p>
+          <p class="hint" id="panel-port-result" hidden></p>
         </article>
 
         <article class="card span2">

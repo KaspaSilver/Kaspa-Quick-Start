@@ -35,7 +35,7 @@ curl -fsSL https://raw.githubusercontent.com/KaspaSilver/Quick-Start-Kaspa/main/
 irm https://raw.githubusercontent.com/KaspaSilver/Quick-Start-Kaspa/main/install.ps1 | iex
 ```
 
-When it finishes it prints the panel URL, `http://localhost:8080`. There is no
+When it finishes it prints the panel URL, `http://localhost:8420`. There is no
 login: the panel is bound to `127.0.0.1`, so only this machine can open it.
 See [Opening the panel to other machines](#opening-the-panel-to-other-machines)
 if you want to reach it from elsewhere.
@@ -137,7 +137,7 @@ Nothing outside `manager/` is mounted, so changes to `docker-compose.yml`,
 | `8600`  | chat indexer API    | as above |
 | `8081`  | Nextcloud           | only if you reach Nextcloud without a proxy host |
 | `80`,`443` | reverse proxy    | only if you switch the proxy on for domains / HTTPS |
-| `8080`  | control panel       | bound to `127.0.0.1`, so do not forward it |
+| `8420`  | control panel       | bound to `127.0.0.1`, so do not forward it. Deliberately not 8080, which you may want for the proxy |
 
 Testnet-10 uses `16211 / 16210 / 17210 / 18210`; the panel switches them for you.
 
@@ -314,7 +314,7 @@ installer warns first, and it takes 30–60 minutes.
 
 ```
 --dir <path>          install location (default ~/.kaspa-node)
---gui-port <port>     control panel port (default 8080)
+--gui-port <port>     control panel port (default 8420)
 --http-port <port>    nginx http port (default 80)
 --https-port <port>   nginx https port (default 443)
 --bind <address>      address the panel listens on (default 127.0.0.1)
@@ -334,7 +334,7 @@ settings, chain data and existing password.
 ## Opening the panel to other machines
 
 The panel drives the Docker socket, which is root on the host. Without a
-password, anything that can reach port 8080 owns the machine, which is exactly
+password, anything that can reach the panel's port owns the machine, which is exactly
 why the default bind is loopback. To reach it from elsewhere, set a password
 first:
 
@@ -346,7 +346,7 @@ Or keep it loopback-only and forward the port over SSH, which needs no password
 and no open port at all:
 
 ```bash
-ssh -N -L 8080:127.0.0.1:8080 you@your-node
+ssh -N -L 8420:127.0.0.1:8420 you@your-node
 ```
 
 Two guard rails enforce this. The installer warns and asks for confirmation if

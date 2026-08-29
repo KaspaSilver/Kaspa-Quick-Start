@@ -855,16 +855,81 @@ route('POST', /^\/api\/proxy\/ports$/, async (req, res) => {
         return Number.isInteger(n) && n >= 1 && n <= 65535 ? n : fallback;
     };
 
+    const env = readEnvFile();
+    const bindHttp = port(body.bindHttp, Number(env.HTTP_PORT) || 80);
+    const bindHttps = port(body.bindHttps, Number(env.HTTPS_PORT) || 443);
+    const guiPort = Number(env.GUI_PORT) || 8080;
+
+    // Docker accepts the mapping and then fails to start the container, so the
+    // clash is caught here where it can be explained. The panel's own port is
+    // the one that bites: 8080 is both a common panel default and the first
+    // port anyone reaches for as an alternative to 80.
+    if (bindHttp === guiPort || bindHttps === guiPort) {
+        return fail(res, 409, `Port ${guiPort} is this panel's own port, so the proxy cannot take it.`, {
+            details: ['Move the panel first, under Global settings, or give the proxy a different port.'],
+        });
+    }
+    if (bindHttp === bindHttps) return fail(res, 400, 'http and https cannot share one port on this machine.');
+
     const cfg = loadManagerConfig();
     cfg.proxy.publicHttpPort = port(body.http, 80);
     cfg.proxy.publicHttpsPort = port(body.https, 443);
     saveManagerConfig(cfg);
 
+    const rebind = bindHttp !== (Number(env.HTTP_PORT) || 80) || bindHttps !== (Number(env.HTTPS_PORT) || 443);
+    if (rebind) updateEnvFile({ HTTP_PORT: String(bindHttp), HTTPS_PORT: String(bindHttps) });
+
     // Redirects embed the https port, so every vhost is rewritten.
     nginx.writeAll(loadProxies(), loadNodeConfig(), renderOptions());
-    if (proxyEnabled()) await nginx.reload().catch(() => {});
 
-    sendJson(res, 200, { ok: true, http: cfg.proxy.publicHttpPort, https: cfg.proxy.publicHttpsPort });
+    if (rebind && proxyEnabled()) {
+        // A published port is fixed when a container is created, so this is a
+        // recreate rather than a reload. Only the proxy changes; the node and
+        // every app keep running.
+        const job = jobs.start(`Move the proxy to ports ${bindHttp} and ${bindHttps}`, async (onLine) => {
+            onLine(`Recreating the reverse proxy on ports ${bindHttp} and ${bindHttps}.`);
+            await dockerctl.compose(['up', '-d', '--force-recreate', 'proxy'], {
+                onLine,
+                profile: 'proxy',
+                timeoutMs: 5 * 60_000,
+            });
+        });
+        return sendJson(res, 202, {
+            ok: true,
+            jobId: job.id,
+            http: cfg.proxy.publicHttpPort,
+            https: cfg.proxy.publicHttpsPort,
+            bindHttp,
+            bindHttps,
+        });
+    }
+
+    if (proxyEnabled()) await nginx.reload().catch(() => {});
+    sendJson(res, 200, { ok: true, http: cfg.proxy.publicHttpPort, https: cfg.proxy.publicHttpsPort, bindHttp, bindHttps });
+});
+
+/**
+ * Moves the panel itself to another port.
+ *
+ * Same shape as setting a password: .env holds it, the container reads it when
+ * it is created, so a sidecar recreates this container a moment after the
+ * answer goes out. The browser has to be told where to look next, because the
+ * address it is on stops working.
+ */
+route('POST', /^\/api\/panel\/port$/, async (req, res) => {
+    const body = await readBody(req);
+    const wanted = Number(body.port);
+    if (!Number.isInteger(wanted) || wanted < 1 || wanted > 65535) return fail(res, 400, 'That is not a port number.');
+
+    const env = readEnvFile();
+    if (wanted === (Number(env.HTTP_PORT) || 80) || wanted === (Number(env.HTTPS_PORT) || 443)) {
+        return fail(res, 409, `Port ${wanted} belongs to the reverse proxy.`);
+    }
+    if (wanted === (Number(env.GUI_PORT) || 8080)) return sendJson(res, 200, { ok: true, unchanged: true });
+
+    updateEnvFile({ GUI_PORT: String(wanted) });
+    await selfservice.restartManager();
+    sendJson(res, 202, { ok: true, port: wanted, restarting: true });
 });
 
 route('GET', /^\/api\/proxy\/portcheck$/, async (req, res) => {
@@ -935,6 +1000,10 @@ route('GET', /^\/api\/publish$/, async (req, res) => {
         publicPorts: {
             http: loadManagerConfig().proxy.publicHttpPort ?? 80,
             https: loadManagerConfig().proxy.publicHttpsPort ?? 443,
+            // What nginx binds here, which is what a router rule points at.
+            bindHttp: Number(readEnvFile().HTTP_PORT) || 80,
+            bindHttps: Number(readEnvFile().HTTPS_PORT) || 443,
+            panel: Number(readEnvFile().GUI_PORT) || 8080,
         },
         container: await dockerctl.containerState(dockerctl.PROXY_CONTAINER),
     });

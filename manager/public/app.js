@@ -3257,8 +3257,13 @@ async function loadPublish() {
     try {
         publishState = await api('/api/publish');
         if (publishState.publicPorts) {
-            $('ports-http').value = publishState.publicPorts.http;
-            $('ports-https').value = publishState.publicPorts.https;
+            const p = publishState.publicPorts;
+            $('ports-http').value = p.http;
+            $('ports-https').value = p.https;
+            $('ports-bind-http').value = p.bindHttp;
+            $('ports-bind-https').value = p.bindHttps;
+            $('panel-port').value = p.panel;
+            $('panel-port-state').textContent = `This panel answers on port ${p.panel}. The reverse proxy holds ${p.bindHttp} and ${p.bindHttps} on this machine.`;
         }
     } catch {
         // The proxy card above already reports anything that is actually wrong.
@@ -3378,9 +3383,15 @@ $('ports-save').addEventListener('click', async () => {
     try {
         const r = await api('/api/proxy/ports', {
             method: 'POST',
-            body: { http: Number($('ports-http').value), https: Number($('ports-https').value) },
+            body: {
+                http: Number($('ports-http').value),
+                https: Number($('ports-https').value),
+                bindHttp: Number($('ports-bind-http').value),
+                bindHttps: Number($('ports-bind-https').value),
+            },
         });
-        toast(`Addresses will use ${r.http === 80 ? 'the default http port' : `http port ${r.http}`} and ${r.https === 443 ? 'the default https port' : `https port ${r.https}`}.`);
+        if (r.jobId) openConsole(`Moving the proxy to ports ${r.bindHttp} and ${r.bindHttps}`);
+        else toast(`Addresses will use ${r.http === 80 ? 'the default http port' : `http port ${r.http}`} and ${r.https === 443 ? 'the default https port' : `https port ${r.https}`}.`);
         await loadProxies();
     } catch (e) {
         toast(e.message, 'bad');
@@ -4262,6 +4273,36 @@ $('password-save').addEventListener('click', async () => {
     } catch (e) {
         toast(e.message, 'bad');
         $('password-save').disabled = false;
+    }
+});
+
+$('panel-port-save').addEventListener('click', async () => {
+    const port = Number($('panel-port').value);
+    if (!confirm(`Move this panel to port ${port}?\n\nIt restarts, and this page will follow it to the new address. Anything you have bookmarked stops working.`)) return;
+
+    $('panel-port-save').disabled = true;
+    try {
+        const r = await api('/api/panel/port', { method: 'POST', body: { port } });
+        if (r.unchanged) return toast('It is already on that port.');
+        // The address this page is on is about to stop answering, so it waits
+        // for the new one rather than for this one to come back.
+        kResult('panel-port-result', `Moving to port ${port}. This page will go there once it answers.`, false);
+        const target = `${location.protocol}//${location.hostname}:${port}${location.pathname}`;
+        const deadline = Date.now() + 120_000;
+        while (Date.now() < deadline) {
+            await new Promise((res) => setTimeout(res, 2000));
+            try {
+                await fetch(`${location.protocol}//${location.hostname}:${port}/healthz`, { mode: 'no-cors', cache: 'no-store' });
+                return location.assign(target);
+            } catch {
+                /* not up yet */
+            }
+        }
+        kResult('panel-port-result', `It has not answered on ${port} yet. Try ${target} directly.`, true);
+    } catch (e) {
+        toast(e.message, 'bad');
+    } finally {
+        $('panel-port-save').disabled = false;
     }
 });
 

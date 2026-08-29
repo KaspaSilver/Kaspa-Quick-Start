@@ -24,7 +24,12 @@ STACK_REPO="${KASPA_STACK_REPO:-KaspaSilver/Quick-Start-Kaspa}"
 STACK_REF="${KASPA_STACK_REF:-main}"
 UPSTREAM_REPO="${KASPA_UPSTREAM_REPO:-kaspanet/rusty-kaspa}"
 STACK_DIR="${KASPA_STACK_DIR:-$HOME/.kaspa-node}"
-GUI_PORT="${KASPA_GUI_PORT:-8080}"
+# Not 8080. That is the first port anyone reaches for when 80 belongs to
+# something else on the network, and only one thing on a machine can hold it --
+# a control panel sitting there is a panel in the way of the job it exists to
+# do. Nothing expects one on 8420, which is the point. --gui-port changes it,
+# and so does the panel itself once it is running.
+GUI_PORT="${KASPA_GUI_PORT:-8420}"
 HTTP_PORT="${KASPA_HTTP_PORT:-80}"
 HTTPS_PORT="${KASPA_HTTPS_PORT:-443}"
 # Loopback by default. The panel ships without a password, and it drives the
@@ -59,7 +64,7 @@ while [ $# -gt 0 ]; do
 Usage: install.sh [options]
 
   --dir <path>          Where to install (default: ~/.kaspa-node)
-  --gui-port <port>     Web control panel port (default: 8080)
+  --gui-port <port>     Web control panel port (default: 8420)
   --http-port <port>    nginx http port (default: 80)
   --https-port <port>   nginx https port (default: 443)
   --bind <address>      Address the panel listens on (default: 127.0.0.1)
@@ -575,6 +580,15 @@ prompt_for_password() {
         return 0
     done
 }
+# Docker accepts a duplicate mapping and then fails to start the container, with
+# an error naming neither of the two things fighting over the port.
+if [ "$GUI_PORT" = "$HTTP_PORT" ] || [ "$GUI_PORT" = "$HTTPS_PORT" ]; then
+    die "The panel and the reverse proxy cannot both use port $GUI_PORT. Pass --gui-port with something else."
+fi
+if [ "$HTTP_PORT" = "$HTTPS_PORT" ]; then
+    die "http and https cannot share port $HTTP_PORT."
+fi
+
 prompt_for_password
 
 # Work out the final auth state before building anything, so the warning lands
