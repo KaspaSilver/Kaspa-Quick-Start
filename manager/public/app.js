@@ -3406,24 +3406,26 @@ $('ports-check').addEventListener('click', async () => {
         const r = await api('/api/proxy/portcheck');
         const line = (ok, text) => `<li class="${ok === null ? '' : ok ? 'ok' : 'bad'}">${escapeHtml(text)}</li>`;
         const rows = [];
+        const bound = `${r.local.bindHttp} and ${r.local.bindHttps}`;
 
         rows.push(line(r.local.proxyRunning, r.local.proxyRunning ? 'The reverse proxy is running here.' : 'The reverse proxy is not running, so nothing would answer even on an open port.'));
-        rows.push(line(r.local.publishes80 && r.local.publishes443,
-            r.local.publishes80 && r.local.publishes443
-                ? 'It holds ports 80 and 443 on this machine.'
-                : `It is missing ${[!r.local.publishes80 && '80', !r.local.publishes443 && '443'].filter(Boolean).join(' and ')} on this machine.`));
+        rows.push(line(r.local.publishesHttp && r.local.publishesHttps,
+            r.local.publishesHttp && r.local.publishesHttps
+                ? `It holds ports ${bound} on this machine.`
+                : `It is missing ${[!r.local.publishesHttp && r.local.bindHttp, !r.local.publishesHttps && r.local.bindHttps].filter(Boolean).join(' and ')} on this machine.`));
         rows.push(line(r.local.servesChallenge, r.local.servesChallenge
             ? "It serves the file Let's Encrypt asks for."
             : "It did not serve the file Let's Encrypt asks for, which is the thing to fix first."));
 
         if (r.outside) {
-            for (const port of [80, 443]) {
-                const p = r.outside[port];
+            for (const key of ['http', 'https']) {
+                const p = r.outside[key];
+                const port = p.port;
                 // Port 80 is always identified -- the check fetches a file
                 // from this machine. Port 443 only once a certificate exists,
                 // and saying which is which is the difference between "it
                 // works" and "something out there answered".
-                const identified = port === 80 || p.identified;
+                const identified = key === 'http' || p.identified;
                 rows.push(
                     line(
                         p.open,
@@ -3443,11 +3445,18 @@ $('ports-check').addEventListener('click', async () => {
             rows.push(line(null, `Could not check from outside: ${r.error ?? 'unknown reason'}.`));
         }
 
-        const bothOpen = r.outside && r.outside[80]?.open && r.outside[443]?.open;
+        const bothOpen = r.outside && r.outside.http?.open && r.outside.https?.open;
+        // A DuckDNS name is proved with a TXT record, so a closed http port
+        // costs the ability to serve plain http and nothing else. Reporting
+        // that as a failure would send someone into their router for no reason.
+        const certNote = r.dnsChallenge
+            ? ' Certificates do not depend on any of this: your DuckDNS name is proved with a DNS record.'
+            : " Let's Encrypt validates over port 80, so that one has to reach this machine before a certificate can be issued.";
+
         const verdict = bothOpen
-            ? '<p class="muted">Both ports reach this machine. Certificates should issue.</p>'
+            ? `<p class="muted">Both ports reach this machine.${certNote}</p>`
             : r.outside && r.local.servesChallenge
-              ? `<p class="muted">This machine is set up correctly, so what is missing is the forwarding. On your router, send TCP 80 and 443 to this machine${r.ip ? ` (your address is ${escapeHtml(r.ip)})` : ''}.</p>`
+              ? `<p class="muted">This machine is set up correctly, so what is missing is the forwarding: on your router, send ${escapeHtml(String(r.outside.http.port))} and ${escapeHtml(String(r.outside.https.port))} to this machine's ${escapeHtml(String(r.local.bindHttp))} and ${escapeHtml(String(r.local.bindHttps))}${r.ip ? `, at ${escapeHtml(r.ip)}` : ''}.${certNote}</p>`
               : '';
 
         out.innerHTML = `<ul class="port-result">${rows.join('')}</ul>${verdict}`;

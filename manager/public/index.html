@@ -1386,17 +1386,18 @@
           -->
           <div class="notice" id="ports-notice">
             <p>
-              <strong>Ports 80 and 443 have to reach this machine.</strong>
-              Forward both to it on your router, or nothing outside your network
-              can open these addresses and Let's Encrypt cannot issue a
-              certificate. Some ISPs block port 80 on home connections.
+              <strong>The outside has to reach this machine somewhere.</strong>
+              By default that means forwarding ports 80 and 443 to it on your
+              router. Nothing outside your network can open these addresses
+              until something does.
             </p>
             <p>
-              If 80 and 443 already belong to something else on your network,
-              forward two other outside ports to this machine instead and say so
-              here. Certificates still work: a DuckDNS name is proved with a DNS
-              record rather than an inbound request, so it needs no open port at
-              all. Addresses then carry the port, as
+              If 80 and 443 already belong to something else, forward two other
+              outside ports to this machine instead and set them here. The check
+              below then tests those rather than 80 and 443. Certificates work
+              either way: a DuckDNS name is proved with a DNS record rather than
+              an inbound request, so it needs no open port at all. Addresses
+              then carry the port, as
               <code>https://yourname.duckdns.org:8443</code>.
             </p>
             <div class="row">

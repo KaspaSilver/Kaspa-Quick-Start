@@ -869,7 +869,21 @@ route('POST', /^\/api\/proxy\/ports$/, async (req, res) => {
 
 route('GET', /^\/api\/proxy\/portcheck$/, async (req, res) => {
     const domain = loadDomains()[0]?.domain ?? null;
-    sendJson(res, 200, await portcheck.check(domain));
+    const mgr = loadManagerConfig().proxy;
+    const env = readEnvFile();
+    sendJson(
+        res,
+        200,
+        await portcheck.check(domain, {
+            httpPort: mgr.publicHttpPort ?? 80,
+            httpsPort: mgr.publicHttpsPort ?? 443,
+            bindHttp: Number(env.HTTP_PORT) || 80,
+            bindHttps: Number(env.HTTPS_PORT) || 443,
+            // A DuckDNS name proves itself with a TXT record, so nothing here
+            // is required for a certificate -- only for serving.
+            dnsChallenge: Boolean(domain && duckdnsFor(domain)),
+        }),
+    );
 });
 
 route('POST', /^\/api\/proxy\/reload$/, async (req, res) => {

@@ -77,6 +77,8 @@ async function probeTcp(ip, port) {
  * name, so it works before any domain is set up.
  */
 async function probeChallenge(target, { scheme = 'http' } = {}) {
+    // `target` carries its own port, because the outside may not be using the
+    // one this scheme defaults to.
     const token = `panel-check-${crypto.randomBytes(8).toString('hex')}`;
     const dir = path.join(WEBROOT_DIR, '.well-known', 'acme-challenge');
     const file = path.join(dir, token);
@@ -96,7 +98,7 @@ async function probeChallenge(target, { scheme = 'http' } = {}) {
             detail:
                 r.good > 0
                     ? `${r.good} of ${r.total} places fetched a file from this machine`
-                    : `none of ${r.total} places reached this machine (something else may be answering on 80)`,
+                    : `none of ${r.total} places reached this machine (nothing is forwarded, or something else answers there)`,
             link: r.link,
         };
     } finally {
@@ -115,18 +117,22 @@ async function probeChallenge(target, { scheme = 'http' } = {}) {
  * separates "your router is not forwarding" from "your proxy is not running",
  * which look identical from outside and need opposite fixes.
  */
-export async function check(domain = null) {
+export async function check(domain = null, { httpPort = 80, httpsPort = 443, bindHttp = 80, bindHttps = 443, dnsChallenge = false } = {}) {
     const [state, published, ip] = await Promise.all([
         containerState(PROXY_CONTAINER),
         publishedPorts(PROXY_CONTAINER),
         publicIp(),
     ]);
 
+    // What nginx binds on this machine, which is not what the outside dials
+    // when a router maps one to the other.
     const listening = new Set(published.map((p) => (p.container || '').split('/')[0]));
     const local = {
         proxyRunning: state.running,
-        publishes80: listening.has('80'),
-        publishes443: listening.has('443'),
+        bindHttp,
+        bindHttps,
+        publishesHttp: listening.has(String(bindHttp)),
+        publishesHttps: listening.has(String(bindHttps)),
         // Serves the file Let's Encrypt will ask for, which is the thing that
         // actually has to work on port 80.
         servesChallenge: state.running ? (await selfTest(domain ?? 'localhost')).ok : false,
@@ -142,15 +148,25 @@ export async function check(domain = null) {
         // HTTPS request to a bare address fails on the name either way, so
         // before then all that can be said is that something accepted the
         // connection. Said plainly rather than implied.
-        const identify443 = Boolean(domain) && hasCertificate(domain);
+        // Whatever the outside actually dials. Hardcoding 80 and 443 here
+        // asked the wrong question the moment somebody forwarded 8080 instead,
+        // and reported a closed port that nothing was supposed to be using.
+        const identifyHttps = Boolean(domain) && hasCertificate(domain);
+        const httpsTarget = identifyHttps ? `${domain}:${httpsPort}` : null;
         const [http, https] = await Promise.all([
-            probeChallenge(ip),
-            identify443 ? probeChallenge(domain, { scheme: 'https' }) : probeTcp(ip, 443),
+            probeChallenge(`${ip}:${httpPort}`),
+            identifyHttps ? probeChallenge(httpsTarget, { scheme: 'https' }) : probeTcp(ip, httpsPort),
         ]);
-        outside = { 80: http, 443: { ...https, identified: identify443 } };
+        outside = {
+            http: { ...http, port: httpPort },
+            https: { ...https, port: httpsPort, identified: identifyHttps },
+        };
     } catch (err) {
         error = err.message;
     }
 
-    return { ip, local, outside, error };
+    // With DNS-01 available, an unreachable http port costs the ability to
+    // serve plain http and nothing else. Saying so is the difference between a
+    // failed check and a working setup that happens to skip a port.
+    return { ip, local, outside, error, dnsChallenge };
 }
