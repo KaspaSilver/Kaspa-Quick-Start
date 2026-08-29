@@ -1677,6 +1677,19 @@ route('PUT', /^\/api\/kassigner$/, async (req, res) => {
     sendJson(res, 202, { ok: true, jobId: job.id });
 });
 
+/**
+ * Re-checks the firmware on disk against the hashes GitHub publishes now.
+ *
+ * A job rather than a plain request: it fetches from GitHub and hashes every
+ * file, and the point of it is the log rather than the verdict, so it belongs
+ * where the panel already streams long output from.
+ */
+route('POST', /^\/api\/kassigner\/verify$/, async (req, res) => {
+    const body = await readBody(req);
+    const job = jobs.start('Verify KasSigner firmware', (onLine) => kassigner.verify(body.tag || null, onLine));
+    sendJson(res, 202, { ok: true, jobId: job.id });
+});
+
 route('GET', /^\/api\/kassigner\/releases$/, async (req, res, match, url) => {
     try {
         const releases = await kassigner.listReleases({ force: url.searchParams.get('force') === '1' });

@@ -1466,6 +1466,7 @@
       <nav class="subnav" aria-label="KasSigner">
         <button class="subtab-btn active" data-subtab="kassigner-setup">Setup</button>
         <button class="subtab-btn" data-subtab="kassigner-updates">Updates</button>
+        <button class="subtab-btn" data-subtab="kassigner-verify">Verify</button>
       </nav>
 
       <div id="sub-kassigner-setup" class="subtab active">
@@ -1514,6 +1515,34 @@
             <pre id="kassigner-log" class="logview"></pre>
           </div>
         </article>
+      </div>
+
+      <div id="sub-kassigner-verify" class="subtab">
+        <div class="grid">
+          <article class="card span2">
+            <h3>Verify the firmware</h3>
+            <p class="muted">
+              Checks every firmware file on this machine against the SHA-256
+              hashes the release notes publish, and shows the whole comparison
+              rather than a verdict. The hashes are fetched from GitHub each time
+              this runs, not read back from this machine: a file and a hash
+              written here at the same moment agree with each other by
+              construction, which would prove nothing.
+            </p>
+            <div class="row">
+              <button id="kassigner-verify-btn" class="primary">Verify now</button>
+              <span id="kassigner-verify-state" class="tag off">not checked yet</span>
+            </div>
+            <pre class="logview" id="kassigner-verify-log"></pre>
+            <p class="hint">
+              This establishes that the bytes here are the bytes the project
+              published. It says nothing about whether the firmware is good, and
+              no hash can. The same release publishes hashes for unsigned images
+              so that a build from source can be reproduced and compared, and
+              those are printed at the end of the log for anyone doing it.
+            </p>
+          </article>
+        </div>
       </div>
 
       <div id="sub-kassigner-updates" class="subtab">

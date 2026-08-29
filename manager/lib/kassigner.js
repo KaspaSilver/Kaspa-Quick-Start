@@ -229,6 +229,90 @@ export async function prepare(tag, onLine = () => {}) {
     return state;
 }
 
+/**
+ * Re-checks every firmware file on disk against the hashes GitHub publishes.
+ *
+ * The hashes are fetched again rather than read back out of kassigner.json. A
+ * file and a hash written at the same moment agree with each other by
+ * construction, so comparing those two proves only that the disk has not
+ * rotted. Asking GitHub again is what makes this a check: it catches a file
+ * altered since it was fetched, and a release re-cut under the same tag.
+ *
+ * What it establishes is narrow and worth stating plainly: that the bytes here
+ * are the bytes this project published. Not that the firmware is good. The
+ * unsigned images exist for that -- they are what a build from source is
+ * compared against -- and their hashes are printed here for anyone doing it.
+ */
+export async function verify(tag = null, onLine = () => {}) {
+    const state = readState();
+    const wanted = tag ?? state.release;
+    if (!wanted) throw new Error('No firmware has been fetched yet, so there is nothing to check.');
+
+    onLine(`Asking GitHub for the release notes of ${wanted}, rather than trusting the copy here.`);
+    await listReleases({ force: true });
+    const release = await findRelease(wanted);
+    onLine(`${release.tag}, published ${new Date(release.publishedAt).toLocaleDateString()}.`);
+    onLine('');
+
+    const results = [];
+    for (const board of Object.values(BOARDS)) {
+        for (const image of Object.keys(IMAGES)) {
+            const name = assetName(board.asset, image);
+            const file = localPath(release.tag, board.asset, image);
+            const expected = release.hashes[`signed:${image}:${board.hashKey}`] ?? null;
+
+            if (!expected) {
+                onLine(`- ${name}: the release notes publish no hash for it. It would not be flashed.`);
+                results.push({ name, status: 'no-hash' });
+                continue;
+            }
+            if (!fs.existsSync(file)) {
+                onLine(`- ${name}: not downloaded here.`);
+                results.push({ name, status: 'missing', expected });
+                continue;
+            }
+
+            const actual = await sha256(file);
+            const ok = actual === expected;
+            onLine(`${ok ? 'OK  ' : 'BAD '} ${name}`);
+            onLine(`      published ${expected}`);
+            onLine(`      on disk   ${actual}`);
+            results.push({ name, status: ok ? 'ok' : 'mismatch', expected, actual });
+        }
+    }
+
+    const checked = results.filter((r) => r.status === 'ok' || r.status === 'mismatch');
+    const bad = results.filter((r) => r.status === 'mismatch');
+
+    onLine('');
+    if (bad.length) {
+        onLine(`${bad.length} of ${checked.length} files do NOT match what ${release.tag} publishes.`);
+        onLine('Do not flash a device from this machine until that is explained. Switching KasSigner');
+        onLine('off and on again downloads them afresh.');
+    } else if (checked.length) {
+        onLine(`All ${checked.length} files match the hashes published for ${release.tag}.`);
+    } else {
+        onLine('Nothing to check: no firmware has been downloaded yet.');
+    }
+
+    // The reference for anyone reproducing the build themselves, which is the
+    // only check that says anything about the source rather than the bytes.
+    const unsigned = Object.entries(release.hashes).filter(([key]) => key.startsWith('unsigned:'));
+    if (unsigned.length) {
+        onLine('');
+        onLine('The same release publishes unsigned hashes. Build the firmware from source at');
+        onLine(`${REPO}@${release.tag} and compare against these -- that is what checks the code,`);
+        onLine('where everything above only checks the download:');
+        for (const [key, value] of unsigned) onLine(`  ${key.replace('unsigned:', '')}  ${value}`);
+    }
+
+    onLine('');
+    onLine('This proves the bytes here are the bytes the project published. It does not');
+    onLine('prove the firmware is good, and no hash can.');
+
+    return { tag: release.tag, results, ok: bad.length === 0 && checked.length > 0 };
+}
+
 export function disable() {
     writeState({ ...readState(), enabled: false });
 }

@@ -3479,6 +3479,45 @@ $('ports-check').addEventListener('click', async () => {
     }
 });
 
+// ------------------------------------------------------- kassigner verify ---
+
+/**
+ * Runs the firmware check and shows the whole comparison.
+ *
+ * The output is the feature, not the verdict: this is a device that holds keys,
+ * and "trust me, it matched" is worth less than a log naming both hashes for
+ * every file. So it streams into the tab rather than a modal that closes.
+ */
+$('kassigner-verify-btn').addEventListener('click', async () => {
+    const button = $('kassigner-verify-btn');
+    const state = $('kassigner-verify-state');
+
+    button.disabled = true;
+    state.textContent = 'checking';
+    state.className = 'tag';
+
+    claimJob('Verify KasSigner', {
+        el: $('kassigner-verify-log'),
+        state,
+        onEnd: (job) => {
+            const ok = job.status === 'succeeded';
+            state.textContent = ok ? 'matches the release' : 'failed';
+            state.className = `tag ${ok ? 'ok' : 'off'}`;
+            button.disabled = false;
+        },
+    });
+
+    try {
+        await api('/api/kassigner/verify', { method: 'POST', body: {} });
+    } catch (e) {
+        inlineJob = null;
+        state.textContent = 'failed';
+        state.className = 'tag off';
+        button.disabled = false;
+        toast(e.message, 'bad');
+    }
+});
+
 // ------------------------------------------------------------ setup wizard ---
 
 /**
