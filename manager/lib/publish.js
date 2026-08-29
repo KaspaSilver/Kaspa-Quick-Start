@@ -1,5 +1,4 @@
 import { APPS, loadAppsConfig } from './apps.js';
-import { loadBridgeConfig } from './bridge.js';
 import { loadManagerConfig, loadNodeConfig, loadProxies } from './store.js';
 import { TARGET_KINDS } from './nginx.js';
 
@@ -16,6 +15,12 @@ import { TARGET_KINDS } from './nginx.js';
  *
  * `kind` is the existing proxy target kind, so an assignment made here produces
  * exactly the proxy host the advanced screen has always produced.
+ *
+ * The stratum bridge's own dashboard is deliberately not here. This panel shows
+ * the same numbers from the same endpoint, so the way to read them from
+ * elsewhere is to publish the panel, which has a password. The dashboard has
+ * none, and lists every miner's wallet address. nginx still knows how to serve
+ * it, so an install that published it before keeps working.
  */
 export const SERVICES = [
     {
@@ -25,15 +30,6 @@ export const SERVICES = [
         label: 'Kaspa node',
         detail: 'wRPC Borsh, the endpoint wallets and KDX connect to.',
         afterNote: 'Wallets and KDX connect to wss://{domain}. The certificate is what makes that a wss and not a ws.',
-    },
-    {
-        key: 'mining',
-        kind: 'bridge',
-        sharedPath: '/mining',
-        label: 'Stratum bridge dashboard',
-        detail: "The bridge's own web page: connected workers, hashrate, shares and blocks found.",
-        afterNote:
-            'The dashboard is at https://{domain}. It is the page built into the stratum bridge itself: worker table, blocks found with a pie chart and a CSV download, network hashrate and difficulty, and a search box for looking up any wallet mining to you. Note what that publishes: every miner\'s wallet address, their hashrate and their share of the blocks, to anyone with the address. That is ordinary for a public pool and a lot to give away if you are mining alone. The page has no password of its own, so use the protections above if it should not be open. The Mining tab here already shows the same numbers, from the same endpoint, so publishing is for other people rather than for you. Miners still connect to the stratum port directly; this name only serves the stats page.',
     },
     {
         key: 'kachat',
@@ -114,18 +110,12 @@ export function pathFor(service, domain, proxies) {
  * ready, but nothing is listening yet", which is worth saying out loud rather
  * than leaving someone to discover through a 502.
  */
-export function readiness({ nodeCfg = loadNodeConfig(), appsCfg = loadAppsConfig(), bridgeCfg = loadBridgeConfig(), panelHasPassword = true } = {}) {
+export function readiness({ nodeCfg = loadNodeConfig(), appsCfg = loadAppsConfig(), panelHasPassword = true } = {}) {
     const state = {};
 
     state.kaspad = nodeCfg.services.borsh
         ? { ready: true }
         : { ready: false, reason: 'The wRPC Borsh listener is off. Switch it on under Kaspad, Ports.' };
-
-    state.mining = bridgeCfg.enabled
-        ? bridgeCfg.publishDashboard
-            ? { ready: true }
-            : { ready: false, reason: "The bridge's dashboard is off. Switch it on under Mining." }
-        : { ready: false, reason: 'Mining is off, so the bridge is not running.' };
 
     for (const key of ['kachat', 'desktop', 'nextcloud']) {
         state[key] = appsCfg[key]?.enabled
@@ -194,7 +184,7 @@ export function overview({ proxies = loadProxies(), panelHasPassword = true } = 
  * so the wizard can show the whole shape of the job and tick off the parts that
  * are already in place.
  */
-export function setupPlan(key, { nodeCfg = loadNodeConfig(), appsCfg = loadAppsConfig(), bridgeCfg = loadBridgeConfig(), panelHasPassword = true, proxyOn = false } = {}) {
+export function setupPlan(key, { nodeCfg = loadNodeConfig(), appsCfg = loadAppsConfig(), panelHasPassword = true, proxyOn = false } = {}) {
     const service = serviceFor(key);
     if (!service) return null;
 
@@ -213,21 +203,6 @@ export function setupPlan(key, { nodeCfg = loadNodeConfig(), appsCfg = loadAppsC
             label: "Switch on the node's wRPC Borsh listener",
             detail: 'That is the endpoint being published. The node restarts to pick it up.',
             done: Boolean(nodeCfg.services.borsh),
-        });
-    }
-
-    if (key === 'mining') {
-        steps.push({
-            key: 'mining',
-            label: 'Switch mining on',
-            detail: 'Builds the stratum bridge if it has never run, then starts it.',
-            done: Boolean(bridgeCfg.enabled),
-        });
-        steps.push({
-            key: 'dashboard',
-            label: "Switch on the bridge's own dashboard",
-            detail: 'It is off by default because the Mining tab already shows those numbers. It is the page this domain will serve.',
-            done: Boolean(bridgeCfg.publishDashboard),
         });
     }
 
