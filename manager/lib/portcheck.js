@@ -23,6 +23,13 @@ import { containerState, publishedPorts, PROXY_CONTAINER } from './dockerctl.js'
  * the panel says so before it does it.
  */
 const API = 'https://check-host.net';
+
+// No LAN address is reported. The obvious way to find one -- reading the
+// interfaces -- returns this container's address on the docker network, which
+// looks like an answer and would send somebody to change a forwarding rule that
+// was already right. The host's own address is not visible from in here, so the
+// panel says "this machine" and leaves the address to the router's own device
+// list, which knows.
 const NODES = 3;
 
 async function ask(path) {

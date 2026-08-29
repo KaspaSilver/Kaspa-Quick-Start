@@ -3456,7 +3456,7 @@ $('ports-check').addEventListener('click', async () => {
         const verdict = bothOpen
             ? `<p class="muted">Both ports reach this machine.${certNote}</p>`
             : r.outside && r.local.servesChallenge
-              ? `<p class="muted">This machine is set up correctly, so what is missing is the forwarding: on your router, send ${escapeHtml(String(r.outside.http.port))} and ${escapeHtml(String(r.outside.https.port))} to this machine's ${escapeHtml(String(r.local.bindHttp))} and ${escapeHtml(String(r.local.bindHttps))}${r.ip ? `, at ${escapeHtml(r.ip)}` : ''}.${certNote}</p>`
+              ? `<p class="muted">This machine is set up correctly, so what is missing is the forwarding. Two numbers per rule, and they are not the same one: the outside port is what the internet dials, the forward port is what this machine listens on. On your router, external <strong>${escapeHtml(String(r.outside.http.port))}</strong> to this machine on port <strong>${escapeHtml(String(r.local.bindHttp))}</strong>, and external <strong>${escapeHtml(String(r.outside.https.port))}</strong> to port <strong>${escapeHtml(String(r.local.bindHttps))}</strong>. A rule that forwards ${escapeHtml(String(r.outside.http.port))} to ${escapeHtml(String(r.outside.http.port))} arrives at a port nothing is bound to.${certNote}</p>`
               : '';
 
         out.innerHTML = `<ul class="port-result">${rows.join('')}</ul>${verdict}`;
