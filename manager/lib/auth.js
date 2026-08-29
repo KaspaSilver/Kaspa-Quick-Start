@@ -18,17 +18,38 @@ const PASSWORD_HASH = (process.env.ADMIN_PASSWORD_HASH || '').trim();
 
 export const authConfigured = () => PASSWORD_HASH.length > 0;
 
+/**
+ * True when a password is stored but cannot possibly be verified.
+ *
+ * Hashes written before the separator changed reached the container truncated,
+ * because docker compose interpolated the `$` in them while reading .env. The
+ * panel would then refuse every password including the right one, with nothing
+ * to say why. Naming the state is what turns a lockout into an instruction.
+ */
+export const passwordUnusable = () => {
+    if (!authConfigured()) return false;
+    const [scheme, saltHex, hashHex] = PASSWORD_HASH.split(/[:$]/);
+    return scheme !== 'scrypt' || !saltHex || !hashHex;
+};
+
 /** True when a caller must sign in. Mirrors authConfigured, named for intent. */
 export const authRequired = () => authConfigured();
 
 export function hashPassword(password, salt = crypto.randomBytes(16)) {
     const derived = crypto.scryptSync(password, salt, SCRYPT_KEYLEN);
-    return `scrypt$${salt.toString('hex')}$${derived.toString('hex')}`;
+    // Colons, not dollars. This value is stored in .env, and docker compose
+    // interpolates $NAME when it reads that file, so `scrypt$salt$hash` reached
+    // the container with everything from the second $ replaced by nothing --
+    // whenever the hash happened to start with a letter, which is most of the
+    // time. It failed silently: the panel simply refused the right password.
+    return `scrypt:${salt.toString('hex')}:${derived.toString('hex')}`;
 }
 
 export function verifyPassword(password) {
     if (!authConfigured()) return false;
-    const [scheme, saltHex, hashHex] = PASSWORD_HASH.split('$');
+    // `$` is the separator this used to use. Accepted so an install that set a
+    // password before the change keeps working -- if compose left it intact.
+    const [scheme, saltHex, hashHex] = PASSWORD_HASH.split(/[:$]/);
     if (scheme !== 'scrypt' || !saltHex || !hashHex) return false;
     let derived;
     try {
