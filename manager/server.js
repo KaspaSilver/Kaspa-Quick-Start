@@ -794,7 +794,7 @@ route('POST', /^\/api\/proxies\/([a-f0-9]{12})\/certificate$/, async (req, res, 
     if (!proxy) return fail(res, 404, 'No such proxy host.');
 
     const email = String(body.email || proxy.ssl?.email || '').trim();
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return fail(res, 400, 'A valid contact e-mail is required.');
+    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return fail(res, 400, `"${email}" is not an e-mail address.`);
     // Let's Encrypt proves the domain by fetching a file over port 80, which
     // nginx serves. Without it running the request can only fail.
     if (!proxyEnabled()) {
@@ -868,6 +868,7 @@ route('GET', /^\/api\/publish$/, async (req, res) => {
         domains: loadDomains().map((d) => ({
             ...d,
             certificate: nginx.hasCertificate(d.domain),
+            expiry: nginx.certificateExpiry(d.domain),
             // Which services are on this name, and where. A name carries
             // several now, so the wizard shows what it would be joining.
             usedBy: proxies.find((p) => p.domain === d.domain && (p.path ?? '/') === '/')?.target?.kind ?? null,
@@ -891,9 +892,7 @@ route('POST', /^\/api\/domains$/, async (req, res) => {
 
     const mode = body.ssl?.mode === 'letsencrypt' ? 'letsencrypt' : 'none';
     const email = String(body.ssl?.email || '').trim();
-    if (mode === 'letsencrypt' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-        return fail(res, 400, "A contact e-mail is required for Let's Encrypt certificates.");
-    }
+    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return fail(res, 400, `"${email}" is not an e-mail address.`);
 
     const record = { id: nginx.newId(), domain, ssl: { mode, email }, addedAt: new Date().toISOString() };
     list.push(record);
@@ -1068,10 +1067,10 @@ route('POST', /^\/api\/setup\/([a-z]+)$/, async (req, res, match) => {
     const token = String(body.token || '').trim();
     if (!existing && !token && !storedToken) return fail(res, 400, 'Enter your DuckDNS token.');
 
+    // No contact address is asked for or required: the ACME account registers
+    // without one, and the panel shows the expiry date itself.
     const email = String(body.email || existing?.ssl?.email || '').trim();
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-        return fail(res, 400, "A contact e-mail is required: Let's Encrypt sends expiry warnings to it.");
-    }
+    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return fail(res, 400, `"${email}" is not an e-mail address.`);
 
     const extras = {
         auth: body.auth?.enabled

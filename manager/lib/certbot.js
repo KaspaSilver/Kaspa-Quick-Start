@@ -16,7 +16,16 @@ function volumeArgs() {
     ];
 }
 
+/**
+ * An ACME account can be registered without a contact address, and this one is.
+ *
+ * The address only ever receives expiry warnings, and this stack renews on a
+ * daily timer and shows the expiry date in the panel, so the warning would be
+ * telling someone something their own screen already says. Asking for it made
+ * every setup one field longer for that.
+ */
 export async function issue(domain, email, { staging = false, onLine } = {}) {
+    const contact = String(email || '').trim();
     const args = [
         'run',
         '--rm',
@@ -30,8 +39,7 @@ export async function issue(domain, email, { staging = false, onLine } = {}) {
         '--agree-tos',
         '--no-eff-email',
         '--keep-until-expiring',
-        '-m',
-        email,
+        ...(contact ? ['-m', contact] : ['--register-unsafely-without-email']),
         '-d',
         domain,
     ];

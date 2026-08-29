@@ -3278,10 +3278,22 @@ function renderPublishServices() {
                   ? '<span class="tag ok">ready</span>'
                   : `<span class="tag" title="${escapeHtml(s.reason ?? '')}">not running</span>`;
 
+            // Certificate life is on screen rather than in an e-mail nobody
+            // asked for. Renewal is automatic, so this is a check, not a chore.
+            const record = publishState.domains.find((d) => d.domain === s.domain);
+            const days = record?.expiry?.daysLeft;
+            const https = Number.isFinite(days)
+                ? `<span class="tag ${days <= 14 ? 'warn' : 'ok'}" title="The certificate renews automatically about a month before this.">https, ${days}d left</span>`
+                : record?.ssl?.mode === 'letsencrypt'
+                  ? '<span class="tag" title="Not issued yet. Retry HTTPS asks again.">no certificate</span>'
+                  : '';
+
             const address = s.url
-                ? `<a href="${escapeHtml(s.url)}" target="_blank" rel="noreferrer noopener">${escapeHtml(s.domain)}</a>${
-                      proxy?.auth?.enabled ? ' <span class="tag">password</span>' : ''
-                  }${(proxy?.allowlist || []).length ? ' <span class="tag">ip filter</span>' : ''}`
+                ? `<a href="${escapeHtml(s.url)}" target="_blank" rel="noreferrer noopener">${escapeHtml(s.domain)}${
+                      s.path && s.path !== '/' ? escapeHtml(s.path) : ''
+                  }</a> ${https}${proxy?.auth?.enabled ? ' <span class="tag">password</span>' : ''}${
+                      (proxy?.allowlist || []).length ? ' <span class="tag">ip filter</span>' : ''
+                  }`
                 // The dropdown beside this already says "not published", so
                 // repeating it here would be two answers to the same question.
                 : '<span class="muted">–</span>';
@@ -3483,10 +3495,6 @@ function renderSetupStep() {
     $('setup-next').hidden = step === 3;
     $('setup-run').hidden = step !== 3;
 
-    // An existing name needs no token: it is already being kept current, or it
-    // is not a DuckDNS name at all.
-    $('setup-token-row').hidden = setupState.mode === 'existing';
-
     if (step !== 3) return;
 
     const domain = setupDomain();
@@ -3527,13 +3535,9 @@ $('setup-next').addEventListener('click', () => {
         const chosen = document.querySelector('input[name="setup-domain"]:checked')?.value ?? '';
         setupState.mode = chosen ? 'existing' : 'new';
         setupState.domain = chosen || null;
-        if (chosen) {
-            const record = publishState.domains.find((d) => d.domain === chosen);
-            if (record?.ssl?.email) $('setup-email').value = record.ssl.email;
-        }
-        // An existing name skips the DuckDNS steps, but still needs an address
-        // for the certificate, which step 2 asks for.
-        setupState.step = chosen ? 2 : 1;
+        // A name already here needs nothing else: no token to save, and the
+        // certificate is issued without a contact address.
+        setupState.step = chosen ? 3 : 1;
         renderSetupStep();
         return;
     }
@@ -3547,11 +3551,8 @@ $('setup-next').addEventListener('click', () => {
     if (step === 2) {
         // A name already on this panel needs no token: either it is already
         // being refreshed, or it is not a DuckDNS name in the first place.
-        if (setupState.mode !== 'existing' && !$('setup-token').value.trim() && !setupState.plan?.duckdns?.hasToken) {
+        if (!$('setup-token').value.trim() && !setupState.plan?.duckdns?.hasToken) {
             return toast('Paste the token from duckdns.org.', 'bad');
-        }
-        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test($('setup-email').value.trim())) {
-            return toast("Enter an e-mail for the certificate. Let's Encrypt needs one.", 'bad');
         }
     }
 
@@ -3562,7 +3563,7 @@ $('setup-next').addEventListener('click', () => {
 $('setup-back').addEventListener('click', () => {
     const { step, mode } = setupState;
     // Coming back from the plan on an existing name lands on the list it was
-    // chosen from, not on the DuckDNS instructions it never saw.
+    // chosen from, not on the DuckDNS steps it never saw.
     setupState.step = step === 3 && mode === 'existing' ? 0 : Math.max(publishState.domains.length ? 0 : 1, step - 1);
     renderSetupStep();
 });
@@ -3577,7 +3578,6 @@ $('setup-run').addEventListener('click', async () => {
         domain: mode === 'existing' ? domain : undefined,
         subdomain: mode === 'existing' ? undefined : $('setup-subdomain').value.trim(),
         token: $('setup-token').value.trim(),
-        email: $('setup-email').value.trim(),
         auth: $('setup-auth').checked
             ? { enabled: true, user: $('setup-auth-user').value.trim(), password: $('setup-auth-pass').value }
             : { enabled: false },

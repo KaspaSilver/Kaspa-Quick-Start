@@ -101,8 +101,10 @@ export function validateProxy(proxy, { existing = [], panelHasPassword = true } 
         if (!['http', 'https'].includes(proxy.target.scheme || 'http')) errors.push('Custom scheme must be http or https.');
     }
 
-    if (proxy.ssl?.mode === 'letsencrypt' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(proxy.ssl.email || ''))) {
-        errors.push("A contact e-mail is required for Let's Encrypt certificates.");
+    // A contact address is optional for an ACME account, so it is optional
+    // here. One that is given still has to look like an address.
+    if (proxy.ssl?.mode === 'letsencrypt' && proxy.ssl.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(proxy.ssl.email))) {
+        errors.push(`"${proxy.ssl.email}" is not an e-mail address.`);
     }
 
     if (proxy.auth?.enabled) {
@@ -158,6 +160,24 @@ export function upstreamFor(proxy, nodeConfig) {
 
 export const certPath = (domain) => path.join(LETSENCRYPT_DIR, 'live', domain, 'fullchain.pem');
 export const hasCertificate = (domain) => fs.existsSync(certPath(domain));
+
+/**
+ * When the certificate for a name runs out.
+ *
+ * This is what the Let's Encrypt contact address would have told someone by
+ * e-mail, and the panel is a better place for it: it is on screen next to the
+ * address it belongs to, and it is true right now rather than a warning sent
+ * once. Renewal is automatic, so this is a check, not a chore.
+ */
+export function certificateExpiry(domain) {
+    try {
+        const cert = new crypto.X509Certificate(fs.readFileSync(certPath(domain)));
+        const validTo = new Date(cert.validTo);
+        return { validTo: validTo.toISOString(), daysLeft: Math.floor((validTo - Date.now()) / 86_400_000) };
+    } catch {
+        return null;
+    }
+}
 
 // ------------------------------------------------------------- rendering ----
 

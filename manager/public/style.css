@@ -504,6 +504,7 @@ table.proxies td:last-child { text-align: right; white-space: nowrap; }
 }
 .tag.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
 .tag.off { color: var(--muted); }
+.tag.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
 
 /* ------------------------------------------------------------------- logs */
 
