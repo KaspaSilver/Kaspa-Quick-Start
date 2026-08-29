@@ -145,7 +145,10 @@ case "${1:-status}" in
             printf '\n  %snot linked%s - the container is serving the files baked into its image\n' "$YLW" "$R"
         fi
         # Compare what is actually being served against the working copy.
-        local_size=$(wc -c < "$REPO/manager/public/app.js")
+        # `wc -c` pads its output with spaces on BSD/macOS, so the string
+        # comparison below fails on two identical numbers unless it is trimmed
+        # the same way the served size already is.
+        local_size=$(wc -c < "$REPO/manager/public/app.js" | tr -d ' \n')
         served_size=$($DOCKER_SUDO docker exec kaspa-node-manager sh -c 'wc -c < /app/public/app.js' 2>/dev/null | tr -d ' \n' || echo "?")
         printf '\n  repo app.js   %s bytes\n' "$local_size"
         printf '  served app.js %s bytes\n' "$served_size"
