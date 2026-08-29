@@ -177,7 +177,7 @@ async function applyNodeConfig(cfg, onLine = () => {}) {
 
     // Regenerate proxy configs too: they embed kaspad's port numbers, which
     // change when the network does.
-    nginx.writeAll(loadProxies(), cfg);
+    nginx.writeAll(loadProxies(), cfg, renderOptions());
 
     // A stopped node stays stopped. Everything above this point is on disk,
     // and kaspad reads it when it next boots, so changing settings is never a
@@ -708,7 +708,7 @@ route('GET', /^\/api\/proxies$/, async (req, res) => {
 
 async function saveProxyList(list, cfg, onLine) {
     saveProxies(list);
-    nginx.writeAll(list, cfg);
+    nginx.writeAll(list, cfg, renderOptions());
     // With the proxy off the files are still written, so switching it on later
     // brings up everything that was configured meanwhile.
     if (!proxyEnabled()) return;
@@ -742,7 +742,7 @@ route('POST', /^\/api\/proxies$/, async (req, res) => {
     } catch (err) {
         // Roll back so a config nginx rejects never stays on disk.
         saveProxies(list.filter((p) => p.id !== proxy.id));
-        nginx.writeAll(loadProxies(), loadNodeConfig());
+        nginx.writeAll(loadProxies(), loadNodeConfig(), renderOptions());
         return fail(res, 400, `nginx rejected the configuration: ${err.message}`);
     }
     sendJson(res, 201, { ok: true, proxy: { ...proxy, auth: undefined } });
@@ -774,7 +774,7 @@ route('PUT', /^\/api\/proxies\/([a-f0-9]{12})$/, async (req, res, match) => {
     } catch (err) {
         list[index] = previous;
         saveProxies(list);
-        nginx.writeAll(list, loadNodeConfig());
+        nginx.writeAll(list, loadNodeConfig(), renderOptions());
         return fail(res, 400, `nginx rejected the configuration: ${err.message}`);
     }
     sendJson(res, 200, { ok: true, proxy: { ...proxy, auth: undefined } });
@@ -807,14 +807,18 @@ route('POST', /^\/api\/proxies\/([a-f0-9]{12})\/certificate$/, async (req, res, 
     const job = jobs.start(`Issue certificate for ${proxy.domain}`, async (onLine) => {
         onLine(`Requesting a certificate for ${proxy.domain} from Let's Encrypt.`);
         onLine('This needs port 80 reachable from the internet for that domain.');
-        await certbot.issue(proxy.domain, email, { staging: Boolean(body.staging), onLine });
+        await certbot.issue(proxy.domain, email, {
+            staging: Boolean(body.staging),
+            onLine,
+            duckdns: duckdnsFor(proxy.domain),
+        });
 
         const current = loadProxies();
         const target = current.find((p) => p.id === proxy.id);
         if (target) {
             target.ssl = { ...target.ssl, mode: 'letsencrypt', email, forceHttps: target.ssl?.forceHttps !== false };
             saveProxies(current);
-            nginx.writeAll(current, loadNodeConfig());
+            nginx.writeAll(current, loadNodeConfig(), renderOptions());
             await nginx.reload();
             onLine('HTTPS is now enabled for this host.');
         }
@@ -839,6 +843,30 @@ route('POST', /^\/api\/proxy\/enabled$/, async (req, res) => {
  * Deliberately not run on page load: it asks a third party to connect back, so
  * it happens when somebody presses the button and not before.
  */
+/**
+ * The ports the outside world reaches this machine on, which a router decides
+ * and nginx cannot know. Saved rather than detected: the check can tell you
+ * whether a port arrives, but not which one a visitor should type.
+ */
+route('POST', /^\/api\/proxy\/ports$/, async (req, res) => {
+    const body = await readBody(req);
+    const port = (value, fallback) => {
+        const n = Number(value);
+        return Number.isInteger(n) && n >= 1 && n <= 65535 ? n : fallback;
+    };
+
+    const cfg = loadManagerConfig();
+    cfg.proxy.publicHttpPort = port(body.http, 80);
+    cfg.proxy.publicHttpsPort = port(body.https, 443);
+    saveManagerConfig(cfg);
+
+    // Redirects embed the https port, so every vhost is rewritten.
+    nginx.writeAll(loadProxies(), loadNodeConfig(), renderOptions());
+    if (proxyEnabled()) await nginx.reload().catch(() => {});
+
+    sendJson(res, 200, { ok: true, http: cfg.proxy.publicHttpPort, https: cfg.proxy.publicHttpsPort });
+});
+
 route('GET', /^\/api\/proxy\/portcheck$/, async (req, res) => {
     const domain = loadDomains()[0]?.domain ?? null;
     sendJson(res, 200, await portcheck.check(domain));
@@ -847,7 +875,7 @@ route('GET', /^\/api\/proxy\/portcheck$/, async (req, res) => {
 route('POST', /^\/api\/proxy\/reload$/, async (req, res) => {
     if (!proxyEnabled()) return fail(res, 409, 'The reverse proxy is switched off.');
     try {
-        nginx.writeAll(loadProxies(), loadNodeConfig());
+        nginx.writeAll(loadProxies(), loadNodeConfig(), renderOptions());
         await nginx.reload();
         sendJson(res, 200, { ok: true, test: await nginx.testConfig() });
     } catch (err) {
@@ -857,7 +885,7 @@ route('POST', /^\/api\/proxy\/reload$/, async (req, res) => {
 
 route('POST', /^\/api\/proxy\/renew$/, async (req, res) => {
     const job = jobs.start('Renew certificates', async (onLine) => {
-        await certbot.renew({ onLine });
+        await certbot.renew({ onLine, duckdns: anyDuckdnsCredentials() });
         await nginx.reload();
     });
     sendJson(res, 202, { ok: true, jobId: job.id });
@@ -890,6 +918,10 @@ route('GET', /^\/api\/publish$/, async (req, res) => {
             rootFree: !proxies.some((p) => p.domain === d.domain && (p.path ?? '/') === '/'),
         })),
         enabled: proxyEnabled(),
+        publicPorts: {
+            http: loadManagerConfig().proxy.publicHttpPort ?? 80,
+            https: loadManagerConfig().proxy.publicHttpsPort ?? 443,
+        },
         container: await dockerctl.containerState(dockerctl.PROXY_CONTAINER),
     });
 });
@@ -1030,7 +1062,7 @@ async function attachDomain(service, domain, ssl, extras = null) {
         const rolled = loadProxies().filter((p) => p.id !== proxy.id);
         if (previous) rolled.push(previous);
         saveProxies(rolled);
-        nginx.writeAll(rolled, loadNodeConfig());
+        nginx.writeAll(rolled, loadNodeConfig(), renderOptions());
         throw new Error(`nginx rejected the configuration: ${cause.message}`);
     }
     return proxy;
@@ -1192,9 +1224,14 @@ route('POST', /^\/api\/setup\/([a-z]+)$/, async (req, res, match) => {
         if (nginx.hasCertificate(domain)) {
             onLine(`${domain} already has a certificate, so it is left alone.`);
         } else {
-            onLine("Asking Let's Encrypt for a certificate. This needs port 80 open from the internet.");
+            const viaDns = duckdnsFor(domain);
+            onLine(
+                viaDns
+                    ? "Asking Let's Encrypt for a certificate, proving the name with a DuckDNS TXT record. This needs no open ports."
+                    : "Asking Let's Encrypt for a certificate. This needs port 80 open from the internet.",
+            );
             try {
-                await certbot.issue(domain, email, { onLine });
+                await certbot.issue(domain, email, { onLine, duckdns: viaDns, staging: Boolean(body.staging) });
             } catch (err) {
                 // Everything else is done and the address works over http, so
                 // this is the one outstanding step rather than a failed job.
@@ -1233,7 +1270,7 @@ route('POST', /^\/api\/setup\/([a-z]+)$/, async (req, res, match) => {
         }
         // The vhost is rendered without a 443 block until the certificate is on
         // disk, so it has to be written again now that it is.
-        nginx.writeAll(loadProxies(), loadNodeConfig());
+        nginx.writeAll(loadProxies(), loadNodeConfig(), renderOptions());
         await nginx.reload();
 
         onLine(`Done. https://${domain} is live.`);
@@ -1348,7 +1385,7 @@ async function applyProxyState(enabled, onLine = () => {}) {
         await dockerctl.compose(['rm', '-sf', 'proxy'], { onLine, profile: 'proxy', timeoutMs: 5 * 60_000 });
         return;
     }
-    nginx.writeAll(loadProxies(), loadNodeConfig());
+    nginx.writeAll(loadProxies(), loadNodeConfig(), renderOptions());
     onLine('Starting the reverse proxy on ports 80 and 443.');
     await dockerctl.compose(['up', '-d', 'proxy'], { onLine, profile: 'proxy', timeoutMs: 5 * 60_000 });
 }
@@ -1793,6 +1830,41 @@ route('PUT', /^\/api\/duckdns$/, async (req, res) => {
 
 // -------------------------------------------------------- admin password --
 
+/**
+ * What the renderer needs to know about the world outside this machine.
+ *
+ * Only the ports so far, and only because a redirect has to name one: nginx
+ * knows what it binds, but not what a router put in front of it.
+ */
+const renderOptions = () => ({ publicHttpsPort: loadManagerConfig().proxy.publicHttpsPort ?? 443 });
+
+/**
+ * The DuckDNS credentials for a name, when it is one and the panel holds the
+ * token.
+ *
+ * A DuckDNS name is exactly the case where DNS-01 is both possible and worth
+ * preferring: it proves the name with a TXT record instead of an inbound
+ * request, so it works on a network where port 80 already belongs to something
+ * else, and it keeps working if that ever changes.
+ */
+function duckdnsFor(domain) {
+    const name = String(domain || '').toLowerCase();
+    if (!name.endsWith('.duckdns.org')) return null;
+    const token = loadManagerConfig().duckdns.token;
+    return token ? { subdomain: name.slice(0, -'.duckdns.org'.length), token } : null;
+}
+
+/**
+ * Renewal runs over every certificate at once, so it needs the credentials if
+ * any of them was issued against a DuckDNS name. One token covers them all.
+ */
+const anyDuckdnsCredentials = () => {
+    const dd = loadManagerConfig().duckdns;
+    // Only the token is passed. The hook takes the name from certbot, so one
+    // token covers every DuckDNS certificate on the account.
+    return dd.token ? { subdomain: duckdns.normalizeDomains(dd.domains)[0] ?? '', token: dd.token } : null;
+};
+
 /** Where the panel's own port is published, which .env records. */
 const managerBind = () => (readEnvFile().MANAGER_BIND || '0.0.0.0').trim();
 const isLoopbackBind = () => ['127.0.0.1', '::1', 'localhost'].includes(managerBind());
@@ -2041,7 +2113,7 @@ async function bootstrap() {
     migrateBindAddress(cfg);
     writeArgsFile(cfg);
     renderPortsOverride(cfg);
-    nginx.writeAll(loadProxies(), cfg);
+    nginx.writeAll(loadProxies(), cfg, renderOptions());
     bridge.writeBridgeFiles(bridge.loadBridgeConfig(), cfg);
 
     const appsCfg = apps.loadAppsConfig();
@@ -2106,7 +2178,7 @@ async function bootstrap() {
             if (jobs.busy) return;
             if (!loadProxies().some((p) => p.ssl?.mode === 'letsencrypt')) return;
             jobs.start('Automatic certificate renewal', async (onLine) => {
-                await certbot.renew({ onLine });
+                await certbot.renew({ onLine, duckdns: anyDuckdnsCredentials() });
                 await nginx.reload().catch(() => {});
             });
         },

@@ -320,7 +320,7 @@ function extraLocations(proxy) {
  * before the request reaches them, so the service behind it needs to know
  * nothing about being proxied.
  */
-export function renderDomain(domain, hosts, nodeConfig) {
+export function renderDomain(domain, hosts, nodeConfig, { publicHttpsPort = 443 } = {}) {
     const live = hosts.filter((p) => p.enabled !== false);
     // Longest path first: nginx picks the longest matching prefix anyway, and
     // reading the file top to bottom should agree with what it does.
@@ -379,8 +379,13 @@ export function renderDomain(domain, hosts, nodeConfig) {
     out.push('    }');
     out.push('');
     if (forceHttps) {
+        // $host carries no port, so on a network where the outside reaches this
+        // machine on something other than 443 a bare redirect would send the
+        // visitor to whatever owns 443 out there -- which is precisely the
+        // other machine this arrangement exists to avoid.
+        const suffix = Number(publicHttpsPort) === 443 ? '' : `:${Number(publicHttpsPort)}`;
         out.push('    location / {');
-        out.push('        return 301 https://$host$request_uri;');
+        out.push(`        return 301 https://$host${suffix}$request_uri;`);
         out.push('    }');
     } else {
         out.push(...locations());
@@ -426,7 +431,7 @@ export function renderDomain(domain, hosts, nodeConfig) {
     return `${out.join('\n')}\n`;
 }
 
-export function writeAll(proxies, nodeConfig) {
+export function writeAll(proxies, nodeConfig, options = {}) {
     fs.mkdirSync(NGINX_CONF_D, { recursive: true });
     fs.mkdirSync(NGINX_SNIPPETS, { recursive: true });
 
@@ -444,7 +449,7 @@ export function writeAll(proxies, nodeConfig) {
     for (const [domain, hosts] of byDomain) {
         const file = `10-${domain}.conf`;
         keep.add(file);
-        fs.writeFileSync(path.join(NGINX_CONF_D, file), renderDomain(domain, hosts, nodeConfig), 'utf8');
+        fs.writeFileSync(path.join(NGINX_CONF_D, file), renderDomain(domain, hosts, nodeConfig, options), 'utf8');
     }
 
     // htpasswd files stay per host: two services on one name can have different

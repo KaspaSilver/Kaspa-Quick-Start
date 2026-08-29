@@ -1,6 +1,6 @@
 import { APPS, loadAppsConfig } from './apps.js';
 import { loadBridgeConfig } from './bridge.js';
-import { loadNodeConfig, loadProxies } from './store.js';
+import { loadManagerConfig, loadNodeConfig, loadProxies } from './store.js';
 import { TARGET_KINDS } from './nginx.js';
 
 /**
@@ -151,6 +151,13 @@ export function readiness({ nodeCfg = loadNodeConfig(), appsCfg = loadAppsConfig
 /** The service view: every publishable thing, with the domain it answers on. */
 export function overview({ proxies = loadProxies(), panelHasPassword = true } = {}) {
     const ready = readiness({ panelHasPassword });
+    // The address someone can paste into a browser, which is not the same as
+    // the name when a router put a different port in front of this machine.
+    const mgr = loadManagerConfig().proxy;
+    const portFor = (scheme) => {
+        const port = scheme === 'https' ? (mgr.publicHttpsPort ?? 443) : (mgr.publicHttpPort ?? 80);
+        return Number(port) === (scheme === 'https' ? 443 : 80) ? '' : `:${Number(port)}`;
+    };
 
     return SERVICES.map((service) => {
         // The proxy host this service owns, if one has been assigned. Matching
@@ -164,9 +171,9 @@ export function overview({ proxies = loadProxies(), panelHasPassword = true } = 
             proxyId: proxy?.id ?? null,
             path: proxy?.path ?? null,
             url: proxy
-                ? `${proxy.ssl?.mode === 'letsencrypt' ? 'https' : 'http'}://${proxy.domain}${
-                      (proxy.path ?? '/') === '/' ? '' : proxy.path
-                  }`
+                ? `${proxy.ssl?.mode === 'letsencrypt' ? 'https' : 'http'}://${proxy.domain}${portFor(
+                      proxy.ssl?.mode === 'letsencrypt' ? 'https' : 'http',
+                  )}${(proxy.path ?? '/') === '/' ? '' : proxy.path}`
                 : null,
             ...ready[service.key],
         };

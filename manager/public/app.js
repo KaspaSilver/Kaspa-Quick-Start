@@ -3256,6 +3256,10 @@ let publishState = { services: [], domains: [] };
 async function loadPublish() {
     try {
         publishState = await api('/api/publish');
+        if (publishState.publicPorts) {
+            $('ports-http').value = publishState.publicPorts.http;
+            $('ports-https').value = publishState.publicPorts.https;
+        }
     } catch {
         // The proxy card above already reports anything that is actually wrong.
         return;
@@ -3366,6 +3370,22 @@ $('publish-body').addEventListener('click', async (event) => {
     } catch (e) {
         toast(e.message, 'bad');
         event.target.disabled = false;
+    }
+});
+
+$('ports-save').addEventListener('click', async () => {
+    $('ports-save').disabled = true;
+    try {
+        const r = await api('/api/proxy/ports', {
+            method: 'POST',
+            body: { http: Number($('ports-http').value), https: Number($('ports-https').value) },
+        });
+        toast(`Addresses will use ${r.http === 80 ? 'the default http port' : `http port ${r.http}`} and ${r.https === 443 ? 'the default https port' : `https port ${r.https}`}.`);
+        await loadProxies();
+    } catch (e) {
+        toast(e.message, 'bad');
+    } finally {
+        $('ports-save').disabled = false;
     }
 });
 

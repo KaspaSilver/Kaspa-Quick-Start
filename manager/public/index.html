@@ -1391,6 +1391,19 @@
               can open these addresses and Let's Encrypt cannot issue a
               certificate. Some ISPs block port 80 on home connections.
             </p>
+            <p>
+              If 80 and 443 already belong to something else on your network,
+              forward two other outside ports to this machine instead and say so
+              here. Certificates still work: a DuckDNS name is proved with a DNS
+              record rather than an inbound request, so it needs no open port at
+              all. Addresses then carry the port, as
+              <code>https://yourname.duckdns.org:8443</code>.
+            </p>
+            <div class="row">
+              <label class="inline">Outside http <input type="number" id="ports-http" min="1" max="65535" value="80" size="5"></label>
+              <label class="inline">Outside https <input type="number" id="ports-https" min="1" max="65535" value="443" size="5"></label>
+              <button id="ports-save" class="ghost">Save ports</button>
+            </div>
             <div class="row">
               <button id="ports-check" class="ghost">Check from outside</button>
               <span class="muted" id="ports-check-note">Asks check-host.net to try connecting to your address. It sees your public IP.</span>

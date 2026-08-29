@@ -87,7 +87,17 @@ export const DEFAULT_MANAGER_CONFIG = {
     // The reverse proxy claims ports 80 and 443, so it stays off until someone
     // actually wants a domain. null means "not decided yet" and is resolved
     // once, on first boot, from whether the stack is already using it.
-    proxy: { enabled: null },
+    proxy: {
+        enabled: null,
+        // What the outside world reaches this machine on, which is not always
+        // what nginx binds. A router can send external 8443 to this machine's
+        // 443, and it has to, on a network where 443 already belongs to
+        // something else. The panel needs the outside numbers to write a
+        // redirect that lands in the right place and to show an address that
+        // can be pasted into a browser.
+        publicHttpPort: 80,
+        publicHttpsPort: 443,
+    },
 };
 
 // ------------------------------------------------------------------- io ----
