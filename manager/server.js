@@ -1159,9 +1159,13 @@ route('POST', /^\/api\/setup\/([a-z]+)$/, async (req, res, match) => {
         // --- the name becomes one of ours, and the service answers on it ----
         const domains = loadDomains();
         const ssl = { mode: 'letsencrypt', email };
-        const existing = domains.find((d) => d.domain === domain);
-        if (existing) {
-            existing.ssl = ssl;
+        // Not `existing`: that name belongs to the domain record this job was
+        // started for, declared outside this closure. Shadowing it here put the
+        // outer one in the temporal dead zone for the whole job, so the very
+        // first line that read it threw before anything ran.
+        const record = domains.find((d) => d.domain === domain);
+        if (record) {
+            record.ssl = ssl;
         } else {
             domains.push({ id: nginx.newId(), domain, ssl, addedAt: new Date().toISOString() });
         }
