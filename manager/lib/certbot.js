@@ -1,5 +1,8 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
 import { docker } from './dockerctl.js';
-import { hostPath } from './paths.js';
+import { hostPath, WEBROOT_DIR } from './paths.js';
 
 const IMAGE = 'certbot/certbot:latest';
 
@@ -36,6 +39,11 @@ export async function issue(domain, email, { staging = false, onLine } = {}) {
         '-w',
         '/var/www/certbot',
         '--non-interactive',
+        // Inside the letsencrypt volume, so the log outlives this throwaway
+        // container. certbot's own error message points at it, and until now it
+        // named a path that ceased to exist the moment it was printed.
+        '--logs-dir',
+        '/etc/letsencrypt/logs',
         '--agree-tos',
         '--no-eff-email',
         '--keep-until-expiring',
@@ -45,6 +53,40 @@ export async function issue(domain, email, { staging = false, onLine } = {}) {
     ];
     if (staging) args.push('--staging');
     return docker(args, { onLine, timeoutMs: 5 * 60_000 });
+}
+
+/**
+ * Serves a file the way Let's Encrypt is about to ask for one, and fetches it
+ * back through nginx.
+ *
+ * A failed challenge has two very different causes -- this machine not serving
+ * it, or the internet not reaching this machine -- and certbot cannot tell them
+ * apart. This can: if the file comes back over the internal network, everything
+ * on this side is right and what is missing is the route in.
+ */
+export async function selfTest(domain) {
+    const token = `panel-check-${crypto.randomBytes(8).toString('hex')}`;
+    const dir = path.join(WEBROOT_DIR, '.well-known', 'acme-challenge');
+    const file = path.join(dir, token);
+    const expected = `served-by-${domain}`;
+
+    try {
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(file, expected, 'utf8');
+        const res = await fetch(`http://proxy/.well-known/acme-challenge/${token}`, {
+            headers: { Host: domain },
+            signal: AbortSignal.timeout(5000),
+        });
+        return { ok: res.ok && (await res.text()).trim() === expected };
+    } catch (err) {
+        return { ok: false, error: err.message };
+    } finally {
+        try {
+            fs.rmSync(file);
+        } catch {
+            /* nothing to clean up */
+        }
+    }
 }
 
 export async function renew({ onLine } = {}) {

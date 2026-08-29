@@ -1181,7 +1181,43 @@ route('POST', /^\/api\/setup\/([a-z]+)$/, async (req, res, match) => {
             onLine(`${domain} already has a certificate, so it is left alone.`);
         } else {
             onLine("Asking Let's Encrypt for a certificate. This needs port 80 open from the internet.");
-            await certbot.issue(domain, email, { onLine });
+            try {
+                await certbot.issue(domain, email, { onLine });
+            } catch (err) {
+                // Everything else is done and the address works over http, so
+                // this is the one outstanding step rather than a failed job.
+                // certbot cannot say why a challenge failed, so say it here:
+                // the answer is almost always the route in, and the checks
+                // below are what distinguish that from a broken vhost.
+                onLine('');
+                onLine('Let\'s Encrypt could not verify the name, so there is no certificate yet.');
+
+                const [reachable, resolvedNow, ip] = await Promise.all([
+                    certbot.selfTest(domain),
+                    dns.resolve4(domain).catch(() => []),
+                    duckdns.publicIp(),
+                ]);
+
+                onLine(
+                    reachable.ok
+                        ? `  - This machine serves the challenge correctly: nginx answered for ${domain} over the internal network.`
+                        : `  - This machine did not serve the challenge: ${reachable.error ?? 'nginx did not return it'}. That is the thing to fix first.`,
+                );
+                onLine(
+                    resolvedNow.length
+                        ? `  - ${domain} resolves to ${resolvedNow.join(', ')}${ip ? `, and this connection looks like ${ip} from outside` : ''}.`
+                        : `  - ${domain} does not resolve yet. DNS can take a few minutes to spread.`,
+                );
+                if (reachable.ok && ip && resolvedNow.includes(ip)) {
+                    onLine('  - So the name points here and this machine answers. What is missing is the route from the');
+                    onLine('    internet to it: forward TCP port 80 (and 443) on your router to this machine, then press');
+                    onLine('    "Retry HTTPS" on the service. Some ISPs block port 80 on home connections, which looks the same.');
+                }
+
+                onLine('');
+                onLine(`${plan.service.label} is live on http://${domain} in the meantime.`);
+                return { domain, url: `http://${domain}`, certificate: false };
+            }
         }
         // The vhost is rendered without a 443 block until the certificate is on
         // disk, so it has to be written again now that it is.
@@ -1189,7 +1225,7 @@ route('POST', /^\/api\/setup\/([a-z]+)$/, async (req, res, match) => {
         await nginx.reload();
 
         onLine(`Done. https://${domain} is live.`);
-        return { domain, url: `https://${domain}` };
+        return { domain, url: `https://${domain}`, certificate: true };
     });
 
     sendJson(res, 202, { ok: true, jobId: job.id, domain });
