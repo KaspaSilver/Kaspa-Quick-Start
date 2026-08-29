@@ -4114,6 +4114,27 @@ $('log-grid').addEventListener('click', (event) => {
 
 let jobStream = null;
 
+/**
+ * What is waiting behind the job on screen. The console shows one job at a
+ * time, so without this a queue of three looks like one.
+ */
+function renderQueue(pending) {
+    const node = $('console-queue');
+    if (!node) return;
+    const list = pending ?? [];
+    node.hidden = list.length === 0;
+    node.textContent = list.length ? `then: ${list.map((j) => j.name).join(', ')}` : '';
+}
+
+const refreshQueueSoon = debounce(async () => {
+    try {
+        const { job } = await api('/api/jobs/current');
+        renderQueue(job?.pending);
+    } catch {
+        /* the console is cosmetic */
+    }
+}, 250);
+
 function openConsole(title) {
     $('console-title').textContent = title;
     $('console-body').textContent = '';
@@ -4165,8 +4186,17 @@ function connectJobs() {
     });
     jobStream.addEventListener('start', (event) => {
         const job = JSON.parse(event.data);
+        renderQueue(job.pending);
         if (inlineJobHandles(job.name)) return;
         openConsole(job.name);
+    });
+    // Something was accepted but has not started. Saying so is the difference
+    // between a queue and a click that appeared to do nothing.
+    jobStream.addEventListener('queued', (event) => {
+        const job = JSON.parse(event.data);
+        if (job.ahead === 0 && !job.running) return;
+        toast(`${job.name}: queued behind ${job.running ?? 'the job running now'}`);
+        refreshQueueSoon();
     });
     jobStream.addEventListener('line', (event) => {
         const { line } = JSON.parse(event.data);
@@ -4175,6 +4205,7 @@ function connectJobs() {
     });
     jobStream.addEventListener('end', (event) => {
         const job = JSON.parse(event.data);
+        renderQueue(job.pending);
         if (inlineJob) {
             appendInline(job.status === 'succeeded' ? '\n✓ Done.' : `\n✗ Failed: ${job.error}`);
             inlineJob.onEnd?.(job);

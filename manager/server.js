@@ -641,15 +641,20 @@ route('GET', /^\/api\/jobs\/stream$/, async (req, res) => {
     const snapshot = jobs.snapshot();
     if (snapshot) send('snapshot', snapshot);
     const onLine = (e) => send('line', e);
-    const onStart = (job) => send('start', { id: job.id, name: job.name });
-    const onEnd = (job) => send('end', { id: job.id, name: job.name, status: job.status, error: job.error });
+    const onStart = (job) => send('start', { id: job.id, name: job.name, pending: jobs.pending });
+    const onEnd = (job) => send('end', { id: job.id, name: job.name, status: job.status, error: job.error, pending: jobs.pending });
+    // Asked for but not started. Without this the browser has no way to show
+    // that a second request was accepted rather than swallowed.
+    const onQueued = (job) => send('queued', job);
     jobs.on('line', onLine);
     jobs.on('start', onStart);
     jobs.on('end', onEnd);
+    jobs.on('queued', onQueued);
     onClose(() => {
         jobs.off('line', onLine);
         jobs.off('start', onStart);
         jobs.off('end', onEnd);
+        jobs.off('queued', onQueued);
     });
 });
 

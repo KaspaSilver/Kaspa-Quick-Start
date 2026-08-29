@@ -772,6 +772,7 @@ table.instances td:last-child { width: 40px; text-align: right; }
     padding: 12px 14px;
     margin: 0 0 14px;
 }
+#console-queue { font-size: 12px; margin-left: 10px; }
 .notice p { margin: 0 0 10px; font-size: 13px; }
 .notice .row { align-items: center; gap: 10px; }
 .notice .muted { font-size: 12px; }
