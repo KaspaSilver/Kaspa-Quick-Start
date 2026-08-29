@@ -97,7 +97,11 @@ async function probeChallenge(target, { scheme = 'http' } = {}) {
         // Each node answers [ok, time, status text, http code, ip].
         const r = await collect(
             await ask(`/check-http?host=${encodeURIComponent(url)}&max_nodes=${NODES}`),
-            (a) => Array.isArray(a) && String(a[3]) === '200',
+            // Each node's answer is a list holding one array:
+            // [[ok, seconds, "OK", "200", address]]. Reading a[3] instead of
+            // a[0][3] found undefined every time, so this probe reported every
+            // port unreachable, including ports that were plainly working.
+            (a) => Array.isArray(a) && Array.isArray(a[0]) && String(a[0][3]) === '200',
         );
         if (r.good === null) return { open: null, detail: 'check-host.net did not finish in time', link: r.link };
         return {
@@ -131,9 +135,14 @@ export async function check(domain = null, { httpPort = 80, httpsPort = 443, bin
         publicIp(),
     ]);
 
-    // What nginx binds on this machine, which is not what the outside dials
-    // when a router maps one to the other.
-    const listening = new Set(published.map((p) => (p.container || '').split('/')[0]));
+    // The host side of each mapping, not the container side.
+    //
+    // `80/tcp -> 0.0.0.0:8080` has a port at each end, and they are the same
+    // number only until somebody moves one. Reading the container side made
+    // this check agree with itself for as long as the proxy was on 80, and
+    // report a correctly rebound proxy as missing its ports the moment it was
+    // not -- which is the one case anybody runs it for.
+    const listening = new Set(published.map((p) => (p.host || '').split(':').pop()));
     const local = {
         proxyRunning: state.running,
         bindHttp,
