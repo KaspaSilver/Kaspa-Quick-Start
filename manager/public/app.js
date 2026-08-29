@@ -3218,10 +3218,7 @@ async function loadProxies() {
     // With the proxy off, the settings are not just unusable, they are
     // misleading: a saved host writes nginx config nothing is serving. So the
     // page says what to do rather than showing controls that cannot work.
-    // The sub-tabs are direct children of the section, which the shared sub-tab
-    // machinery requires, so a class on the section hides them rather than a
-    // wrapper around them.
-    $('tab-proxy').classList.toggle('proxy-off', !on);
+    $('proxy-config').hidden = !on;
 
     // With nothing else on the page, a full-width card of two sentences is
     // mostly empty space; narrowed and centred it reads as the one thing there
@@ -3269,6 +3266,13 @@ function renderPublishServices() {
 
     $('publish-body').innerHTML = services
         .map((s) => {
+            // The proxy host behind this row, and the domain record behind
+            // that. Both are read all over the cells below, so they are worked
+            // out once, first: a `const` further down would be in the temporal
+            // dead zone for everything above it, and the row would throw.
+            const proxy = proxies.find((p) => p.id === s.proxyId);
+            const record = domains.find((d) => d.domain === s.domain);
+
             // "not running" is a state, not a problem: a domain can be assigned
             // now and answer when the service is started. "unavailable" is the
             // one that means the panel will refuse.
@@ -3280,7 +3284,6 @@ function renderPublishServices() {
 
             // Certificate life is on screen rather than in an e-mail nobody
             // asked for. Renewal is automatic, so this is a check, not a chore.
-            const record = publishState.domains.find((d) => d.domain === s.domain);
             const days = record?.expiry?.daysLeft;
             const https = Number.isFinite(days)
                 ? `<span class="tag ${days <= 14 ? 'warn' : 'ok'}" title="The certificate renews automatically about a month before this.">https, ${days}d left</span>`
@@ -3294,17 +3297,15 @@ function renderPublishServices() {
                   }</a> ${https}${proxy?.auth?.enabled ? ' <span class="tag">password</span>' : ''}${
                       (proxy?.allowlist || []).length ? ' <span class="tag">ip filter</span>' : ''
                   }`
-                // The dropdown beside this already says "not published", so
-                // repeating it here would be two answers to the same question.
+                // The button beside this already says "Set up", so repeating
+                // "not published" here would be two answers to one question.
                 : '<span class="muted">–</span>';
 
-            // One button, whatever state the row is in. Setting up and moving
-            // to another name are the same walk with a different starting
-            // point, and a row that is already live keeps a way to take it down.
-            // Everything the advanced screen used to offer for a host is here,
-            // on the row that host belongs to: retry the certificate, open the
-            // details, or take it down.
-            const proxy = proxies.find((p) => p.id === s.proxyId);
+            // Setting up and moving to another name are the same walk from a
+            // different starting point, so one button covers both. Everything
+            // the advanced screen used to offer for a host is on the row that
+            // host belongs to: retry the certificate, open the details, take it
+            // down.
             const needsCert = proxy?.ssl?.mode === 'letsencrypt' && !proxy.certificate;
             const actions = s.blocked
                 ? `<button class="ghost" disabled title="${escapeHtml(s.reason)}">Set up</button>`
