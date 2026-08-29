@@ -642,7 +642,7 @@
           <label class="inline">Block wait (ms) <input type="number" id="mining-blockwait" min="10" max="60000"></label>
           <label>Coinbase tag suffix <input id="mining-tag" placeholder="optional"></label>
           <label class="check"><input type="checkbox" id="mining-logfile"> Write bridge log files</label>
-          <label class="check"><input type="checkbox" id="mining-dash"> Publish the bridge's own dashboard on port 3030</label>
+          <label class="check" title="The stratum bridge has a small web page built into its binary: connected workers, their hashrate, shares accepted and rejected, and blocks found. This tab reads the same numbers from it over the internal network, so the page is only worth publishing if you want miners to see their own workers without a login here."><input type="checkbox" id="mining-dash"> Publish the bridge's own dashboard on port 3030</label>
           <p class="error" id="mining-error" hidden></p>
           </article>
 
@@ -1370,46 +1370,35 @@
       </article>
 
       <div class="grid" id="proxy-config">
-
         <article class="card span2">
-          <h3>DuckDNS <a class="title-link" href="https://www.duckdns.org/" target="_blank" rel="noreferrer noopener">duckdns.org ↗</a></h3>
+          <h3>Public addresses</h3>
           <p class="muted">
-            Keeps a free <code>*.duckdns.org</code> name pointed at this
-            machine's current IP. Fill both fields in and it keeps itself current.
-            A home connection can change address at any time, so there is
-            nothing to switch on and nothing to remember.
+            Everything here can have a web address of its own.
+            <strong>Set up</strong> walks the whole thing: a free DuckDNS name,
+            whatever the service needs switched on, the nginx configuration, and
+            an HTTPS certificate. One name serves one service.
           </p>
-          <label class="inline">Subdomain <input id="dd-domains" placeholder="mynode"><span class="suffix">.duckdns.org</span></label>
-          <label class="inline">Token <input id="dd-token" type="password" placeholder="from duckdns.org"></label>
-          <label class="inline">Check every <input type="number" id="dd-interval" min="5" value="5" size="4"> minutes</label>
-          <div class="row">
-            <button id="dd-save" class="primary">Save</button>
-            <button id="dd-now" class="ghost">Update now</button>
-          </div>
-          <p class="hint" id="dd-status">–</p>
-        </article>
-
-        <article class="card span2">
-          <h3>Proxy hosts</h3>
-          <p class="muted">
-            Point a domain at this machine and it will be forwarded to the node
-            or to this panel, with free HTTPS from Let's Encrypt. Websockets work
-            (wRPC needs them), and you can add a password or limit access to
-            certain IP addresses.
-          </p>
-          <table class="proxies">
-            <thead><tr><th>Domain</th><th>Forwards to</th><th>TLS</th><th>Extras</th><th></th></tr></thead>
-            <tbody id="proxy-body"></tbody>
+          <table class="proxies publish-table">
+            <thead>
+              <tr><th>Service</th><th>Status</th><th>Public address</th><th></th></tr>
+            </thead>
+            <tbody id="publish-body"></tbody>
           </table>
-          <div class="row">
-            <button id="proxy-add" class="primary">Add proxy host</button>
-            <button id="proxy-reload" class="ghost">Re-apply nginx config</button>
-            <button id="proxy-renew" class="ghost">Renew certificates</button>
+          <p class="hint">
+            A service that is switched off can still be given an address: nginx
+            serves it either way and it starts answering the moment the service
+            does.
+          </p>
+          <div class="row proxy-tools">
+            <span class="muted" id="duck-status">–</span>
+            <span class="spacer"></span>
+            <button id="dd-now" class="ghost" title="Tell DuckDNS this machine's address right now, rather than waiting for the next check.">Refresh DNS</button>
+            <button id="proxy-renew" class="ghost" title="Renew every Let's Encrypt certificate that is close to expiring.">Renew certificates</button>
+            <button id="proxy-reload" class="ghost" title="Rewrite every vhost from the saved configuration and reload nginx.">Re-apply nginx config</button>
           </div>
-          <p class="hint">Requires ports <strong>80</strong> and <strong>443</strong> forwarded to this machine.</p>
         </article>
-
       </div>
+
     </section>
 
     <!-- ------------------------------------------------------------ logs -->
@@ -1515,6 +1504,28 @@
     <!-- ---------------------------------------------------------- support -->
     <section id="tab-global" class="tab">
       <div class="grid">
+
+        <article class="card span2" id="password-card">
+          <h3>Admin password</h3>
+          <p class="muted" id="password-state">–</p>
+          <div class="row">
+            <label class="inline" id="password-current-row" hidden>
+              Current <input id="password-current" type="password" size="16" autocomplete="current-password">
+            </label>
+            <label class="inline">New <input id="password-new" type="password" size="18" autocomplete="new-password"></label>
+            <label class="inline">Repeat <input id="password-repeat" type="password" size="18" autocomplete="new-password"></label>
+            <button id="password-save" class="primary">Save</button>
+            <button id="password-clear" class="ghost danger" hidden>Remove it</button>
+          </div>
+          <p class="hint">
+            This panel drives the Docker daemon, which is root on this machine.
+            A password is what makes it safe to reach from anywhere other than
+            this computer, and it is required before the panel itself can go on
+            a domain. Saving restarts the panel, which takes a few seconds; the
+            node, the proxy and every app keep running throughout.
+          </p>
+          <p class="hint" id="password-result" hidden></p>
+        </article>
 
         <article class="card span2">
           <h3>Update the control panel</h3>
@@ -1654,6 +1665,95 @@
   </div>
   <pre id="console-body"></pre>
 </div>
+
+<!-- --------------------------------------------------------- setup wizard -->
+<dialog id="setup-dialog" class="wide">
+  <form method="dialog" id="setup-form">
+    <h3 id="setup-title">Set up a public address</h3>
+
+    <!-- 0: which name ------------------------------------------------------ -->
+    <section class="setup-step" data-step="0" hidden>
+      <p class="step-head"><span class="step-num">1</span> Which address?</p>
+      <p class="muted">You have names on this panel already. Use one of those, or make another.</p>
+      <div id="setup-domain-list" class="domain-choices"></div>
+    </section>
+
+    <!-- 1: the name ------------------------------------------------------- -->
+    <section class="setup-step" data-step="1">
+      <p class="step-head"><span class="step-num">1</span> Create a free DuckDNS name</p>
+      <p class="muted">
+        DuckDNS gives you a name like <code>yournode.duckdns.org</code> and keeps
+        it pointed at this machine even when your home connection changes
+        address. It is free and needs no card.
+      </p>
+      <ol class="steps">
+        <li>Open <a href="https://www.duckdns.org/" target="_blank" rel="noreferrer noopener">duckdns.org ↗</a> and sign in with an account you already have.</li>
+        <li>Type a name into the <strong>domain</strong> box and press <strong>add domain</strong>.</li>
+        <li>Copy the <strong>token</strong> shown at the top of that page. It is the password for the name.</li>
+      </ol>
+      <label class="inline">
+        Your name
+        <input id="setup-subdomain" placeholder="yournode" size="18" autocomplete="off">
+        <span class="suffix">.duckdns.org</span>
+      </label>
+      <p class="hint" id="setup-ip">–</p>
+    </section>
+
+    <!-- 2: the token ------------------------------------------------------ -->
+    <section class="setup-step" data-step="2" hidden>
+      <p class="step-head"><span class="step-num">2</span> Paste the token</p>
+      <p class="muted">
+        The panel keeps the name current from here on, so this is the only time
+        you need it. It is stored on this machine and never leaves it except to
+        talk to DuckDNS.
+      </p>
+      <label class="inline" id="setup-token-row">Token <input id="setup-token" type="password" size="32" autocomplete="off" placeholder="from duckdns.org"></label>
+      <p class="hint" id="setup-token-note" hidden>A token is already saved. Leave this blank to keep it.</p>
+      <label class="inline">Contact e-mail <input id="setup-email" type="email" size="26" placeholder="you@example.com"></label>
+      <p class="hint">
+        Let's Encrypt sends certificate expiry warnings to that address. It is
+        the only thing it is used for.
+      </p>
+    </section>
+
+    <!-- 3: what it will do ------------------------------------------------ -->
+    <section class="setup-step" data-step="3" hidden>
+      <p class="step-head"><span class="step-num">3</span> What this will do</p>
+      <p class="muted" id="setup-summary">–</p>
+      <ul class="plan" id="setup-plan"></ul>
+
+      <details class="protect">
+        <summary>Lock it down (optional)</summary>
+        <p class="muted">
+          Both of these apply to this address only, and either can be changed
+          later without redoing any of the above.
+        </p>
+        <label class="check">
+          <input type="checkbox" id="setup-auth"> Ask for a username and password
+        </label>
+        <div class="row" id="setup-auth-fields" hidden>
+          <label class="inline">User <input id="setup-auth-user" size="14" autocomplete="off"></label>
+          <label class="inline">Password <input id="setup-auth-pass" type="password" size="18" autocomplete="new-password"></label>
+        </div>
+        <label class="inline">
+          Only allow these addresses
+          <input id="setup-allowlist" size="28" placeholder="203.0.113.4, 10.0.0.0/24">
+        </label>
+        <p class="hint">Leave the address list empty to let anyone reach it.</p>
+      </details>
+
+      <p class="hint" id="setup-after"></p>
+      <p class="error" id="setup-error" hidden></p>
+    </section>
+
+    <menu>
+      <button type="button" class="ghost" id="setup-back">Back</button>
+      <button type="button" class="primary" id="setup-next">Next</button>
+      <button type="button" class="primary" id="setup-run" hidden>Set it up</button>
+      <button value="cancel" class="ghost">Cancel</button>
+    </menu>
+  </form>
+</dialog>
 
 <!-- ---------------------------------------------------------- proxy dialog -->
 <dialog id="proxy-dialog">

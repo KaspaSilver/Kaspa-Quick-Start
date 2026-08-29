@@ -10,7 +10,7 @@ export const MINING_STATE_FILE = path.join(CONF_DIR, 'mining.json');
 
 // Reached over the internal docker network, so it needs no published port.
 // Overridable so the stats plumbing can be exercised without a live bridge.
-const DASHBOARD_PORT = 3030;
+export const DASHBOARD_PORT = 3030;
 const STATS_URL = process.env.BRIDGE_STATS_URL || `http://bridge:${DASHBOARD_PORT}/api/stats`;
 
 export const DEFAULT_BRIDGE_CONFIG = {

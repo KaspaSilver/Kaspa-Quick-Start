@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {
+    DOMAINS_FILE,
     ENV_FILE,
     MANAGER_CONFIG_FILE,
     NODE_CONFIG_FILE,
@@ -133,6 +134,9 @@ export const saveManagerConfig = (cfg) => writeJson(MANAGER_CONFIG_FILE, cfg);
 
 export const loadProxies = () => readJson(PROXIES_FILE, []);
 export const saveProxies = (list) => writeJson(PROXIES_FILE, list);
+
+export const loadDomains = () => readJson(DOMAINS_FILE, []);
+export const saveDomains = (list) => writeJson(DOMAINS_FILE, list);
 
 // ------------------------------------------------------------- .env file ----
 

@@ -77,6 +77,34 @@ async function detach({ name, image, script, mounts = [] }) {
     return stdout.trim().slice(0, 12);
 }
 
+// --------------------------------------------------------- panel restart ---
+
+/**
+ * Recreates the panel's own container.
+ *
+ * The admin password reaches the panel as an environment variable, read once at
+ * startup, so setting one from inside the panel means replacing the container
+ * that is serving the request. It cannot do that itself -- the command would die
+ * with the process running it -- so a detached sidecar does it a moment later,
+ * from this same image, which already has compose in it.
+ */
+export async function restartManager() {
+    const compose = `docker compose ${await composeFileArgs()} --project-directory "${STACK_HOST}"`;
+    const script = `
+set -u
+# Long enough for the response to this request to have been written.
+sleep 2
+${compose} up -d --force-recreate manager
+`;
+    const container = await detach({
+        name: 'kaspa-node-panel-restart',
+        image: 'kaspa-one-click/manager:1',
+        script,
+        mounts: [`${STACK_HOST}:${STACK_HOST}`],
+    });
+    return { started: true, container };
+}
+
 // ------------------------------------------------------------- panel update ---
 
 const REPO_RE = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;

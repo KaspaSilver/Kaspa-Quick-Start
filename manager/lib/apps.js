@@ -23,6 +23,38 @@ export const APPS = {
         // Reads live chain data, so it is pointless before the node has synced.
         needsSyncedNode: true,
         container: 'kaspa-node-kachat',
+        // Where nginx sends a domain pointed at this app. The hostname is the
+        // one compose gives the container on the internal network, so this
+        // works whether or not the port is published to the host.
+        //
+        // The indexer is two APIs on two ports and a client expects both under
+        // one name: the KaPosts content API answers on 3080 and takes the root,
+        // and the chat side -- handshakes, group traffic, push registration --
+        // is a separate process on 8600. Upstream's INSTALL.md says to add
+        // those as custom locations on the same proxy host, so the panel does
+        // it rather than leaving it as homework.
+        publish: {
+            hostname: 'kachat-app',
+            port: 3080,
+            websocket: true,
+            routes: [
+                { location: '/handshakes', port: 8600 },
+                { location: '/contextual-messages', port: 8600 },
+                { location: '/payments', port: 8600 },
+                { location: '/self-stash', port: 8600 },
+                { location: '/group-messages', port: 8600 },
+                { location: '/group-control', port: 8600 },
+                { location: '/v1/push', port: 8600 },
+            ],
+            // Not decoration. `/self-stash-gc-orphans` is a top-level
+            // maintenance route that lives under the `/self-stash` prefix, so
+            // proxying the chat routes would publish it by accident; nginx
+            // takes the longest matching prefix, which is why a 404 here wins.
+            // `/internal/push` is the injection point upstream is emphatic
+            // about never exposing, and it is one prefix away from a route that
+            // is exposed on purpose.
+            deny: ['/self-stash-gc-orphans', '/internal/push'],
+        },
         // Ports the container listens on, and whether publishing them is useful.
         ports: {
             api: { port: 3080, label: 'KaPosts REST API' },
@@ -41,6 +73,7 @@ export const APPS = {
         // and indexer it is pointed at, so there is nothing local to wait for.
         needsSyncedNode: false,
         container: 'kaspa-node-kachat-desktop',
+        publish: { hostname: 'kachat-desktop', port: 5173, websocket: true },
         ports: {
             web: { port: 5173, label: 'KaChat Desktop', hostPort: 5173 },
         },
@@ -54,6 +87,7 @@ export const APPS = {
         // A file server: nothing to do with the chain, so never gated on it.
         needsSyncedNode: false,
         container: 'kaspa-node-nextcloud',
+        publish: { hostname: 'nextcloud', port: 80, websocket: false },
         ports: {
             web: { port: 80, label: 'Nextcloud web', hostPort: 8080 },
         },

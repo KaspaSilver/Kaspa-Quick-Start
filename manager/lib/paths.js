@@ -23,6 +23,11 @@ export const ENV_FILE = path.join(STACK_LOCAL, '.env');
 export const NODE_CONFIG_FILE = path.join(CONF_DIR, 'node.json');
 export const MANAGER_CONFIG_FILE = path.join(CONF_DIR, 'manager.json');
 export const PROXIES_FILE = path.join(CONF_DIR, 'proxies.json');
+// The domains someone has pointed at this machine, whether or not anything is
+// published on them yet. Kept apart from proxies.json because a domain outlives
+// the service behind it: you add the name once and then decide, and change your
+// mind about, what answers on it.
+export const DOMAINS_FILE = path.join(CONF_DIR, 'domains.json');
 export const KASPAD_ARGS_FILE = path.join(CONF_DIR, 'kaspad.args');
 
 // The host-side equivalents, for `docker run -v` and compose `-f`.

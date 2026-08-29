@@ -1,18 +1,22 @@
 import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import dns from 'node:dns/promises';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { CONF_DIR, ensureDirs, KASPAD_ARGS_FILE, NODE_CONFIG_FILE, PROXIES_FILE, STACK_HOST } from './lib/paths.js';
+import { CONF_DIR, DOMAINS_FILE, ensureDirs, KASPAD_ARGS_FILE, NODE_CONFIG_FILE, PROXIES_FILE, STACK_HOST } from './lib/paths.js';
 import {
     DEFAULT_NODE_CONFIG,
     NETWORKS,
+    loadDomains,
     loadManagerConfig,
     loadNodeConfig,
     loadProxies,
     readEnvFile,
+    updateEnvFile,
+    saveDomains,
     saveManagerConfig,
     saveNodeConfig,
     saveProxies,
@@ -32,12 +36,15 @@ import * as emission from './lib/emission.js';
 import * as pruning from './lib/pruning.js';
 import * as kassigner from './lib/kassigner.js';
 import * as selfservice from './lib/selfservice.js';
+import * as publish from './lib/publish.js';
 import { nodeSnapshot, rpc } from './lib/rpc.js';
 import { jobs } from './lib/jobs.js';
 import {
     authConfigured,
     authRequired,
     clearCookie,
+    hashPassword,
+    passwordUnusable,
     isAuthenticated,
     issueSession,
     sessionCookie,
@@ -366,6 +373,9 @@ route(
             // password or proxy-level basic auth is in place.
             required: authRequired(),
             authenticated: !authRequired() || isAuthenticated(req),
+            // A stored hash that cannot be verified would otherwise present as
+            // "your password is wrong", forever.
+            passwordUnusable: passwordUnusable(),
             panelVersion: PANEL_VERSION,
         }),
     { auth: false },
@@ -839,6 +849,347 @@ route('POST', /^\/api\/proxy\/renew$/, async (req, res) => {
         await nginx.reload();
     });
     sendJson(res, 202, { ok: true, jobId: job.id });
+});
+
+// ------------------------------------------------------- domains & publishing --
+
+/**
+ * The service-first view of the reverse proxy: what can be published, what it
+ * is published on, and every domain available to publish it on.
+ *
+ * The proxy-host endpoints below still exist and still own the detail -- basic
+ * auth, allowlists, custom snippets, certificates. This is the same data asked
+ * a friendlier question.
+ */
+route('GET', /^\/api\/publish$/, async (req, res) => {
+    const proxies = loadProxies();
+    sendJson(res, 200, {
+        services: publish.overview({ proxies, panelHasPassword: authConfigured() }),
+        domains: loadDomains().map((d) => ({
+            ...d,
+            certificate: nginx.hasCertificate(d.domain),
+            // Which services are on this name, and where. A name carries
+            // several now, so the wizard shows what it would be joining.
+            usedBy: proxies.find((p) => p.domain === d.domain && (p.path ?? '/') === '/')?.target?.kind ?? null,
+            hosts: proxies
+                .filter((p) => p.domain === d.domain)
+                .map((p) => ({ kind: p.target?.kind ?? null, path: p.path ?? '/' })),
+            rootFree: !proxies.some((p) => p.domain === d.domain && (p.path ?? '/') === '/'),
+        })),
+        enabled: proxyEnabled(),
+        container: await dockerctl.containerState(dockerctl.PROXY_CONTAINER),
+    });
+});
+
+route('POST', /^\/api\/domains$/, async (req, res) => {
+    const body = await readBody(req);
+    const { domain, error } = nginx.validateDomainName(body.domain);
+    if (error) return fail(res, 400, error);
+
+    const list = loadDomains();
+    if (list.some((d) => d.domain === domain)) return fail(res, 400, `${domain} is already on the list.`);
+
+    const mode = body.ssl?.mode === 'letsencrypt' ? 'letsencrypt' : 'none';
+    const email = String(body.ssl?.email || '').trim();
+    if (mode === 'letsencrypt' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+        return fail(res, 400, "A contact e-mail is required for Let's Encrypt certificates.");
+    }
+
+    const record = { id: nginx.newId(), domain, ssl: { mode, email }, addedAt: new Date().toISOString() };
+    list.push(record);
+    saveDomains(list);
+    sendJson(res, 201, { ok: true, domain: record });
+});
+
+route('DELETE', /^\/api\/domains\/([a-f0-9]{12})$/, async (req, res, match) => {
+    const list = loadDomains();
+    const record = list.find((d) => d.id === match[1]);
+    if (!record) return fail(res, 404, 'No such domain.');
+
+    // Removing a name that something answers on would leave a vhost pointing at
+    // a domain the panel no longer knows about, so the assignment goes first.
+    const inUse = loadProxies().find((p) => p.domain === record.domain);
+    if (inUse) {
+        const service = publish.SERVICES.find((sv) => sv.kind === inUse.target?.kind);
+        return fail(res, 409, `${record.domain} is still publishing ${service?.label ?? 'a proxy host'}.`, {
+            details: ['Set that service back to "not published" first, then remove the domain.'],
+        });
+    }
+
+    saveDomains(list.filter((d) => d.id !== record.id));
+    sendJson(res, 200, { ok: true });
+});
+
+/**
+ * Points a service at one of the stored domains, or at none of them.
+ *
+ * Everything here funnels into the same proxy-host list the advanced screen
+ * edits, so a service published from this screen can be opened there and given
+ * an allowlist or a password without any of it being a special case.
+ */
+route('POST', /^\/api\/publish\/([a-z]+)$/, async (req, res, match) => {
+    const service = publish.serviceFor(match[1]);
+    if (!service) return fail(res, 404, 'No such service.');
+
+    const body = await readBody(req);
+    const wanted = body.domain ? String(body.domain).trim().toLowerCase() : null;
+
+    const list = loadProxies();
+    const index = list.findIndex((p) => p.target?.kind === service.kind);
+
+    if (!wanted) {
+        if (index < 0) return sendJson(res, 200, { ok: true, unchanged: true });
+        const [removed] = list.splice(index, 1);
+        await saveProxyList(list, loadNodeConfig());
+        return sendJson(res, 200, { ok: true, domain: null, was: removed.domain });
+    }
+
+    const record = loadDomains().find((d) => d.domain === wanted);
+    if (!record) return fail(res, 400, `${wanted} is not one of your domains.`, { details: ['Set it up from a service first.'] });
+
+    // The domain owns the certificate settings: a certificate is issued for a
+    // name, not for whatever happens to sit behind it this week.
+    const ssl = { mode: record.ssl?.mode ?? 'none', email: record.ssl?.email ?? '' };
+    try {
+        const proxy = await attachDomain(service, wanted, ssl);
+        sendJson(res, 200, { ok: true, domain: wanted, proxyId: proxy.id });
+    } catch (err) {
+        fail(res, 400, err.message, err.details ? { details: err.details } : undefined);
+    }
+});
+
+/**
+ * Attaches a domain to a service, creating the proxy host if there is not one.
+ * Shared by the dropdown on the services page and by the setup wizard, so both
+ * produce exactly the same proxy host.
+ */
+async function attachDomain(service, domain, ssl, extras = null) {
+    const list = loadProxies();
+    const index = list.findIndex((p) => p.target?.kind === service.kind);
+    // Where it sits on that name depends on what is already there. Throws with
+    // an explanation when the service can only live at a root that is taken.
+    const { path } = publish.pathFor(service, domain, index >= 0 ? list.filter((_, i) => i !== index) : list);
+    const proxy =
+        index >= 0
+            ? { ...list[index], domain, ssl, path }
+            : {
+                  path,
+                  id: nginx.newId(),
+                  enabled: true,
+                  websocket: true,
+                  allowlist: [],
+                  rateLimit: null,
+                  customSnippet: '',
+                  auth: { enabled: false },
+                  domain,
+                  target: { kind: service.kind },
+                  ssl,
+              };
+
+    // Basic auth and an allowlist used to be reachable only from the advanced
+    // screen. They are the two protections worth offering at the moment someone
+    // puts a service on the internet, so the wizard asks for them there and
+    // passes them through here.
+    if (extras) {
+        if (extras.auth?.enabled) {
+            proxy.auth = { enabled: true, user: extras.auth.user, password: extras.auth.password, htpasswd: proxy.auth?.htpasswd };
+        } else if (extras.auth) {
+            proxy.auth = { enabled: false };
+        }
+        if (Array.isArray(extras.allowlist)) proxy.allowlist = extras.allowlist.filter(Boolean);
+    }
+
+    const errors = nginx.validateProxy(proxy, { existing: list, panelHasPassword: authConfigured() });
+    if (errors.length) {
+        const err = new Error(`${service.label} cannot be published on ${domain}.`);
+        err.details = errors;
+        throw err;
+    }
+
+    nginx.storeBasicAuth(proxy);
+
+    const previous = index >= 0 ? { ...list[index] } : null;
+    if (index >= 0) list[index] = proxy;
+    else list.push(proxy);
+
+    try {
+        await saveProxyList(list, loadNodeConfig());
+    } catch (cause) {
+        // Roll back so a configuration nginx rejects never stays on disk.
+        const rolled = loadProxies().filter((p) => p.id !== proxy.id);
+        if (previous) rolled.push(previous);
+        saveProxies(rolled);
+        nginx.writeAll(rolled, loadNodeConfig());
+        throw new Error(`nginx rejected the configuration: ${cause.message}`);
+    }
+    return proxy;
+}
+
+// ----------------------------------------------------------- setup wizard --
+
+route('GET', /^\/api\/setup\/([a-z]+)$/, async (req, res, match) => {
+    const plan = publish.setupPlan(match[1], { panelHasPassword: authConfigured(), proxyOn: proxyEnabled() });
+    if (!plan) return fail(res, 404, 'No such service.');
+
+    const dd = loadManagerConfig().duckdns;
+    sendJson(res, 200, {
+        ...plan,
+        duckdns: { subdomain: duckdns.normalizeDomains(dd.domains)[0] ?? '', hasToken: Boolean(dd.token) },
+        publicIp: await duckdns.publicIp(),
+    });
+});
+
+/**
+ * The whole setup, done once: name, DNS, whatever the service needs switched
+ * on, the vhost, and the certificate. Every step narrates itself into the job
+ * console, because "it did not work" is unanswerable when the failure could
+ * have been any one of six things.
+ */
+route('POST', /^\/api\/setup\/([a-z]+)$/, async (req, res, match) => {
+    const key = match[1];
+    const plan = publish.setupPlan(key, { panelHasPassword: authConfigured(), proxyOn: proxyEnabled() });
+    if (!plan) return fail(res, 404, 'No such service.');
+    if (plan.blocked) return fail(res, 409, plan.blocked);
+
+    const body = await readBody(req);
+
+    // Two ways in: a name that already exists on this panel, or a new DuckDNS
+    // one to create. Only the second needs a token, and only the second touches
+    // the DNS record.
+    const existing = body.domain ? loadDomains().find((d) => d.domain === String(body.domain).trim().toLowerCase()) : null;
+    if (body.domain && !existing) return fail(res, 400, `${body.domain} is not one of your domains.`);
+
+    const [subdomain] = existing ? [null] : duckdns.normalizeDomains(body.subdomain);
+    if (!existing && (!subdomain || !/^[a-z0-9-]{1,63}$/.test(subdomain))) {
+        return fail(res, 400, 'Enter the DuckDNS subdomain you created, without the .duckdns.org.');
+    }
+
+    const storedToken = loadManagerConfig().duckdns.token;
+    const token = String(body.token || '').trim();
+    if (!existing && !token && !storedToken) return fail(res, 400, 'Enter your DuckDNS token.');
+
+    const email = String(body.email || existing?.ssl?.email || '').trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+        return fail(res, 400, "A contact e-mail is required: Let's Encrypt sends expiry warnings to it.");
+    }
+
+    const extras = {
+        auth: body.auth?.enabled
+            ? { enabled: true, user: String(body.auth.user || '').trim(), password: String(body.auth.password || '') }
+            : { enabled: false },
+        allowlist: String(body.allowlist || '')
+            .split(/[\s,]+/)
+            .map((entry) => entry.trim())
+            .filter(Boolean),
+    };
+
+    const domain = existing ? existing.domain : `${subdomain}.duckdns.org`;
+
+    const job = jobs.start(`Publish ${plan.service.label} on ${domain}`, async (onLine) => {
+        // --- the name -------------------------------------------------------
+        if (existing) {
+            onLine(`Using ${domain}, which is already on this panel.`);
+        } else {
+            onLine(`Saving ${domain} and telling DuckDNS where this machine is.`);
+            const mgr = loadManagerConfig();
+            // DuckDNS refreshes every name on the account in one call, so a
+            // second service on a second name adds to the list rather than
+            // replacing it.
+            const names = new Set(duckdns.normalizeDomains(mgr.duckdns.domains));
+            names.add(subdomain);
+            mgr.duckdns.domains = [...names].join(',');
+            if (token) mgr.duckdns.token = token;
+            mgr.duckdns.enabled = true;
+            saveManagerConfig(mgr);
+            duckdns.scheduleFromConfig(log);
+
+            const update = await duckdns.update({ domains: mgr.duckdns.domains, token: token || storedToken });
+            onLine(`DuckDNS: ${update.body.split('\n').join(' ').trim()}`);
+        }
+
+        // --- does the name actually arrive here -----------------------------
+        const [resolved, publicIp] = await Promise.all([
+            dns.resolve4(domain).catch(() => []),
+            duckdns.publicIp(),
+        ]);
+        if (!resolved.length) {
+            onLine(`${domain} does not resolve yet. DNS can take a minute; the certificate step will say if it is still not there.`);
+        } else if (publicIp && !resolved.includes(publicIp)) {
+            onLine(`Careful: ${domain} resolves to ${resolved.join(', ')} but this connection looks like ${publicIp}.`);
+        } else {
+            onLine(`${domain} resolves to ${resolved.join(', ')}.`);
+        }
+
+        // --- whatever this service needs before it can answer ---------------
+        if (!proxyEnabled()) {
+            onLine('Starting the reverse proxy, which serves every domain.');
+            await applyProxyState(true, onLine);
+        }
+
+        if (key === 'kaspad') {
+            const cfg = loadNodeConfig();
+            if (!cfg.services.borsh) {
+                onLine("Switching on the node's wRPC Borsh listener.");
+                cfg.services.borsh = true;
+                saveNodeConfig(cfg);
+                await applyNodeConfig(cfg, onLine);
+            }
+        }
+
+        if (key === 'mining') {
+            const mining = bridge.loadBridgeConfig();
+            if (!mining.enabled || !mining.publishDashboard) {
+                onLine('Switching mining and the bridge dashboard on.');
+                mining.enabled = true;
+                mining.publishDashboard = true;
+                bridge.saveBridgeConfig(mining);
+                await applyMiningConfig(mining, onLine);
+            }
+        }
+
+        if (['kachat', 'desktop', 'nextcloud'].includes(key)) {
+            const appsCfg = apps.loadAppsConfig();
+            if (!appsCfg[key]?.enabled) {
+                onLine(`Switching ${apps.APPS[key].label} on. The first build can take a while.`);
+                appsCfg[key].enabled = true;
+                apps.saveAppsConfig(appsCfg);
+                await applyAppConfig(key, appsCfg, onLine);
+            }
+        }
+
+        // --- the name becomes one of ours, and the service answers on it ----
+        const domains = loadDomains();
+        const ssl = { mode: 'letsencrypt', email };
+        const existing = domains.find((d) => d.domain === domain);
+        if (existing) {
+            existing.ssl = ssl;
+        } else {
+            domains.push({ id: nginx.newId(), domain, ssl, addedAt: new Date().toISOString() });
+        }
+        saveDomains(domains);
+
+        onLine(`Publishing ${plan.service.label} on ${domain}.`);
+        if (extras.auth.enabled) onLine(`It will ask for a username and password (${extras.auth.user}).`);
+        if (extras.allowlist.length) onLine(`Only these addresses will be let through: ${extras.allowlist.join(', ')}.`);
+        await attachDomain(plan.service, domain, ssl, extras);
+
+        // --- https ----------------------------------------------------------
+        if (nginx.hasCertificate(domain)) {
+            onLine(`${domain} already has a certificate, so it is left alone.`);
+        } else {
+            onLine("Asking Let's Encrypt for a certificate. This needs port 80 open from the internet.");
+            await certbot.issue(domain, email, { onLine });
+        }
+        // The vhost is rendered without a 443 block until the certificate is on
+        // disk, so it has to be written again now that it is.
+        nginx.writeAll(loadProxies(), loadNodeConfig());
+        await nginx.reload();
+
+        onLine(`Done. https://${domain} is live.`);
+        return { domain, url: `https://${domain}` };
+    });
+
+    sendJson(res, 202, { ok: true, jobId: job.id, domain });
 });
 
 // ------------------------------------------------------------------- mining --
@@ -1389,6 +1740,59 @@ route('PUT', /^\/api\/duckdns$/, async (req, res) => {
     sendJson(res, 200, { ok: true, domains: domains.map((d) => `${d}.duckdns.org`) });
 });
 
+// -------------------------------------------------------- admin password --
+
+/** Where the panel's own port is published, which .env records. */
+const managerBind = () => (readEnvFile().MANAGER_BIND || '0.0.0.0').trim();
+const isLoopbackBind = () => ['127.0.0.1', '::1', 'localhost'].includes(managerBind());
+
+/**
+ * Sets, changes or clears the panel's own password.
+ *
+ * The hash lives in .env and is read into the process once at startup, so this
+ * writes the file and then has a sidecar replace this container. Nothing is
+ * lost: the node, the proxy and every app keep running, and the browser is told
+ * to expect a few seconds of silence.
+ *
+ * With no password set this route is open, because the panel is open -- anyone
+ * who can reach it already has the Docker socket. Once one exists the ordinary
+ * gate applies, and changing it also requires the current one, so a borrowed
+ * session cannot lock the owner out.
+ */
+route('POST', /^\/api\/auth\/password$/, async (req, res) => {
+    const body = await readBody(req);
+
+    if (authConfigured() && !verifyPassword(String(body.current || ''))) {
+        return fail(res, 403, 'That is not the current password.');
+    }
+
+    if (body.clear) {
+        if (!authConfigured()) return sendJson(res, 200, { ok: true, unchanged: true });
+        // Removing the password is only sane while the panel is on loopback and
+        // not on a domain; either would leave the Docker socket open.
+        const published = loadProxies().some((p) => p.target?.kind === 'manager');
+        if (published) {
+            return fail(res, 409, 'This panel is published on a domain, so it cannot have its password removed.', {
+                details: ['Unpublish it first, or keep the password.'],
+            });
+        }
+        if (!isLoopbackBind()) {
+            return fail(res, 409, `This panel is bound to ${managerBind()}, not to loopback, so it needs a password.`);
+        }
+        updateEnvFile({ ADMIN_PASSWORD_HASH: '' });
+        await selfservice.restartManager();
+        return sendJson(res, 202, { ok: true, cleared: true, restarting: true });
+    }
+
+    const password = String(body.password || '');
+    if (password.length < 8) return fail(res, 400, 'Use at least 8 characters.');
+    if (password.length > 200) return fail(res, 400, 'That is longer than 200 characters.');
+
+    updateEnvFile({ ADMIN_PASSWORD_HASH: hashPassword(password) });
+    await selfservice.restartManager();
+    sendJson(res, 202, { ok: true, restarting: true });
+});
+
 // ------------------------------------------------------------ global system --
 
 route('GET', /^\/api\/system$/, async (req, res) => {
@@ -1564,6 +1968,23 @@ async function bootstrap() {
 
     if (!fs.existsSync(NODE_CONFIG_FILE)) saveNodeConfig(structuredClone(DEFAULT_NODE_CONFIG));
     if (!fs.existsSync(PROXIES_FILE)) saveProxies([]);
+    // A domain used to exist only as a field on a proxy host. The services
+    // screen needs domains as things in their own right, so an install that
+    // predates the split gets its list built from the hosts it already has.
+    if (!fs.existsSync(DOMAINS_FILE)) {
+        const seeded = [];
+        for (const proxy of loadProxies()) {
+            if (seeded.some((d) => d.domain === proxy.domain)) continue;
+            seeded.push({
+                id: nginx.newId(),
+                domain: proxy.domain,
+                ssl: { mode: proxy.ssl?.mode ?? 'none', email: proxy.ssl?.email ?? '' },
+                addedAt: new Date().toISOString(),
+            });
+        }
+        saveDomains(seeded);
+        if (seeded.length) log(`domains: adopted ${seeded.length} from existing proxy hosts`);
+    }
 
     const cfg = loadNodeConfig();
     migrateBindAddress(cfg);
@@ -1582,6 +2003,11 @@ async function bootstrap() {
     log(`stack dir      : ${CONF_DIR}`);
     log(`kaspad version : ${readEnvFile().KASPAD_VERSION || 'unset'}`);
     log(`network        : ${cfg.network} (${JSON.stringify(ports(cfg))})`);
+    if (passwordUnusable()) {
+        log('auth           : the stored password hash is unusable and no password will be accepted.');
+        log('                 It was truncated by docker compose reading a $ in .env, which is fixed now.');
+        log(`                 Clear ADMIN_PASSWORD_HASH in ${STACK_HOST}/.env, recreate this container, and set a new one.`);
+    }
     log(
         authRequired()
             ? 'auth           : password required'

@@ -286,12 +286,52 @@ ADMIN_PASSWORD_HASH=$existingHash
 
 # Work out the final auth state before building anything, so the warning lands
 # before the user walks away from a long build.
+$isLoopback = $Bind -eq '127.0.0.1' -or $Bind -eq '::1' -or $Bind -eq 'localhost' -or $Bind.StartsWith('127.')
+
+# Ask when nobody said either way. The flags are for scripted installs; a person
+# running this by hand should be offered the choice rather than have to know
+# that -Password exists. Asked before the long build, not after it.
+if (-not $Password -and -not $NoPassword -and -not $existingHash -and -not $Yes) {
+    Write-Host ''
+    Write-Host 'The panel controls the Docker daemon on this machine.'
+    if ($isLoopback) {
+        Write-Host "It is bound to $Bind, so a password is optional. Set one anyway if you may" -ForegroundColor DarkGray
+        Write-Host 'ever want to reach it from another machine or put it on a domain.' -ForegroundColor DarkGray
+    } else {
+        Write-Host "You asked for it on $Bind, so it needs one." -ForegroundColor Yellow
+    }
+
+    while ($true) {
+        $first = Read-Host 'Panel password (leave empty for none)' -AsSecureString
+        $plain = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR(
+            [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($first))
+
+        if ([string]::IsNullOrEmpty($plain)) {
+            if ($isLoopback) {
+                Warn 'No password. The panel stays reachable from this machine only.'
+                break
+            }
+            Warn 'A password is required when the panel is not on loopback.'
+            continue
+        }
+        if ($plain.Length -lt 8) { Warn 'Use at least 8 characters.'; continue }
+
+        $second = Read-Host 'Repeat it' -AsSecureString
+        $plain2 = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR(
+            [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($second))
+        if ($plain -ne $plain2) { Warn 'Those did not match.'; continue }
+
+        $Password = $plain
+        Ok 'Password set. You will be asked for it when you open the panel.'
+        break
+    }
+}
+
 $authState = 'none'
 if ($Password)          { $authState = 'set' }
 elseif ($NoPassword)    { $authState = 'cleared' }
 elseif ($existingHash)  { $authState = 'kept' }
 
-$isLoopback = $Bind -eq '127.0.0.1' -or $Bind -eq '::1' -or $Bind -eq 'localhost' -or $Bind.StartsWith('127.')
 
 if ($authState -notin @('set', 'kept') -and -not $isLoopback) {
     Warn "The panel has no password and you asked for it on $Bind."

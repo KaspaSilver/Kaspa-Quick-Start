@@ -3218,89 +3218,390 @@ async function loadProxies() {
     // With the proxy off, the settings are not just unusable, they are
     // misleading: a saved host writes nginx config nothing is serving. So the
     // page says what to do rather than showing controls that cannot work.
-    $('proxy-config').hidden = !on;
+    // The sub-tabs are direct children of the section, which the shared sub-tab
+    // machinery requires, so a class on the section hides them rather than a
+    // wrapper around them.
+    $('tab-proxy').classList.toggle('proxy-off', !on);
+
     // With nothing else on the page, a full-width card of two sentences is
     // mostly empty space; narrowed and centred it reads as the one thing there
     // is to do. It goes back to full width once the settings are under it.
     $('tab-proxy').classList.toggle('alone', !on);
 
-    for (const id of ['proxy-add', 'proxy-reload', 'proxy-renew']) {
+    for (const id of ['proxy-reload', 'proxy-renew', 'dd-now']) {
         const button = $(id);
         button.disabled = !on;
         button.title = on ? '' : 'Turn the reverse proxy on first.';
     }
 
-    const body = $('proxy-body');
-
-    if (!proxies.length) {
-        body.innerHTML = '<tr><td colspan="5" class="empty">No proxy hosts yet.</td></tr>';
-        return;
-    }
-
-    body.innerHTML = proxies
-        .map((p) => {
-            const target =
-                p.target.kind === 'custom'
-                    ? `${p.target.scheme}://${p.target.host}:${p.target.port}`
-                    : { borsh: 'kaspad wRPC Borsh', json: 'kaspad wRPC JSON', grpc: 'kaspad gRPC', manager: 'control panel' }[
-                          p.target.kind
-                      ];
-            const tls =
-                p.ssl?.mode === 'letsencrypt'
-                    ? p.certificate
-                        ? '<span class="tag ok">https</span>'
-                        : '<span class="tag">pending</span>'
-                    : '<span class="tag off">http only</span>';
-            const extras = [
-                p.enabled === false ? '<span class="tag off">disabled</span>' : '',
-                p.auth?.enabled ? '<span class="tag">password</span>' : '',
-                (p.allowlist || []).length ? '<span class="tag">ip filter</span>' : '',
-                p.rateLimit ? `<span class="tag">${p.rateLimit}/s</span>` : '',
-            ]
-                .filter(Boolean)
-                .join('');
-            return `<tr>
-        <td><a href="${p.ssl?.mode === 'letsencrypt' && p.certificate ? 'https' : 'http'}://${p.domain}" target="_blank" rel="noreferrer noopener">${p.domain}</a></td>
-        <td>${target}</td>
-        <td>${tls}</td>
-        <td>${extras || '<span class="muted">–</span>'}</td>
-        <td>
-          ${p.ssl?.mode === 'letsencrypt' && !p.certificate ? `<button class="ghost" data-cert="${p.id}">Get certificate</button>` : ''}
-          <button class="ghost" data-edit="${p.id}">Edit</button>
-          <button class="ghost danger" data-del="${p.id}">Delete</button>
-        </td>
-      </tr>`;
-        })
-        .join('');
+    // The one table on this page is the service view, which reads the same
+    // proxy list back from its own endpoint.
+    await loadPublish();
 }
 
-$('proxy-body').addEventListener('click', async (event) => {
-    const { edit, del, cert } = event.target.dataset;
-    if (edit) return openProxyDialog(proxies.find((p) => p.id === edit));
+// ------------------------------------------------- services and domains ---
+
+/**
+ * The whole of this page. It asks "what do you want reachable" rather than
+ * "what is an upstream", and the wizard behind the Set up button answers every
+ * other question -- the name, the DNS record, the certificate, whatever the
+ * service needs switched on -- so that nobody has to learn nginx to publish a
+ * node. The proxy-host dialog is still here for the details, reached from a
+ * published row rather than from a screen of its own.
+ */
+let publishState = { services: [], domains: [] };
+
+async function loadPublish() {
+    try {
+        publishState = await api('/api/publish');
+    } catch {
+        // The proxy card above already reports anything that is actually wrong.
+        return;
+    }
+    renderPublishServices();
+}
+
+/** What a target kind reads as, for "in use by" and for taken-domain options. */
+const serviceLabel = (kind) => publishState.services.find((s) => s.kind === kind)?.label ?? 'another proxy host';
+
+function renderPublishServices() {
+    const { services, domains } = publishState;
+
+    $('publish-body').innerHTML = services
+        .map((s) => {
+            // "not running" is a state, not a problem: a domain can be assigned
+            // now and answer when the service is started. "unavailable" is the
+            // one that means the panel will refuse.
+            const status = s.blocked
+                ? `<span class="tag off" title="${escapeHtml(s.reason)}">unavailable</span>`
+                : s.ready
+                  ? '<span class="tag ok">ready</span>'
+                  : `<span class="tag" title="${escapeHtml(s.reason ?? '')}">not running</span>`;
+
+            const address = s.url
+                ? `<a href="${escapeHtml(s.url)}" target="_blank" rel="noreferrer noopener">${escapeHtml(s.domain)}</a>${
+                      proxy?.auth?.enabled ? ' <span class="tag">password</span>' : ''
+                  }${(proxy?.allowlist || []).length ? ' <span class="tag">ip filter</span>' : ''}`
+                // The dropdown beside this already says "not published", so
+                // repeating it here would be two answers to the same question.
+                : '<span class="muted">–</span>';
+
+            // One button, whatever state the row is in. Setting up and moving
+            // to another name are the same walk with a different starting
+            // point, and a row that is already live keeps a way to take it down.
+            // Everything the advanced screen used to offer for a host is here,
+            // on the row that host belongs to: retry the certificate, open the
+            // details, or take it down.
+            const proxy = proxies.find((p) => p.id === s.proxyId);
+            const needsCert = proxy?.ssl?.mode === 'letsencrypt' && !proxy.certificate;
+            const actions = s.blocked
+                ? `<button class="ghost" disabled title="${escapeHtml(s.reason)}">Set up</button>`
+                : [
+                      `<button class="primary" data-setup="${s.key}">${s.domain ? 'Change' : 'Set up'}</button>`,
+                      needsCert ? `<button class="ghost" data-cert="${s.proxyId}" title="The name has no certificate yet. This asks Let's Encrypt again.">Retry HTTPS</button>` : '',
+                      s.proxyId ? `<button class="ghost" data-options="${s.proxyId}" title="Basic auth, IP allowlist, rate limit, custom nginx.">Options</button>` : '',
+                      s.domain ? `<button class="ghost danger" data-unpublish="${s.key}">Unpublish</button>` : '',
+                  ]
+                      .filter(Boolean)
+                      .join(' ');
+
+            return `<tr title="${escapeHtml(`Forwards to ${s.upstreamLabel}`)}">
+      <td><span class="service-name">${escapeHtml(s.label)}</span><small class="service-detail">${escapeHtml(s.detail)}</small></td>
+      <td>${status}</td>
+      <td>${address}</td>
+      <td class="row-actions">${actions}</td>
+    </tr>`;
+        })
+        .join('');
+
+}
+
+// Everything a published address needs is on its own row: set it up, retry the
+// certificate, open the details, take it down.
+$('publish-body').addEventListener('click', async (event) => {
+    const { setup, unpublish, cert, options } = event.target.dataset ?? {};
+    if (setup) return openSetup(setup);
+    if (options) return openProxyDialog(proxies.find((p) => p.id === options));
+
     if (cert) {
         const proxy = proxies.find((p) => p.id === cert);
         try {
-            await api(`/api/proxies/${cert}/certificate`, { method: 'POST', body: { email: proxy.ssl?.email } });
+            await api(`/api/proxies/${cert}/certificate`, { method: 'POST', body: { email: proxy?.ssl?.email } });
             openConsole(`Issuing certificate for ${proxy.domain}`);
         } catch (e) {
             toast(e.message, 'bad');
         }
         return;
     }
-    if (del) {
-        const proxy = proxies.find((p) => p.id === del);
-        if (!confirm(`Delete the proxy host for ${proxy.domain}?`)) return;
-        try {
-            await api(`/api/proxies/${del}`, { method: 'DELETE' });
-            toast('Proxy host removed.', 'good');
-            loadProxies();
-        } catch (e) {
-            toast(e.message, 'bad');
-        }
+
+    if (!unpublish) return;
+
+    const service = publishState.services.find((s) => s.key === unpublish);
+    if (!confirm(`Stop publishing ${service?.label ?? unpublish} on ${service?.domain}?\n\nThe name stays on your list and the certificate is left alone.`)) {
+        return;
+    }
+    event.target.disabled = true;
+    try {
+        await api(`/api/publish/${unpublish}`, { method: 'POST', body: { domain: null } });
+        toast(`${service?.label ?? unpublish} is no longer published`);
+        await loadProxies();
+    } catch (e) {
+        toast(e.message, 'bad');
+        event.target.disabled = false;
     }
 });
 
-$('proxy-add').addEventListener('click', () => openProxyDialog(null));
+// ------------------------------------------------------------ setup wizard ---
+
+/**
+ * The guided path to a public address, which is the only path most people
+ * should need. It asks for a DuckDNS name and a token, shows exactly what it is
+ * about to change, and then does all of it: the DNS record, whatever the
+ * service needs switched on, the vhost, and the certificate.
+ *
+ * The alternative -- add a domain, pick an upstream, remember to click "get
+ * certificate" -- is still there under Domains and Advanced. This is for the
+ * person who wants their node reachable and does not want to learn nginx to get
+ * there.
+ */
+let setupState = { key: null, step: 1, plan: null, mode: 'new', domain: null };
+
+async function openSetup(key) {
+    const service = publishState.services.find((s) => s.key === key);
+    setupState = { key, step: 1, plan: null, mode: 'new', domain: null };
+
+    $('setup-title').textContent = `Publish ${service?.label ?? key}`;
+    $('setup-error').hidden = true;
+    $('setup-subdomain').value = '';
+    $('setup-token').value = '';
+
+    let info;
+    try {
+        info = await api(`/api/setup/${key}`);
+    } catch (e) {
+        return toast(e.message, 'bad');
+    }
+    setupState.plan = info;
+
+    // A name and token already saved means this is someone's second service, so
+    // the first two steps are a confirmation rather than a chore.
+    if (info.duckdns?.subdomain) $('setup-subdomain').value = info.duckdns.subdomain;
+    $('setup-token-note').hidden = !info.duckdns?.hasToken;
+    $('setup-token').placeholder = info.duckdns?.hasToken ? 'unchanged' : 'from duckdns.org';
+    $('setup-ip').textContent = info.publicIp
+        ? `This connection looks like ${info.publicIp} from the outside. DuckDNS will point the name here.`
+        : 'Could not work out this connection\'s public address, which is not fatal: DuckDNS uses the address it sees.';
+
+    $('setup-after').textContent = (service?.afterNote ?? '').replace('{domain}', 'that name');
+    $('setup-auth').checked = false;
+    $('setup-auth-fields').hidden = true;
+    $('setup-allowlist').value = '';
+
+    // A second service starts from a list of names rather than from duckdns.org.
+    renderDomainChoices();
+    setupState.step = publishState.domains.length ? 0 : 1;
+    renderSetupStep();
+    $('setup-dialog').showModal();
+}
+
+/**
+ * The domain list, which used to be a screen of its own. It only ever answered
+ * two questions -- which names do I have, and can I get rid of this one -- and
+ * both belong at the point where a name is being chosen.
+ */
+function renderDomainChoices() {
+    const list = $('setup-domain-list');
+    const service = publishState.services.find((s) => s.key === setupState.key);
+
+    list.innerHTML = publishState.domains
+        .map((d) => {
+            const others = (d.hosts ?? []).filter((h) => h.kind !== service?.kind);
+            const mine = (d.hosts ?? []).find((h) => h.kind === service?.kind);
+
+            // A name can carry several services, so "in use" is information
+            // rather than a refusal. The one arrangement that cannot work is a
+            // service that must own the root joining a name whose root is taken.
+            const blocked = service?.rootOnly && !d.rootFree && !mine;
+            const sharing = others
+                .map((h) => `${serviceLabel(h.kind)}${h.path === '/' ? '' : ` at ${h.path}`}`)
+                .join(', ');
+
+            const note = blocked
+                ? `${serviceLabel(d.usedBy)} is at the root, and this has to be`
+                : mine
+                  ? `already serving this${mine.path === '/' ? '' : ` at ${mine.path}`}`
+                  : others.length
+                    ? `shared with ${sharing}, so this joins at ${escapeHtml(service?.sharedPath ?? '/' + setupState.key)}`
+                    : d.certificate
+                      ? 'free, and has an HTTPS certificate'
+                      : 'free, no certificate yet';
+
+            return `<label class="domain-choice${blocked ? ' taken' : ''}">
+        <input type="radio" name="setup-domain" value="${escapeHtml(d.domain)}"${blocked ? ' disabled' : ''}>
+        <span>
+          <strong>${escapeHtml(d.domain)}</strong>
+          <small>${note}</small>
+        </span>
+        ${(d.hosts ?? []).length ? '' : `<button type="button" class="ghost danger" data-domain-del="${d.id}">Remove</button>`}
+      </label>`;
+        })
+        .join('')
+        .concat(
+            `<label class="domain-choice">
+        <input type="radio" name="setup-domain" value="" checked>
+        <span><strong>Create another DuckDNS name</strong><small>free, and kept pointed here for you</small></span>
+      </label>`,
+        );
+}
+
+$('setup-domain-list').addEventListener('click', async (event) => {
+    const id = event.target.dataset?.domainDel;
+    if (!id) return;
+    const record = publishState.domains.find((d) => d.id === id);
+    if (!confirm(`Remove ${record?.domain}?\n\nNothing is published on it, so this only takes the name off the list.`)) return;
+    try {
+        await api(`/api/domains/${id}`, { method: 'DELETE' });
+        await loadPublish();
+        renderDomainChoices();
+    } catch (e) {
+        toast(e.message, 'bad');
+    }
+});
+
+/** The name this run will publish on, whichever way it was chosen. */
+const setupDomain = () =>
+    setupState.mode === 'existing'
+        ? setupState.domain
+        : `${$('setup-subdomain').value.trim().toLowerCase()}.duckdns.org`;
+
+function renderSetupStep() {
+    const { step, plan } = setupState;
+    for (const section of document.querySelectorAll('#setup-form .setup-step')) {
+        section.hidden = Number(section.dataset.step) !== step;
+    }
+    $('setup-back').hidden = step === (publishState.domains.length ? 0 : 1);
+    $('setup-next').hidden = step === 3;
+    $('setup-run').hidden = step !== 3;
+
+    // An existing name needs no token: it is already being kept current, or it
+    // is not a DuckDNS name at all.
+    $('setup-token-row').hidden = setupState.mode === 'existing';
+
+    if (step !== 3) return;
+
+    const domain = setupDomain();
+    const record = publishState.domains.find((d) => d.domain === domain);
+    const joining = (record?.hosts ?? []).filter((h) => h.kind !== plan.service.kind);
+    // The address is the name plus wherever this service lands on it, which is
+    // not always the root once a name is shared.
+    const path = joining.some((h) => h.path === '/') ? (plan.service.sharedPath ?? `/${setupState.key}`) : '';
+    setupState.address = `https://${domain}${path}`;
+
+    $('setup-summary').textContent = joining.length
+        ? `${plan.service.label} will answer on ${setupState.address}, alongside ${joining
+              .map((h) => serviceLabel(h.kind))
+              .join(', ')} already on that name. Everything below happens in one go:`
+        : `${plan.service.label} will answer on ${setupState.address}. Everything below happens in one go:`;
+    $('setup-plan').innerHTML = (plan.steps ?? [])
+        // The DNS step belongs to creating a name. Choosing one that is already
+        // here skips it, and listing it anyway would promise work that will not
+        // happen.
+        .filter((st) => !(st.key === 'dns' && setupState.mode === 'existing'))
+        .map(
+            (st) => `<li class="${st.done ? 'done' : ''}">
+        <strong>${escapeHtml(st.label)}</strong>${st.done ? ' <span class="tag ok">already done</span>' : ''}
+        <small>${escapeHtml(st.detail ?? '')}</small>
+      </li>`,
+        )
+        .join('');
+
+    const svc = publishState.services.find((s) => s.key === setupState.key);
+    $('setup-after').textContent = (svc?.afterNote ?? '').replace('{domain}', setupState.address.replace(/^https:\/\//, ''));
+}
+
+$('setup-next').addEventListener('click', () => {
+    const { step } = setupState;
+    $('setup-error').hidden = true;
+
+    if (step === 0) {
+        const chosen = document.querySelector('input[name="setup-domain"]:checked')?.value ?? '';
+        setupState.mode = chosen ? 'existing' : 'new';
+        setupState.domain = chosen || null;
+        if (chosen) {
+            const record = publishState.domains.find((d) => d.domain === chosen);
+            if (record?.ssl?.email) $('setup-email').value = record.ssl.email;
+        }
+        // An existing name skips the DuckDNS steps, but still needs an address
+        // for the certificate, which step 2 asks for.
+        setupState.step = chosen ? 2 : 1;
+        renderSetupStep();
+        return;
+    }
+
+    if (step === 1) {
+        const name = $('setup-subdomain').value.trim().toLowerCase().replace(/\.duckdns\.org\.?$/, '');
+        if (!/^[a-z0-9-]{1,63}$/.test(name)) return toast('Enter the name you created at duckdns.org.', 'bad');
+        $('setup-subdomain').value = name;
+    }
+
+    if (step === 2) {
+        // A name already on this panel needs no token: either it is already
+        // being refreshed, or it is not a DuckDNS name in the first place.
+        if (setupState.mode !== 'existing' && !$('setup-token').value.trim() && !setupState.plan?.duckdns?.hasToken) {
+            return toast('Paste the token from duckdns.org.', 'bad');
+        }
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test($('setup-email').value.trim())) {
+            return toast("Enter an e-mail for the certificate. Let's Encrypt needs one.", 'bad');
+        }
+    }
+
+    setupState.step = Math.min(3, step + 1);
+    renderSetupStep();
+});
+
+$('setup-back').addEventListener('click', () => {
+    const { step, mode } = setupState;
+    // Coming back from the plan on an existing name lands on the list it was
+    // chosen from, not on the DuckDNS instructions it never saw.
+    setupState.step = step === 3 && mode === 'existing' ? 0 : Math.max(publishState.domains.length ? 0 : 1, step - 1);
+    renderSetupStep();
+});
+
+$('setup-auth').addEventListener('change', (event) => {
+    $('setup-auth-fields').hidden = !event.target.checked;
+});
+
+$('setup-run').addEventListener('click', async () => {
+    const { key, mode, domain } = setupState;
+    const body = {
+        domain: mode === 'existing' ? domain : undefined,
+        subdomain: mode === 'existing' ? undefined : $('setup-subdomain').value.trim(),
+        token: $('setup-token').value.trim(),
+        email: $('setup-email').value.trim(),
+        auth: $('setup-auth').checked
+            ? { enabled: true, user: $('setup-auth-user').value.trim(), password: $('setup-auth-pass').value }
+            : { enabled: false },
+        allowlist: $('setup-allowlist').value,
+    };
+
+    $('setup-run').disabled = true;
+    try {
+        const r = await api(`/api/setup/${key}`, { method: 'POST', body });
+        $('setup-dialog').close();
+        // The job console is where every long job in this panel reports, and
+        // this one has more to say than a toast can hold.
+        openConsole(`Publishing on ${r.domain}`);
+    } catch (e) {
+        const box = $('setup-error');
+        box.textContent = e.message;
+        box.hidden = false;
+    } finally {
+        $('setup-run').disabled = false;
+    }
+});
+
+
+
 
 $('proxy-reload').addEventListener('click', async () => {
     try {
@@ -3411,39 +3712,30 @@ $('proxy-form').addEventListener('submit', async (event) => {
 
 // ---------------------------------------------------------------- duckdns ---
 
+/**
+ * DuckDNS has no screen of its own any more: the wizard sets the name and the
+ * token, and this is the one line that says whether the refresh is alive. The
+ * public address it also reports is used on the Kaspad ports page.
+ */
 async function loadDuckDns() {
     const r = await api('/api/duckdns');
-    $('dd-domains').value = r.duckdns.domains;
-    $('dd-token').value = r.duckdns.token;
-    $('dd-interval').value = r.duckdns.intervalMinutes;
     $('public-ip').textContent = r.publicIp || 'unknown';
 
+    const names = r.duckdns.domains
+        ? r.duckdns.domains
+              .split(',')
+              .filter(Boolean)
+              .map((d) => `${d}.duckdns.org`)
+              .join(', ')
+        : '';
     const last = r.duckdns.lastRunAt
-        ? `Last checked ${new Date(r.duckdns.lastRunAt).toLocaleString()}: ${r.duckdns.lastResult}.`
-        : 'Not checked yet.';
-    // With nothing configured there is no refresh running, and "not checked
-    // yet" would read as a delay rather than as nothing being set up.
-    $('dd-status').textContent = r.duckdns.enabled
-        ? `${last} Rechecking every ${r.duckdns.intervalMinutes} minutes.`
-        : 'Not set up. Add a subdomain and token and it starts keeping itself current.';
-}
+        ? `checked ${new Date(r.duckdns.lastRunAt).toLocaleTimeString()}, ${r.duckdns.lastResult}`
+        : 'not checked yet';
 
-$('dd-save').addEventListener('click', async () => {
-    try {
-        const r = await api('/api/duckdns', {
-            method: 'PUT',
-            body: {
-                domains: $('dd-domains').value,
-                token: $('dd-token').value,
-                intervalMinutes: Number($('dd-interval').value),
-            },
-        });
-        toast(r.domains.length ? `Saved. Keeping ${r.domains.join(', ')} up to date.` : 'Saved.', 'good');
-        loadDuckDns();
-    } catch (e) {
-        toast(e.message, 'bad');
-    }
-});
+    $('duck-status').textContent = r.duckdns.enabled
+        ? `DuckDNS: ${names} (${last}, every ${r.duckdns.intervalMinutes} min)`
+        : 'DuckDNS: nothing set up yet. Set up a service and it is arranged for you.';
+}
 
 $('dd-now').addEventListener('click', async () => {
     try {
@@ -3779,14 +4071,98 @@ function connectJobs() {
 api('/api/session')
     .then((s) => {
         if (s.panelVersion) $('version-badge').textContent = `v${s.panelVersion}`;
+        renderPasswordCard(Boolean(s.required));
         // No password set: skip the sign-in screen entirely and say why, so the
         // absence of a login prompt reads as a decision rather than a bug.
         $('logout').hidden = !s.required;
         $('auth-note').hidden = Boolean(s.required);
+        if (s.passwordUnusable) {
+            // No password will be accepted, so say that rather than let someone
+            // retype a correct one until they give up.
+            const note = $('login-error');
+            note.hidden = false;
+            note.textContent =
+                'The stored password cannot be read, so none will be accepted. It was truncated by an old bug in how the hash was saved. Clear ADMIN_PASSWORD_HASH in the .env file in your install directory, recreate the panel container, and set a new password from Global settings.';
+        }
         if (s.authenticated) showApp();
         else showLogin();
     })
     .catch(() => showLogin());
+
+// -------------------------------------------------------- admin password ---
+
+/**
+ * Setting a password is the one change that replaces the container serving this
+ * page, so it cannot report success the way everything else does: the answer
+ * arrives as the panel coming back with a sign-in screen.
+ */
+function renderPasswordCard(isSet) {
+    $('password-state').textContent = isSet
+        ? 'A password is required to open this panel. Change it below, or remove it if the panel is only ever reached from this machine.'
+        : 'No password is set. Anyone who can reach this port has full control of the node and of Docker, which is why the installer keeps the panel on 127.0.0.1 until you set one.';
+    $('password-current-row').hidden = !isSet;
+    $('password-clear').hidden = !isSet;
+    $('password-save').textContent = isSet ? 'Change it' : 'Set a password';
+}
+
+/**
+ * Waits for the panel to go away and come back, then reloads. The restart is
+ * done by a detached container a second or two after the request returns, so
+ * "still answering" does not yet mean "finished".
+ */
+async function waitForPanelRestart(note) {
+    const deadline = Date.now() + 120_000;
+    let wentDown = false;
+    kResult('password-result', note, false);
+
+    while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 1500));
+        try {
+            const res = await fetch('/healthz', { cache: 'no-store' });
+            if (res.ok && wentDown) return location.reload();
+        } catch {
+            wentDown = true;
+        }
+    }
+    kResult('password-result', 'The panel has not come back. Check `docker logs kaspa-node-manager`.', true);
+}
+
+$('password-save').addEventListener('click', async () => {
+    const password = $('password-new').value;
+    const repeat = $('password-repeat').value;
+
+    if (password.length < 8) return toast('Use at least 8 characters.', 'bad');
+    if (password !== repeat) return toast('The two passwords are not the same.', 'bad');
+
+    $('password-save').disabled = true;
+    try {
+        await api('/api/auth/password', {
+            method: 'POST',
+            body: { password, current: $('password-current').value },
+        });
+        $('password-new').value = '';
+        $('password-repeat').value = '';
+        $('password-current').value = '';
+        await waitForPanelRestart('Password saved. The panel is restarting, and will ask you to sign in.');
+    } catch (e) {
+        toast(e.message, 'bad');
+        $('password-save').disabled = false;
+    }
+});
+
+$('password-clear').addEventListener('click', async () => {
+    if (!confirm('Remove the password?\n\nAnyone who can reach this port will then have full control of the node and of Docker. Only sensible while the panel is on 127.0.0.1.')) {
+        return;
+    }
+    $('password-clear').disabled = true;
+    try {
+        await api('/api/auth/password', { method: 'POST', body: { clear: true, current: $('password-current').value } });
+        await waitForPanelRestart('Password removed. The panel is restarting.');
+    } catch (e) {
+        toast(e.message, 'bad');
+        $('password-clear').disabled = false;
+    }
+});
 
 // -------------------------------------------------------- global settings ---
 

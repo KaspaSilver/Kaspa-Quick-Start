@@ -524,6 +524,59 @@ fi
 
 write_env
 
+# Ask for a password when nobody said either way.
+#
+# The flags exist for scripted installs; a person running this by hand should be
+# offered the choice rather than have to know that --password exists. It is
+# asked once, before the long build, because a question at the end of an hour of
+# compiling is a question nobody is there to answer.
+prompt_for_password() {
+    [ "$ASSUME_YES" = "1" ] && return 0
+    [ -n "$ADMIN_PASSWORD" ] && return 0
+    [ "$CLEAR_PASSWORD" = "1" ] && return 0
+    [ "$ENV_HAD_PASSWORD" = "1" ] && return 0
+    [ -e /dev/tty ] || return 0
+
+    printf '\n%sThe panel controls the Docker daemon on this machine.%s\n' "$B" "$R" > /dev/tty
+    if is_loopback_bind; then
+        printf '%sIt is bound to %s, so a password is optional. Set one anyway if you\n' "$DIM" "$MANAGER_BIND" > /dev/tty
+        printf 'may ever want to reach it from another machine or put it on a domain.%s\n' "$R" > /dev/tty
+    else
+        printf '%sYou asked for it on %s, so it needs one.%s\n' "$YLW" "$MANAGER_BIND" "$R" > /dev/tty
+    fi
+
+    local first second
+    while :; do
+        printf 'Panel password (leave empty for none): ' > /dev/tty
+        # -s so it is not echoed; the newline it swallows is printed back.
+        read -rs first < /dev/tty || first=""
+        printf '\n' > /dev/tty
+
+        if [ -z "$first" ]; then
+            if is_loopback_bind; then
+                warn "No password. The panel stays reachable from this machine only."
+                return 0
+            fi
+            warn "A password is required when the panel is not on loopback."
+            continue
+        fi
+        if [ "${#first}" -lt 8 ]; then
+            warn "Use at least 8 characters."
+            continue
+        fi
+
+        printf 'Repeat it: ' > /dev/tty
+        read -rs second < /dev/tty || second=""
+        printf '\n' > /dev/tty
+        [ "$first" = "$second" ] || { warn "Those did not match."; continue; }
+
+        ADMIN_PASSWORD="$first"
+        ok "Password set. You will be asked for it when you open the panel."
+        return 0
+    done
+}
+prompt_for_password
+
 # Work out the final auth state before building anything, so the warning lands
 # before the user walks away from a long build.
 AUTH_STATE=none
