@@ -217,13 +217,12 @@ services:
   kachat-desktop:
     image: kaspa-one-click/kachat-desktop:${KACHAT_DESKTOP_REF:-main}
     build:
-      # A local context, unlike the indexer: upstream ships no Dockerfile, so
-      # ours lives in the stack and clones the source itself. Changing the ref
-      # and rebuilding is what the panel's update button does.
-      context: ./kachat-desktop
-      args:
-        KACHAT_DESKTOP_REPO: ${KACHAT_DESKTOP_REPO:-https://github.com/KaspaSilver/KaChat-Desktop.git}
-        KACHAT_DESKTOP_REF: ${KACHAT_DESKTOP_REF:-main}
+      # Built straight from the repository, which now carries its own
+      # Dockerfile -- no second copy here to drift out of step with it.
+      # Changing KACHAT_DESKTOP_REF and rebuilding is what the panel's update
+      # button does.
+      context: ${KACHAT_DESKTOP_REPO:-https://github.com/KaspaSilver/KaChat-Desktop.git}#${KACHAT_DESKTOP_REF:-main}
+      dockerfile: Dockerfile
     container_name: kaspa-node-kachat-desktop
     hostname: kachat-desktop
     profiles: ["kachat-desktop"]

@@ -92,7 +92,6 @@ const CODE_ITEMS = [
     'manager',
     'bridge',
     'kachat',
-    'kachat-desktop',
     'kassigner',
     'nextcloud',
     'uninstall.sh',
