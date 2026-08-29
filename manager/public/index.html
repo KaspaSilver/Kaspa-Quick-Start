@@ -288,9 +288,9 @@
 
           <article class="card">
             <h3>Indexes &amp; flags</h3>
-            <label class="check locked-row">
-              <input type="checkbox" checked disabled> UTXO index
-              <span class="pill">always on</span>
+            <label class="check" title="Passes --utxoindex. The node keeps an index of which addresses hold which UTXOs, which is what wallets and explorers ask it for. Switching it off makes those queries fail and blanks the UTXO figure on the dashboard.">
+              <input type="checkbox" id="cfg-flag-utxoindex"> UTXO index
+              <span class="pill">recommended</span>
             </label>
             <label class="check"><input type="checkbox" id="cfg-flag-archival"> Archival node <span class="muted">(keeps all history, large disk)</span></label>
             <label class="check"><input type="checkbox" id="cfg-flag-unsaferpc"> Enable unsafe RPC calls</label>

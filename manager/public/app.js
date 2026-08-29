@@ -388,6 +388,37 @@ const stopPolling = () => {
 };
 
 let lastStatus = null;
+// The manager's process id for this run. A change means it restarted with
+// different code underneath this tab.
+let bootId = null;
+
+/**
+ * Reloads the page when the manager comes back as a different process, which is
+ * what makes an edit under `dev.sh watch` appear without touching the browser,
+ * and what stops a tab surviving a panel update from talking to an API it no
+ * longer matches.
+ *
+ * It waits for a quiet moment first. Reloading out from under a half-typed form
+ * or an open dialog would cost more than the staleness does, and the next poll
+ * is four seconds away.
+ */
+function reloadIfManagerRestarted(id) {
+    if (!id) return false;
+    if (bootId === null) {
+        bootId = id;
+        return false;
+    }
+    if (id === bootId) return false;
+
+    const typing = document.activeElement;
+    const busy =
+        document.querySelector('dialog[open]') ||
+        (typing && ['INPUT', 'TEXTAREA', 'SELECT'].includes(typing.tagName));
+    if (busy) return false;
+
+    location.reload();
+    return true;
+}
 
 async function refreshStatus() {
     let s;
@@ -396,6 +427,7 @@ async function refreshStatus() {
     } catch {
         return;
     }
+    if (reloadIfManagerRestarted(s.bootId)) return;
     lastStatus = s;
 
     const running = s.container.running;
@@ -434,7 +466,6 @@ async function refreshStatus() {
     $('stat-daa').textContent = fmtNum(s.rpc.dag?.virtualDaaScore);
     $('stat-diff').textContent = s.rpc.dag?.difficulty ? Number(s.rpc.dag.difficulty).toExponential(3) : '–';
     $('stat-mempool').textContent = fmtNum(s.rpc.info?.mempoolSize);
-    $('stat-utxo').textContent = s.rpc.info ? (s.rpc.info.isUtxoIndexed ? 'enabled' : 'DISABLED') : '–';
 
     const containerTag = $('stat-container');
     containerTag.textContent = s.container.status || 'absent';
@@ -445,11 +476,25 @@ async function refreshStatus() {
     $('stat-version').textContent = s.version?.version || '–';
     $('stat-uptime').textContent = running ? fmtDuration(s.container.startedAt) : '–';
     $('stat-disk').textContent = fmtBytes(s.disk?.size);
-    // The disk walk behind this is cached, so it is briefly absent on a cold
-    // start. A blank beats a zero, which would read as an empty index.
-    $('stat-utxo').textContent = Number.isFinite(s.dataSplit?.utxoindexBytes)
-        ? fmtBytes(s.dataSplit.utxoindexBytes)
-        : '–';
+
+    // Two facts share this one field, and neither can stand in for the other.
+    // The size cannot say "switched off": absent bytes is also what a cold
+    // start looks like while the disk walk is still filling its cache, so the
+    // node's own answer decides first and the size only fills in the detail.
+    // It matters now that the index is a setting rather than something the
+    // entrypoint forced on -- a node running without one should say so.
+    const utxo = $('stat-utxo');
+    const utxoBytes = s.dataSplit?.utxoindexBytes;
+    const indexed = s.rpc.info ? Boolean(s.rpc.info.isUtxoIndexed) : null;
+    utxo.textContent =
+        indexed === false
+            ? 'disabled'
+            : Number.isFinite(utxoBytes)
+              ? fmtBytes(utxoBytes)
+              : indexed
+                ? 'enabled'
+                : '–';
+    utxo.classList.toggle('warn', indexed === false);
     renderPruning(s.pruning, running);
 
     $('stat-peers').textContent = fmtNum(s.peers.total);
@@ -875,6 +920,7 @@ $('install-release').addEventListener('click', async () => {
 let currentConfig = null;
 
 const FLAGS = [
+    'utxoindex',
     'archival',
     'unsaferpc',
     'perfMetrics',

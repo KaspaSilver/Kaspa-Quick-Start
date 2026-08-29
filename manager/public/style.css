@@ -413,6 +413,8 @@ main {
 .kv > div { min-width: 0; }
 .kv dt { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
 .kv dd { margin: 2px 0 0; font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }
+/* A value that reports something switched off, rather than a number. */
+.kv dd.warn { color: var(--warn); }
 .kv.vertical > div { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
 .kv.vertical dt { text-transform: none; letter-spacing: 0; font-size: 13px; }
 

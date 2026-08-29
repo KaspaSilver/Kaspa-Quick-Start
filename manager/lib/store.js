@@ -42,6 +42,11 @@ export const DEFAULT_NODE_CONFIG = {
     // reaching the network is a second, deliberate choice.
     expose: { p2p: false, grpc: false, borsh: false, json: false, bindAddress: '127.0.0.1' },
     flags: {
+        // On for every new install: it is what wallets, explorers and anything
+        // asking "what does this address hold" need from a node, and building
+        // it afterwards costs more than having it from the start. It can be
+        // switched off, unlike --appdir and --yes.
+        utxoindex: true,
         archival: false,
         unsaferpc: false,
         perfMetrics: false,

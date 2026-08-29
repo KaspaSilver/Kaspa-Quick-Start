@@ -44,6 +44,13 @@ import {
     verifyPassword,
 } from './lib/auth.js';
 
+// Identifies this manager process, and nothing more. The panel reads it on
+// every status poll and reloads itself when it changes, so a tab left open
+// overnight is never running the code of a build that has already been
+// replaced -- after the panel updates itself, and after every restart while
+// `dev.sh watch` is rebuilding it.
+const BOOT_ID = crypto.randomUUID();
+
 // This panel's own version, not the node's. kaspad's version is reported
 // separately on the Kaspad page, where it belongs.
 const PANEL_VERSION = (() => {
@@ -421,6 +428,7 @@ route('GET', /^\/api\/status$/, async (req, res) => {
         p2pReachable: peers.length ? inbound > 0 : null,
         // Drives whether the panel unlocks Mining and KaChat.
         ready: state.running && snapshot.reachable && Boolean(snapshot.sync?.isSynced ?? snapshot.info?.isSynced ?? false),
+        bootId: BOOT_ID,
         version,
         network: cfg.network,
         ports: ports(cfg),

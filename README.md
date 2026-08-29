@@ -4,7 +4,7 @@ One command installs Docker (if needed), runs a Kaspa node with the right
 arguments, and gives you a web control panel to manage it: node settings,
 domains, HTTPS and updates.
 
-The node always runs with `--utxoindex`. Everything else starts switched off:
+A new install starts with the UTXO index on and everything else switched off:
 the installer brings up the panel on its own, and you decide which listeners to
 bind and which ports to publish before you press Start. **To go public, switch
 on the ports you want in the panel and open them on your router.**
@@ -46,6 +46,11 @@ decision about your network, so neither happens until you make it. Open the
 panel, go to **Kaspad, Ports**, switch on what you want, then press **Start**.
 Until then the node listens on P2P and on the wRPC-JSON channel the panel
 speaks, and publishes nothing at all.
+
+The one thing that does start on is the UTXO index, under **Indexes & flags**.
+It is what wallets and explorers ask a node for, and building it later costs
+more than having it from the beginning, so it is a checkbox you can clear rather
+than a default you have to find.
 
 ### Uninstall, which removes everything
 
@@ -95,6 +100,29 @@ git config core.hooksPath .githooks
 
 It reads only the lines a commit adds, and `git commit --no-verify` gets past it
 when that is genuinely what you want.
+
+### Editing the panel against a running stack
+
+The installer copies this repo into `~/.kaspa-node` and bakes the panel's files
+into an image, so there are three copies of every file and the browser sees the
+third. `dev.sh` collapses that:
+
+```bash
+./dev.sh watch
+```
+
+It mounts this working copy over the image's files and then restarts the panel
+on every change under `manager/`. The open browser tab notices the restart on
+its next status poll and reloads itself, so an edit reaches the screen without
+touching either the terminal or the browser. It waits for a quiet moment first:
+a reload never interrupts a focused field or an open dialog, it just happens on
+the following poll. A tab in a background window polls on the browser's own
+throttled schedule, which can be up to a minute.
+
+`./dev.sh link` is the same mount without the watching, `./dev.sh unlink`
+restores the image's own files, and `./dev.sh status` says which copy is live.
+Nothing outside `manager/` is mounted, so changes to `docker-compose.yml`,
+`kaspad/` or the installers still need `./dev.sh sync`.
 
 ## Ports
 
