@@ -33,7 +33,7 @@ export const SERVICES = [
         label: 'Stratum bridge dashboard',
         detail: "The bridge's own web page: connected workers, hashrate, shares and blocks found.",
         afterNote:
-            'The dashboard is at https://{domain}. It is the page built into the stratum bridge itself, showing the same numbers as the Mining tab here, which reads them from it. Publishing it is worth doing when people mining to you want to see their own workers without a login to this panel. It has no password of its own, so add one above if it should not be public. Miners still point at the stratum port directly; this name is only the stats page.',
+            'The dashboard is at https://{domain}. It is the page built into the stratum bridge itself: worker table, blocks found with a pie chart and a CSV download, network hashrate and difficulty, and a search box for looking up any wallet mining to you. Note what that publishes: every miner\'s wallet address, their hashrate and their share of the blocks, to anyone with the address. That is ordinary for a public pool and a lot to give away if you are mining alone. The page has no password of its own, so use the protections above if it should not be open. The Mining tab here already shows the same numbers, from the same endpoint, so publishing is for other people rather than for you. Miners still connect to the stratum port directly; this name only serves the stats page.',
     },
     {
         key: 'kachat',
