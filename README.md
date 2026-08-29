@@ -4,8 +4,10 @@ One command installs Docker (if needed), runs a Kaspa node with the right
 arguments, and gives you a web control panel to manage it: node settings,
 domains, HTTPS and updates.
 
-The node always runs with `--utxoindex`, and always listens on the P2P, gRPC and
-wRPC ports. **To go public you only have to open the ports on your router.**
+The node always runs with `--utxoindex`. Everything else starts switched off:
+the installer brings up the panel on its own, and you decide which listeners to
+bind and which ports to publish before you press Start. **To go public, switch
+on the ports you want in the panel and open them on your router.**
 A stratum bridge is included, so miners and ASICs can point straight at your
 node, with a dashboard for hashrate, workers and blocks found. The
 [KaChat indexer](https://github.com/KaspaSilver/KaChat-Indexer) and
@@ -37,6 +39,13 @@ When it finishes it prints the panel URL, `http://localhost:8080`. There is no
 login: the panel is bound to `127.0.0.1`, so only this machine can open it.
 See [Opening the panel to other machines](#opening-the-panel-to-other-machines)
 if you want to reach it from elsewhere.
+
+The node itself is not running at that point, and that is deliberate. Syncing
+the chain costs hours and tens of gigabytes, and publishing a port is a
+decision about your network, so neither happens until you make it. Open the
+panel, go to **Kaspad, Ports**, switch on what you want, then press **Start**.
+Until then the node listens on P2P and on the wRPC-JSON channel the panel
+speaks, and publishes nothing at all.
 
 ### Uninstall, which removes everything
 
@@ -94,7 +103,7 @@ when that is genuinely what you want.
 | `16111` | P2P                 | be a public node. The only one that is required |
 | `16110` | gRPC RPC            | let wallets and tools reach your node    |
 | `17110` | wRPC Borsh          | serve Rusty/KDX style clients            |
-| `18110` | wRPC JSON           | serve browser / JSON clients (off by default) |
+| `18110` | wRPC JSON           | serve browser / JSON clients (the panel already uses it internally) |
 | `5555`  | stratum             | only if you mine, and only for miners outside this machine |
 | `3080`  | KaPosts REST API    | only if KaChat clients connect from outside this machine |
 | `8600`  | chat indexer API    | as above |
@@ -104,9 +113,23 @@ when that is genuinely what you want.
 
 Testnet-10 uses `16211 / 16210 / 17210 / 18210`; the panel switches them for you.
 
-Every listener is bound inside the stack regardless of these toggles. The
-"Published" switch controls whether Docker maps it to a host port, which is the
-line between private and public.
+A fresh install binds only P2P and the wRPC-JSON channel the panel speaks, and
+publishes nothing at all. Each row carries two independent switches, and both
+matter:
+
+* **On** binds the listener inside the stack. It is what the stratum bridge
+  (gRPC) and the KaChat indexer (wRPC Borsh) need over the internal network, and
+  both tell you which one is missing when you switch them on.
+* **Public** maps it to a host port, which is the line between private and
+  public.
+
+A new install also publishes on `127.0.0.1`, so a port switched on by mistake is
+still reachable from this machine only. **Publish on**, under the table, is what
+lets the rest of the network in.
+
+Changing either while the node is stopped simply saves it. Nothing in the panel
+starts a node you have switched off: settings, updates and port changes all wait
+for you to press Start.
 
 ---
 

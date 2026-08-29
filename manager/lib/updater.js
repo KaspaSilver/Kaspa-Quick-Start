@@ -1,4 +1,4 @@
-import { compose, imageVersion, KASPAD_CONTAINER } from './dockerctl.js';
+import { compose, containerState, imageVersion, KASPAD_CONTAINER } from './dockerctl.js';
 import { readEnvFile, updateEnvFile, loadManagerConfig, saveManagerConfig } from './store.js';
 import { rpc } from './rpc.js';
 import { loadBridgeConfig } from './bridge.js';
@@ -147,10 +147,15 @@ export async function applyUpdate(version, onLine = () => {}) {
         onLine('Building the kaspad image...');
         await compose(['build', '--pull', 'kaspad'], { onLine, timeoutMs: 90 * 60_000 });
 
-        onLine('Restarting the node...');
-        await compose(['up', '-d', '--force-recreate', 'kaspad'], { onLine, timeoutMs: 10 * 60_000 });
-
-        onLine(`kaspad is now running ${version}.`);
+        // An update is not a reason to start a node that is switched off. The
+        // new image is simply what it boots from whenever that happens.
+        if ((await containerState(KASPAD_CONTAINER)).running) {
+            onLine('Restarting the node...');
+            await compose(['up', '-d', '--force-recreate', 'kaspad'], { onLine, timeoutMs: 10 * 60_000 });
+            onLine(`kaspad is now running ${version}.`);
+        } else {
+            onLine(`The node is stopped, so it stays stopped. It runs ${version} when you start it.`);
+        }
 
         // The stratum bridge is built from the same release archive and pinned
         // to the same KASPAD_VERSION, so leaving it alone here would quietly

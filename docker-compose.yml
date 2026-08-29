@@ -293,8 +293,11 @@ services:
       - "${MANAGER_BIND:-0.0.0.0}:${GUI_PORT:-8080}:8080"
     networks:
       - kaspa
-    depends_on:
-      - kaspad
+    # No depends_on: kaspad, deliberately. The panel is what starts the node,
+    # so it has to come up whether or not the node exists -- and a dependency
+    # would start kaspad again on every `up -d manager`, quietly undoing the
+    # panel's own stop button. The panel finds the node by hostname once it
+    # exists, and reports it as stopped until then.
     logging:
       driver: json-file
       options:

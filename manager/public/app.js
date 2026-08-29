@@ -525,10 +525,11 @@ function applyNodeGating(status) {
 }
 
 /**
- * Every port gets a switch, on by default because that is how the node starts
- * out. Every port is listed whether it is on or off -- showing only the enabled
- * ones would remove a port's own row when you switched it off, leaving no way
- * to switch it back on.
+ * Every port gets a switch, and on a fresh install nearly all of them are off:
+ * the node starts with P2P and the panel's own wRPC-JSON channel bound, and
+ * nothing published. Every port is listed whether it is on or off -- showing
+ * only the enabled ones would remove a port's own row when you switched it off,
+ * leaving no way to switch it back on.
  */
 // The whole IBD sequence, so it is obvious what has finished, what is running
 // now, and what is still to come -- rather than one number with no context.

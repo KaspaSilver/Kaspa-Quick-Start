@@ -164,6 +164,21 @@ async function applyNodeConfig(cfg, onLine = () => {}) {
     // change when the network does.
     nginx.writeAll(loadProxies(), cfg);
 
+    // A stopped node stays stopped. Everything above this point is on disk,
+    // and kaspad reads it when it next boots, so changing settings is never a
+    // back door that starts a node somebody switched off -- nor one that has
+    // never been started at all, which is how every fresh install begins.
+    const state = await dockerctl.containerState(dockerctl.KASPAD_CONTAINER);
+    if (!state.running) {
+        onLine(
+            state.exists
+                ? 'The node is stopped, so this is saved and applies the moment you start it.'
+                : 'The node has not been started yet, so this applies the moment you start it.',
+        );
+        await reloadProxyIfRunning(onLine);
+        return { args, mappings };
+    }
+
     onLine('Recreating the kaspad container...');
     await dockerctl.compose(['up', '-d', '--force-recreate', KASPAD_SERVICE], { onLine, timeoutMs: 10 * 60_000 });
     // The container now matches the file; remember that so a manager restart
@@ -529,8 +544,14 @@ route('POST', /^\/api\/ports\/bind$/, async (req, res) => {
 route('POST', /^\/api\/node\/(start|stop|restart)$/, async (req, res, match) => {
     const action = match[1];
     const job = jobs.start(`${action} node`, async (onLine) => {
-        if (action === 'start') await dockerctl.compose(['up', '-d', KASPAD_SERVICE], { onLine });
-        else if (action === 'stop') await dockerctl.compose(['stop', KASPAD_SERVICE], { onLine, timeoutMs: 5 * 60_000 });
+        if (action === 'start') {
+            await dockerctl.compose(['up', '-d', KASPAD_SERVICE], { onLine });
+            // It has just been created from the arguments file as it stands, so
+            // record that. Otherwise the next manager restart reads drift that
+            // is not there and recreates a node the user only just started.
+            recordAppliedArgs();
+            syncProgress.reset();
+        } else if (action === 'stop') await dockerctl.compose(['stop', KASPAD_SERVICE], { onLine, timeoutMs: 5 * 60_000 });
         else await dockerctl.compose(['restart', KASPAD_SERVICE], { onLine, timeoutMs: 5 * 60_000 });
     });
     sendJson(res, 202, { ok: true, jobId: job.id });
@@ -1510,6 +1531,26 @@ const server = http.createServer(async (req, res) => {
 
 // -------------------------------------------------------------------- boot ---
 
+/**
+ * Published ports used to bind 0.0.0.0 whenever nobody had chosen an address.
+ * The default is loopback now, which is right for a new install and wrong for
+ * an old one: a config written before the change carries no key to read, and
+ * its node was reachable from the network. Letting the new default apply would
+ * quietly unpublish a public node on its next restart, so pin those installs to
+ * what they were already doing and leave the choice where it was made.
+ */
+function migrateBindAddress(cfg) {
+    try {
+        const raw = JSON.parse(fs.readFileSync(NODE_CONFIG_FILE, 'utf8'));
+        if (!raw?.expose || raw.expose.bindAddress !== undefined) return;
+        cfg.expose.bindAddress = '0.0.0.0';
+        saveNodeConfig(cfg);
+        log('published ports pinned to 0.0.0.0, which is where this install already had them');
+    } catch (err) {
+        log(`could not read the published-port address: ${err.message}`);
+    }
+}
+
 async function bootstrap() {
     ensureDirs();
 
@@ -1517,6 +1558,7 @@ async function bootstrap() {
     if (!fs.existsSync(PROXIES_FILE)) saveProxies([]);
 
     const cfg = loadNodeConfig();
+    migrateBindAddress(cfg);
     writeArgsFile(cfg);
     renderPortsOverride(cfg);
     nginx.writeAll(loadProxies(), cfg);
