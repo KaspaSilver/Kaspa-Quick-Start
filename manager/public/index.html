@@ -1753,20 +1753,19 @@
 <!-- ---------------------------------------------------------- proxy dialog -->
 <dialog id="proxy-dialog">
   <form method="dialog" id="proxy-form">
-    <h3 id="proxy-dialog-title">Add proxy host</h3>
+    <div class="dialog-head">
+      <h3 id="proxy-dialog-title">Add proxy host</h3>
+      <!-- formnovalidate: closing is not submitting, and the domain field is
+           required, which would otherwise refuse to let the dialog go. -->
+      <button value="cancel" class="dialog-close" formnovalidate aria-label="Close">&times;</button>
+    </div>
 
     <label>Domain
       <input id="px-domain" placeholder="mynode.duckdns.org" required>
     </label>
 
     <label>Forwards to
-      <select id="px-target">
-        <option value="borsh">Kaspad wRPC Borsh (17110)</option>
-        <option value="json">Kaspad wRPC JSON (18110)</option>
-        <option value="grpc">Kaspad gRPC (16110)</option>
-        <option value="manager">This control panel</option>
-        <option value="custom">Custom host:port</option>
-      </select>
+      <select id="px-target"></select>
     </label>
 
     <div id="px-custom" class="row" hidden>
@@ -1803,7 +1802,6 @@
 
     <p class="error" id="px-error" hidden></p>
     <div class="row end">
-      <button value="cancel" class="ghost">Cancel</button>
       <button value="save" class="primary" id="px-save">Save</button>
     </div>
   </form>

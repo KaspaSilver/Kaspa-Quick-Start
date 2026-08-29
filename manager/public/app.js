@@ -3201,10 +3201,15 @@ $('kassigner-fetch').addEventListener('click', async () => {
 // ---------------------------------------------------------------- proxies ---
 
 let proxies = [];
+// The kinds a proxy host can forward to, as the server defines them. The dialog
+// used to carry its own copy in markup, which went stale the moment the apps
+// became targets: editing a Nextcloud host showed an empty "Forwards to".
+let targetKinds = {};
 
 async function loadProxies() {
     const r = await api('/api/proxies');
     proxies = r.proxies;
+    targetKinds = r.targets ?? {};
 
     // Reflect whether the proxy is running before anything else: with it off,
     // adding a host would write config nothing is serving.
@@ -3629,8 +3634,18 @@ function openProxyDialog(proxy) {
     $('proxy-dialog-title').textContent = proxy ? `Edit ${proxy.domain}` : 'Add proxy host';
     $('px-error').hidden = true;
 
+    const kind = proxy?.target?.kind ?? 'borsh';
+    $('px-target').innerHTML = Object.entries(targetKinds)
+        .map(([key, meta]) => `<option value="${key}">${escapeHtml(meta.label ?? key)}</option>`)
+        .join('');
+    // A host pointing at something this panel no longer offers keeps its own
+    // option, so opening it cannot silently repoint it at the first in the list.
+    if (kind && !targetKinds[kind]) {
+        $('px-target').insertAdjacentHTML('beforeend', `<option value="${escapeHtml(kind)}">${escapeHtml(kind)}</option>`);
+    }
+
     $('px-domain').value = proxy?.domain ?? '';
-    $('px-target').value = proxy?.target?.kind ?? 'borsh';
+    $('px-target').value = kind;
     $('px-scheme').value = proxy?.target?.scheme ?? 'http';
     $('px-host').value = proxy?.target?.host ?? '';
     $('px-port').value = proxy?.target?.port ?? '';

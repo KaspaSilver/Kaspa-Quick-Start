@@ -567,6 +567,20 @@ dialog {
 dialog.wide { width: min(680px, calc(100vw - 32px)); }
 dialog::backdrop { background: rgb(0 0 0 / 0.6); }
 dialog h3 { margin-top: 0; }
+.dialog-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.dialog-head h3 { margin-bottom: 12px; }
+.dialog-close {
+    background: none;
+    border: 0;
+    color: var(--muted);
+    font-size: 22px;
+    line-height: 1;
+    padding: 0 6px;
+    margin: -2px -4px 0 0;
+    cursor: pointer;
+    border-radius: 8px;
+}
+.dialog-close:hover { color: var(--text); background: var(--panel-2); }
 dialog .row label { flex: 1; min-width: 110px; }
 
 /* ----------------------------------------------------------------- toast */
