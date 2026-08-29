@@ -128,13 +128,57 @@ need tar
 # Docker may be installed but only reachable as root (fresh Linux install, user
 # not yet in the docker group). Track that once and reuse it everywhere.
 DOCKER_SUDO=""
-docker_ok() { $DOCKER_SUDO docker info >/dev/null 2>&1; }
+
+# `docker info` is not guaranteed to come back. Docker Desktop accepts a
+# connection long before it can answer one, so the call can block for minutes
+# while the VM boots, which turns a bounded "180 tries" wait into an open one.
+DOCKER_PROBE_TIMEOUT="${KASPA_DOCKER_PROBE_TIMEOUT:-10}"
+
+# Runs a command quietly and kills it after DOCKER_PROBE_TIMEOUT seconds.
+# macOS ships no timeout(1), hence the hand-rolled one.
+#
+# The subshell earns its keep separately: when a child dies on a signal, bash
+# announces it ("Killed: 9") on its own stderr rather than the child's, so
+# redirecting the command alone does not hide it. macOS does SIGKILL a binary
+# whose app bundle was replaced underneath it, which is precisely what a Docker
+# Desktop upgrade does to the docker CLI moments before this probe runs.
+run_probe() {
+    (
+        "$@" >/dev/null 2>&1 &
+        probe_pid=$!
+        probe_waited=0
+        while kill -0 "$probe_pid" 2>/dev/null; do
+            if [ "$probe_waited" -ge "$DOCKER_PROBE_TIMEOUT" ]; then
+                kill -9 "$probe_pid" 2>/dev/null || true
+                wait "$probe_pid" 2>/dev/null || true
+                exit 1
+            fi
+            sleep 1
+            probe_waited=$((probe_waited + 1))
+        done
+        wait "$probe_pid"
+    ) 2>/dev/null
+}
+
+docker_ok() {
+    # The sudo probe must not race the timeout: sudo may be sitting on a
+    # password prompt, and a person needs longer than ten seconds to type.
+    if [ -n "$DOCKER_SUDO" ]; then
+        ( $DOCKER_SUDO docker info >/dev/null 2>&1 ) 2>/dev/null
+        return
+    fi
+    run_probe docker info
+}
 
 resolve_docker_access() {
     command -v docker >/dev/null 2>&1 || return 1
     DOCKER_SUDO=""
     docker_ok && return 0
-    if [ -n "$SUDO" ]; then
+    # Only Linux has a root-owned daemon socket a plain user may not reach yet.
+    # On macOS the daemon belongs to the user, so sudo cannot help. Asking
+    # anyway would leave sudo waiting on a password prompt whose output the
+    # probe throws away, once every two seconds, with nothing on screen.
+    if [ "$PLATFORM" = linux ] && [ -n "$SUDO" ]; then
         DOCKER_SUDO="$SUDO"
         docker_ok && return 0
     fi
@@ -262,13 +306,23 @@ install_docker_macos() {
     open -a Docker || warn "Could not start Docker Desktop automatically. Open it from Applications."
 }
 
+# Takes a budget in seconds, not a number of attempts: a probe can now cost
+# anything from an instant to DOCKER_PROBE_TIMEOUT, so counting attempts says
+# nothing about how long the caller is actually going to sit here.
 wait_for_docker() {
-    local tries="${1:-120}"
-    say "Waiting for the Docker daemon"
-    local i=0
-    while [ "$i" -lt "$tries" ]; do
+    local limit="${1:-240}"
+    say "Waiting for the Docker daemon (up to $(( (limit + 59) / 60 )) min)"
+    if [ "$PLATFORM" = macos ]; then
+        say "Keep an eye on the Docker Desktop window while this runs. A fresh"
+        say "install, and every upgrade, asks you to accept the licence and to"
+        say "grant privileged access. The daemon stays down until you do."
+    fi
+    local deadline=$((SECONDS + limit)) i=0
+    while [ "$SECONDS" -lt "$deadline" ]; do
         if resolve_docker_access; then ok "Docker is running${DOCKER_SUDO:+ (via sudo)}"; return 0; fi
         i=$((i + 1))
+        # Minutes of silence read as a hang, so say it is still alive.
+        if [ $((i % 8)) -eq 0 ]; then say "Still waiting, $((deadline - SECONDS))s left"; fi
         sleep 2
     done
     return 1
@@ -285,14 +339,14 @@ ensure_docker() {
             elif command -v systemctl >/dev/null 2>&1; then
                 $SUDO systemctl start docker >/dev/null 2>&1 || true
             fi
-            wait_for_docker 60 || true
+            wait_for_docker 120 || true
         fi
 
         if ! resolve_docker_access; then
             [ "$SKIP_DOCKER_INSTALL" = "1" ] && die "Docker is not available and --skip-docker-install was given."
             confirm "Docker is not installed. Install it now?" || die "Docker is required."
             if [ "$PLATFORM" = linux ]; then install_docker_linux; else install_docker_macos; fi
-            wait_for_docker 180 || die "Docker did not start. Start Docker manually and re-run this script."
+            wait_for_docker 360 || die "Docker did not start. Start Docker manually and re-run this script."
         fi
     fi
 
