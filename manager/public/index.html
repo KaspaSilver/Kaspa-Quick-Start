@@ -1378,6 +1378,25 @@
             whatever the service needs switched on, the nginx configuration, and
             an HTTPS certificate. One name serves one service.
           </p>
+          <!--
+            The one requirement nothing here can arrange for you, and the reason
+            most setups fail at the certificate. It is stated before the table
+            rather than in the failure, because by then an hour of build has
+            gone by.
+          -->
+          <div class="notice" id="ports-notice">
+            <p>
+              <strong>Ports 80 and 443 have to reach this machine.</strong>
+              Forward both to it on your router, or nothing outside your network
+              can open these addresses and Let's Encrypt cannot issue a
+              certificate. Some ISPs block port 80 on home connections.
+            </p>
+            <div class="row">
+              <button id="ports-check" class="ghost">Check from outside</button>
+              <span class="muted" id="ports-check-note">Asks check-host.net to try connecting to your address. It sees your public IP.</span>
+            </div>
+            <div id="ports-check-result" hidden></div>
+          </div>
           <table class="proxies publish-table">
             <thead>
               <tr><th>Service</th><th>Status</th><th>Public address</th><th></th></tr>

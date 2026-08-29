@@ -37,6 +37,7 @@ import * as pruning from './lib/pruning.js';
 import * as kassigner from './lib/kassigner.js';
 import * as selfservice from './lib/selfservice.js';
 import * as publish from './lib/publish.js';
+import * as portcheck from './lib/portcheck.js';
 import { nodeSnapshot, rpc } from './lib/rpc.js';
 import { jobs } from './lib/jobs.js';
 import {
@@ -830,6 +831,17 @@ route('POST', /^\/api\/proxy\/enabled$/, async (req, res) => {
         applyProxyState(enabled, onLine),
     );
     sendJson(res, 202, { ok: true, jobId: job.id });
+});
+
+/**
+ * Whether 80 and 443 actually reach this machine from the internet.
+ *
+ * Deliberately not run on page load: it asks a third party to connect back, so
+ * it happens when somebody presses the button and not before.
+ */
+route('GET', /^\/api\/proxy\/portcheck$/, async (req, res) => {
+    const domain = loadDomains()[0]?.domain ?? null;
+    sendJson(res, 200, await portcheck.check(domain));
 });
 
 route('POST', /^\/api\/proxy\/reload$/, async (req, res) => {

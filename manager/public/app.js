@@ -3369,6 +3369,76 @@ $('publish-body').addEventListener('click', async (event) => {
     }
 });
 
+/**
+ * The reachability check. It reports what this machine does and what the
+ * internet can see separately, because those need opposite fixes and look
+ * identical from outside: a closed port and a stopped proxy both just fail.
+ */
+$('ports-check').addEventListener('click', async () => {
+    const button = $('ports-check');
+    const out = $('ports-check-result');
+    button.disabled = true;
+    button.textContent = 'Checking…';
+    out.hidden = false;
+    out.innerHTML = '<p class="muted">Asking a few places on the internet to connect. This takes a few seconds.</p>';
+
+    try {
+        const r = await api('/api/proxy/portcheck');
+        const line = (ok, text) => `<li class="${ok === null ? '' : ok ? 'ok' : 'bad'}">${escapeHtml(text)}</li>`;
+        const rows = [];
+
+        rows.push(line(r.local.proxyRunning, r.local.proxyRunning ? 'The reverse proxy is running here.' : 'The reverse proxy is not running, so nothing would answer even on an open port.'));
+        rows.push(line(r.local.publishes80 && r.local.publishes443,
+            r.local.publishes80 && r.local.publishes443
+                ? 'It holds ports 80 and 443 on this machine.'
+                : `It is missing ${[!r.local.publishes80 && '80', !r.local.publishes443 && '443'].filter(Boolean).join(' and ')} on this machine.`));
+        rows.push(line(r.local.servesChallenge, r.local.servesChallenge
+            ? "It serves the file Let's Encrypt asks for."
+            : "It did not serve the file Let's Encrypt asks for, which is the thing to fix first."));
+
+        if (r.outside) {
+            for (const port of [80, 443]) {
+                const p = r.outside[port];
+                // Port 80 is always identified -- the check fetches a file
+                // from this machine. Port 443 only once a certificate exists,
+                // and saying which is which is the difference between "it
+                // works" and "something out there answered".
+                const identified = port === 80 || p.identified;
+                rows.push(
+                    line(
+                        p.open,
+                        `Port ${port}: ${
+                            p.open
+                                ? identified
+                                    ? 'reaches this machine'
+                                    : 'something accepts connections, which may be your router rather than this machine'
+                                : p.open === null
+                                  ? 'no answer in time'
+                                  : 'does not reach this machine'
+                        } (${p.detail}).`,
+                    ),
+                );
+            }
+        } else {
+            rows.push(line(null, `Could not check from outside: ${r.error ?? 'unknown reason'}.`));
+        }
+
+        const bothOpen = r.outside && r.outside[80]?.open && r.outside[443]?.open;
+        const verdict = bothOpen
+            ? '<p class="muted">Both ports reach this machine. Certificates should issue.</p>'
+            : r.outside && r.local.servesChallenge
+              ? `<p class="muted">This machine is set up correctly, so what is missing is the forwarding. On your router, send TCP 80 and 443 to this machine${r.ip ? ` (your address is ${escapeHtml(r.ip)})` : ''}.</p>`
+              : '';
+
+        out.innerHTML = `<ul class="port-result">${rows.join('')}</ul>${verdict}`;
+    } catch (e) {
+        out.innerHTML = `<p class="error">${escapeHtml(e.message)}</p>`;
+    } finally {
+        button.disabled = false;
+        button.textContent = 'Check from outside';
+    }
+});
+
 // ------------------------------------------------------------ setup wizard ---
 
 /**

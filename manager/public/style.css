@@ -763,6 +763,24 @@ table.instances td:last-child { width: 40px; text-align: right; }
 .proxy-tools { align-items: center; gap: 8px; }
 .proxy-tools .spacer { flex: 1; }
 
+/* The one thing the panel cannot do for you, said before the table rather than
+   after an hour of building. */
+.notice {
+    border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+    background: color-mix(in srgb, var(--warn) 7%, transparent);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin: 0 0 14px;
+}
+.notice p { margin: 0 0 10px; font-size: 13px; }
+.notice .row { align-items: center; gap: 10px; }
+.notice .muted { font-size: 12px; }
+.port-result { margin: 10px 0 0; font-size: 13px; }
+.port-result li { margin: 3px 0; list-style: none; }
+.port-result li::before { content: '· '; color: var(--muted); }
+.port-result li.ok::before { content: '✓ '; color: var(--ok); }
+.port-result li.bad::before { content: '✗ '; color: var(--danger); }
+
 /* ----------------------------------------------------------- port toggles */
 
 .switch {
