@@ -138,6 +138,18 @@ UNITS.kassigner = {
 
 export const unitFor = (key) => UNITS[key] ?? null;
 
+/**
+ * Every `up` here names every container the service owns, so compose has
+ * nothing left to work out -- and is told not to.
+ *
+ * Belt and braces over having removed the depends_on that caused this:
+ * installing the stratum bridge compiled kaspad from source and started it,
+ * because compose treats "the bridge needs the node" as "start the node". A
+ * service in this panel is started by somebody clicking its switch, and by
+ * nothing else.
+ */
+const NO_DEPS = ['--no-deps'];
+
 /** Installed means the container exists, whether or not it is running. */
 export async function status(key) {
     const unit = unitFor(key);
@@ -187,7 +199,7 @@ export async function install(key, onLine = () => {}) {
         await compose(['build', ...unit.buildable], { onLine, profile: unit.profile, timeoutMs: 120 * 60_000 });
     }
     onLine(`Starting ${unit.label}.`);
-    await compose(['up', '-d', ...unit.services], { onLine, profile: unit.profile, timeoutMs: 20 * 60_000 });
+    await compose(['up', '-d', ...NO_DEPS, ...unit.services], { onLine, profile: unit.profile, timeoutMs: 20 * 60_000 });
 }
 
 /**
@@ -202,7 +214,11 @@ export async function setRunning(key, running, onLine = () => {}) {
         onLine(`Starting ${unit.label}.`);
         // `up -d` rather than `start`, so a container whose configuration
         // changed while it was stopped comes back with the new one.
-        await compose(['up', '-d', ...unit.services], { onLine, profile: unit.profile, timeoutMs: 10 * 60_000 });
+        await compose(['up', '-d', ...NO_DEPS, ...unit.services], {
+            onLine,
+            profile: unit.profile,
+            timeoutMs: 10 * 60_000,
+        });
     } else {
         onLine(`Stopping ${unit.label}. Nothing is removed.`);
         await compose(['stop', ...unit.services], { onLine, profile: unit.profile, timeoutMs: 5 * 60_000 });

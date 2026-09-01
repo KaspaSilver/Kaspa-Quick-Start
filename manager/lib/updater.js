@@ -1,4 +1,4 @@
-import { compose, containerState, imageVersion, KASPAD_CONTAINER } from './dockerctl.js';
+import { compose, containerState, imageVersion, KASPAD_CONTAINER, BRIDGE_CONTAINER } from './dockerctl.js';
 import { readEnvFile, updateEnvFile, loadManagerConfig, saveManagerConfig } from './store.js';
 import { rpc } from './rpc.js';
 import { loadBridgeConfig } from './bridge.js';
@@ -165,12 +165,18 @@ export async function applyUpdate(version, onLine = () => {}) {
             onLine('Rebuilding the stratum bridge, which ships in the same release...');
             try {
                 await compose(['build', '--pull', 'bridge'], { onLine, profile: 'mining', timeoutMs: 90 * 60_000 });
-                await compose(['up', '-d', '--force-recreate', 'bridge'], {
-                    onLine,
-                    profile: 'mining',
-                    timeoutMs: 10 * 60_000,
-                });
-                onLine(`The bridge is on ${version} too.`);
+                // Same rule as the node above: build the new image either way,
+                // and only restart what was already running.
+                if ((await containerState(BRIDGE_CONTAINER)).running) {
+                    await compose(['up', '-d', '--no-deps', '--force-recreate', 'bridge'], {
+                        onLine,
+                        profile: 'mining',
+                        timeoutMs: 10 * 60_000,
+                    });
+                    onLine(`The bridge is on ${version} too.`);
+                } else {
+                    onLine(`The bridge is stopped, so it stays stopped. It runs ${version} when you start it.`);
+                }
             } catch (err) {
                 // The node is already up and correct; a bridge that failed to
                 // rebuild is worth reporting but not worth undoing that.

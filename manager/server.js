@@ -210,11 +210,21 @@ async function applyNodeConfig(cfg, onLine = () => {}) {
     // breaks. Rewrite and bounce it whenever the node is reconfigured.
     const miningCfg = bridge.loadBridgeConfig();
     bridge.writeBridgeFiles(miningCfg, cfg);
-    if (miningCfg.enabled) {
+    // Only if it is actually running. The saved 'enabled' flag survives the
+    // switch being turned off -- that is the point of it -- so restarting on
+    // the flag would start a bridge somebody had stopped, as a side effect of
+    // editing an unrelated node setting.
+    if ((await dockerctl.containerState(dockerctl.BRIDGE_CONTAINER)).running) {
         onLine('Restarting the stratum bridge against the reconfigured node...');
         await dockerctl
-            .compose(['up', '-d', '--force-recreate', 'bridge'], { onLine, profile: 'mining', timeoutMs: 10 * 60_000 })
+            .compose(['up', '-d', '--no-deps', '--force-recreate', 'bridge'], {
+                onLine,
+                profile: 'mining',
+                timeoutMs: 10 * 60_000,
+            })
             .catch((err) => onLine(`Bridge restart failed: ${err.message}`));
+    } else if (miningCfg.enabled) {
+        onLine('The stratum bridge is stopped, so it picks up the new node settings when you start it.');
     }
 
     return { args, mappings };
@@ -1867,11 +1877,17 @@ route('POST', /^\/api\/apps\/(kachat|desktop|nextcloud)\/update$/, async (req, r
             profile: app.profile,
             timeoutMs: 120 * 60_000,
         });
-        await dockerctl.compose(['up', '-d', '--force-recreate', ...app.services], {
-            onLine,
-            profile: app.profile,
-            timeoutMs: 20 * 60_000,
-        });
+        // The new image is built either way; what was stopped stays stopped and
+        // comes up on the new image whenever somebody starts it.
+        if ((await lifecycle.status(name))?.running) {
+            await dockerctl.compose(['up', '-d', '--no-deps', '--force-recreate', ...app.services], {
+                onLine,
+                profile: app.profile,
+                timeoutMs: 20 * 60_000,
+            });
+        } else {
+            onLine(`${app.label} is stopped, so it stays stopped. It runs the new build when you start it.`);
+        }
         const upstream = await apps.checkUpstream(name, cfg);
         apps.writeBuildRecord(name, { sha: upstream.latestSha, ref: cfg[name].ref, builtAt: new Date().toISOString() });
         onLine(`${app.label} is now running ${upstream.shortSha}.`);

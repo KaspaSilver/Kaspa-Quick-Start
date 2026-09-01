@@ -65,8 +65,16 @@ services:
       - ${STACK_DIR}/conf:/conf:ro
     networks:
       - kaspa
-    depends_on:
-      - kaspad
+    # No depends_on: kaspad. It reads like documentation of what the bridge
+    # needs, and compose reads it as permission to start the node: installing
+    # the bridge built kaspad from source and started it, on a machine where
+    # nobody had asked for a node yet. Nothing here starts anything else.
+    #
+    # Nothing is lost by dropping it. depends_on only orders a `compose up`
+    # that names both, and it is ignored entirely when docker restarts
+    # containers after a reboot. The bridge retries its gRPC connection until
+    # the node is there, which is the same thing it does whenever kaspad
+    # restarts underneath it.
     logging:
       driver: json-file
       options:
@@ -154,8 +162,9 @@ services:
       - ${STACK_DIR}/kachat/run-ingest.sh:/app/run-ingest.sh:ro
     networks:
       - kaspa
+    # Its own database, and nothing else. kaspad is deliberately not here: see
+    # the bridge above. The indexer waits for the node in its own retry loop.
     depends_on:
-      - kaspad
       - kachat-db
     logging:
       driver: json-file

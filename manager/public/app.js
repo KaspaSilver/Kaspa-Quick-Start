@@ -765,10 +765,20 @@ function applyNodeGating(status) {
 
     for (const service of ['mining', 'kachat']) {
         const input = navSwitch(service);
-        if (input && input.dataset.busy !== '1') {
-            input.disabled = !ready;
-            const label = input.closest('.switch');
-            if (label) label.title = ready ? `Start or stop ${SERVICE_NAMES[service]}` : lockReason;
+        if (!input || input.dataset.busy === '1') continue;
+
+        // Off is always available. Whatever is wrong with the node, a service
+        // that is running is a container the person looking at this is entitled
+        // to stop -- and greying out the only control that stops it is how you
+        // end up with something running that the panel refuses to turn off.
+        // The gate is on starting, and only on starting.
+        // What docker says, not what the switch happens to be showing: this can
+        // run before the services poll has caught up with it.
+        const running = serviceState[service]?.running ?? input.checked;
+        input.disabled = !ready && !running;
+        const label = input.closest('.switch');
+        if (label) {
+            label.title = input.disabled ? lockReason : `Start or stop ${SERVICE_NAMES[service]}`;
         }
     }
 
