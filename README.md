@@ -302,6 +302,17 @@ bind-mounting a RocksDB database into Docker Desktop is painfully slow.
 | `kachat-app` + `kachat-db` | built from KaChat-Indexer | chat/KaPosts indexer and its Postgres (only when KaChat is on) |
 | `nextcloud` + db/redis/imaginary | `nextcloud:stable` + ffmpeg | private cloud (only when Nextcloud is on) |
 
+Nothing here starts anything else. Installing the bridge does not start the
+node, and no compose service declares a dependency on `kaspad` — the bridge and
+the indexer retry their connection to it instead. Each service is started by
+its own switch and by nothing else.
+
+After a reboot or a power cut, docker brings back exactly what was running when
+the machine went down: every container is `restart: unless-stopped`, so
+anything you had stopped stays stopped. That relies on docker itself starting,
+which is a setting outside this stack — on macOS and Windows, Docker Desktop's
+**Start Docker Desktop when you sign in**; on Linux, `systemctl enable docker`.
+
 On `linux/amd64` the kaspad image is built by downloading the official release
 archive. Those binaries are static musl builds, so the image is a bare Alpine
 plus one file and builds in seconds. There is no upstream `linux/arm64` asset,
