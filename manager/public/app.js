@@ -128,16 +128,7 @@ const MOBILE = () => window.matchMedia('(max-width: 860px)').matches;
 // Why the node-dependent sections are locked, or null when they are open.
 let lockReason = 'Waiting for the node…';
 
-const isLocked = (name) => {
-    const item = document.querySelector(`.nav-item[data-tab="${name}"]`);
-    return Boolean(item?.classList.contains('locked'));
-};
-
 function selectTab(name) {
-    if (isLocked(name)) {
-        toast(lockReason || 'This section needs a running, synced node.', 'bad');
-        return;
-    }
     let title = name;
     for (const item of document.querySelectorAll('.nav-item')) {
         const active = item.dataset.tab === name;
@@ -566,15 +557,32 @@ async function refreshStatus() {
  * would index a chain that is not there. The server refuses to enable them too
  * -- this just stops the UI offering something it will reject.
  */
+/**
+ * Mining and the KaChat indexer both read the chain, so neither does anything
+ * useful until the node is running and caught up.
+ *
+ * That used to be enforced by locking the sections: the nav item refused to
+ * open, and opening one while the node fell behind threw you back to Kaspad
+ * with a toast. Which meant somebody could not read what mining offered, or set
+ * a difficulty, or point the indexer at a network, until after an overnight
+ * sync -- decisions they might reasonably want to make while waiting for it.
+ *
+ * So the door is open and the room is labelled. A banner at the top of each
+ * says what is missing and what that costs, settings can be read and changed,
+ * and the one thing still held back is starting the service, which genuinely
+ * cannot work yet.
+ */
 function applyNodeGating(status) {
     const ready = Boolean(status?.ready);
     lockReason = ready
         ? null
-        : !status?.container?.running
-          ? 'The node is not running yet. Start it on the Kaspad page.'
-          : !status?.rpc?.reachable
-            ? 'The node is still starting up.'
-            : 'The node is still catching up. This unlocks once it is done.';
+        : !status?.container?.exists
+          ? 'The Kaspa node is not installed yet. Install it on the Kaspad page.'
+          : !status?.container?.running
+            ? 'The Kaspa node is not running yet. Start it on the Kaspad page.'
+            : !status?.rpc?.reachable
+              ? 'The Kaspa node is still starting up.'
+              : 'The Kaspa node is still syncing. This service reads the chain, so it stays quiet until that finishes.';
 
     for (const service of ['mining', 'kachat']) {
         const input = navSwitch(service);
@@ -585,21 +593,38 @@ function applyNodeGating(status) {
         }
     }
 
+    // Nothing is locked any more; the tabs say why instead.
     for (const item of document.querySelectorAll('.nav-item[data-requires-node]')) {
-        item.classList.toggle('locked', !ready);
-        item.setAttribute('aria-disabled', String(!ready));
-        item.title = ready
-            ? item.querySelector('.label').textContent
-            : `${item.querySelector('.label').textContent}: ${lockReason}`;
+        item.classList.remove('locked');
+        item.removeAttribute('aria-disabled');
+        item.title = item.querySelector('.label').textContent;
     }
 
-    // If the node falls out of sync while one of these is open, do not strand
-    // the user on a section whose controls no longer work.
-    const active = document.querySelector('.nav-item.active');
-    if (!ready && active?.hasAttribute('data-requires-node')) {
-        selectTab('kaspad');
-        toast(lockReason, 'bad');
+    for (const tab of ['mining', 'kachat']) renderNodeBanner(tab, ready);
+}
+
+/**
+ * The banner. Sits above everything in the tab, including the sub-nav, so it is
+ * read before anything it applies to.
+ */
+function renderNodeBanner(tab, ready) {
+    const section = document.getElementById(`tab-${tab}`);
+    if (!section) return;
+
+    let banner = section.querySelector(':scope > .node-banner');
+    if (ready) return banner?.remove();
+
+    if (!banner) {
+        banner = document.createElement('div');
+        banner.className = 'notice node-banner';
+        section.prepend(banner);
     }
+    banner.innerHTML = `
+      <p><strong>${escapeHtml(lockReason)}</strong></p>
+      <p class="muted">
+        Everything here can be read and changed while you wait. Nothing will run
+        against the chain until the node is up and caught up.
+      </p>`;
 }
 
 /**

@@ -259,7 +259,6 @@ body {
     background: color-mix(in srgb, var(--accent) 14%, transparent);
     box-shadow: inset 2px 0 0 var(--accent);
 }
-.nav-row:has(.nav-item.locked):hover { background: none; }
 
 .sidebar-foot {
     border-top: 1px solid var(--line);
@@ -666,32 +665,9 @@ table.instances td:last-child { width: 40px; text-align: right; }
 
 /* ------------------------------------------------------------------ apps */
 
-/* Sections that need a running, synced node. Locked until the dashboard says
-   so, because starting them against a syncing node produces stale mining work
-   or an indexer reading a chain that is not there yet. */
-.nav-item.locked {
-    opacity: 0.4;
-    cursor: not-allowed;
-}
-.nav-item.locked:hover {
-    background: none;
-    color: var(--muted);
-}
-.nav-item.locked .label::after {
-    content: "";
-    display: inline-block;
-    width: 11px;
-    height: 11px;
-    margin-left: 7px;
-    vertical-align: -1px;
-    background: currentColor;
-    /* Padlock, drawn with a mask so it follows the text colour. */
-    -webkit-mask: var(--lock-icon) center / contain no-repeat;
-    mask: var(--lock-icon) center / contain no-repeat;
-}
-:root {
-    --lock-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6 10V7a6 6 0 1112 0v3' fill='none' stroke='black' stroke-width='2.4'/%3E%3Crect x='4' y='10' width='16' height='11' rx='2' fill='black'/%3E%3C/svg%3E");
-}
+/* Sections that read the chain say so in a banner at the top of themselves.
+   They used to be locked shut, padlock and all, which meant nobody could read
+   what mining offered or set a difficulty until after an overnight sync. */
 
 /* --------------------------------------------------------------- subtabs */
 
@@ -849,6 +825,10 @@ button.big { font-size: 15px; padding: 11px 22px; }
 .notice p { margin: 0 0 10px; font-size: 13px; }
 .notice .row { align-items: center; gap: 10px; }
 .notice .muted { font-size: 12px; }
+/* Above the sub-nav, so it is read before the thing it applies to. */
+.node-banner { margin-bottom: 16px; }
+.node-banner p:last-child { margin-bottom: 0; }
+
 .port-result { margin: 10px 0 0; font-size: 13px; }
 .port-result li { margin: 3px 0; list-style: none; }
 .port-result li::before { content: '· '; color: var(--muted); }
