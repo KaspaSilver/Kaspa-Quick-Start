@@ -521,11 +521,6 @@ if [ -z "$KASPAD_VERSION" ]; then
 fi
 ok "kaspad $KASPAD_VERSION"
 
-if [ "$DOCKER_ARCH" = "arm64" ]; then
-    warn "No arm64 release binary exists upstream, so kaspad will be compiled from source."
-    warn "That takes roughly 30-60 minutes the first time. Later updates rebuild too."
-    confirm "Continue?" || die "Aborted."
-fi
 
 write_env
 
@@ -609,7 +604,14 @@ if [ "$AUTH_STATE" != "set" ] && [ "$AUTH_STATE" != "kept" ] && ! is_loopback_bi
     confirm "Continue anyway?" || die "Aborted."
 fi
 
-say "Building images"
+# One image, and it is the panel's. Nothing else is built here.
+#
+# The node used to be compiled during installation, which on arm64 is an hour of
+# waiting before anything can be looked at, for a node the person may not want
+# on this machine at all. Everything the stack can run is now installed from the
+# panel, by somebody who has seen what it is and asked for it -- including the
+# node. What this script installs is the thing that installs the rest.
+say "Building the control panel"
 dc build manager || die "Could not build the manager image."
 
 case "$AUTH_STATE" in
@@ -617,29 +619,16 @@ case "$AUTH_STATE" in
     cleared) write_password_hash "" ;;
 esac
 
-dc build kaspad || die "Could not build the kaspad image."
-
-# The panel, and nothing else. The node stays off until it is switched on
-# there, so a fresh install never syncs a chain, opens a port or fills a disk
-# that nobody has asked it to.
 say "Starting the control panel"
 dc up -d manager || die "Could not start the control panel."
-
-# A re-install must not start a node that was deliberately stopped. It must not
-# leave a running one on the image it just replaced either, so that case, and
-# only that case, gets recreated.
-if [ "$($DOCKER_SUDO docker inspect -f '{{.State.Running}}' kaspa-node-kaspad 2>/dev/null || echo false)" = "true" ]; then
-    say "The node is running, so it is being recreated on the image just built"
-    dc up -d kaspad || warn "Could not recreate kaspad. Restart it from the panel."
-fi
 
 # ----------------------------------------------------------------- summary ---
 
 printf '\n%s─────────────────────────────────────────────────%s\n' "$DIM" "$R"
 printf '%sYour Kaspa control panel is running.%s\n\n' "$GRN$B" "$R"
 printf '  Control panel   %shttp://localhost:%s%s\n' "$B" "$GUI_PORT" "$R"
-printf '  The node        %snot started, and no port published%s\n' "$YLW" "$R"
-printf '                  %sdecide what to switch on in the panel, then press Start%s\n' "$DIM" "$R"
+printf '  Nothing else    %snot installed yet, including the node%s\n' "$YLW" "$R"
+printf '                  %severy service is installed from the panel, when you want it%s\n' "$DIM" "$R"
 case "$AUTH_STATE" in
     set)
         printf '  Sign in         %swith the password you supplied%s\n' "$DIM" "$R" ;;
@@ -657,12 +646,22 @@ case "$AUTH_STATE" in
 esac
 cat <<SUMMARY
 
-  First run        Open the panel, go to Kaspad, and look at Ports. The node
-                   listens on P2P and on the channel the panel uses, and
-                   publishes nothing at all. Switch on what you want, then
-                   press Start. The UTXO index starts on, because wallets and
-                   explorers ask the node for exactly that; it is a checkbox
-                   under Indexes & flags if you want it off.
+  First run        Only the panel is installed. Open it and press Install on
+                   Kaspad to build and start the node; every other service
+                   works the same way, and each has an Uninstall tab that
+                   takes its data with it.
+
+                   Installing the node builds it first. On a machine with no
+                   upstream binary for its architecture that means compiling
+                   from source, which takes roughly 30 to 60 minutes. It is
+                   the panel that waits, not this script, and the log is on
+                   screen while it happens.
+
+                   Then look at Kaspad, Ports. The node listens on P2P and on
+                   the channel the panel uses, and publishes nothing at all.
+                   The UTXO index starts on, because wallets and explorers ask
+                   the node for exactly that; it is a checkbox under Indexes &
+                   flags if you want it off.
 
                    Anything you do publish binds 127.0.0.1 until you change
                    "Publish on" to 0.0.0.0, so going public takes both.

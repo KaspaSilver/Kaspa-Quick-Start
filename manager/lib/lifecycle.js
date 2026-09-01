@@ -28,6 +28,22 @@ import { FIRMWARE_DIR, uninstall as uninstallKassigner } from './kassigner.js';
  * getting it wrong deletes somebody else's data.
  */
 export const UNITS = {
+    // The node itself. Keyed 'node' because that is what its switch is called,
+    // and its tab is named separately because that is not the same word.
+    node: {
+        label: 'Kaspad',
+        tab: 'kaspad',
+        // No profile: kaspad is in the compose file unconditionally, so that a
+        // stack with nothing else installed is still a node.
+        profile: null,
+        services: ['kaspad'],
+        containers: ['kaspa-node-kaspad'],
+        primary: 'kaspa-node-kaspad',
+        volumes: ['kaspa-node-data'],
+        images: ['kaspa-one-click/kaspad'],
+        buildable: ['kaspad'],
+        data: 'the entire synced blockchain, which is tens of gigabytes and days of syncing to replace',
+    },
     kachat: {
         label: 'KaChat-Indexer',
         profile: 'kachat',
@@ -130,13 +146,22 @@ export async function status(key) {
     // Something with no container is installed when its files are here.
     if (unit.runnable === false) {
         const installed = fs.existsSync(FIRMWARE_DIR) && fs.readdirSync(FIRMWARE_DIR).length > 0;
-        return { key, label: unit.label, runnable: false, installed, running: false, status: installed ? 'ready' : 'absent' };
+        return {
+            key,
+            label: unit.label,
+            tab: unit.tab ?? key,
+            runnable: false,
+            installed,
+            running: false,
+            status: installed ? 'ready' : 'absent',
+        };
     }
 
     const state = await containerState(unit.primary);
     return {
         key,
         label: unit.label,
+        tab: unit.tab ?? key,
         runnable: true,
         installed: state.exists,
         running: state.running,

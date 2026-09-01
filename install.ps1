@@ -360,30 +360,22 @@ if ($authState -eq 'set') {
     Write-PasswordHash ''
 }
 
-Invoke-Compose build kaspad
-
 # The panel, and nothing else. The node stays off until it is switched on
 # there, so a fresh install never syncs a chain, opens a port or fills a disk
 # that nobody has asked it to.
 Say 'Starting the control panel'
 Invoke-Compose up -d manager
 
-# A re-install must not start a node that was deliberately stopped. It must not
-# leave a running one on the image just replaced either, so that case, and only
-# that case, gets recreated.
-$kaspadRunning = (& docker inspect -f '{{.State.Running}}' kaspa-node-kaspad 2>$null)
-if ($LASTEXITCODE -eq 0 -and $kaspadRunning -eq 'true') {
-    Say 'The node is running, so it is being recreated on the image just built'
-    try { Invoke-Compose up -d kaspad } catch { Warn 'Could not recreate kaspad. Restart it from the panel.' }
-}
+# The node is not touched here at all. It is installed, started, stopped and
+# removed from the panel, like everything else the stack can run.
 
 Write-Host ''
 Write-Host '-------------------------------------------------' -ForegroundColor DarkGray
 Write-Host 'Your Kaspa control panel is running.' -ForegroundColor Green
 Write-Host ''
 Write-Host "  Control panel   http://localhost:$GuiPort"
-Write-Host '  The node        not started, and no port published' -ForegroundColor Yellow
-Write-Host '                  decide what to switch on in the panel, then press Start' -ForegroundColor DarkGray
+Write-Host '  Nothing else    not installed yet, including the node' -ForegroundColor Yellow
+Write-Host '                  every service is installed from the panel, when you want it' -ForegroundColor DarkGray
 switch ($authState) {
     'set'  { Write-Host '  Sign in         with the password you supplied' -ForegroundColor DarkGray }
     'kept' { Write-Host '  Sign in         with the password from your previous install' -ForegroundColor DarkGray }
@@ -398,12 +390,12 @@ switch ($authState) {
 }
 Write-Host @"
 
-  First run        Open the panel, go to Kaspad, and look at Ports. The node
-                   listens on P2P and on the channel the panel uses, and
-                   publishes nothing at all. Switch on what you want, then
-                   press Start. The UTXO index starts on, because wallets and
-                   explorers ask the node for exactly that; it is a checkbox
-                   under Indexes & flags if you want it off.
+  First run        Only the panel is installed. Open it and press Install on
+                   Kaspad to build and start the node; every other service
+                   works the same way, and each has an Uninstall tab that
+                   takes its data with it. The UTXO index starts on, because
+                   wallets and explorers ask the node for exactly that; it is
+                   a checkbox under Indexes & flags if you want it off.
 
                    Anything you do publish binds 127.0.0.1 until you change
                    "Publish on" to 0.0.0.0, so going public takes both.

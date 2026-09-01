@@ -3551,6 +3551,7 @@ const UNINSTALL_COPY = {
     desktop: 'nothing: it keeps no state of its own',
     nextcloud: 'every file, photo and calendar stored in it',
     gift: 'the record of who has already claimed a gift',
+    node: 'the entire synced blockchain. Tens of gigabytes, and days of syncing to get back',
     kassigner: 'the downloaded firmware and the record of what was verified. A device you have already flashed is unaffected',
     mining: "the bridge's own share and block records",
     proxy: 'nothing. Your domains and certificates live in the stack directory and are kept',
@@ -3605,7 +3606,9 @@ function renderServiceRow(key, state) {
  * covered, it reads as what it is: a preview of what installing gets you.
  */
 function renderInstallGate(key, state) {
-    const section = document.getElementById(`tab-${key}`);
+    // The switch key and the tab name are not always the same word: the node's
+    // switch is 'node' and its tab is 'kaspad'.
+    const section = document.getElementById(`tab-${state?.tab ?? key}`);
     if (!section) return;
 
     const installed = Boolean(state?.installed);
