@@ -291,6 +291,183 @@ function setNavSwitch(service, on, { disabled = false, reason = '' } = {}) {
     if (label) label.title = disabled && reason ? reason : label.getAttribute('aria-title') || label.title;
 }
 
+// ------------------------------------------------------- blocking actions ---
+
+/**
+ * Installing, starting, stopping and uninstalling take over the screen.
+ *
+ * They used to run in the background: a toast, and a log in the corner. That
+ * reads as though the panel can do several of these at once, and it cannot --
+ * there is one docker daemon, and the jobs queue. Clicking a switch while
+ * Nextcloud was building put a five-second stop behind a twenty-minute build,
+ * which from the outside is indistinguishable from a switch that does nothing.
+ *
+ * So: one at a time, everything else covered and blurred while it runs, the log
+ * in front of you, and no way out until it is finished. Slower to look at, and
+ * it never lies about what is happening.
+ */
+let pendingAction = null;
+
+/**
+ * Lines that arrived before we knew which job was ours.
+ *
+ * The server queues the job and starts streaming it before it answers the
+ * request that asked for it, so the first lines of a fast job can beat their
+ * own job id back to the browser. Held by id until an action claims them.
+ */
+const earlyLines = new Map();
+const earlyEnds = new Map();
+
+function openAction({ key, title, note }) {
+    const action = { key, title, jobId: null, finished: false, resolve: null };
+    action.done = new Promise((resolve) => {
+        action.resolve = resolve;
+    });
+    pendingAction = action;
+
+    $('action-title').textContent = title;
+    $('action-note').textContent = note ?? '';
+    $('action-log').textContent = '';
+    $('action-spinner').hidden = false;
+    // Docker can take a few seconds to say anything at all, and an empty black
+    // box for those seconds reads as nothing having happened.
+    actionAppend(`> ${title}…`);
+    const close = $('action-close');
+    close.disabled = true;
+    close.textContent = 'Please wait…';
+    $('action-overlay').hidden = false;
+    return action;
+}
+
+function actionAppend(line) {
+    const log = $('action-log');
+    if (!log) return;
+    const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+    log.textContent += `${line}\n`;
+    if (atBottom) log.scrollTop = log.scrollHeight;
+}
+
+/** Ours, somebody else's, or too early to tell. */
+function actionLine(jobId, line) {
+    if (!pendingAction || pendingAction.finished) return;
+    if (pendingAction.jobId === jobId) return actionAppend(line);
+    if (pendingAction.jobId === null) {
+        const held = earlyLines.get(jobId) ?? [];
+        held.push(line);
+        earlyLines.set(jobId, held);
+    }
+}
+
+/** Takes ownership of a job id, and of anything it printed before we had it. */
+function adoptActionJob(jobId) {
+    if (!pendingAction) return;
+    pendingAction.jobId = jobId;
+    for (const line of earlyLines.get(jobId) ?? []) actionAppend(line);
+    earlyLines.clear();
+    const ended = earlyEnds.get(jobId);
+    earlyEnds.clear();
+    if (ended) finishAction(ended);
+}
+
+/** The job is over. Only now is there a way out of this. */
+function finishAction(job) {
+    if (!pendingAction || pendingAction.finished) return;
+    const ok = job.status === 'succeeded';
+    actionAppend(ok ? '\n✓ Done.' : `\n✗ Failed: ${job.error ?? 'it did not finish'}`);
+
+    pendingAction.finished = true;
+    $('action-spinner').hidden = true;
+    $('action-title').textContent = `${pendingAction.title} — ${ok ? 'done' : 'failed'}`;
+    const close = $('action-close');
+    close.disabled = false;
+    close.textContent = 'Close';
+    close.focus();
+    // Resolved rather than rejected even when the job failed: every caller
+    // wants to know how it went, and none of them want an exception for a
+    // container that would not start.
+    pendingAction.resolve({ ...job, ok });
+}
+
+/** Called by the job stream when any job ends, ours or not. */
+function actionJobEnded(job) {
+    if (!pendingAction || pendingAction.finished) return;
+    if (pendingAction.jobId === job.id) return finishAction(job);
+    // A job that failed before its request came back -- 'no such service' is
+    // instant. Held, or the overlay waits forever for a job that is over.
+    if (pendingAction.jobId === null) earlyEnds.set(job.id, job);
+}
+
+function closeAction() {
+    if (!pendingAction?.finished) return;
+    $('action-overlay').hidden = true;
+    pendingAction = null;
+    earlyLines.clear();
+    earlyEnds.clear();
+
+    // What exists, what is running and what every tab shows can all have
+    // changed while this was on screen. Failures here are the panel not
+    // knowing something yet, which the next poll fixes.
+    for (const reload of [loadServices, refreshStatus, loadMining, loadApps, loadKassigner, loadProxies]) {
+        Promise.resolve(reload()).catch(() => {});
+    }
+}
+
+$('action-close').addEventListener('click', closeAction);
+
+// Escape is the usual way out of a dialog, and here it must not be one until
+// the job has finished. Capturing, so nothing else sees the key first.
+document.addEventListener(
+    'keydown',
+    (event) => {
+        if (!pendingAction) return;
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            event.stopPropagation();
+            if (pendingAction.finished) closeAction();
+            return;
+        }
+        // The overlay stops the mouse reaching the page behind it; tab does not
+        // care about overlays, so focus is put back by hand.
+        if (event.key === 'Tab') {
+            const card = el('.action-card');
+            if (card && !card.contains(document.activeElement)) {
+                event.preventDefault();
+                $('action-close').focus();
+            }
+        }
+    },
+    true,
+);
+
+/**
+ * Runs one of them: opens the overlay, starts the job, and resolves when the
+ * job has finished -- not when the overlay is dismissed, which is the user's
+ * own time and nothing should wait for it.
+ */
+async function runAction({ key, title, note, request }) {
+    if (pendingAction) {
+        toast('Something else is running. Wait for it to finish.', 'bad');
+        return null;
+    }
+    const action = openAction({ key, title, note });
+
+    let response;
+    try {
+        response = await request();
+    } catch (e) {
+        finishAction({ status: 'failed', error: e.message });
+        return action.done;
+    }
+
+    // Something that finished inside the request itself, with no job to watch.
+    if (!response?.jobId) {
+        finishAction({ status: 'succeeded' });
+        return action.done;
+    }
+    adoptActionJob(response.jobId);
+    return action.done;
+}
+
 // Each service is switched on in whatever way its own API expects.
 /**
  * What a switch does now: start or stop, and nothing else.
@@ -323,6 +500,7 @@ const SERVICE_NAMES = {
     desktop: 'KaChat-Desktop',
     kassigner: 'KasSigner',
     nextcloud: 'Nextcloud',
+    gift: 'the gift service',
     proxy: 'the reverse proxy',
 };
 
@@ -330,25 +508,27 @@ for (const input of document.querySelectorAll('[data-service]')) {
     input.addEventListener('change', async () => {
         const service = input.dataset.service;
         const wanted = input.checked;
+        const name = SERVICE_NAMES[service] ?? service;
+
+        // Held across the whole action so the status poll cannot flip the
+        // switch back and forth underneath what is happening.
         input.dataset.busy = '1';
         input.disabled = true;
-        try {
-            await SERVICE_ACTIONS[service](wanted);
-        } catch (e) {
-            input.checked = !wanted;
-            toast(e.message, 'bad');
-        } finally {
-            // Hold the switch until the next poll can report what really happened.
-            setTimeout(() => {
-                input.dataset.busy = '0';
-                input.disabled = false;
-                refreshStatus();
-                loadMining();
-                loadApps();
-                loadKassigner();
-                loadProxies();
-            }, 2500);
-        }
+
+        const job = await runAction({
+            key: service,
+            title: `${wanted ? 'Starting' : 'Stopping'} ${name}`,
+            note: wanted
+                ? 'Starting a container that already exists is quick. Nothing is rebuilt.'
+                : 'The container stops and keeps everything: its data, its image, and the container itself.',
+            request: () => SERVICE_ACTIONS[service](wanted),
+        });
+
+        // Setting .checked does not fire change, so putting the switch back is
+        // not another request.
+        if (!job?.ok) input.checked = !wanted;
+        input.dataset.busy = '0';
+        input.disabled = false;
     });
 }
 
@@ -3579,13 +3759,6 @@ $('kassigner-verify-btn').addEventListener('click', async () => {
  */
 let serviceState = {};
 
-/**
- * Installs in flight, by service. Two jobs for one service is never what
- * somebody meant by clicking twice -- the second one builds an image that is
- * already being built -- and the queue happily accepted both.
- */
-const installing = new Map();
-
 const UNINSTALL_COPY = {
     kachat: 'the indexed chat history and its Postgres database',
     desktop: 'nothing: it keeps no state of its own',
@@ -3666,9 +3839,9 @@ function renderInstallGate(key, state) {
     let gate = section.querySelector(':scope > .install-gate');
     if (installed) return gate?.remove();
 
-    // An install in progress owns this gate: it is showing the log, and
-    // rebuilding it on the next poll would wipe what it has printed so far.
-    if (installing.has(key) && gate) return;
+    // Left alone while its install runs: the overlay in front of it has the
+    // log, and rebuilding this would put a live Install button back underneath.
+    if (pendingAction?.key === key && gate) return;
 
     if (!gate) {
         gate = document.createElement('div');
@@ -3685,53 +3858,7 @@ function renderInstallGate(key, state) {
                 : 'Installing builds its image and creates its container. Everything behind this is what it will look like.'
         }</p>
         <button class="primary big" data-install="${escapeHtml(key)}">Install ${label}</button>
-        <pre class="logview gate-log" hidden></pre>
       </div>`;
-}
-
-/** Turns the gate into a live log for the job it just started. */
-function gateWatch(key, jobId) {
-    installing.set(key, jobId);
-    const gate = document.querySelector(`#tab-${serviceState[key]?.tab ?? key} .install-gate`);
-    if (!gate) return;
-
-    const button = gate.querySelector('[data-install]');
-    if (button) {
-        button.disabled = true;
-        button.textContent = 'Installing…';
-    }
-    const log = gate.querySelector('.gate-log');
-    if (log) {
-        log.hidden = false;
-        log.textContent = '';
-    }
-}
-
-/** Appends to whichever gate is watching this job, if any. */
-function gateLine(jobId, line) {
-    for (const [key, id] of installing) {
-        if (id !== jobId) continue;
-        const log = document.querySelector(`#tab-${serviceState[key]?.tab ?? key} .install-gate .gate-log`);
-        if (!log) continue;
-        const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
-        log.textContent += `${line}\n`;
-        if (atBottom) log.scrollTop = log.scrollHeight;
-    }
-}
-
-function gateFinished(job) {
-    for (const [key, id] of [...installing]) {
-        if (id !== job.id) continue;
-        // Written before the entry goes: gateLine finds its target by looking
-        // up this map, so deleting first threw away the last line.
-        gateLine(job.id, job.status === 'succeeded' ? '\n✓ Done.' : `\n✗ Failed: ${job.error}`);
-        installing.delete(key);
-        const button = document.querySelector(`#tab-${serviceState[key]?.tab ?? key} .install-gate [data-install]`);
-        if (button && job.status !== 'succeeded') {
-            button.disabled = false;
-            button.textContent = `Try installing ${serviceState[key]?.label ?? key} again`;
-        }
-    }
 }
 
 function renderUninstallCards() {
@@ -3767,18 +3894,16 @@ document.addEventListener('click', async (event) => {
     const key = event.target?.dataset?.install;
     if (!key) return;
 
-    // The sidebar button and the overlay button are both this, so a second
-    // click anywhere would have queued a second build of the same image.
-    if (installing.has(key)) return toast('That is already installing.');
-
-    event.target.disabled = true;
-    try {
-        const r = await api(`/api/services/${key}/install`, { method: 'POST' });
-        gateWatch(key, r.jobId);
-    } catch (e) {
-        toast(e.message, 'bad');
-        event.target.disabled = false;
-    }
+    const label = serviceState[key]?.label ?? key;
+    await runAction({
+        key,
+        title: `Installing ${label}`,
+        note:
+            serviceState[key]?.runnable === false
+                ? 'Downloading the firmware and checking it against the published hashes.'
+                : 'The first install builds an image from source, which can take a long time. Leave this open.',
+        request: () => api(`/api/services/${key}/install`, { method: 'POST' }),
+    });
 });
 
 document.addEventListener('click', async (event) => {
@@ -3796,13 +3921,12 @@ document.addEventListener('click', async (event) => {
     );
     if (typed !== key) return toast(typed === null ? 'Nothing was removed.' : 'That did not match, so nothing was removed.');
 
-    event.target.disabled = true;
-    try {
-        await api(`/api/services/${key}/uninstall`, { method: 'POST', body: { confirm: key, keepData } });
-    } catch (e) {
-        toast(e.message, 'bad');
-        event.target.disabled = false;
-    }
+    await runAction({
+        key,
+        title: `Uninstalling ${state?.label ?? key}`,
+        note: `Removing ${what}. Stopping partway through would leave half of it behind, so this runs to the end.`,
+        request: () => api(`/api/services/${key}/uninstall`, { method: 'POST', body: { confirm: key, keepData } }),
+    });
 });
 
 // ------------------------------------------------------------ gift service ---
@@ -4777,32 +4901,44 @@ function connectJobs() {
         pushJobLine(`\n> ${job.name}`);
         // Nothing pops up any more, so a job with no log of its own on screen
         // says once that it has started.
-        if (!inlineJobHandles(job.name) && !installing.size) toast(`${job.name}…`);
+        if (!inlineJobHandles(job.name) && !pendingAction) toast(`${job.name}…`);
     });
     // Something was accepted but has not started. Saying so is the difference
     // between a queue and a click that appeared to do nothing.
     jobStream.addEventListener('queued', (event) => {
         const job = JSON.parse(event.data);
         if (job.ahead === 0 && !job.running) return;
-        toast(`${job.name}: queued behind ${job.running ?? 'the job running now'}`);
+        const waiting = `Waiting for ${job.running ?? 'the job running now'} to finish first.`;
+        // If this is the overlay's own job, it belongs in its log rather than
+        // in a toast behind it. It has no id yet, so it goes in the same place
+        // as any other line that arrived early.
+        if (pendingAction) actionLine(job.id, waiting);
+        else toast(`${job.name}: queued behind ${job.running ?? 'the job running now'}`);
         refreshQueueSoon();
     });
     jobStream.addEventListener('line', (event) => {
         const { line, jobId } = JSON.parse(event.data);
         pushJobLine(line);
-        // The overlay shows the install it started; a tab watching its own job
+        // The overlay shows the action it started; a tab watching its own job
         // shows that one. Everything is in All logs either way.
-        gateLine(jobId, line);
+        actionLine(jobId, line);
         if (inlineJob) appendInline(line);
     });
     jobStream.addEventListener('end', (event) => {
         const job = JSON.parse(event.data);
         renderQueue(job.pending);
-        gateFinished(job);
+        const wasOurs = pendingAction?.jobId === job.id;
+        actionJobEnded(job);
         // Whether a service exists changes when a job finishes, and nothing
         // else tells the page that. Without this the Install overlay sat there
         // for up to ten seconds after the log had already said Done.
         loadServices().catch(() => {});
+
+        // The overlay has already said how it went, in front of everything.
+        if (wasOurs) {
+            refreshStatus();
+            return;
+        }
 
         if (inlineJob) {
             appendInline(job.status === 'succeeded' ? '\n✓ Done.' : `\n✗ Failed: ${job.error}`);

@@ -2122,6 +2122,25 @@
   </form>
 </dialog>
 
+<!-- Installing, starting, stopping and uninstalling all take over the screen
+     while they run. Two reasons: the log is the only thing worth looking at
+     until it finishes, and docker is one machine -- a build, a stop and an
+     uninstall queued on top of each other take longer and read as a panel that
+     ignored the click. There is no way out of this until the job is done. -->
+<div id="action-overlay" class="action-overlay" hidden>
+  <div class="action-card" role="dialog" aria-modal="true" aria-labelledby="action-title" aria-live="polite">
+    <header class="action-head">
+      <span class="spinner" id="action-spinner"></span>
+      <h3 id="action-title">Working</h3>
+    </header>
+    <p class="muted" id="action-note"></p>
+    <pre class="logview action-log" id="action-log"></pre>
+    <div class="row end">
+      <button class="primary" id="action-close" disabled>Please wait…</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast" class="toast hidden"></div>
 
 <script type="module" src="/app.js"></script>

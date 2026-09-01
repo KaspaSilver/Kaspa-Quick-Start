@@ -776,15 +776,69 @@ table.instances td:last-child { width: 40px; text-align: right; }
     box-shadow: 0 18px 50px rgb(0 0 0 / 0.45);
 }
 .install-gate-card h3 { margin-top: 0; }
-/* The log the overlay prints while it installs. Capped so a long build scrolls
-   inside the card rather than pushing the card off the screen. */
-.gate-log {
-    margin: 18px 0 0;
-    max-height: 40vh;
-    text-align: left;
+.install-gate-card p { margin-bottom: 18px; }
+
+/* Anything that installs, starts, stops or removes a container takes the whole
+   screen while it runs.
+
+   The log used to print inside the tab's own overlay, which left the rest of
+   the panel clickable: a build running, and every other switch still inviting
+   somebody to queue a second job behind it on the same docker daemon. Covering
+   everything is the honest version -- one thing is happening, this is it, and
+   the way out is for it to finish. */
+.action-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgb(0 0 0 / 0.55);
+    backdrop-filter: blur(7px);
+}
+/* display:flex would otherwise beat the hidden attribute. */
+.action-overlay[hidden] { display: none; }
+
+.action-card {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: min(760px, 100%);
+    max-height: 86vh;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 22px 24px;
+    box-shadow: 0 24px 70px rgb(0 0 0 / 0.55);
+}
+.action-card p { margin: 0; }
+.action-head { display: flex; align-items: center; gap: 10px; }
+.action-head h3 { margin: 0; font-size: 17px; }
+/* The log grows to fill the card rather than being a fixed height: a stop
+   prints four lines and should not open a screen of empty black. */
+.action-log {
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 8rem;
+    max-height: 60vh;
     font-size: 12px;
 }
-.install-gate-card p { margin-bottom: 18px; }
+
+.spinner {
+    flex: 0 0 auto;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    border: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    border-top-color: var(--accent);
+    animation: spin 0.8s linear infinite;
+}
+.spinner[hidden] { display: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+    .spinner { animation-duration: 3s; }
+}
 button.big { font-size: 15px; padding: 11px 22px; }
 
 /* Shown in place of the switch until a service exists at all. Kept narrow: it
