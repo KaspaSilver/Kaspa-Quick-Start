@@ -4704,6 +4704,11 @@ function connectJobs() {
     jobStream.addEventListener('end', (event) => {
         const job = JSON.parse(event.data);
         renderQueue(job.pending);
+        // Whether a service exists changes when a job finishes, and nothing
+        // else tells the page that. Without this the Install overlay sat there
+        // for up to ten seconds after the log had already said Done.
+        loadServices().catch(() => {});
+
         if (inlineJob) {
             appendInline(job.status === 'succeeded' ? '\n✓ Done.' : `\n✗ Failed: ${job.error}`);
             inlineJob.onEnd?.(job);
@@ -4726,7 +4731,7 @@ function connectJobs() {
 // Which services exist at all, which decides whether each row shows a button or
 // a switch. Refreshed alongside the status poll so an install or an uninstall
 // finishing is reflected without a reload.
-setInterval(() => loadServices().catch(() => {}), 10_000);
+setInterval(() => loadServices().catch(() => {}), 30_000);
 
 api('/api/session')
     .then((s) => {
