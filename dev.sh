@@ -52,7 +52,26 @@ dc() {
 
 # Mounts the working copy over the files baked into the image. Both `link` and
 # `watch` need it, and running it twice is harmless.
+# Files the running stack reads from the install directory, not from the mount.
+# The manager's own code can be mounted over the image; a compose file cannot,
+# because it is the docker CLI inside the container that reads it, from /stack.
+STACK_ITEMS="docker-compose.yml kaspad manager bridge kachat kassigner nextcloud uninstall.sh uninstall.ps1 README.md"
+
+copy_stack_items() {
+    for item in $STACK_ITEMS; do
+        [ -e "$REPO/$item" ] || continue
+        rm -rf "${STACK_DIR:?}/${item:?}"
+        cp -R "$REPO/$item" "$STACK_DIR/$item"
+    done
+    cp "$REPO/proxy/nginx-base.conf" "$STACK_DIR/proxy/nginx-base.conf" 2>/dev/null || true
+}
+
 link_repo() {
+    # Mounting the manager is not enough on its own. A service added to the
+    # compose file is invisible until that file reaches the install directory,
+    # and the failure reads as "no such service", which sounds like a bug in the
+    # panel rather than a stale copy of a file.
+    copy_stack_items
     mkdir -p "$STACK_DIR/conf"
     # Read-only: the container should never write back into the repo.
     cat > "$OVERRIDE" <<YAML
@@ -123,12 +142,7 @@ case "${1:-status}" in
     sync)
         # The permanent path: what a user re-running the installer would get.
         say "Copying the repo into $STACK_DIR and rebuilding"
-        for item in docker-compose.yml kaspad manager bridge nextcloud uninstall.sh uninstall.ps1 README.md; do
-            [ -e "$REPO/$item" ] || continue
-            rm -rf "${STACK_DIR:?}/${item:?}"
-            cp -R "$REPO/$item" "$STACK_DIR/$item"
-        done
-        cp "$REPO/proxy/nginx-base.conf" "$STACK_DIR/proxy/nginx-base.conf" 2>/dev/null || true
+        copy_stack_items
         rm -f "$OVERRIDE"
         dc build manager
         dc up -d --force-recreate manager >/dev/null
