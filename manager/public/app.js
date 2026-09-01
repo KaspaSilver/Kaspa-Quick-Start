@@ -3591,6 +3591,13 @@ $('kassigner-verify-btn').addEventListener('click', async () => {
  */
 let serviceState = {};
 
+/**
+ * Installs in flight, by service. Two jobs for one service is never what
+ * somebody meant by clicking twice -- the second one builds an image that is
+ * already being built -- and the queue happily accepted both.
+ */
+const installing = new Map();
+
 const UNINSTALL_COPY = {
     kachat: 'the indexed chat history and its Postgres database',
     desktop: 'nothing: it keeps no state of its own',
@@ -3671,6 +3678,10 @@ function renderInstallGate(key, state) {
     let gate = section.querySelector(':scope > .install-gate');
     if (installed) return gate?.remove();
 
+    // An install in progress owns this gate: it is showing the log, and
+    // rebuilding it on the next poll would wipe what it has printed so far.
+    if (installing.has(key) && gate) return;
+
     if (!gate) {
         gate = document.createElement('div');
         gate.className = 'install-gate';
@@ -3686,7 +3697,53 @@ function renderInstallGate(key, state) {
                 : 'Installing builds its image and creates its container. Everything behind this is what it will look like.'
         }</p>
         <button class="primary big" data-install="${escapeHtml(key)}">Install ${label}</button>
+        <pre class="logview gate-log" hidden></pre>
       </div>`;
+}
+
+/** Turns the gate into a live log for the job it just started. */
+function gateWatch(key, jobId) {
+    installing.set(key, jobId);
+    const gate = document.querySelector(`#tab-${serviceState[key]?.tab ?? key} .install-gate`);
+    if (!gate) return;
+
+    const button = gate.querySelector('[data-install]');
+    if (button) {
+        button.disabled = true;
+        button.textContent = 'Installing…';
+    }
+    const log = gate.querySelector('.gate-log');
+    if (log) {
+        log.hidden = false;
+        log.textContent = '';
+    }
+}
+
+/** Appends to whichever gate is watching this job, if any. */
+function gateLine(jobId, line) {
+    for (const [key, id] of installing) {
+        if (id !== jobId) continue;
+        const log = document.querySelector(`#tab-${serviceState[key]?.tab ?? key} .install-gate .gate-log`);
+        if (!log) continue;
+        const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+        log.textContent += `${line}\n`;
+        if (atBottom) log.scrollTop = log.scrollHeight;
+    }
+}
+
+function gateFinished(job) {
+    for (const [key, id] of [...installing]) {
+        if (id !== job.id) continue;
+        // Written before the entry goes: gateLine finds its target by looking
+        // up this map, so deleting first threw away the last line.
+        gateLine(job.id, job.status === 'succeeded' ? '\n✓ Done.' : `\n✗ Failed: ${job.error}`);
+        installing.delete(key);
+        const button = document.querySelector(`#tab-${serviceState[key]?.tab ?? key} .install-gate [data-install]`);
+        if (button && job.status !== 'succeeded') {
+            button.disabled = false;
+            button.textContent = `Try installing ${serviceState[key]?.label ?? key} again`;
+        }
+    }
 }
 
 function renderUninstallCards() {
@@ -3722,9 +3779,14 @@ document.addEventListener('click', async (event) => {
     const key = event.target?.dataset?.install;
     if (!key) return;
 
+    // The sidebar button and the overlay button are both this, so a second
+    // click anywhere would have queued a second build of the same image.
+    if (installing.has(key)) return toast('That is already installing.');
+
     event.target.disabled = true;
     try {
-        await api(`/api/services/${key}/install`, { method: 'POST' });
+        const r = await api(`/api/services/${key}/install`, { method: 'POST' });
+        gateWatch(key, r.jobId);
         openConsole(`Installing ${serviceState[key]?.label ?? key}`);
     } catch (e) {
         toast(e.message, 'bad');
@@ -4722,13 +4784,16 @@ function connectJobs() {
         refreshQueueSoon();
     });
     jobStream.addEventListener('line', (event) => {
-        const { line } = JSON.parse(event.data);
+        const { line, jobId } = JSON.parse(event.data);
+        // The overlay shows the install it started, as well as the console.
+        gateLine(jobId, line);
         if (inlineJob) return appendInline(line);
         appendConsole(line);
     });
     jobStream.addEventListener('end', (event) => {
         const job = JSON.parse(event.data);
         renderQueue(job.pending);
+        gateFinished(job);
         // Whether a service exists changes when a job finishes, and nothing
         // else tells the page that. Without this the Install overlay sat there
         // for up to ten seconds after the log had already said Done.

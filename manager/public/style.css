@@ -800,6 +800,14 @@ table.instances td:last-child { width: 40px; text-align: right; }
     box-shadow: 0 18px 50px rgb(0 0 0 / 0.45);
 }
 .install-gate-card h3 { margin-top: 0; }
+/* The log the overlay prints while it installs. Capped so a long build scrolls
+   inside the card rather than pushing the card off the screen. */
+.gate-log {
+    margin: 18px 0 0;
+    max-height: 40vh;
+    text-align: left;
+    font-size: 12px;
+}
 .install-gate-card p { margin-bottom: 18px; }
 button.big { font-size: 15px; padding: 11px 22px; }
 
