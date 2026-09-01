@@ -282,6 +282,19 @@ function setNavHealth(tab, state) {
     }[state] ?? '';
 }
 
+/**
+ * Only for switches nothing else owns.
+ *
+ * The switch means one thing: this container is running. Several screens used
+ * to write it from their own saved 'enabled' flag instead -- the mining tab
+ * every five seconds, the apps tab on its own poll -- while loadServices wrote
+ * what docker actually reported. A service that is installed and stopped has
+ * enabled=true and running=false, so the two pollers took turns and the switch
+ * flipped itself back and forth without anybody touching it. It looked exactly
+ * like a service starting and stopping on its own.
+ *
+ * loadServices is the only writer for anything with a container now.
+ */
 function setNavSwitch(service, on, { disabled = false, reason = '' } = {}) {
     const input = navSwitch(service);
     if (!input || input.dataset.busy === '1') return;
@@ -763,22 +776,27 @@ function applyNodeGating(status) {
               ? 'The Kaspa node is still starting up.'
               : 'The Kaspa node is still syncing. This service reads the chain, so it stays quiet until that finishes.';
 
+    // Never disabled, in either direction.
+    //
+    // These switches used to grey out whenever the node was not ready, which
+    // made both halves of them unavailable: you could not stop something that
+    // was running, and you could not start something that is perfectly capable
+    // of waiting. Neither service needs the node to be up to be started -- the
+    // bridge and the indexer both sit in a retry loop until it is there, which
+    // is what they do anyway every time the node restarts underneath them.
+    //
+    // What the node's state changes is what the service can usefully do, and
+    // the banner on the tab says that. It does not change who is allowed to
+    // press the switch.
     for (const service of ['mining', 'kachat']) {
         const input = navSwitch(service);
         if (!input || input.dataset.busy === '1') continue;
-
-        // Off is always available. Whatever is wrong with the node, a service
-        // that is running is a container the person looking at this is entitled
-        // to stop -- and greying out the only control that stops it is how you
-        // end up with something running that the panel refuses to turn off.
-        // The gate is on starting, and only on starting.
-        // What docker says, not what the switch happens to be showing: this can
-        // run before the services poll has caught up with it.
-        const running = serviceState[service]?.running ?? input.checked;
-        input.disabled = !ready && !running;
+        input.disabled = false;
         const label = input.closest('.switch');
         if (label) {
-            label.title = input.disabled ? lockReason : `Start or stop ${SERVICE_NAMES[service]}`;
+            label.title = ready
+                ? `Start or stop ${SERVICE_NAMES[service]}`
+                : `Start or stop ${SERVICE_NAMES[service]}. ${lockReason} It waits until then.`;
         }
     }
 
@@ -1361,7 +1379,6 @@ async function loadMining() {
     $('mining-version').textContent = r.version || '';
     renderStratumTargets(c);
     renderEconomics(r);
-    setNavSwitch('mining', c.enabled);
     setNavHealth('mining', !c.enabled ? 'off' : r.container?.running ? 'ok' : 'bad');
 }
 
@@ -1862,9 +1879,6 @@ async function loadApps() {
     renderAppState('nextcloud', r.apps.nextcloud);
     loadNextcloudAdmin();
     loadRefPickers();
-    setNavSwitch('kachat', c.kachat.enabled);
-    setNavSwitch('desktop', c.desktop.enabled);
-    setNavSwitch('nextcloud', c.nextcloud.enabled);
     for (const [app, tab] of [['kachat', 'kachat'], ['desktop', 'desktop'], ['nextcloud', 'nextcloud']]) {
         const running = Boolean(r.apps[app]?.container?.running);
         setNavHealth(tab, !c[app]?.enabled ? 'off' : running ? 'ok' : 'bad');
@@ -3451,8 +3465,10 @@ async function loadProxies() {
     const badge = $('proxy-state');
     badge.textContent = !on ? 'off' : r.container?.running ? 'running' : r.container?.status || 'starting';
     badge.className = `tag ${!on ? 'off' : r.container?.running ? 'ok' : ''}`;
-    setNavSwitch('proxy', on);
-    setNavHealth('proxy', on ? 'ok' : 'off');
+    // The dot follows the container, not the saved setting: with the proxy
+    // installed and stopped this used to stay green, and disagree with the
+    // services poll writing the same dot from what docker says.
+    setNavHealth('proxy', r.container?.running ? 'ok' : on ? 'bad' : 'off');
 
     // With the proxy off, the settings are not just unusable, they are
     // misleading: a saved host writes nginx config nothing is serving. So the
@@ -3858,6 +3874,11 @@ function renderInstallGate(key, state) {
         gate.className = 'install-gate';
         section.appendChild(gate);
     }
+    // Already built and still saying the same thing. The poll comes round every
+    // ten seconds and there is nothing here that changes in between.
+    if (gate.dataset.builtFor === key) return;
+    gate.dataset.builtFor = key;
+
     const label = escapeHtml(state?.label ?? key);
     gate.innerHTML = `
       <div class="install-gate-card">
@@ -3871,7 +3892,20 @@ function renderInstallGate(key, state) {
       </div>`;
 }
 
+/**
+ * Rebuilt only when something actually changed. These cards carry a checkbox
+ * somebody may have just ticked, and the services poll comes round every ten
+ * seconds; rewriting the markup underneath them would untick it.
+ */
+let uninstallSignature = null;
+
 function renderUninstallCards() {
+    const signature = Object.entries(serviceState)
+        .map(([key, state]) => `${key}:${state?.installed ? 1 : 0}`)
+        .join(',');
+    if (signature === uninstallSignature) return;
+    uninstallSignature = signature;
+
     for (const card of document.querySelectorAll('.uninstall-card')) {
         const key = card.dataset.uninstall;
         const state = serviceState[key];
@@ -3964,8 +3998,7 @@ async function loadGift() {
     const badge = $('gift-state');
     badge.textContent = running ? (status ? 'running' : 'starting') : container?.status || 'off';
     badge.className = `tag ${running && status ? 'ok' : running ? '' : 'off'}`;
-    setNavSwitch('gift', Boolean(config.enabled));
-    setNavHealth('gift', !config.enabled ? 'off' : running && status ? 'ok' : 'warn');
+    setNavHealth('gift', !running ? (config.enabled ? 'bad' : 'off') : status ? 'ok' : 'warn');
 
     $('gift-mode').textContent = status
         ? status.mode === 'live'
@@ -4971,7 +5004,9 @@ function connectJobs() {
 // Which services exist at all, which decides whether each row shows a button or
 // a switch. Refreshed alongside the status poll so an install or an uninstall
 // finishing is reflected without a reload.
-setInterval(() => loadServices().catch(() => {}), 30_000);
+// Ten seconds, not thirty: this is now the only thing that writes the switches,
+// so how stale it is, is how stale they are.
+setInterval(() => loadServices().catch(() => {}), 10_000);
 
 api('/api/session')
     .then((s) => {
