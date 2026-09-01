@@ -38,6 +38,7 @@ import * as kassigner from './lib/kassigner.js';
 import * as selfservice from './lib/selfservice.js';
 import * as publish from './lib/publish.js';
 import * as portcheck from './lib/portcheck.js';
+import * as gift from './lib/gift.js';
 import { nodeSnapshot, rpc } from './lib/rpc.js';
 import { jobs } from './lib/jobs.js';
 import {
@@ -2015,6 +2016,114 @@ route('POST', /^\/api\/auth\/password$/, async (req, res) => {
     updateEnvFile({ ADMIN_PASSWORD_HASH: hashPassword(password) });
     await selfservice.restartManager();
     sendJson(res, 202, { ok: true, restarting: true });
+});
+
+// ------------------------------------------------------------------- gift --
+
+/** Rewrites what the service reads, from the panel's settings plus the keys on disk. */
+function writeGiftConfig() {
+    const appsCfg = apps.loadAppsConfig();
+    const nodeCfg = loadNodeConfig();
+    return gift.writeConfig(appsCfg.gift ?? {}, { network: nodeCfg.network, kaspadPort: ports(nodeCfg).json });
+}
+
+route('GET', /^\/api\/gift$/, async (req, res) => {
+    const cfg = apps.loadAppsConfig().gift ?? {};
+    const state = await dockerctl.containerState('kaspa-node-gift');
+
+    // The service's own view, which is the only place the claim counts and the
+    // day's spend exist. Absent while it is switched off, which is not an error.
+    let status = null;
+    try {
+        const r = await fetch('http://gift:8770/v1/status', { signal: AbortSignal.timeout(4000) });
+        if (r.ok) status = await r.json();
+    } catch {
+        /* not running */
+    }
+
+    sendJson(res, 200, {
+        config: cfg,
+        container: state,
+        status,
+        credentials: { apple: gift.hasApple(), google: gift.hasGoogle() },
+        repo: apps.APPS.gift.repo,
+    });
+});
+
+route('POST', /^\/api\/gift\/apple$/, async (req, res) => {
+    const body = await readBody(req);
+    try {
+        // The key first: a saved team id with no key is a half-configured
+        // platform, and the service refuses to start on one of those.
+        if (body.key) gift.saveAppleKey(body.key);
+
+        const appsCfg = apps.loadAppsConfig();
+        const g = appsCfg.gift;
+        g.apple = {
+            enabled: body.enabled !== false,
+            teamId: String(body.teamId ?? g.apple.teamId ?? '').trim(),
+            keyId: String(body.keyId ?? g.apple.keyId ?? '').trim(),
+            bundleId: String(body.bundleId ?? g.apple.bundleId ?? 'com.kachat.app').trim(),
+        };
+        apps.saveAppsConfig(appsCfg);
+        writeGiftConfig();
+
+        sendJson(res, 200, { ok: true, apple: g.apple, hasKey: gift.hasApple() });
+    } catch (err) {
+        fail(res, 400, err.message);
+    }
+});
+
+route('POST', /^\/api\/gift\/android$/, async (req, res) => {
+    const body = await readBody(req);
+    try {
+        let account = null;
+        if (body.serviceAccount) account = gift.saveGoogleKey(body.serviceAccount);
+
+        const appsCfg = apps.loadAppsConfig();
+        const g = appsCfg.gift;
+        g.android = {
+            enabled: body.enabled !== false,
+            packageName: String(body.packageName ?? g.android.packageName ?? 'com.kachat.app').trim(),
+        };
+        apps.saveAppsConfig(appsCfg);
+        writeGiftConfig();
+
+        sendJson(res, 200, { ok: true, android: g.android, hasKey: gift.hasGoogle(), account });
+    } catch (err) {
+        fail(res, 400, err.message);
+    }
+});
+
+/** The wizard's last step: make the credential answer before anyone relies on it. */
+route('POST', /^\/api\/gift\/test\/(apple|android)$/, async (req, res, match) => {
+    try {
+        const cfg = apps.loadAppsConfig().gift ?? {};
+        const result = match[1] === 'apple' ? await gift.testApple(cfg.apple ?? {}) : await gift.testGoogle();
+        sendJson(res, 200, result);
+    } catch (err) {
+        sendJson(res, 200, { ok: false, detail: err.message });
+    }
+});
+
+route('POST', /^\/api\/gift\/settings$/, async (req, res) => {
+    const body = await readBody(req);
+    const appsCfg = apps.loadAppsConfig();
+    const g = appsCfg.gift;
+
+    const number = (value, fallback, min) => {
+        const n = Number(value);
+        return Number.isFinite(n) && n >= min ? n : fallback;
+    };
+    g.amountKas = number(body.amountKas, g.amountKas ?? 3, 0.00000001);
+    g.dailyCapKas = number(body.dailyCapKas, g.dailyCapKas ?? 300, 0);
+    g.poolFloorKas = number(body.poolFloorKas, g.poolFloorKas ?? 50, 0);
+    // Going live is a decision, so it is only ever taken from an explicit value.
+    g.mode = body.mode === 'live' ? 'live' : 'record-only';
+
+    apps.saveAppsConfig(appsCfg);
+    const written = writeGiftConfig();
+    sendJson(res, 200, { ok: true, config: g, service: { mode: written.mode, amountKas: written.amountKas } });
 });
 
 // ------------------------------------------------------------ global system --

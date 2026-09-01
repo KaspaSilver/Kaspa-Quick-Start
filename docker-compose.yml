@@ -239,6 +239,40 @@ services:
       driver: json-file
       options: { max-size: "5m", max-file: "2" }
 
+  # ---- KaChat gift service --------------------------------------------------
+  #
+  # Behind the "gift" profile, like the other apps. It holds a wallet key and
+  # store credentials, so its configuration is mounted read-only from the
+  # stack's own conf directory and nothing sensitive is ever built into the
+  # image or written into the repository it is built from.
+  gift:
+    image: kaspa-one-click/gift:${GIFT_REF:-main}
+    build:
+      context: ${GIFT_REPO:-https://github.com/KaspaSilver/KaChat-Gift-Service.git}#${GIFT_REF:-main}
+      dockerfile: Dockerfile
+    container_name: kaspa-node-gift
+    hostname: gift
+    profiles: ["gift"]
+    restart: unless-stopped
+    environment:
+      GIFT_CONF: /conf/gift.json
+      GIFT_DATA: /data
+    volumes:
+      # Read-only: the service reads its key, it never rewrites it.
+      - ${STACK_DIR}/conf/gift:/conf:ro
+      - gift-data:/data
+    networks:
+      - kaspa
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8770/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
   nextcloud:
     image: kaspa-one-click/nextcloud:1
     build:
@@ -346,3 +380,5 @@ volumes:
     name: kaspa-node-nextcloud-db-data
   nextcloud-data:
     name: kaspa-node-nextcloud-data
+  gift-data:
+    name: kaspa-node-gift-data

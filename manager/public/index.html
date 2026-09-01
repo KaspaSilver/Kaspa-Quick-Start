@@ -97,6 +97,17 @@
         </label>
       </div>
       <div class="nav-row">
+        <button class="nav-item" data-tab="gift" title="KaChat Gift Service">
+          <span class="nav-dot" data-health="gift"></span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11h16v9H4z"/><path d="M3 7h18v4H3z"/><path d="M12 7v13"/><path d="M12 7S9.5 3.5 7.5 4.6 9 7 12 7zm0 0s2.5-3.5 4.5-2.4S15 7 12 7z"/></svg>
+          <span class="label">Gift service</span>
+        </button>
+        <label class="switch mini" title="Start or stop the gift service">
+          <input type="checkbox" data-service="gift" aria-label="Start or stop the gift service">
+          <span class="track"></span>
+        </label>
+      </div>
+      <div class="nav-row">
         <button class="nav-item" data-tab="nextcloud" title="Nextcloud">
           <span class="nav-dot" data-health="nextcloud"></span>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 16.5a3.5 3.5 0 00-.7-6.9 5.5 5.5 0 00-10.5-1.2A4.2 4.2 0 006 16.5z"/><circle cx="12" cy="12.5" r="2.2"/></svg>
@@ -1343,6 +1354,113 @@
       </div>
     </section>
 
+    <!-- ------------------------------------------------------------ gift -->
+    <section id="tab-gift" class="tab">
+      <nav class="subnav" aria-label="Gift service">
+        <button class="subtab-btn active" data-subtab="gift-overview">Overview</button>
+        <button class="subtab-btn" data-subtab="gift-setup">Setup</button>
+        <button class="subtab-btn" data-subtab="gift-updates">Updates</button>
+      </nav>
+
+      <div id="sub-gift-overview" class="subtab active">
+        <div class="grid">
+          <article class="card span2">
+            <div class="toggle-row">
+              <div class="toggle-text">
+                <strong>KaChat Gift Service</strong>
+                <span class="muted">
+                  Gives a new KaChat user their first 3 KAS, once, so they can
+                  send a message before they have bought anything.
+                </span>
+              </div>
+              <span id="gift-state" class="tag off">off</span>
+            </div>
+            <div class="notice">
+              <p>
+                <strong>This is for people who run KaChat.</strong> Every
+                credential it needs belongs to a specific App Store and Play
+                Console listing &mdash; your own. It is not a public faucet, and
+                it cannot be pointed at somebody else's app.
+              </p>
+            </div>
+            <dl class="kv">
+              <div><dt>Mode</dt><dd id="gift-mode">–</dd></div>
+              <div><dt>Gift</dt><dd id="gift-amount">–</dd></div>
+              <div><dt>Given today</dt><dd id="gift-today">–</dd></div>
+              <div><dt>Pool left</dt><dd id="gift-pool">–</dd></div>
+              <div><dt>iPhone claims</dt><dd id="gift-apple-count">–</dd></div>
+              <div><dt>Android claims</dt><dd id="gift-android-count">–</dd></div>
+            </dl>
+            <p class="hint" id="gift-overview-note">–</p>
+          </article>
+
+          <article class="card span2">
+            <h3>Limits</h3>
+            <p class="muted">
+              Apple and Google stop other people's scripts. These stop your own
+              mistakes: a loop that pays the same address forever is a bug
+              anyone can write, and the difference between noticing at 300 KAS
+              and at an empty wallet is a ceiling.
+            </p>
+            <div class="row">
+              <label class="inline">Gift <input type="number" id="gift-set-amount" min="0.1" step="0.1" size="5"> KAS</label>
+              <label class="inline">Most per day <input type="number" id="gift-set-daily" min="0" size="6"> KAS</label>
+              <label class="inline">Stop below <input type="number" id="gift-set-floor" min="0" size="6"> KAS</label>
+            </div>
+            <label class="check" title="Until this is ticked, claims are checked and recorded but nothing is sent. It is the safe way to watch real traffic before any money moves.">
+              <input type="checkbox" id="gift-set-live"> Actually send the Kaspa
+              <span class="pill warn">spends money</span>
+            </label>
+            <div class="row">
+              <button id="gift-save-settings" class="primary">Save limits</button>
+            </div>
+            <p class="hint" id="gift-settings-result" hidden></p>
+          </article>
+        </div>
+      </div>
+
+      <div id="sub-gift-setup" class="subtab">
+        <div class="grid">
+          <article class="card span2">
+            <h3>Which phone are you setting up?</h3>
+            <p class="muted">
+              Each store is configured separately and either can run without the
+              other. Both need credentials only their console will give you, so
+              have that tab open.
+            </p>
+            <div class="row">
+              <button class="primary" id="gift-setup-apple">Set up iPhone</button>
+              <button class="primary" id="gift-setup-android">Set up Android</button>
+              <span class="muted" id="gift-credentials-state">–</span>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <div id="sub-gift-updates" class="subtab">
+        <div class="grid">
+          <article class="card span2">
+            <h3>Service code</h3>
+            <p class="muted">
+              The service itself lives in <code id="gift-repo">KaspaSilver/KaChat-Gift-Service</code>.
+              This rebuilds the container from it. Your keys are not in that
+              repository and are not touched by an update: they live in this
+              stack's own configuration directory.
+            </p>
+            <label class="inline">Branch or tag <input id="gift-ref" value="main" size="16"></label>
+            <div class="row">
+              <button id="gift-rebuild" class="primary">Rebuild from the repo</button>
+            </div>
+            <p class="hint">
+              The first build compiles nothing heavy, so it is quick. The
+              service is restarted at the end, which interrupts any claim in
+              flight.
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
     <!-- ----------------------------------------------------------- proxy -->
     <section id="tab-proxy" class="tab">
       <!--
@@ -1755,6 +1873,60 @@
   </div>
   <pre id="console-body"></pre>
 </div>
+
+<!-- ---------------------------------------------------------- gift wizard -->
+<dialog id="gift-wizard" class="wide">
+  <form method="dialog" id="gift-wizard-form">
+    <div class="dialog-head">
+      <h3 id="gift-wizard-title">Set up</h3>
+      <button value="cancel" class="dialog-close" formnovalidate aria-label="Close">&times;</button>
+    </div>
+
+    <!-- 1: fetch it from the console ------------------------------------- -->
+    <section class="setup-step" data-giftstep="1">
+      <p class="step-head"><span class="step-num">1</span> <span id="gift-step1-title">Get the credentials</span></p>
+      <div id="gift-step1-body" class="muted"></div>
+    </section>
+
+    <!-- 2: paste it in ---------------------------------------------------- -->
+    <section class="setup-step" data-giftstep="2" hidden>
+      <p class="step-head"><span class="step-num">2</span> Paste it here</p>
+      <div id="gift-apple-fields" hidden>
+        <label class="inline">Team ID <input id="gift-team-id" size="12" autocomplete="off" placeholder="ABCDE12345"></label>
+        <label class="inline">Key ID <input id="gift-key-id" size="12" autocomplete="off" placeholder="from the key you made"></label>
+        <label class="inline">Bundle ID <input id="gift-bundle-id" size="22" autocomplete="off" placeholder="com.kachat.app"></label>
+        <label>The .p8 file
+          <textarea id="gift-apple-key" rows="6" spellcheck="false" placeholder="paste the whole .p8 file, from its BEGIN line to its END line"></textarea>
+        </label>
+      </div>
+      <div id="gift-android-fields" hidden>
+        <label class="inline">Package name <input id="gift-package" size="22" autocomplete="off" placeholder="com.kachat.app"></label>
+        <label>The service account JSON
+          <textarea id="gift-google-key" rows="7" spellcheck="false" placeholder='{ "type": "service_account", "client_email": "...", "private_key": "..." }'></textarea>
+        </label>
+      </div>
+      <p class="hint">
+        This is written into this machine's configuration directory with
+        owner-only permissions. It is never put in a repository, never built
+        into an image, and never sent anywhere except to Apple or Google.
+      </p>
+    </section>
+
+    <!-- 3: prove it works -------------------------------------------------- -->
+    <section class="setup-step" data-giftstep="3" hidden>
+      <p class="step-head"><span class="step-num">3</span> Check it answers</p>
+      <p class="muted" id="gift-test-intro">–</p>
+      <pre class="logview" id="gift-test-result">Not checked yet.</pre>
+    </section>
+
+    <menu>
+      <button type="button" class="ghost" id="gift-wizard-back">Back</button>
+      <button type="button" class="primary" id="gift-wizard-next">Next</button>
+      <button type="button" class="primary" id="gift-wizard-save" hidden>Save</button>
+      <button type="button" class="ghost" id="gift-wizard-test" hidden>Test it</button>
+    </menu>
+  </form>
+</dialog>
 
 <!-- --------------------------------------------------------- setup wizard -->
 <dialog id="setup-dialog" class="wide">

@@ -79,6 +79,22 @@ export const APPS = {
         },
         adminPort: null,
     },
+    gift: {
+        label: 'KaChat Gift Service',
+        repo: 'KaspaSilver/KaChat-Gift-Service',
+        profile: 'gift',
+        services: ['gift'],
+        // Nothing to do with the chain: it asks Apple and Google about a device
+        // and then pays from a wallet. The node only matters when it pays.
+        needsSyncedNode: false,
+        container: 'kaspa-node-gift',
+        publish: { hostname: 'gift', port: 8770, websocket: false },
+        ports: {
+            api: { port: 8770, label: 'Gift claim API' },
+        },
+        adminPort: null,
+    },
+
     nextcloud: {
         label: 'Nextcloud',
         repo: 'KaspaSilver/KaChat-NextCloud',
@@ -110,6 +126,25 @@ export const DEFAULT_APPS_CONFIG = {
         publish: { web: true },
         hostPort: 5173,
     },
+    gift: {
+        enabled: false,
+        ref: 'main',
+        // The claim endpoint is what the phones call, so it is useless unless
+        // something outside can reach it. Published through the proxy rather
+        // than on a host port: it holds a wallet, and wants a name and HTTPS.
+        publish: { api: false },
+        // Everything the service is actually configured with lives in
+        // conf/gift/, written by the wizards. None of it belongs in here: this
+        // file is read and rewritten constantly and is not the place for a key.
+        apple: { enabled: false, teamId: '', keyId: '', bundleId: 'com.kachat.app' },
+        android: { enabled: false, packageName: 'com.kachat.app' },
+        amountKas: 3,
+        dailyCapKas: 300,
+        poolFloorKas: 50,
+        // record-only until somebody deliberately says otherwise.
+        mode: 'record-only',
+    },
+
     nextcloud: {
         enabled: false,
         ref: 'main',

@@ -159,6 +159,7 @@ function selectTab(name) {
     else setKaspadLog(activeSubtab('kaspad') === 'kaspadlog');
     // Read on arrival rather than polled: nothing on it changes by itself.
     if (name === 'global') loadGlobal().catch(() => {});
+    if (name === 'gift') loadGift().catch(() => {});
     // On the drawer layout, picking a destination should get out of the way.
     if (MOBILE()) closeDrawer();
 }
@@ -3514,6 +3515,251 @@ $('kassigner-verify-btn').addEventListener('click', async () => {
         state.textContent = 'failed';
         state.className = 'tag off';
         button.disabled = false;
+        toast(e.message, 'bad');
+    }
+});
+
+// ------------------------------------------------------------ gift service ---
+
+/**
+ * The gift service: a faucet that hands a new KaChat user their first 3 KAS.
+ *
+ * The panel's job here is the credentials. Apple hands out a .p8 exactly once
+ * and Google a service account JSON, both authenticate as somebody's app, and
+ * both arrive by being pasted into a box. So the wizard's last step is a real
+ * request to the real store, because a wrong key id and a revoked key produce
+ * the same silence months later, when a user taps a button.
+ */
+let giftState = { config: {}, status: null, credentials: {} };
+
+async function loadGift() {
+    try {
+        giftState = await api('/api/gift');
+    } catch {
+        return;
+    }
+    const { config, status, container, credentials } = giftState;
+
+    const running = Boolean(container?.running);
+    const badge = $('gift-state');
+    badge.textContent = running ? (status ? 'running' : 'starting') : container?.status || 'off';
+    badge.className = `tag ${running && status ? 'ok' : running ? '' : 'off'}`;
+    setNavSwitch('gift', Boolean(config.enabled));
+    setNavHealth('gift', !config.enabled ? 'off' : running && status ? 'ok' : 'warn');
+
+    $('gift-mode').textContent = status
+        ? status.mode === 'live'
+            ? 'sending for real'
+            : 'recording only, sending nothing'
+        : config.mode === 'live'
+          ? 'sending for real (not running)'
+          : 'recording only (not running)';
+    $('gift-amount').textContent = `${config.amountKas ?? 3} KAS`;
+    $('gift-today').textContent = status ? `${status.claims.paidTodayKas} of ${status.caps.dailyKas} KAS` : '–';
+    // The pool is the wallet's balance, which only exists once payouts do.
+    $('gift-pool').textContent = status?.pool ? `${status.pool.balanceKas} KAS` : 'no wallet yet';
+    $('gift-apple-count').textContent = status ? status.claims.apple : '–';
+    $('gift-android-count').textContent = status ? status.claims.android : '–';
+
+    $('gift-set-amount').value = config.amountKas ?? 3;
+    $('gift-set-daily').value = config.dailyCapKas ?? 300;
+    $('gift-set-floor').value = config.poolFloorKas ?? 50;
+    $('gift-set-live').checked = config.mode === 'live';
+    $('gift-ref').value = config.ref ?? 'main';
+    $('gift-repo').textContent = giftState.repo ?? 'KaspaSilver/KaChat-Gift-Service';
+
+    const ready = [
+        credentials.apple ? 'iPhone ready' : 'iPhone not set up',
+        credentials.google ? 'Android ready' : 'Android not set up',
+    ].join(' · ');
+    $('gift-credentials-state').textContent = ready;
+    $('gift-overview-note').textContent = status
+        ? status.mode === 'live'
+            ? 'Claims are being paid.'
+            : 'Claims are being checked and recorded, and nothing is being sent. Tick the box below when you have watched enough of them.'
+        : config.enabled
+          ? 'Switched on but not answering yet. Give it a moment, or look at the log.'
+          : 'Switched off. Set up at least one phone, then start it from the switch beside the sidebar entry.';
+}
+
+/** What each console gives you, and where to find it. */
+const GIFT_STEPS = {
+    apple: {
+        title: 'Set up iPhone',
+        step1: 'What to get from App Store Connect',
+        body: `
+      <p>The claim is proved with <strong>DeviceCheck</strong>: two bits Apple stores
+      against the device itself. That is why a reinstall, a restore or a wipe cannot
+      clear "already claimed" &mdash; the mark was never on the phone.</p>
+      <ol class="steps">
+        <li><strong>Team ID</strong> &mdash; App Store Connect, <em>Membership</em>. Ten characters.</li>
+        <li><strong>Bundle ID</strong> &mdash; your app's, exactly.</li>
+        <li><strong>A key</strong> &mdash; <em>Users and Access</em> → <em>Integrations</em> →
+        <em>App Store Connect API</em> → <strong>+</strong>, and tick <strong>DeviceCheck</strong>.
+        Note the <strong>Key ID</strong> and download the <code>.p8</code>.</li>
+      </ol>
+      <p><strong>Apple gives you the .p8 once.</strong> There is no second download. If you
+      lose it, revoke that key and make another.</p>`,
+        test: "This asks Apple to answer a query signed with your key, carrying a deliberately fake device token. A 400 is the good answer: it means Apple accepted the key and rejected the token, which is exactly what it should do.",
+    },
+    android: {
+        title: 'Set up Android',
+        step1: 'What to get from Google',
+        body: `
+      <p>The claim is proved with <strong>Play Integrity</strong>: Google's own verdict on
+      whether this is your app, from Play, on a real device.</p>
+      <ol class="steps">
+        <li><strong>Package name</strong> &mdash; as published. The debug build has its own and
+        will not pass with the release one.</li>
+        <li><strong>A service account</strong> &mdash; Google Cloud console, on the project linked
+        to your Play listing: <em>IAM and Admin</em> → <em>Service Accounts</em> →
+        <em>Create</em>, then <em>Keys</em> → <em>Add key</em> → <strong>JSON</strong>.</li>
+        <li>Enable the <strong>Play Integrity API</strong> on that project, and link it under
+        Play Console → <em>Monetise</em> → <em>App integrity</em>.</li>
+      </ol>
+      <p><strong>Worth knowing:</strong> Play Integrity proves the app, but it remembers
+      nothing across reinstalls the way Apple's DeviceCheck does. On Android, repeat claims
+      are bounded by the daily ceiling rather than prevented, so set that ceiling to what you
+      are willing to lose in a day.</p>`,
+        test: 'This asks Google for an access token with the service account, which is the same thing the service does on its first real claim.',
+    },
+};
+
+let giftWizard = { platform: null, step: 1 };
+
+function openGiftWizard(platform) {
+    const copy = GIFT_STEPS[platform];
+    giftWizard = { platform, step: 1 };
+
+    $('gift-wizard-title').textContent = copy.title;
+    $('gift-step1-title').textContent = copy.step1;
+    $('gift-step1-body').innerHTML = copy.body;
+    $('gift-test-intro').textContent = copy.test;
+    $('gift-test-result').textContent = 'Not checked yet.';
+
+    const cfg = giftState.config ?? {};
+    $('gift-team-id').value = cfg.apple?.teamId ?? '';
+    $('gift-key-id').value = cfg.apple?.keyId ?? '';
+    $('gift-bundle-id').value = cfg.apple?.bundleId ?? 'com.kachat.app';
+    $('gift-package').value = cfg.android?.packageName ?? 'com.kachat.app';
+    // Never repopulated from the server: the panel does not read keys back out,
+    // and an empty box here means "keep what is saved" rather than "erase it".
+    $('gift-apple-key').value = '';
+    $('gift-google-key').value = '';
+
+    $('gift-apple-fields').hidden = platform !== 'apple';
+    $('gift-android-fields').hidden = platform !== 'android';
+
+    renderGiftStep();
+    $('gift-wizard').showModal();
+}
+
+function renderGiftStep() {
+    const { step } = giftWizard;
+    for (const section of document.querySelectorAll('#gift-wizard-form .setup-step')) {
+        section.hidden = Number(section.dataset.giftstep) !== step;
+    }
+    $('gift-wizard-back').hidden = step === 1;
+    $('gift-wizard-next').hidden = step === 3;
+    $('gift-wizard-save').hidden = step !== 2;
+    $('gift-wizard-test').hidden = step !== 3;
+}
+
+$('gift-wizard-next').addEventListener('click', () => {
+    giftWizard.step = Math.min(3, giftWizard.step + 1);
+    renderGiftStep();
+});
+$('gift-wizard-back').addEventListener('click', () => {
+    giftWizard.step = Math.max(1, giftWizard.step - 1);
+    renderGiftStep();
+});
+
+$('gift-wizard-save').addEventListener('click', async () => {
+    const { platform } = giftWizard;
+    const body =
+        platform === 'apple'
+            ? {
+                  teamId: $('gift-team-id').value.trim(),
+                  keyId: $('gift-key-id').value.trim(),
+                  bundleId: $('gift-bundle-id').value.trim(),
+                  key: $('gift-apple-key').value.trim() || undefined,
+              }
+            : {
+                  packageName: $('gift-package').value.trim(),
+                  serviceAccount: $('gift-google-key').value.trim() || undefined,
+              };
+
+    $('gift-wizard-save').disabled = true;
+    try {
+        const r = await api(`/api/gift/${platform}`, { method: 'POST', body });
+        if (!r.hasKey) {
+            return toast('Saved, but there is still no key here. Paste the file contents in.', 'bad');
+        }
+        toast(`${platform === 'apple' ? 'iPhone' : 'Android'} credentials saved.`);
+        // The key is out of the browser the moment it is saved.
+        $('gift-apple-key').value = '';
+        $('gift-google-key').value = '';
+        giftWizard.step = 3;
+        renderGiftStep();
+        await loadGift();
+    } catch (e) {
+        toast(e.message, 'bad');
+    } finally {
+        $('gift-wizard-save').disabled = false;
+    }
+});
+
+$('gift-wizard-test').addEventListener('click', async () => {
+    const { platform } = giftWizard;
+    const out = $('gift-test-result');
+    $('gift-wizard-test').disabled = true;
+    out.textContent = 'Asking…';
+    try {
+        const r = await api(`/api/gift/test/${platform}`, { method: 'POST', body: {} });
+        out.textContent = `${r.ok ? 'OK' : 'Not working'}\n\n${r.detail}`;
+    } catch (e) {
+        out.textContent = e.message;
+    } finally {
+        $('gift-wizard-test').disabled = false;
+    }
+});
+
+$('gift-setup-apple').addEventListener('click', () => openGiftWizard('apple'));
+$('gift-setup-android').addEventListener('click', () => openGiftWizard('android'));
+
+$('gift-save-settings').addEventListener('click', async () => {
+    const live = $('gift-set-live').checked;
+    if (live && giftState.config?.mode !== 'live') {
+        const ok = confirm(
+            'Send real Kaspa from now on?\n\n' +
+                'Until now claims have been checked and recorded without paying. From here, a claim that passes ' +
+                'Apple or Google is paid from the wallet, up to the daily ceiling.',
+        );
+        if (!ok) return;
+    }
+
+    try {
+        await api('/api/gift/settings', {
+            method: 'POST',
+            body: {
+                amountKas: Number($('gift-set-amount').value),
+                dailyCapKas: Number($('gift-set-daily').value),
+                poolFloorKas: Number($('gift-set-floor').value),
+                mode: live ? 'live' : 'record-only',
+            },
+        });
+        kResult('gift-settings-result', 'Saved. The service picks these up when it next starts.', false);
+        await loadGift();
+    } catch (e) {
+        toast(e.message, 'bad');
+    }
+});
+
+$('gift-rebuild').addEventListener('click', async () => {
+    try {
+        await api('/api/apps/gift', { method: 'PUT', body: { enabled: true, ref: $('gift-ref').value.trim() || 'main' } });
+        openConsole('Rebuilding the gift service');
+    } catch (e) {
         toast(e.message, 'bad');
     }
 });
