@@ -772,8 +772,12 @@ table.instances td:last-child { width: 40px; text-align: right; }
     padding: 12px 14px;
     margin: 0 0 14px;
 }
-/* Shown in place of the switch until a service exists at all. */
+/* Shown in place of the switch until a service exists at all, and sized to sit
+   in the same place the switch will once it does. */
+.nav-install[hidden] { display: none; }
 .nav-install {
+    flex: 0 0 auto;
+    margin-left: auto;
     background: color-mix(in srgb, var(--accent) 18%, transparent);
     border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
     color: var(--text);
@@ -797,6 +801,11 @@ table.instances td:last-child { width: 40px; text-align: right; }
 .port-result li.bad::before { content: '✗ '; color: var(--danger); }
 
 /* ----------------------------------------------------------- port toggles */
+
+/* `display` on a class beats the hidden attribute's UA rule, so a switch told
+   to hide stayed on screen and sat on top of the label beside it. Every element
+   in this file that carries a display and can be hidden needs this. */
+.switch[hidden] { display: none; }
 
 .switch {
     position: relative;
