@@ -3886,7 +3886,7 @@ function renderInstallGate(key, state) {
         <p class="muted">${
             state?.runnable === false
                 ? 'Installing downloads the firmware and checks it against the hashes the release publishes.'
-                : 'Installing builds its image and creates its container. Everything behind this is what it will look like.'
+                : 'Installing builds its image and creates its container. It stays switched off afterwards -- the switch in the sidebar is what starts it. Everything behind this is what it will look like.'
         }</p>
         <button class="primary big" data-install="${escapeHtml(key)}">Install ${label}</button>
       </div>`;
@@ -3945,7 +3945,7 @@ document.addEventListener('click', async (event) => {
         note:
             serviceState[key]?.runnable === false
                 ? 'Downloading the firmware and checking it against the published hashes.'
-                : 'The first install builds an image from source, which can take a long time. Leave this open.',
+                : 'The first install builds an image from source, which can take a long time. It does not start the service -- that is the switch. Leave this open.',
         request: () => api(`/api/services/${key}/install`, { method: 'POST' }),
     });
 });
@@ -4752,8 +4752,12 @@ function connectLogs() {
 
     logStream.addEventListener('containers', (event) => {
         const { containers } = JSON.parse(event.data);
+        const up = containers.filter((c) => c.running !== false).length;
+        // A stopped container still has a log worth reading -- usually the one
+        // that says why it stopped -- so it keeps its tile and the count says
+        // how many of them are actually running.
         $('logs-note').textContent = containers.length
-            ? `${containers.length} container${containers.length === 1 ? '' : 's'} running`
+            ? `${containers.length} container${containers.length === 1 ? '' : 's'}, ${up} running`
             : '';
         // The tiles are about to be replaced, so anything lifted over them is
         // gone too; leaving the scrim would dim the page with nothing on top.
@@ -4765,7 +4769,7 @@ function connectLogs() {
             logTile(JOB_LOG_KEY, 'Panel jobs') +
             (containers.length
                 ? containers.map((c) => logTile(c.key, c.label)).join('')
-                : '<p class="empty-tile">No containers are running.</p>');
+                : '<p class="empty-tile">Nothing is installed yet, so there are no container logs. The panel\'s own log is above.</p>');
         logBuffers.set(JOB_LOG_KEY, [...jobLog]);
         renderLogTile(JOB_LOG_KEY);
         for (const c of containers) {
@@ -4773,7 +4777,7 @@ function connectLogs() {
             // The tile was just recreated, so its stored size needs reapplying.
             restoreLogSize(`tile:${c.key}`);
             const dot = document.querySelector(`[data-tiledot="${c.key}"]`);
-            if (dot) dot.className = 'dot ok';
+            if (dot) dot.className = `dot ${c.running === false ? 'off' : 'ok'}`;
         }
         updateLogSummary();
     });

@@ -624,27 +624,80 @@ route('GET', /^\/api\/logs\/containers$/, async (req, res) => {
  * would consume the entire budget and stall the status polling that drives the
  * rest of the panel.
  */
+/**
+ * Every container's log at once, and it keeps up with the stack.
+ *
+ * What is on the machine changes while somebody is watching this page:
+ * installing creates a container, a switch starts one, uninstalling takes one
+ * away. The set used to be read once, when the page connected -- so a container
+ * that appeared afterwards never got a tile, and one that restarted went quiet
+ * for good, because `docker logs --follow` ends when its container does and
+ * nothing reattached. Rescanned every few seconds instead.
+ */
 route('GET', /^\/api\/logs\/stream-all$/, async (req, res) => {
-    const present = [];
-    for (const c of dockerctl.STACK_CONTAINERS) {
-        const state = await dockerctl.containerState(c.name);
-        if (state.exists) present.push(c);
-    }
-
     const { send, onClose } = sse(req, res);
-    send('containers', { containers: present.map(({ key, label, name }) => ({ key, label, name })) });
 
-    const stops = present.map((c) =>
-        dockerctl.streamLogs(c.name, (line) => send('line', { key: c.key, line }), { tail: 60 }),
-    );
-    onClose(() => {
-        for (const stop of stops) {
-            try {
-                stop();
-            } catch {
-                /* already exited */
-            }
+    const followers = new Map(); // name -> { stop, startedAt }
+    let listed = null;
+    let closed = false;
+
+    const detach = (name) => {
+        const follower = followers.get(name);
+        if (!follower) return;
+        followers.delete(name);
+        try {
+            follower.stop();
+        } catch {
+            /* already exited */
         }
+    };
+
+    const scan = async () => {
+        if (closed) return;
+
+        const present = [];
+        for (const c of dockerctl.STACK_CONTAINERS) {
+            const state = await dockerctl.containerState(c.name);
+            if (state.exists) present.push({ ...c, state });
+        }
+
+        // The browser rebuilds every tile when this arrives, losing what is in
+        // them, so it is sent when the set itself changed and not on every scan.
+        const signature = present.map((c) => `${c.key}:${c.state.running ? 1 : 0}`).join(',');
+        if (signature !== listed) {
+            listed = signature;
+            send('containers', {
+                containers: present.map(({ key, label, name, state }) => ({
+                    key,
+                    label,
+                    name,
+                    running: state.running,
+                })),
+            });
+        }
+
+        const names = new Set(present.map((c) => c.name));
+        for (const name of [...followers.keys()]) if (!names.has(name)) detach(name);
+
+        for (const c of present) {
+            const follower = followers.get(c.name);
+            // startedAt is what tells one run of a container from the next, and
+            // a new run means the old `docker logs` has already exited.
+            if (follower && follower.startedAt === c.state.startedAt) continue;
+            detach(c.name);
+            followers.set(c.name, {
+                startedAt: c.state.startedAt,
+                stop: dockerctl.streamLogs(c.name, (line) => send('line', { key: c.key, line }), { tail: 60 }),
+            });
+        }
+    };
+
+    await scan();
+    const timer = setInterval(() => scan().catch(() => {}), 5000);
+    onClose(() => {
+        closed = true;
+        clearInterval(timer);
+        for (const name of [...followers.keys()]) detach(name);
     });
 });
 
@@ -1405,8 +1458,20 @@ async function applyMiningConfig(cfg, onLine = () => {}) {
     onLine('Building the stratum bridge image if needed...');
     await dockerctl.compose(['build', 'bridge'], { onLine, profile: 'mining', timeoutMs: 90 * 60_000 });
 
-    onLine('Starting the stratum bridge...');
-    await dockerctl.compose(['up', '-d', '--force-recreate', 'bridge'], { onLine, profile: 'mining', timeoutMs: 10 * 60_000 });
+    // Saving mining settings is not asking for mining to start. This is reached
+    // from the Save button on the mining tab, which carries `enabled` through
+    // unchanged -- so recreating unconditionally started a bridge that was
+    // deliberately stopped, on an edit that had nothing to do with running it.
+    if ((await dockerctl.containerState(dockerctl.BRIDGE_CONTAINER)).running) {
+        onLine('Restarting the stratum bridge with the new settings...');
+        await dockerctl.compose(['up', '-d', '--no-deps', '--force-recreate', 'bridge'], {
+            onLine,
+            profile: 'mining',
+            timeoutMs: 10 * 60_000,
+        });
+    } else {
+        onLine('The stratum bridge is not running, so this applies the moment you switch it on.');
+    }
 
     return { enabled: true, published };
 }

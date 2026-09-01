@@ -187,8 +187,13 @@ export async function statusAll() {
 }
 
 /**
- * Builds the images and creates the containers. The long one: a first install
- * compiles from source for some of these.
+ * Builds the images and creates the containers, and leaves them stopped.
+ *
+ * Installing is not starting. It used to end in `up -d`, so choosing to have
+ * something on the machine also chose to run it -- which for the node means
+ * hours of syncing and a disk filling up, decided by a button that said
+ * Install. The switch is what starts things, and it is now the only thing that
+ * does.
  */
 export async function install(key, onLine = () => {}) {
     const unit = unitFor(key);
@@ -198,8 +203,9 @@ export async function install(key, onLine = () => {}) {
         onLine(`Building ${unit.label}. The first time can take a while.`);
         await compose(['build', ...unit.buildable], { onLine, profile: unit.profile, timeoutMs: 120 * 60_000 });
     }
-    onLine(`Starting ${unit.label}.`);
-    await compose(['up', '-d', ...NO_DEPS, ...unit.services], { onLine, profile: unit.profile, timeoutMs: 20 * 60_000 });
+    onLine(`Creating the ${unit.label} container.`);
+    await compose(['create', ...unit.services], { onLine, profile: unit.profile, timeoutMs: 20 * 60_000 });
+    onLine(`${unit.label} is installed and switched off. Its switch in the sidebar starts it.`);
 }
 
 /**
