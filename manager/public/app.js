@@ -258,15 +258,35 @@ const navSwitch = (service) => document.querySelector(`[data-service="${service}
  * Red is reserved for "you asked for this and it is not there", which is the
  * only case worth walking over to look at.
  */
+/** Where a tab's name and its lifecycle key are different words. */
+const HEALTH_KEYS = { kaspad: 'node' };
+
+/**
+ * The dot beside a service.
+ *
+ * Red means installed and not running, which is a thing to look into. Something
+ * that was never installed is not unhealthy, and saying so in red sends people
+ * looking for a fault in a service they have not asked for yet.
+ *
+ * Every caller works this out from its own tab's data -- the node from its RPC,
+ * the apps from their config -- and each of them would have to remember to ask
+ * whether the thing exists first. Asking here instead means none of them can
+ * forget, including the ones written later.
+ */
 function setNavHealth(tab, state) {
     const dot = document.querySelector(`.nav-dot[data-health="${tab}"]`);
     if (!dot) return;
-    dot.className = `nav-dot ${state ?? ''}`.trim();
+
+    const known = serviceState[HEALTH_KEYS[tab] ?? tab];
+    if (known && known.installed === false && state !== 'none') state = 'absent';
+
+    dot.className = `nav-dot ${state === 'absent' ? '' : (state ?? '')}`.trim();
     dot.title = {
         ok: 'Running normally',
         warn: 'Running, but not fully ready',
-        bad: 'Switched on, but not running',
+        bad: 'Installed, but not running',
         off: 'Switched off',
+        absent: 'Not installed',
         none: '',
     }[state] ?? '';
 }
@@ -3597,6 +3617,10 @@ function renderServiceRow(key, state) {
 
     button.hidden = installed;
     if (label) label.hidden = !installed || !runnable;
+
+    // Set before any tab has been opened, so a service nobody has looked at
+    // still shows the right colour.
+    setNavHealth(state?.tab ?? key, !installed ? 'absent' : state.running ? 'ok' : 'bad');
 
     // A switch that is showing should say what is actually true, without
     // waiting for the next status poll to correct it.
