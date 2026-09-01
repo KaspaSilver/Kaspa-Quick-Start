@@ -2964,9 +2964,6 @@ async function loadKachatFeatures() {
 async function loadKachatSettings() {
     try {
         const s = await kachat('settings');
-        $('kachat-set-name').value = s.instance_name || '';
-        $('kachat-set-tagline').value = s.instance_tagline || '';
-        $('kachat-set-url').value = s.instance_url || '';
         $('kachat-operator-addr').value = s.kaposts_operator_address || '';
         $('kachat-kap-personal').checked = Boolean(s.kaposts_personal_mode);
         $('kachat-kap-personal-body').hidden = !s.kaposts_personal_mode;
@@ -3289,17 +3286,6 @@ $('kachat-kap-personal').addEventListener('change', (e) => {
 
 $('kachat-kap-save').addEventListener('click', () =>
     saveKachatSettings({ kaposts_operator_address: $('kachat-operator-addr').value.trim() }, 'Address saved.'),
-);
-
-$('kachat-set-save').addEventListener('click', () =>
-    saveKachatSettings(
-        {
-            instance_name: $('kachat-set-name').value.trim(),
-            instance_tagline: $('kachat-set-tagline').value.trim(),
-            instance_url: $('kachat-set-url').value.trim(),
-        },
-        'Identity saved.',
-    ),
 );
 
 for (const [id, key, label] of [

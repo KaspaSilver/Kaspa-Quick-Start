@@ -1208,7 +1208,7 @@
 
       <div id="sub-kachat-settings" class="subtab">
         <div class="grid">
-          <article class="card">
+          <article class="card span2">
             <h3>Published ports</h3>
             <p class="muted">
               Both APIs already work for anything running alongside them here. Only
@@ -1219,29 +1219,8 @@
             <div class="row">
               <button type="button" id="kachat-save" class="primary">Apply settings</button>
             </div>
-            <p class="hint">
-              Publishing a port restarts the indexer. The cards below act on the
-              data it has already collected and take effect on their own.
-            </p>
+            <p class="hint">Publishing a port restarts the indexer.</p>
           </article>
-
-
-          <!-- Half width so it pairs with Published ports; the two are a similar
-               height and the row would otherwise be half empty. -->
-          <article class="card">
-            <h3>How this instance presents itself</h3>
-            <p class="muted">
-              The name and tagline are what KaChat clients see when they connect
-              to this indexer.
-            </p>
-            <label class="inline">Name <input id="kachat-set-name" placeholder="KaChat Indexer" size="24"></label>
-            <label class="inline">Tagline <input id="kachat-set-tagline" placeholder="Kaspa-native messaging and social indexer" size="36"></label>
-            <label class="inline">Public URL <input id="kachat-set-url" type="url" placeholder="https://kaposts.duckdns.org" size="30"></label>
-            <div class="row">
-              <button type="button" id="kachat-set-save" class="primary">Save identity</button>
-            </div>
-          </article>
-
         </div>
       </div>
     
