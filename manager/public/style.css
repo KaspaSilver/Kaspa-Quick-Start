@@ -209,10 +209,12 @@ body {
 .nav-item {
     display: flex;
     align-items: center;
-    gap: 11px;
+    gap: 9px;
     flex: 1;
     min-width: 0;
-    padding: 9px 10px;
+    /* Little right padding: the row's own gap already separates the name from
+       the control, and in a 232px sidebar every pixel here is a pixel of name. */
+    padding: 9px 2px 9px 10px;
     border: 0;
     border-radius: 8px 0 0 8px;
     background: none;
@@ -222,6 +224,15 @@ body {
     text-align: left;
     cursor: pointer;
     white-space: nowrap;
+}
+/* The row is a name and a control, and the control is the part that must not
+   move. Without this the name is nowrap with nothing to clip it, so a long one
+   ran straight under the Install button instead of giving way to it. */
+.nav-item .label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .nav-item svg { width: 18px; height: 18px; flex: 0 0 18px; }
 .nav-item.active { color: var(--text); }
@@ -233,7 +244,7 @@ body {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding-right: 8px;
+    padding-right: 6px;
     border-radius: 8px;
 }
 .nav-row:hover { background: var(--panel-2); }
@@ -772,18 +783,18 @@ table.instances td:last-child { width: 40px; text-align: right; }
     padding: 12px 14px;
     margin: 0 0 14px;
 }
-/* Shown in place of the switch until a service exists at all, and sized to sit
-   in the same place the switch will once it does. */
+/* Shown in place of the switch until a service exists at all. Kept narrow: it
+   sits where the switch will, and every pixel it takes is one the name loses. */
 .nav-install[hidden] { display: none; }
 .nav-install {
     flex: 0 0 auto;
-    margin-left: auto;
     background: color-mix(in srgb, var(--accent) 18%, transparent);
     border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
     color: var(--text);
     border-radius: 999px;
     font-size: 11px;
-    padding: 3px 10px;
+    line-height: 1.6;
+    padding: 1px 7px;
     cursor: pointer;
     white-space: nowrap;
 }
