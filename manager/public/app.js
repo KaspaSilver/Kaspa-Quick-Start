@@ -1516,8 +1516,8 @@ async function loadMining() {
 function renderMiningState(container, stats) {
     const badge = $('mining-state');
     const running = container?.running;
-    badge.textContent = !miningConfig?.enabled ? 'off' : running ? 'running' : container?.status || 'stopped';
-    badge.className = `tag ${!miningConfig?.enabled ? 'off' : running ? 'ok' : ''}`;
+    badge.textContent = containerWord(container);
+    badge.className = `tag ${!container?.exists ? 'off' : running ? 'ok' : ''}`;
 
     const on = Boolean(miningConfig?.enabled);
     $('mining-live').hidden = !on;
@@ -2028,12 +2028,52 @@ function startFailure(state) {
     return `Could not start. ${reason ? `${reason} ` : ''}The full output is under All logs; switching it off and on again retries.`;
 }
 
+/**
+ * The one word a status badge shows, and it comes from the container.
+ *
+ * Three states somebody can act on -- nothing there, there but stopped, up --
+ * said in the panel's own words. Docker's own vocabulary leaks otherwise: a
+ * container somebody switched off reports "exited", which is true, is not what
+ * they did, and sits oddly next to a switch labelled off.
+ */
+function containerWord(container) {
+    if (!container?.exists) return 'not installed';
+    if (container.running) return 'running';
+    if (container.status === 'restarting') return 'restarting';
+    return 'stopped';
+}
+
+/**
+ * What to say about an app that has no link to offer.
+ *
+ * Driven by the container and never by the saved `enabled` flag. That flag is
+ * what separates stopped from uninstalled, so it stays true across a stop --
+ * and reading it as "this is meant to be up" is how a service somebody had
+ * switched off spent the whole time claiming to be starting up.
+ */
+function appStatusNote(state, { absent, stopped }) {
+    const container = state.container ?? {};
+    if (!container.exists) return { text: absent, bad: false };
+    // A container that exists, is not running, and failed the last time it was
+    // asked to. Not the same as one that was switched off.
+    const failure = startFailure(state);
+    if (failure) return { text: failure, bad: true };
+    if (container.status === 'restarting') {
+        return { text: 'Restarting. If it keeps doing this, All logs says why.', bad: true };
+    }
+    // Every caller shows a link instead of reaching this, but a helper whose
+    // answer depends on that is one refactor away from saying "not running"
+    // about something that is.
+    if (container.running) return { text: 'Running.', bad: false };
+    return { text: stopped, bad: false };
+}
+
 function renderAppState(name, state) {
     const badge = $(`${name}-state`);
-    const running = state.container?.running;
-    const enabled = Boolean(appsState.config?.[name]?.enabled);
-    badge.textContent = !enabled ? 'off' : running ? 'running' : state.container?.status || 'stopped';
-    badge.className = `tag ${!enabled ? 'off' : running ? 'ok' : ''}`;
+    const container = state.container ?? {};
+    const running = container.running;
+    badge.textContent = containerWord(container);
+    badge.className = `tag ${!container.exists ? 'off' : running ? 'ok' : ''}`;
 
     const notice = $(`${name}-notice`);
     if (state.blockers?.length) {
@@ -2045,13 +2085,14 @@ function renderAppState(name, state) {
     }
 
     if (name === 'kachat') {
-        if (enabled && !running && !state.blockers?.length) {
+        if (!running && !state.blockers?.length) {
+            const note = appStatusNote(state, {
+                absent: 'Not installed yet.',
+                stopped: 'Not running. Its switch in the sidebar starts it.',
+            });
             notice.hidden = false;
-            const failure = startFailure(state);
-            notice.className = failure ? 'verdict bad' : 'verdict';
-            notice.textContent =
-                failure ??
-                'Starting up. The first build compiles the indexer from source, which takes a while. You can watch it under All logs.';
+            notice.className = note.bad ? 'verdict bad' : 'verdict';
+            notice.textContent = note.text;
         }
 
         const build = $('kachat-build');
@@ -2063,21 +2104,22 @@ function renderAppState(name, state) {
     if (name === 'nextcloud') {
         const link = $('nextcloud-link');
         const cfg = appsState.config.nextcloud;
-        if (enabled && running && cfg.publish.web) {
+        link.hidden = false;
+        if (running && cfg.publish.web) {
             const url = `http://${location.hostname}:${cfg.hostPort}`;
-            link.hidden = false;
             link.className = 'verdict ok';
             link.innerHTML = `<a href="${url}" target="_blank" rel="noreferrer noopener">${escapeHtml(url)} ↗</a>`;
-        } else if (enabled && running) {
-            link.hidden = false;
+        } else if (running) {
             link.className = 'verdict';
             link.textContent =
                 'Running, but not published on the host. Reach it through a proxy host, or tick "Publish on the host" under Settings.';
         } else {
-            const failure = enabled ? startFailure(state) : null;
-            link.hidden = false;
-            link.className = failure ? 'verdict bad' : 'verdict';
-            link.textContent = failure ?? (enabled ? 'Starting up…' : 'Not running. Switch it on above.');
+            const note = appStatusNote(state, {
+                absent: 'Not installed yet. Installing builds it and leaves it switched off.',
+                stopped: 'Not running. Its switch in the sidebar starts it.',
+            });
+            link.className = note.bad ? 'verdict bad' : 'verdict';
+            link.textContent = note.text;
         }
 
         const build = $('nextcloud-build');
@@ -2090,7 +2132,7 @@ function renderAppState(name, state) {
         const link = $('desktop-link');
         const cfg = appsState.config.desktop;
         link.hidden = false;
-        if (enabled && running) {
+        if (running) {
             // location.hostname rather than localhost: the panel is often open
             // from another machine on the LAN, and localhost would send that
             // browser to itself.
@@ -2098,13 +2140,12 @@ function renderAppState(name, state) {
             link.className = 'verdict ok';
             link.innerHTML = `<a href="${url}" target="_blank" rel="noreferrer noopener">${escapeHtml(url)} ↗</a>`;
         } else {
-            const failure = enabled ? startFailure(state) : null;
-            link.className = failure ? 'verdict bad' : 'verdict';
-            link.textContent =
-                failure ??
-                (enabled
-                    ? 'Starting up. The first build installs the app dependencies, which takes a few minutes.'
-                    : 'Not running. Switch it on in the sidebar.');
+            const note = appStatusNote(state, {
+                absent: 'Not installed yet. Installing builds it and leaves it switched off.',
+                stopped: 'Not running. Its switch in the sidebar starts it.',
+            });
+            link.className = note.bad ? 'verdict bad' : 'verdict';
+            link.textContent = note.text;
         }
 
         const build = $('desktop-build');
@@ -3726,8 +3767,8 @@ async function loadProxies() {
     // adding a host would write config nothing is serving.
     const on = Boolean(r.enabled);
     const badge = $('proxy-state');
-    badge.textContent = !on ? 'off' : r.container?.running ? 'running' : r.container?.status || 'starting';
-    badge.className = `tag ${!on ? 'off' : r.container?.running ? 'ok' : ''}`;
+    badge.textContent = containerWord(r.container);
+    badge.className = `tag ${!r.container?.exists ? 'off' : r.container.running ? 'ok' : ''}`;
     // The dot follows the container, not the saved setting: with the proxy
     // installed and stopped this used to stay green, and disagree with the
     // services poll writing the same dot from what docker says.
@@ -4279,7 +4320,7 @@ async function loadGift() {
 
     const running = Boolean(container?.running);
     const badge = $('gift-state');
-    badge.textContent = running ? (status ? 'running' : 'starting') : container?.status || 'off';
+    badge.textContent = running && !status ? 'starting' : containerWord(container);
     badge.className = `tag ${running && status ? 'ok' : running ? '' : 'off'}`;
     setNavHealth('gift', !running ? (config.enabled ? 'bad' : 'off') : status ? 'ok' : 'warn');
 
