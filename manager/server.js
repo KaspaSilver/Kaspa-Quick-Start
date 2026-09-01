@@ -39,6 +39,7 @@ import * as selfservice from './lib/selfservice.js';
 import * as publish from './lib/publish.js';
 import * as portcheck from './lib/portcheck.js';
 import * as gift from './lib/gift.js';
+import * as lifecycle from './lib/lifecycle.js';
 import { nodeSnapshot, rpc } from './lib/rpc.js';
 import { jobs } from './lib/jobs.js';
 import {
@@ -2016,6 +2017,92 @@ route('POST', /^\/api\/auth\/password$/, async (req, res) => {
     updateEnvFile({ ADMIN_PASSWORD_HASH: hashPassword(password) });
     await selfservice.restartManager();
     sendJson(res, 202, { ok: true, restarting: true });
+});
+
+// -------------------------------------------------------------- lifecycle --
+
+/**
+ * Install, start, stop, uninstall, for every service that is a container.
+ *
+ * One set of endpoints rather than a set per service, because the difference
+ * between them is a table and the mistake worth avoiding -- a switch that
+ * quietly deletes an hour of building -- is the same mistake everywhere.
+ */
+route('GET', /^\/api\/services$/, async (req, res) => {
+    sendJson(res, 200, { services: await lifecycle.statusAll() });
+});
+
+route('POST', /^\/api\/services\/([a-z-]+)\/install$/, async (req, res, match) => {
+    const unit = lifecycle.unitFor(match[1]);
+    if (!unit) return fail(res, 404, 'No such service.');
+
+    const job = jobs.start(`Install ${unit.label}`, async (onLine) => {
+        // Whatever the service needs written before it starts. Enabling it in
+        // the apps config keeps the rest of the panel agreeing with reality.
+        const appsCfg = apps.loadAppsConfig();
+        if (appsCfg[match[1]]) {
+            appsCfg[match[1]].enabled = true;
+            apps.saveAppsConfig(appsCfg);
+            apps.writeAppsEnv(appsCfg);
+            apps.renderAppsPortsOverride(appsCfg);
+        }
+        if (match[1] === 'gift') writeGiftConfig();
+        await lifecycle.install(match[1], onLine);
+    });
+    sendJson(res, 202, { ok: true, jobId: job.id });
+});
+
+route('POST', /^\/api\/services\/([a-z-]+)\/(start|stop)$/, async (req, res, match) => {
+    const unit = lifecycle.unitFor(match[1]);
+    if (!unit) return fail(res, 404, 'No such service.');
+
+    const running = match[2] === 'start';
+    const state = await lifecycle.status(match[1]);
+    if (!state.installed) return fail(res, 409, `${unit.label} is not installed yet.`);
+
+    const job = jobs.start(`${running ? 'Start' : 'Stop'} ${unit.label}`, (onLine) =>
+        lifecycle.setRunning(match[1], running, onLine),
+    );
+    sendJson(res, 202, { ok: true, jobId: job.id });
+});
+
+route('POST', /^\/api\/services\/([a-z-]+)\/uninstall$/, async (req, res, match) => {
+    const unit = lifecycle.unitFor(match[1]);
+    if (!unit) return fail(res, 404, 'No such service.');
+    const body = await readBody(req);
+
+    // Deleting somebody's Nextcloud is not a thing to do on a mis-click, so the
+    // request has to name the service it means.
+    if (String(body.confirm ?? '') !== match[1]) {
+        return fail(res, 400, 'The uninstall request did not confirm which service it meant.');
+    }
+
+    const keepData = body.keepData === true;
+    const job = jobs.start(`Uninstall ${unit.label}`, async (onLine) => {
+        const removed = await lifecycle.uninstall(match[1], { keepData, onLine });
+
+        // Back to how it looked before it was ever installed.
+        const appsCfg = apps.loadAppsConfig();
+        if (appsCfg[match[1]]) {
+            appsCfg[match[1]] = structuredClone(apps.DEFAULT_APPS_CONFIG[match[1]]);
+            apps.saveAppsConfig(appsCfg);
+            apps.writeAppsEnv(appsCfg);
+            apps.renderAppsPortsOverride(appsCfg);
+            onLine('Its settings are back to their defaults.');
+        }
+        if (match[1] === 'mining') {
+            bridge.saveBridgeConfig(structuredClone(bridge.DEFAULT_BRIDGE_CONFIG));
+            onLine('Mining settings are back to their defaults.');
+        }
+        if (match[1] === 'proxy') {
+            const mgr = loadManagerConfig();
+            mgr.proxy.enabled = false;
+            saveManagerConfig(mgr);
+            onLine('The proxy is switched off. Your domains and certificates are untouched.');
+        }
+        return removed;
+    });
+    sendJson(res, 202, { ok: true, jobId: job.id });
 });
 
 // ------------------------------------------------------------------- gift --

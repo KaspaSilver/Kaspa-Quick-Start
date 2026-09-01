@@ -772,6 +772,20 @@ table.instances td:last-child { width: 40px; text-align: right; }
     padding: 12px 14px;
     margin: 0 0 14px;
 }
+/* Shown in place of the switch until a service exists at all. */
+.nav-install {
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+    color: var(--text);
+    border-radius: 999px;
+    font-size: 11px;
+    padding: 3px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.nav-install:hover { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+.uninstall-card .notice { border-color: color-mix(in srgb, var(--danger) 35%, transparent); background: color-mix(in srgb, var(--danger) 7%, transparent); }
+
 #console-queue { font-size: 12px; margin-left: 10px; }
 .notice p { margin: 0 0 10px; font-size: 13px; }
 .notice .row { align-items: center; gap: 10px; }

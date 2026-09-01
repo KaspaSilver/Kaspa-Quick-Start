@@ -281,16 +281,28 @@ function setNavSwitch(service, on, { disabled = false, reason = '' } = {}) {
 }
 
 // Each service is switched on in whatever way its own API expects.
+/**
+ * What a switch does now: start or stop, and nothing else.
+ *
+ * It used to enable and disable, which for every container service meant
+ * building on the way up and removing the container on the way down -- so
+ * "off" and "never installed" were the same state, and an hour of building was
+ * one careless click from gone. Installing and removing are their own actions
+ * now, with their own buttons.
+ */
+const start = (key) => (on) => api(`/api/services/${key}/${on ? 'start' : 'stop'}`, { method: 'POST' });
+
 const SERVICE_ACTIONS = {
     node: (on) => api(`/api/node/${on ? 'start' : 'stop'}`, { method: 'POST' }),
-    mining: (on) => api('/api/mining', { method: 'PUT', body: { config: { ...collectMiningConfig(), enabled: on } } }),
+    // Not a container: it fetches and verifies firmware, so there is nothing to
+    // install or leave running.
     kassigner: (on) => api('/api/kassigner', { method: 'PUT', body: { enabled: on } }),
-    kachat: (on) => api('/api/apps/kachat', { method: 'PUT', body: { config: { ...collectAppConfig('kachat'), enabled: on } } }),
-    desktop: (on) =>
-        api('/api/apps/desktop', { method: 'PUT', body: { config: { ...collectAppConfig('desktop'), enabled: on } } }),
-    nextcloud: (on) =>
-        api('/api/apps/nextcloud', { method: 'PUT', body: { config: { ...collectAppConfig('nextcloud'), enabled: on } } }),
-    proxy: (on) => api('/api/proxy/enabled', { method: 'POST', body: { enabled: on } }),
+    mining: start('mining'),
+    kachat: start('kachat'),
+    desktop: start('desktop'),
+    nextcloud: start('nextcloud'),
+    gift: start('gift'),
+    proxy: start('proxy'),
 };
 
 const SERVICE_NAMES = {
@@ -3519,6 +3531,133 @@ $('kassigner-verify-btn').addEventListener('click', async () => {
     }
 });
 
+// -------------------------------------------------------------- lifecycle ---
+
+/**
+ * Install, run, uninstall.
+ *
+ * The sidebar switch used to mean "exists or does not", so turning something
+ * off threw away an hour of building. Now a service that has never been
+ * installed offers a button that says so, and the switch only appears once
+ * there is something to switch: from then on it starts and stops, and nothing
+ * it does removes anything.
+ *
+ * Removing is its own tab, per service, and says what it will delete.
+ */
+let serviceState = {};
+
+const UNINSTALL_COPY = {
+    kachat: 'the indexed chat history and its Postgres database',
+    desktop: 'nothing: it keeps no state of its own',
+    nextcloud: 'every file, photo and calendar stored in it',
+    gift: 'the record of who has already claimed a gift',
+    mining: "the bridge's own share and block records",
+    proxy: 'nothing. Your domains and certificates live in the stack directory and are kept',
+};
+
+async function loadServices() {
+    try {
+        serviceState = (await api('/api/services')).services ?? {};
+    } catch {
+        return;
+    }
+    for (const [key, state] of Object.entries(serviceState)) renderServiceRow(key, state);
+    renderUninstallCards();
+}
+
+/** The sidebar row: a button before it exists, a switch after. */
+function renderServiceRow(key, state) {
+    const input = navSwitch(key);
+    if (!input) return;
+    const label = input.closest('.switch');
+    const row = label?.closest('.nav-row');
+    if (!row) return;
+
+    let button = row.querySelector('[data-install]');
+    if (!button) {
+        button = document.createElement('button');
+        button.className = 'nav-install';
+        button.dataset.install = key;
+        button.textContent = 'Install';
+        row.appendChild(button);
+    }
+
+    const installed = Boolean(state?.installed);
+    button.hidden = installed;
+    if (label) label.hidden = !installed;
+    // A switch that is showing should say what is actually true, without
+    // waiting for the next status poll to correct it.
+    if (installed && input.dataset.busy !== '1') input.checked = Boolean(state.running);
+}
+
+function renderUninstallCards() {
+    for (const card of document.querySelectorAll('.uninstall-card')) {
+        const key = card.dataset.uninstall;
+        const state = serviceState[key];
+        const installed = Boolean(state?.installed);
+
+        card.innerHTML = `
+      <h3>Uninstall ${escapeHtml(state?.label ?? key)}</h3>
+      <p class="muted">
+        Removes the containers, the images built for it, and by default its data.
+        Everything else in the panel leaves all of that alone: stopping a service
+        keeps it, and this is the only place that does not.
+      </p>
+      <div class="notice">
+        <p><strong>What goes:</strong> ${escapeHtml(UNINSTALL_COPY[key] ?? 'its data')}.</p>
+        <p class="muted">Installing it again afterwards starts from nothing, and rebuilds.</p>
+      </div>
+      <label class="check">
+        <input type="checkbox" data-keepdata="${key}"> Keep the data, remove only the containers and images
+      </label>
+      <div class="row">
+        <button class="ghost danger" data-douninstall="${key}" ${installed ? '' : 'disabled'}>
+          ${installed ? 'Uninstall' : 'Not installed'}
+        </button>
+        <span class="muted">${installed ? '' : 'There is nothing here to remove.'}</span>
+      </div>`;
+    }
+}
+
+document.addEventListener('click', async (event) => {
+    const key = event.target?.dataset?.install;
+    if (!key) return;
+
+    event.target.disabled = true;
+    try {
+        await api(`/api/services/${key}/install`, { method: 'POST' });
+        openConsole(`Installing ${serviceState[key]?.label ?? key}`);
+    } catch (e) {
+        toast(e.message, 'bad');
+        event.target.disabled = false;
+    }
+});
+
+document.addEventListener('click', async (event) => {
+    const key = event.target?.dataset?.douninstall;
+    if (!key) return;
+
+    const state = serviceState[key];
+    const keepData = document.querySelector(`[data-keepdata="${key}"]`)?.checked === true;
+    const what = keepData ? 'its containers and images' : `its containers, images and ${UNINSTALL_COPY[key]}`;
+
+    // Typed rather than clicked. This is the one action in the panel that
+    // deletes something a person cannot get back.
+    const typed = prompt(
+        `This removes ${what}.\n\nThis cannot be undone. Type the name to confirm:\n\n  ${key}`,
+    );
+    if (typed !== key) return toast(typed === null ? 'Nothing was removed.' : 'That did not match, so nothing was removed.');
+
+    event.target.disabled = true;
+    try {
+        await api(`/api/services/${key}/uninstall`, { method: 'POST', body: { confirm: key, keepData } });
+        openConsole(`Uninstalling ${state?.label ?? key}`);
+    } catch (e) {
+        toast(e.message, 'bad');
+        event.target.disabled = false;
+    }
+});
+
 // ------------------------------------------------------------ gift service ---
 
 /**
@@ -4510,6 +4649,11 @@ function connectJobs() {
 
 // ------------------------------------------------------------------- boot ---
 
+// Which services exist at all, which decides whether each row shows a button or
+// a switch. Refreshed alongside the status poll so an install or an uninstall
+// finishing is reflected without a reload.
+setInterval(() => loadServices().catch(() => {}), 10_000);
+
 api('/api/session')
     .then((s) => {
         if (s.panelVersion) $('version-badge').textContent = `v${s.panelVersion}`;
@@ -4526,8 +4670,10 @@ api('/api/session')
             note.textContent =
                 'The stored password cannot be read, so none will be accepted. It was truncated by an old bug in how the hash was saved. Clear ADMIN_PASSWORD_HASH in the .env file in your install directory, recreate the panel container, and set a new password from Global settings.';
         }
-        if (s.authenticated) showApp();
-        else showLogin();
+        if (s.authenticated) {
+            showApp();
+            loadServices().catch(() => {});
+        } else showLogin();
     })
     .catch(() => showLogin());
 
