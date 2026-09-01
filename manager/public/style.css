@@ -545,30 +545,6 @@ table.proxies td:last-child { text-align: right; white-space: nowrap; }
 .update-status.available { color: var(--accent); }
 .update-status.current { color: var(--ok); }
 
-/* --------------------------------------------------------------- console */
-
-.console {
-    position: fixed;
-    right: 16px;
-    bottom: 16px;
-    width: min(560px, calc(100vw - 32px));
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    box-shadow: 0 18px 50px rgb(0 0 0 / 0.45);
-    z-index: 40;
-    overflow: hidden;
-}
-.console-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--line);
-}
-.console pre { height: 260px; border: 0; border-radius: 0; }
-
 /* ---------------------------------------------------------------- dialog */
 
 dialog {
@@ -829,7 +805,6 @@ button.big { font-size: 15px; padding: 11px 22px; }
 .nav-install:hover { background: color-mix(in srgb, var(--accent) 30%, transparent); }
 .uninstall-card .notice { border-color: color-mix(in srgb, var(--danger) 35%, transparent); background: color-mix(in srgb, var(--danger) 7%, transparent); }
 
-#console-queue { font-size: 12px; margin-left: 10px; }
 .notice p { margin: 0 0 10px; font-size: 13px; }
 .notice .row { align-items: center; gap: 10px; }
 .notice .muted { font-size: 12px; }

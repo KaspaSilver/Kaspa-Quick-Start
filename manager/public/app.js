@@ -334,7 +334,6 @@ for (const input of document.querySelectorAll('[data-service]')) {
         input.disabled = true;
         try {
             await SERVICE_ACTIONS[service](wanted);
-            openConsole(`${wanted ? 'Starting' : 'Stopping'} ${SERVICE_NAMES[service]}`);
         } catch (e) {
             input.checked = !wanted;
             toast(e.message, 'bad');
@@ -798,7 +797,6 @@ $('ports-body').addEventListener('change', async (event) => {
     event.target.disabled = true;
     try {
         const r = await api(`/api/ports/${key}`, { method: 'POST', body: { [axis]: value } });
-        if (!r.unchanged) openConsole(`${key}: ${axis} ${value ? 'on' : 'off'}`);
     } catch (e) {
         // Put the switch back; the node was not changed.
         event.target.checked = !value;
@@ -815,7 +813,6 @@ $('bind-address').addEventListener('change', async (event) => {
     event.target.disabled = true;
     try {
         const r = await api('/api/ports/bind', { method: 'POST', body: { address } });
-        if (!r.unchanged) openConsole(`Publishing ports on ${address}`);
     } catch (e) {
         toast(e.message, 'bad');
         refreshStatus();
@@ -846,7 +843,6 @@ for (const button of document.querySelectorAll('[data-node]')) {
     button.addEventListener('click', async () => {
         try {
             await api(`/api/node/${button.dataset.node}`, { method: 'POST' });
-            openConsole(`Restarting the node`);
         } catch (e) {
             toast(e.message, 'bad');
         }
@@ -899,7 +895,6 @@ $('apply-update').addEventListener('click', async () => {
     try {
         const r = await api('/api/update/apply', { method: 'POST', body: { version: latestRelease.latest } });
         if (r.alreadyCurrent) return toast('Already on the newest version.', 'good');
-        openConsole(`Updating to ${latestRelease.latest}`);
         $('apply-update').disabled = true;
     } catch (e) {
         toast(e.message, 'bad');
@@ -966,7 +961,6 @@ $('install-release').addEventListener('click', async () => {
     }
     try {
         await api('/api/update/apply', { method: 'POST', body: { version } });
-        openConsole(`Installing ${version}`);
         $('install-release').disabled = true;
     } catch (e) {
         toast(e.message, 'bad');
@@ -1062,7 +1056,6 @@ $('settings-form').addEventListener('submit', async (event) => {
     err.hidden = true;
     try {
         await api('/api/config', { method: 'PUT', body: { config: collectConfig() } });
-        openConsole('Applying node configuration');
         setTimeout(loadSettings, 1500);
     } catch (e) {
         err.textContent = e.message;
@@ -1608,7 +1601,6 @@ $('mining-save').addEventListener('click', async () => {
     err.hidden = true;
     try {
         await api('/api/mining', { method: 'PUT', body: { config: collectMiningConfig() } });
-        openConsole('Applying mining settings');
         setTimeout(loadMining, 2000);
     } catch (e) {
         err.textContent = e.message;
@@ -1620,7 +1612,6 @@ for (const button of document.querySelectorAll('[data-bridge]')) {
     button.addEventListener('click', async () => {
         try {
             await api(`/api/mining/${button.dataset.bridge}`, { method: 'POST' });
-            openConsole(`${button.dataset.bridge} stratum bridge`);
         } catch (e) {
             toast(e.message, 'bad');
         }
@@ -1910,7 +1901,6 @@ for (const app of ['kachat', 'desktop', 'nextcloud']) {
         err.hidden = true;
         try {
             await api(`/api/apps/${app}`, { method: 'PUT', body: { config: collectAppConfig(app) } });
-            openConsole(`Rebuilding ${SERVICE_NAMES[app]}`);
             setTimeout(loadApps, 2000);
         } catch (e) {
             toast(e.message, 'bad');
@@ -1984,7 +1974,6 @@ for (const name of ['kachat', 'desktop', 'nextcloud']) {
         err.hidden = true;
         try {
             await api(`/api/apps/${name}`, { method: 'PUT', body: { config: collectAppConfig(name) } });
-            openConsole(`Applying ${SERVICE_NAMES[name]} settings`);
             setTimeout(loadApps, 2000);
         } catch (e) {
             err.textContent = e.message;
@@ -2022,7 +2011,6 @@ for (const name of ['kachat', 'desktop', 'nextcloud']) {
         if (!confirm(`Rebuild ${name} from the newest commit?\n\nIt will be unavailable while it rebuilds.`)) return;
         try {
             await api(`/api/apps/${name}/update`, { method: 'POST' });
-            openConsole(`Updating ${name}`);
             $(`${name}-update`).disabled = true;
         } catch (e) {
             toast(e.message, 'bad');
@@ -2034,7 +2022,6 @@ for (const button of document.querySelectorAll('[data-app-action]')) {
     button.addEventListener('click', async () => {
         try {
             await api(`/api/apps/${button.dataset.appAction}`, { method: 'POST' });
-            openConsole(button.dataset.appAction.replace('/', ' '));
         } catch (e) {
             toast(e.message, 'bad');
         }
@@ -3250,7 +3237,6 @@ $('kassigner-check').addEventListener('click', async () => {
 $('kassigner-fetch').addEventListener('click', async () => {
     try {
         await api('/api/kassigner', { method: 'PUT', body: { enabled: true, tag: $('kassigner-release').value || null } });
-        openConsole('Fetching KasSigner firmware');
     } catch (e) {
         toast(e.message, 'bad');
     }
@@ -3412,7 +3398,6 @@ $('publish-body').addEventListener('click', async (event) => {
         const proxy = proxies.find((p) => p.id === cert);
         try {
             await api(`/api/proxies/${cert}/certificate`, { method: 'POST', body: { email: proxy?.ssl?.email } });
-            openConsole(`Issuing certificate for ${proxy.domain}`);
         } catch (e) {
             toast(e.message, 'bad');
         }
@@ -3448,8 +3433,11 @@ $('ports-save').addEventListener('click', async () => {
                 bindHttps: Number($('ports-bind-https').value),
             },
         });
-        if (r.jobId) openConsole(`Moving the proxy to ports ${r.bindHttp} and ${r.bindHttps}`);
-        else toast(`Addresses will use ${r.http === 80 ? 'the default http port' : `http port ${r.http}`} and ${r.https === 443 ? 'the default https port' : `https port ${r.https}`}.`);
+        toast(
+            r.jobId
+                ? `Moving the proxy to ports ${r.bindHttp} and ${r.bindHttps}.`
+                : `Addresses will use ${r.http === 80 ? 'the default http port' : `http port ${r.http}`} and ${r.https === 443 ? 'the default https port' : `https port ${r.https}`}.`,
+        );
         await loadProxies();
     } catch (e) {
         toast(e.message, 'bad');
@@ -3787,7 +3775,6 @@ document.addEventListener('click', async (event) => {
     try {
         const r = await api(`/api/services/${key}/install`, { method: 'POST' });
         gateWatch(key, r.jobId);
-        openConsole(`Installing ${serviceState[key]?.label ?? key}`);
     } catch (e) {
         toast(e.message, 'bad');
         event.target.disabled = false;
@@ -3812,7 +3799,6 @@ document.addEventListener('click', async (event) => {
     event.target.disabled = true;
     try {
         await api(`/api/services/${key}/uninstall`, { method: 'POST', body: { confirm: key, keepData } });
-        openConsole(`Uninstalling ${state?.label ?? key}`);
     } catch (e) {
         toast(e.message, 'bad');
         event.target.disabled = false;
@@ -4058,7 +4044,6 @@ $('gift-save-settings').addEventListener('click', async () => {
 $('gift-rebuild').addEventListener('click', async () => {
     try {
         await api('/api/apps/gift', { method: 'PUT', body: { enabled: true, ref: $('gift-ref').value.trim() || 'main' } });
-        openConsole('Rebuilding the gift service');
     } catch (e) {
         toast(e.message, 'bad');
     }
@@ -4291,7 +4276,6 @@ $('setup-run').addEventListener('click', async () => {
         $('setup-dialog').close();
         // The job console is where every long job in this panel reports, and
         // this one has more to say than a toast can hold.
-        openConsole(`Publishing on ${r.domain}`);
     } catch (e) {
         const box = $('setup-error');
         box.textContent = e.message;
@@ -4316,7 +4300,6 @@ $('proxy-reload').addEventListener('click', async () => {
 $('proxy-renew').addEventListener('click', async () => {
     try {
         await api('/api/proxy/renew', { method: 'POST' });
-        openConsole('Renewing certificates');
     } catch (e) {
         toast(e.message, 'bad');
     }
@@ -4412,7 +4395,6 @@ $('proxy-form').addEventListener('submit', async (event) => {
                     method: 'POST',
                     body: { email: payload.ssl.email, staging: $('px-staging').checked },
                 });
-                openConsole(`Issuing certificate for ${payload.domain}`);
             }
         }
     } catch (e) {
@@ -4609,9 +4591,16 @@ function connectLogs() {
         // The tiles are about to be replaced, so anything lifted over them is
         // gone too; leaving the scrim would dim the page with nothing on top.
         closeLogOverlay();
-        grid.innerHTML = containers.length
-            ? containers.map((c) => logTile(c.key, c.label)).join('')
-            : '<p class="empty-tile">No containers are running.</p>';
+        // The panel's own jobs first: installs, certificates, restarts. It is
+        // the log somebody is looking for after something went wrong, and it
+        // exists whether or not any container does.
+        grid.innerHTML =
+            logTile(JOB_LOG_KEY, 'Panel jobs') +
+            (containers.length
+                ? containers.map((c) => logTile(c.key, c.label)).join('')
+                : '<p class="empty-tile">No containers are running.</p>');
+        logBuffers.set(JOB_LOG_KEY, [...jobLog]);
+        renderLogTile(JOB_LOG_KEY);
         for (const c of containers) {
             logBuffers.set(c.key, []);
             // The tile was just recreated, so its stored size needs reapplying.
@@ -4703,12 +4692,15 @@ let jobStream = null;
  * What is waiting behind the job on screen. The console shows one job at a
  * time, so without this a queue of three looks like one.
  */
+/** What is waiting, now that there is no console head to put it in. */
+let lastQueueNote = '';
 function renderQueue(pending) {
-    const node = $('console-queue');
-    if (!node) return;
     const list = pending ?? [];
-    node.hidden = list.length === 0;
-    node.textContent = list.length ? `then: ${list.map((j) => j.name).join(', ')}` : '';
+    const note = list.length ? `then: ${list.map((j) => j.name).join(', ')}` : '';
+    // Only when it changes: this runs on every job event, and a toast repeating
+    // itself is worse than no toast at all.
+    if (note && note !== lastQueueNote) toast(note);
+    lastQueueNote = note;
 }
 
 const refreshQueueSoon = debounce(async () => {
@@ -4719,20 +4711,6 @@ const refreshQueueSoon = debounce(async () => {
         /* the console is cosmetic */
     }
 }, 250);
-
-function openConsole(title) {
-    $('console-title').textContent = title;
-    $('console-body').textContent = '';
-    $('console').classList.remove('hidden');
-}
-
-$('console-close').addEventListener('click', () => $('console').classList.add('hidden'));
-
-function appendConsole(line) {
-    const body = $('console-body');
-    body.textContent += `${line}\n`;
-    body.scrollTop = body.scrollHeight;
-}
 
 /**
  * A job that renders on its own page rather than in the console overlay.
@@ -4759,21 +4737,47 @@ function appendInline(line) {
     if (atBottom) el.scrollTop = el.scrollHeight;
 }
 
+/**
+ * Everything the panel's own jobs have printed this session.
+ *
+ * Kept whether or not the logs tab is open, because the interesting moment for
+ * a job log is usually after it has finished: something did not work and the
+ * question is what it said. This is the panel's own log, sitting beside the
+ * containers' logs, which is where somebody looks for it.
+ */
+const JOB_LOG_KEY = 'panel-jobs';
+const jobLog = [];
+
+function pushJobLine(line) {
+    jobLog.push(line);
+    if (jobLog.length > LOG_TILE_LINES) jobLog.splice(0, jobLog.length - LOG_TILE_LINES);
+
+    const buf = logBuffers.get(JOB_LOG_KEY);
+    if (!buf) return;
+    buf.push(line);
+    if (buf.length > LOG_TILE_LINES) buf.splice(0, buf.length - LOG_TILE_LINES);
+    renderLogTile(JOB_LOG_KEY);
+}
+
 function connectJobs() {
     jobStream?.close();
     jobStream = new EventSource('/api/jobs/stream');
+    // A job already running when this page loaded: what it has printed so far
+    // goes into the panel's log, so opening All logs shows it rather than
+    // starting from the next line.
     jobStream.addEventListener('snapshot', (event) => {
         const job = JSON.parse(event.data);
         if (job.status !== 'running') return;
-        if (inlineJobHandles(job.name)) return;
-        openConsole(job.name);
-        $('console-body').textContent = `${job.lines.join('\n')}\n`;
+        for (const line of job.lines ?? []) pushJobLine(line);
+        renderQueue(job.pending);
     });
     jobStream.addEventListener('start', (event) => {
         const job = JSON.parse(event.data);
         renderQueue(job.pending);
-        if (inlineJobHandles(job.name)) return;
-        openConsole(job.name);
+        pushJobLine(`\n> ${job.name}`);
+        // Nothing pops up any more, so a job with no log of its own on screen
+        // says once that it has started.
+        if (!inlineJobHandles(job.name) && !installing.size) toast(`${job.name}…`);
     });
     // Something was accepted but has not started. Saying so is the difference
     // between a queue and a click that appeared to do nothing.
@@ -4785,10 +4789,11 @@ function connectJobs() {
     });
     jobStream.addEventListener('line', (event) => {
         const { line, jobId } = JSON.parse(event.data);
-        // The overlay shows the install it started, as well as the console.
+        pushJobLine(line);
+        // The overlay shows the install it started; a tab watching its own job
+        // shows that one. Everything is in All logs either way.
         gateLine(jobId, line);
-        if (inlineJob) return appendInline(line);
-        appendConsole(line);
+        if (inlineJob) appendInline(line);
     });
     jobStream.addEventListener('end', (event) => {
         const job = JSON.parse(event.data);
@@ -4806,7 +4811,6 @@ function connectJobs() {
             refreshStatus();
             return;
         }
-        appendConsole(job.status === 'succeeded' ? '\n✓ Done.' : `\n✗ Failed: ${job.error}`);
         toast(job.status === 'succeeded' ? `${job.name}: done` : `${job.name}: failed`, job.status === 'succeeded' ? 'good' : 'bad');
         refreshStatus();
         loadProxies();
