@@ -3572,9 +3572,6 @@ async function loadServices() {
 
 /** The sidebar row: a button before it exists, a switch after. */
 function renderServiceRow(key, state) {
-    // Something with nothing to run keeps whatever control it already has: an
-    // Install button in front of a switch that starts nothing would be a lie.
-    if (state?.runnable === false) return;
     const input = navSwitch(key);
     if (!input) return;
     const label = input.closest('.switch');
@@ -3591,11 +3588,19 @@ function renderServiceRow(key, state) {
     }
 
     const installed = Boolean(state?.installed);
+    // Something with nothing to run gets the Install button like everything
+    // else, and then no control at all. KasSigner's switch used to be its
+    // install -- flipping it downloaded firmware -- which left it showing a
+    // toggle where every other service showed Install, and a toggle that
+    // claimed to start something that does not run.
+    const runnable = state?.runnable !== false;
+
     button.hidden = installed;
-    if (label) label.hidden = !installed;
+    if (label) label.hidden = !installed || !runnable;
+
     // A switch that is showing should say what is actually true, without
     // waiting for the next status poll to correct it.
-    if (installed && input.dataset.busy !== '1') input.checked = Boolean(state.running);
+    if (installed && runnable && input.dataset.busy !== '1') input.checked = Boolean(state.running);
 }
 
 /**
