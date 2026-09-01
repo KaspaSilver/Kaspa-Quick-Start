@@ -2216,8 +2216,12 @@
     </header>
     <p class="muted" id="action-note"></p>
     <pre class="logview action-log" id="action-log"></pre>
-    <div class="row end">
-      <button class="primary" id="action-close" disabled>Please wait…</button>
+    <div class="action-foot">
+      <div class="action-bar" id="action-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <span id="action-bar-fill"></span>
+      </div>
+      <span class="muted mono" id="action-elapsed"></span>
+      <button class="primary" id="action-close" disabled hidden>Close</button>
     </div>
   </div>
 </div>

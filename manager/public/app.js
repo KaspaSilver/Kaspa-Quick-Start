@@ -335,8 +335,115 @@ let pendingAction = null;
 const earlyLines = new Map();
 const earlyEnds = new Map();
 
+/**
+ * How far along the thing in the overlay is.
+ *
+ * There is no honest single number for "install KaChat": it is a Rust build
+ * that takes half an hour, and docker does not know how long it has left any
+ * more than we do. What there is, is a log that says what has happened, so the
+ * bar is driven entirely by that -- every position it takes is something the
+ * job has actually reported, and it only ever moves forwards.
+ *
+ * Between two reports it stops, because inventing movement is how a progress
+ * bar starts lying. The stripes are what say it is still working; the elapsed
+ * clock beside it is the other real number on offer.
+ */
+const ACTION_MARKS = [
+    // Our own phase lines, from lifecycle.js and the routes.
+    [/^Building /i, 0.04],
+    [/^Removing the .* containers/i, 0.2],
+    [/^Deleting volume /i, 0.55],
+    [/^Keeping \d+ volume/i, 0.55],
+    [/^Starting /i, 0.35],
+    [/^Stopping /i, 0.35],
+    [/^Creating the .* container/i, 0.86],
+    [/^Recreating /i, 0.5],
+    [/removed: \d+ container/i, 0.95],
+    [/is installed and switched off/i, 0.97],
+
+    // Compose's own progress, which is the tail of nearly every job here.
+    [/\bPulling fs layer\b|\bPulling\b.*\.\.\.$/i, 0.1],
+    [/\bDownload complete\b|\bPull complete\b/i, 0.3],
+    [/Container .* (?:Creating|Created)\b/i, 0.9],
+    [/Container .* (?:Starting|Started|Running|Stopping|Stopped|Removing|Removed)\b/i, 0.94],
+    [/Volume .* (?:Creating|Created|Removing|Removed)\b/i, 0.9],
+    [/Network .* (?:Creating|Created)\b/i, 0.88],
+
+    // cargo, at the end of the long one.
+    [/Finished `release` profile/i, 0.82],
+];
+
+/**
+ * BuildKit's own step counter: "#21 [ourbuild 9/9] RUN cargo build --release",
+ * and the line that ends a stage: "#22 DONE 1889.6s".
+ *
+ * Kept per stage. Two of these build in parallel and report interleaved, so
+ * reading whichever line arrived last as "the" progress makes the bar jump to
+ * whatever the furthest-along stage has reached while the other is barely
+ * started. The average across the stages seen is the honest reading.
+ */
+const BUILDKIT_STEP = /^(#\d+) \[[^\]]*?(\d+)\/(\d+)\]/;
+const BUILDKIT_DONE = /^(#\d+) DONE\b/;
+
+let progressTimer = null;
+
+function resetProgress() {
+    const bar = $('action-bar');
+    const fill = $('action-bar-fill');
+    bar.hidden = false;
+    bar.className = 'action-bar working';
+    bar.setAttribute('aria-valuenow', '0');
+    fill.style.width = '0%';
+
+    clearInterval(progressTimer);
+    progressTimer = setInterval(tickElapsed, 1000);
+    tickElapsed();
+}
+
+function setProgress(fraction) {
+    if (!pendingAction || pendingAction.finished) return;
+    // Forwards only. Two builds run in parallel and report their steps
+    // interleaved, so the raw numbers go up and down; a bar that does the same
+    // is worse than no bar.
+    const next = Math.max(pendingAction.progress ?? 0, Math.min(fraction, 0.99));
+    if (next === pendingAction.progress) return;
+    pendingAction.progress = next;
+    $('action-bar-fill').style.width = `${(next * 100).toFixed(1)}%`;
+    $('action-bar').setAttribute('aria-valuenow', String(Math.round(next * 100)));
+}
+
+/** Reads one log line for anything that says where the job has got to. */
+function progressFromLine(line) {
+    if (!pendingAction) return;
+    const stages = (pendingAction.stages ??= new Map());
+
+    const step = BUILDKIT_STEP.exec(line);
+    const done = BUILDKIT_DONE.exec(line);
+    if (step && Number(step[3]) > 0) stages.set(step[1], Number(step[2]) / Number(step[3]));
+    else if (done) stages.set(done[1], 1);
+
+    if (step || done) {
+        const mean = [...stages.values()].reduce((a, b) => a + b, 0) / stages.size;
+        // The build occupies the middle of the bar: something has already
+        // happened before the first step, and creating the container still has
+        // to happen after the last one.
+        return setProgress(0.06 + 0.74 * mean);
+    }
+
+    for (const [re, fraction] of ACTION_MARKS) {
+        if (re.test(line)) return setProgress(fraction);
+    }
+}
+
+function tickElapsed() {
+    if (!pendingAction) return;
+    const seconds = Math.round((Date.now() - pendingAction.startedAt) / 1000);
+    const label = seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`;
+    $('action-elapsed').textContent = label;
+}
+
 function openAction({ key, title, note }) {
-    const action = { key, title, jobId: null, finished: false, resolve: null };
+    const action = { key, title, jobId: null, finished: false, resolve: null, progress: 0, startedAt: Date.now() };
     action.done = new Promise((resolve) => {
         action.resolve = resolve;
     });
@@ -349,9 +456,12 @@ function openAction({ key, title, note }) {
     // Docker can take a few seconds to say anything at all, and an empty black
     // box for those seconds reads as nothing having happened.
     actionAppend(`> ${title}…`);
+    // Hidden rather than disabled-and-labelled: the bar says how far along this
+    // is, and no button at all says there is no way out of it yet.
     const close = $('action-close');
     close.disabled = true;
-    close.textContent = 'Please wait…';
+    close.hidden = true;
+    resetProgress();
     $('action-overlay').hidden = false;
     return action;
 }
@@ -359,6 +469,7 @@ function openAction({ key, title, note }) {
 function actionAppend(line) {
     const log = $('action-log');
     if (!log) return;
+    progressFromLine(line);
     const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
     log.textContent += `${line}\n`;
     if (atBottom) log.scrollTop = log.scrollHeight;
@@ -395,9 +506,20 @@ function finishAction(job) {
     pendingAction.finished = true;
     $('action-spinner').hidden = true;
     $('action-title').textContent = `${pendingAction.title} — ${ok ? 'done' : 'failed'}`;
+
+    // Full either way: the bar tracks the job reaching its end, not the job
+    // succeeding. Which of those happened is the colour, the title and the last
+    // line of the log.
+    clearInterval(progressTimer);
+    progressTimer = null;
+    tickElapsed();
+    $('action-bar').className = `action-bar${ok ? '' : ' failed'}`;
+    $('action-bar-fill').style.width = '100%';
+    $('action-bar').setAttribute('aria-valuenow', '100');
+
     const close = $('action-close');
     close.disabled = false;
-    close.textContent = 'Close';
+    close.hidden = false;
     close.focus();
     // Resolved rather than rejected even when the job failed: every caller
     // wants to know how it went, and none of them want an exception for a
@@ -416,6 +538,8 @@ function actionJobEnded(job) {
 
 function closeAction() {
     if (!pendingAction?.finished) return;
+    clearInterval(progressTimer);
+    progressTimer = null;
     $('action-overlay').hidden = true;
     pendingAction = null;
     earlyLines.clear();

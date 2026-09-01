@@ -1940,3 +1940,54 @@ select { font-family: var(--mono); font-size: 13.5px; }
     margin: 12px 0;
 }
 .lang-grid .check { margin: 0; }
+
+/* The bottom of the action overlay: a bar while it runs, a way out when it is
+   done. The two never show at once -- the absence of the button is what says
+   there is no way out yet, which is the same thing the disabled "Please wait…"
+   used to say with more words and less information. */
+.action-foot {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.action-bar {
+    flex: 1 1 auto;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    overflow: hidden;
+}
+.action-bar[hidden] { display: none; }
+.action-bar > span {
+    display: block;
+    height: 100%;
+    width: 0;
+    border-radius: inherit;
+    background: var(--accent);
+    /* Eased in CSS rather than by the animation loop: the loop sets a target a
+       few times a second and the browser draws the movement between. */
+    transition: width 420ms ease-out;
+}
+/* A build can spend minutes inside one step, and a bar that has not moved for
+   two minutes reads as a hung panel. The stripes say work is happening without
+   claiming any progress the log has not reported. */
+.action-bar.working > span {
+    background-image: linear-gradient(
+        115deg,
+        color-mix(in srgb, var(--accent) 55%, transparent) 25%,
+        var(--accent) 25%,
+        var(--accent) 50%,
+        color-mix(in srgb, var(--accent) 55%, transparent) 50%,
+        color-mix(in srgb, var(--accent) 55%, transparent) 75%,
+        var(--accent) 75%
+    );
+    background-size: 22px 22px;
+    animation: bar-stripes 0.9s linear infinite;
+}
+.action-bar.failed > span { background: var(--warn); background-image: none; animation: none; }
+@keyframes bar-stripes { to { background-position: 22px 0; } }
+@media (prefers-reduced-motion: reduce) {
+    .action-bar.working > span { animation: none; }
+}
+.action-foot .mono { font-family: var(--mono); font-size: 12px; min-width: 4.5rem; text-align: right; }
