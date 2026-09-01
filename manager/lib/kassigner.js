@@ -313,6 +313,55 @@ export async function verify(tag = null, onLine = () => {}) {
     return { tag: release.tag, results, ok: bad.length === 0 && checked.length > 0 };
 }
 
+/**
+ * Removes everything KasSigner has put on this machine.
+ *
+ * It is not a container, which is why it was missed when the other services got
+ * an uninstall -- but "not a container" is not "nothing to remove". It leaves
+ * tens of megabytes of firmware, a state file recording what was verified and
+ * when, and an image built once for flashing over USB.
+ */
+export async function uninstall(onLine = () => {}) {
+    const removed = { firmware: 0, bytes: 0, image: false };
+
+    if (fs.existsSync(FIRMWARE_DIR)) {
+        // Counted before deleting, so the log can say what went rather than
+        // that something did.
+        for (const release of fs.readdirSync(FIRMWARE_DIR)) {
+            const dir = path.join(FIRMWARE_DIR, release);
+            for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.bin'))) {
+                removed.bytes += fs.statSync(path.join(dir, file)).size;
+                removed.firmware += 1;
+            }
+        }
+        fs.rmSync(FIRMWARE_DIR, { recursive: true, force: true });
+        onLine(`Deleted ${removed.firmware} firmware file(s), ${(removed.bytes / 1e6).toFixed(0)} MB.`);
+    } else {
+        onLine('No firmware was downloaded.');
+    }
+
+    try {
+        await docker(['image', 'rm', '-f', ESPTOOL_IMAGE], { timeoutMs: 60_000 });
+        removed.image = true;
+        onLine('Removed the flashing tool image.');
+    } catch {
+        onLine('The flashing tool image was not here.');
+    }
+
+    try {
+        fs.rmSync(STATE_FILE, { force: true });
+    } catch {
+        /* nothing recorded */
+    }
+    onLine('KasSigner is back to how it was before it was set up.');
+
+    // A device already flashed keeps working. Nothing here reaches it, and
+    // somebody uninstalling the panel's copy of the firmware should not be left
+    // wondering about the board in their hand.
+    onLine('Any device you have already flashed is unaffected.');
+    return removed;
+}
+
 export function disable() {
     writeState({ ...readState(), enabled: false });
 }

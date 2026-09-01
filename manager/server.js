@@ -2036,6 +2036,13 @@ route('POST', /^\/api\/services\/([a-z-]+)\/install$/, async (req, res, match) =
     const unit = lifecycle.unitFor(match[1]);
     if (!unit) return fail(res, 404, 'No such service.');
 
+    if (unit.runnable === false) {
+        // Not a container: installing it means fetching and verifying the
+        // firmware, which is what its own endpoint has always done.
+        const job = jobs.start(`Install ${unit.label}`, (onLine) => kassigner.prepare(null, onLine));
+        return sendJson(res, 202, { ok: true, jobId: job.id });
+    }
+
     const job = jobs.start(`Install ${unit.label}`, async (onLine) => {
         // Whatever the service needs written before it starts. Enabling it in
         // the apps config keeps the rest of the panel agreeing with reality.
@@ -2047,6 +2054,24 @@ route('POST', /^\/api\/services\/([a-z-]+)\/install$/, async (req, res, match) =
             apps.renderAppsPortsOverride(appsCfg);
         }
         if (match[1] === 'gift') writeGiftConfig();
+
+        // Two services keep their own idea of being on, in their own files, and
+        // the rest of the panel reads those rather than asking docker. Starting
+        // a container without setting them leaves a service that is running and
+        // that every screen still describes as off.
+        if (match[1] === 'proxy') {
+            const mgr = loadManagerConfig();
+            mgr.proxy.enabled = true;
+            saveManagerConfig(mgr);
+            nginx.writeAll(loadProxies(), loadNodeConfig(), renderOptions());
+        }
+        if (match[1] === 'mining') {
+            const miningCfg = bridge.loadBridgeConfig();
+            miningCfg.enabled = true;
+            bridge.saveBridgeConfig(miningCfg);
+            bridge.writeBridgeFiles(miningCfg, loadNodeConfig());
+        }
+
         await lifecycle.install(match[1], onLine);
     });
     sendJson(res, 202, { ok: true, jobId: job.id });

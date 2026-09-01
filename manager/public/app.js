@@ -3551,6 +3551,7 @@ const UNINSTALL_COPY = {
     desktop: 'nothing: it keeps no state of its own',
     nextcloud: 'every file, photo and calendar stored in it',
     gift: 'the record of who has already claimed a gift',
+    kassigner: 'the downloaded firmware and the record of what was verified. A device you have already flashed is unaffected',
     mining: "the bridge's own share and block records",
     proxy: 'nothing. Your domains and certificates live in the stack directory and are kept',
 };
@@ -3561,12 +3562,18 @@ async function loadServices() {
     } catch {
         return;
     }
-    for (const [key, state] of Object.entries(serviceState)) renderServiceRow(key, state);
+    for (const [key, state] of Object.entries(serviceState)) {
+        renderServiceRow(key, state);
+        renderInstallGate(key, state);
+    }
     renderUninstallCards();
 }
 
 /** The sidebar row: a button before it exists, a switch after. */
 function renderServiceRow(key, state) {
+    // Something with nothing to run keeps whatever control it already has: an
+    // Install button in front of a switch that starts nothing would be a lie.
+    if (state?.runnable === false) return;
     const input = navSwitch(key);
     if (!input) return;
     const label = input.closest('.switch');
@@ -3588,6 +3595,41 @@ function renderServiceRow(key, state) {
     // A switch that is showing should say what is actually true, without
     // waiting for the next status poll to correct it.
     if (installed && input.dataset.busy !== '1') input.checked = Boolean(state.running);
+}
+
+/**
+ * A service that is not installed has nothing to show, so it does not show it.
+ *
+ * The page underneath is real markup with empty numbers and dead switches, and
+ * reading it as though it meant something is the obvious mistake. Blurred and
+ * covered, it reads as what it is: a preview of what installing gets you.
+ */
+function renderInstallGate(key, state) {
+    const section = document.getElementById(`tab-${key}`);
+    if (!section) return;
+
+    const installed = Boolean(state?.installed);
+    section.classList.toggle('not-installed', !installed);
+
+    let gate = section.querySelector(':scope > .install-gate');
+    if (installed) return gate?.remove();
+
+    if (!gate) {
+        gate = document.createElement('div');
+        gate.className = 'install-gate';
+        section.appendChild(gate);
+    }
+    const label = escapeHtml(state?.label ?? key);
+    gate.innerHTML = `
+      <div class="install-gate-card">
+        <h3>${label} is not installed</h3>
+        <p class="muted">${
+            state?.runnable === false
+                ? 'Installing downloads the firmware and checks it against the hashes the release publishes.'
+                : 'Installing builds its image and creates its container. Everything behind this is what it will look like.'
+        }</p>
+        <button class="primary big" data-install="${escapeHtml(key)}">Install ${label}</button>
+      </div>`;
 }
 
 function renderUninstallCards() {

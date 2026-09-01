@@ -1,4 +1,6 @@
+import fs from 'node:fs';
 import { compose, docker, containerState } from './dockerctl.js';
+import { FIRMWARE_DIR, uninstall as uninstallKassigner } from './kassigner.js';
 
 /**
  * Install, start, stop, uninstall -- for everything in the stack that is a
@@ -103,16 +105,39 @@ export const UNITS = {
     },
 };
 
+/**
+ * KasSigner is not a container, which is why it was missed when everything else
+ * got an install and uninstall. It still puts tens of megabytes of firmware on
+ * the machine, a record of what was verified, and an image built for flashing,
+ * so it belongs here -- just without a container's states. `runnable: false`
+ * says so: there is nothing to start or stop, and the sidebar leaves its own
+ * switch alone.
+ */
+UNITS.kassigner = {
+    label: 'KasSigner',
+    runnable: false,
+    data: 'the downloaded firmware and the record of what was verified',
+    uninstall: uninstallKassigner,
+};
+
 export const unitFor = (key) => UNITS[key] ?? null;
 
 /** Installed means the container exists, whether or not it is running. */
 export async function status(key) {
     const unit = unitFor(key);
     if (!unit) return null;
+
+    // Something with no container is installed when its files are here.
+    if (unit.runnable === false) {
+        const installed = fs.existsSync(FIRMWARE_DIR) && fs.readdirSync(FIRMWARE_DIR).length > 0;
+        return { key, label: unit.label, runnable: false, installed, running: false, status: installed ? 'ready' : 'absent' };
+    }
+
     const state = await containerState(unit.primary);
     return {
         key,
         label: unit.label,
+        runnable: true,
         installed: state.exists,
         running: state.running,
         status: state.status,
@@ -169,6 +194,9 @@ export async function setRunning(key, running, onLine = () => {}) {
 export async function uninstall(key, { keepData = false, onLine = () => {} } = {}) {
     const unit = unitFor(key);
     if (!unit) throw new Error(`No such service: ${key}`);
+    // Something that owns files rather than containers removes its own.
+    if (unit.uninstall) return unit.uninstall(onLine);
+
     const removed = { containers: [], volumes: [], images: [] };
 
     onLine(`Removing the ${unit.label} containers.`);
