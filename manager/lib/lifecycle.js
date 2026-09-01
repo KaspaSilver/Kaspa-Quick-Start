@@ -57,6 +57,29 @@ export const UNITS = {
         buildable: ['kachat-app'],
         data: 'the indexed chat history and the Postgres database',
     },
+    /**
+     * The translation engine behind the indexer's POST /translate.
+     *
+     * A unit of its own rather than part of KaChat, because it is several
+     * gigabytes of language models and asks for 4GB of RAM -- too much to hand
+     * somebody who only wanted a chat index. It has no sidebar row either: it
+     * belongs to the indexer, so its install, switch and uninstall all live on
+     * the indexer's Translation tab.
+     */
+    translate: {
+        label: 'Translation engine',
+        // No tab of its own, so nothing renders an install overlay over one.
+        tab: null,
+        profile: 'translate',
+        services: ['libretranslate'],
+        containers: ['kaspa-node-libretranslate'],
+        primary: 'kaspa-node-libretranslate',
+        volumes: ['kaspa-node-libretranslate-models'],
+        // Pulled, not built here.
+        images: [],
+        buildable: [],
+        data: 'the downloaded language models, which are several gigabytes and have to be fetched again',
+    },
     desktop: {
         label: 'KaChat-Desktop',
         profile: 'kachat-desktop',

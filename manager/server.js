@@ -1881,6 +1881,63 @@ route('GET', /^\/api\/apps\/(kachat|desktop|nextcloud)\/refs$/, async (req, res,
     }
 });
 
+// ------------------------------------------------------------- translation --
+
+/**
+ * Which languages the translation engine loads.
+ *
+ * Bare BCP-47 primary subtags, which is what the indexer's /translate contract
+ * speaks: 'pt', never 'pt-BR'. Anything else is dropped rather than argued
+ * with, because the engine's answer to a language it does not know is to fail
+ * to start, hours later, once the models have downloaded.
+ */
+function normaliseLanguages(input) {
+    const seen = new Set();
+    for (const raw of String(input ?? '').split(/[\s,]+/)) {
+        const tag = raw.trim().toLowerCase().split('-')[0];
+        if (/^[a-z]{2,3}$/.test(tag)) seen.add(tag);
+    }
+    return [...seen].sort().join(',');
+}
+
+route('GET', /^\/api\/kachat\/translate$/, async (req, res) => {
+    const cfg = apps.loadAppsConfig();
+    sendJson(res, 200, {
+        languages: cfg.kachat.translate?.languages ?? '',
+        engine: await lifecycle.status('translate'),
+        indexer: await lifecycle.status('kachat'),
+    });
+});
+
+route('PUT', /^\/api\/kachat\/translate$/, async (req, res) => {
+    const body = await readBody(req);
+    const languages = normaliseLanguages(body.languages);
+    if (!languages) return fail(res, 400, 'Choose at least one language.');
+
+    const cfg = apps.loadAppsConfig();
+    cfg.kachat.translate = { ...cfg.kachat.translate, languages };
+    apps.saveAppsConfig(cfg);
+    apps.writeAppsEnv(cfg);
+
+    // The engine reads this once, at startup, so a running one has to be
+    // recreated. A stopped one picks it up when it is started, and is not
+    // started here: saving a setting is not asking for anything to run.
+    const engine = await lifecycle.status('translate');
+    if (!engine.running) return sendJson(res, 200, { ok: true, languages, restarted: false });
+
+    const job = jobs.start('Reload the translation engine', async (onLine) => {
+        onLine(`Loading: ${languages.split(',').join(', ')}.`);
+        onLine('Any language it does not already have is downloaded now, which takes a few minutes.');
+        await dockerctl.compose(['up', '-d', '--no-deps', '--force-recreate', 'libretranslate'], {
+            onLine,
+            profile: 'translate',
+            timeoutMs: 60 * 60_000,
+        });
+        onLine('Reloading. It answers /translate again once its models are in memory.');
+    });
+    sendJson(res, 202, { ok: true, jobId: job.id, languages, restarted: true });
+});
+
 route('GET', /^\/api\/apps\/nextcloud\/admin$/, async (req, res) => {
     // The panel is bound to loopback and this is the same value sitting in the
     // stack's .env, so showing it here reveals nothing a local user could not

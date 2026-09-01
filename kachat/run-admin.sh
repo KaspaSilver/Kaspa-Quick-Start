@@ -17,7 +17,14 @@
 #
 # Kept in step with upstream's script by hand: if they add an argument to the
 # admin binary, add it here too.
+#
+# --libretranslate-url is the third change. It defaults to 127.0.0.1:5000
+# upstream, which under host networking is the translation engine sitting beside
+# the indexer; here it is a container of its own on the stack network. Without
+# this the panel's Translation tab reports the engine as down while it is
+# running perfectly well.
 exec /app/kachat-admin \
   --db-host "${DB_HOST}" --db-port "${DB_PORT}" --db-name "${DB_NAME}" \
   --db-user "${DB_USER}" --db-password "${DB_PASSWORD}" \
-  --db-max-connections 4 --bind-address "0.0.0.0:${ADMIN_PORT}"
+  --db-max-connections 4 --bind-address "0.0.0.0:${ADMIN_PORT}" \
+  --libretranslate-url "${LIBRETRANSLATE_URL:-http://libretranslate:5000}"

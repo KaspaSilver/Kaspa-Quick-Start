@@ -218,6 +218,10 @@ function selectSubtab(section, name) {
     setKaspadLog(name === 'kaspadlog');
     // A KaChat panel loads when it is opened rather than all of them upfront.
     if (name.startsWith('kachat-')) refreshKachatPanel();
+    // Its own call: refreshKachatPanel gives up when the indexer is not
+    // running, and this screen works without it -- the engine it configures is
+    // a different container.
+    if (name === 'kachat-translate') loadTranslate().catch(() => {});
     // Same for the release list: it costs a GitHub call, so it is fetched when
     // the tab that shows it is opened rather than on every page load.
     if (name === 'updates') loadReleasePicker().catch(() => {});
@@ -502,6 +506,8 @@ const SERVICE_ACTIONS = {
     kachat: start('kachat'),
     desktop: start('desktop'),
     nextcloud: start('nextcloud'),
+    // No sidebar row: its switch lives on the indexer's Translation tab.
+    translate: start('translate'),
     gift: start('gift'),
     proxy: start('proxy'),
 };
@@ -514,6 +520,7 @@ const SERVICE_NAMES = {
     kassigner: 'KasSigner',
     nextcloud: 'Nextcloud',
     gift: 'the gift service',
+    translate: 'the translation engine',
     proxy: 'the reverse proxy',
 };
 
@@ -2924,10 +2931,156 @@ function refreshKachatPanel() {
         case 'kachat-settings':
             loadKachatSettings();
             break;
+        case 'kachat-translate':
+            loadTranslate();
+            break;
         default:
             break;
     }
 }
+
+// ------------------------------------------------------------- translation ---
+
+/**
+ * Server-side translation of KaPosts.
+ *
+ * The apps send a post and a target language to the indexer they are already
+ * pointed at, and get it back translated; the work is done here by a
+ * LibreTranslate container, offline, with no API key and nothing leaving the
+ * machine. This screen is the whole operator side of it: whether the engine
+ * exists, whether it is running, and which languages it has loaded.
+ *
+ * It is not gated on the indexer running. The engine is a separate container
+ * with its own install and its own switch, and setting it up before the indexer
+ * is up is a perfectly reasonable order to do things in.
+ */
+const TRANSLATE_LANGUAGES = [
+    ['en', 'English'], ['es', 'Spanish'], ['pt', 'Portuguese'], ['fr', 'French'],
+    ['de', 'German'], ['ru', 'Russian'], ['zh', 'Chinese'], ['ja', 'Japanese'],
+    ['ko', 'Korean'], ['ar', 'Arabic'], ['it', 'Italian'], ['nl', 'Dutch'],
+    ['pl', 'Polish'], ['tr', 'Turkish'], ['hi', 'Hindi'], ['id', 'Indonesian'],
+    ['uk', 'Ukrainian'], ['vi', 'Vietnamese'], ['sv', 'Swedish'], ['cs', 'Czech'],
+    ['el', 'Greek'], ['he', 'Hebrew'], ['fa', 'Persian'], ['ro', 'Romanian'],
+];
+
+let translateState = null;
+
+function renderTranslateLanguages(selected) {
+    const chosen = new Set(String(selected || '').split(','));
+    $('translate-langs').innerHTML = TRANSLATE_LANGUAGES.map(
+        ([tag, name]) => `
+        <label class="check">
+          <input type="checkbox" data-lang="${tag}" ${chosen.has(tag) ? 'checked' : ''}>
+          ${escapeHtml(name)} <span class="muted">${tag}</span>
+        </label>`,
+    ).join('');
+    updateTranslateCount();
+}
+
+function chosenLanguages() {
+    return [...document.querySelectorAll('#translate-langs [data-lang]')]
+        .filter((box) => box.checked)
+        .map((box) => box.dataset.lang);
+}
+
+function updateTranslateCount() {
+    const count = chosenLanguages().length;
+    $('translate-count').textContent = count
+        ? `${count} language${count === 1 ? '' : 's'} — roughly ${(count * 0.4).toFixed(1)}GB of models`
+        : 'Nothing selected, which the engine will refuse.';
+}
+
+$('translate-langs').addEventListener('change', updateTranslateCount);
+
+async function loadTranslate() {
+    let info;
+    try {
+        info = await api('/api/kachat/translate');
+    } catch {
+        return;
+    }
+    translateState = info;
+    const engine = info.engine ?? {};
+
+    // Install, then a switch: the same two states every other service has.
+    renderTranslateRow(engine);
+
+    // The saved list, not the loaded one: this is what it will load next time.
+    if (!document.querySelector('#translate-langs [data-lang]')) renderTranslateLanguages(info.languages);
+
+    $('translate-state').textContent = !engine.installed
+        ? 'not installed'
+        : engine.running
+          ? engine.health === 'starting' || engine.health === 'unhealthy'
+              ? 'loading models'
+              : 'running'
+          : 'stopped';
+
+    // Everything below comes from the indexer, which has to be running to
+    // answer for it. Not being able to ask is not an error worth shouting
+    // about; it is the ordinary state of a stopped indexer.
+    let status = null;
+    try {
+        status = await kachat('translate-status');
+    } catch {
+        /* the indexer is not up */
+    }
+
+    $('translate-loaded').textContent = status ? String(status.languages?.length ?? 0) : '–';
+    $('translate-cached').textContent = status ? fmtNum(status.cached_translations ?? 0) : '–';
+
+    const notice = $('translate-notice');
+    const hint = $('translate-hint');
+    if (!engine.installed) {
+        notice.hidden = true;
+        hint.textContent =
+            'Nothing is installed yet. Installing downloads the engine image; it does not start it, and it does not download any language until it first runs.';
+    } else if (!engine.running) {
+        notice.hidden = true;
+        hint.textContent = 'The engine is stopped, so /translate fails for everybody. Its switch starts it.';
+    } else if (status && !status.libretranslate_ok) {
+        notice.hidden = false;
+        notice.className = 'verdict bad';
+        notice.textContent =
+            'The engine is running but the indexer cannot reach it yet. On a first start it is downloading language models, which takes several minutes; All logs shows how far it has got.';
+        hint.textContent = '';
+    } else if (status) {
+        notice.hidden = true;
+        hint.textContent = `Serving: ${status.languages.join(', ')}.`;
+    } else {
+        notice.hidden = true;
+        hint.textContent =
+            'The engine is running. The indexer is not, so it cannot be asked what is loaded or how much is cached.';
+    }
+}
+
+$('translate-save').addEventListener('click', async () => {
+    const error = $('translate-error');
+    error.hidden = true;
+    const languages = chosenLanguages();
+    if (!languages.length) {
+        error.hidden = false;
+        error.textContent = 'Choose at least one language.';
+        return;
+    }
+    const button = $('translate-save');
+    button.disabled = true;
+    try {
+        const r = await api('/api/kachat/translate', { method: 'PUT', body: { languages: languages.join(',') } });
+        toast(
+            r.restarted
+                ? 'Saved. The engine is restarting to load them.'
+                : 'Saved. The engine loads them when you start it.',
+            'good',
+        );
+    } catch (e) {
+        error.hidden = false;
+        error.textContent = e.message;
+    } finally {
+        button.disabled = false;
+        setTimeout(() => loadTranslate().catch(() => {}), 1500);
+    }
+});
 
 let kachatTimer = null;
 function setKachatPolling(active) {
@@ -3794,6 +3947,7 @@ const UNINSTALL_COPY = {
     kassigner: 'the downloaded firmware and the record of what was verified. A device you have already flashed is unaffected',
     mining: "the bridge's own share and block records",
     proxy: 'nothing. Your domains and certificates live in the stack directory and are kept',
+    translate: 'the downloaded language models, which are several gigabytes and have to be fetched again',
 };
 
 async function loadServices() {
@@ -3806,7 +3960,26 @@ async function loadServices() {
         renderServiceRow(key, state);
         renderInstallGate(key, state);
     }
+    // The one service with no sidebar row, so renderServiceRow leaves it alone.
+    renderTranslateRow(serviceState.translate);
     renderUninstallCards();
+}
+
+/**
+ * The same Install-then-switch pair as a sidebar row, for the one service that
+ * does not have one: the translation engine lives on the indexer's own tab.
+ */
+function renderTranslateRow(state) {
+    const button = $('translate-install');
+    const label = $('translate-switch-label');
+    if (!button || !label) return;
+
+    const installed = Boolean(state?.installed);
+    button.hidden = installed;
+    label.hidden = !installed;
+
+    const input = navSwitch('translate');
+    if (input && installed && input.dataset.busy !== '1') input.checked = Boolean(state.running);
 }
 
 /** The sidebar row: a button before it exists, a switch after. */

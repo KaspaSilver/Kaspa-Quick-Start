@@ -145,6 +145,9 @@ services:
       CHAT_API_PORT: 8600
       KASIA_INDEXER_DB_ROOT: /app/data
       KASIA_API_BIND: 0.0.0.0:8600
+      # Upstream defaults this to 127.0.0.1:5000, which under host networking
+      # is the LibreTranslate beside it. Here it is a container of its own.
+      LIBRETRANSLATE_URL: ${LIBRETRANSLATE_URL:-http://libretranslate:5000}
       INTERNAL_PUSH_SECRET: ${KACHAT_PUSH_SECRET:-}
       FCM_PROJECT_ID: ${KACHAT_FCM_PROJECT_ID:-}
       FCM_SERVICE_ACCOUNT_PATH: /app/data/fcm/service-account.json
@@ -311,6 +314,54 @@ services:
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
+  # ---- Translation ----------------------------------------------------------
+  #
+  # The engine behind the indexer's POST /translate: KaPosts are translated
+  # server-side and cached forever, because a post is immutable so a translation
+  # of it is correct permanently.
+  #
+  # Its own profile rather than part of the KaChat unit. Upstream runs it beside
+  # the indexer, but it is several gigabytes of language models and wants 4GB of
+  # RAM, which is not something to hand somebody who only asked for a chat
+  # index. Install it from the indexer's Translation tab when it is wanted.
+  #
+  # Not published to the host either, where upstream binds it to loopback: on
+  # this stack's private network only the webserver and the admin API can reach
+  # it, and it needs no authentication because nothing else can.
+  libretranslate:
+    image: libretranslate/libretranslate:latest
+    container_name: kaspa-node-libretranslate
+    hostname: libretranslate
+    profiles: ["translate"]
+    restart: unless-stopped
+    # Root so it can write models into the named volume. The image's own user
+    # cannot: the argos directory is not baked into the image, so docker has
+    # nothing to chown the volume against, and a fresh install fails to download
+    # a single model. Upstream does the same, for the same reason.
+    user: "0:0"
+    mem_limit: ${LT_MEMORY:-4g}
+    environment:
+      # Every loaded language is a model held in memory. Ten is upstream's
+      # default and already a few gigabytes.
+      LT_LOAD_ONLY: ${LT_LOAD_ONLY:-en,es,pt,fr,de,ru,zh,ja,ko,ar}
+      LT_DISABLE_WEB_UI: "true"
+      LT_THREADS: ${LT_THREADS:-4}
+    volumes:
+      - libretranslate-models:/home/libretranslate/.local/share/argos-translate
+    networks:
+      - kaspa
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:5000/languages', timeout=5).status==200 else 1)\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      # The first start downloads every model it was asked to load, which on a
+      # slow line is many minutes. Unhealthy before that is not a failure.
+      start_period: 600s
+      retries: 5
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
 
   manager:
     image: kaspa-one-click/manager:1
@@ -391,3 +442,5 @@ volumes:
     name: kaspa-node-nextcloud-data
   gift-data:
     name: kaspa-node-gift-data
+  libretranslate-models:
+    name: kaspa-node-libretranslate-models

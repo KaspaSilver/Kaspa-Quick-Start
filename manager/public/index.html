@@ -692,6 +692,7 @@
         <button class="subtab-btn" data-subtab="kachat-broadcasts">Broadcasts</button>
         <button class="subtab-btn" data-subtab="kachat-chats">Chats</button>
         <button class="subtab-btn" data-subtab="kachat-groups">Group chats</button>
+        <button class="subtab-btn" data-subtab="kachat-translate">Translation</button>
         <button class="subtab-btn" data-subtab="kachat-transfer">Export / Import</button>
         <button class="subtab-btn" data-subtab="kachat-settings">Settings</button>
         <button class="subtab-btn" data-subtab="kachat-updates">Updates</button>
@@ -1122,6 +1123,86 @@
               Rust source and takes a while, which you can follow under All logs.
             </p>
           </article>
+        </div>
+      </div>
+
+      <div id="sub-kachat-translate" class="subtab">
+        <div class="grid">
+          <article class="card span2 toggle-bar">
+            <div class="toggle-row">
+              <div class="toggle-text">
+                <strong>Post translation</strong>
+                <span class="muted">
+                  KaChat apps ask this indexer to translate a KaPost into the
+                  reader's language, and it is answered here, by a translation
+                  engine running on this machine. Nothing is sent to Google or
+                  DeepL and there is no API key: the engine is
+                  <a href="https://libretranslate.com" target="_blank" rel="noopener">LibreTranslate</a>,
+                  running offline beside the indexer. A post never changes, so
+                  each translation is worked out once and served from a cache to
+                  everybody who reads it afterwards.
+                </span>
+              </div>
+              <button class="primary" id="translate-install" data-install="translate" hidden>Install engine</button>
+              <label class="switch" id="translate-switch-label" hidden title="Start or stop the translation engine">
+                <input type="checkbox" data-service="translate"><span class="track"></span>
+              </label>
+            </div>
+            <div id="translate-notice" class="verdict" hidden></div>
+          </article>
+
+          <article class="card">
+            <h3>Engine</h3>
+            <div class="grid stats">
+              <div class="stat"><span id="translate-state">–</span><small>engine</small></div>
+              <div class="stat"><span id="translate-loaded">–</span><small>languages loaded</small></div>
+              <div class="stat"><span id="translate-cached">–</span><small>translations cached</small></div>
+            </div>
+            <p class="hint" id="translate-hint">
+              Nothing is installed yet. The engine is a container of its own, and
+              installing it does not start it.
+            </p>
+          </article>
+
+          <article class="card">
+            <h3>Languages</h3>
+            <p class="muted">
+              Each language is a model the engine downloads once and then keeps in
+              memory for as long as it runs, so this list is a memory bill rather
+              than a preference. The ten selected by default already want about
+              4GB, which is what the container is allowed.
+            </p>
+            <div class="lang-grid" id="translate-langs"></div>
+            <div class="row">
+              <button type="button" id="translate-save" class="primary">Save languages</button>
+              <span class="muted" id="translate-count"></span>
+            </div>
+            <p class="error" id="translate-error" hidden></p>
+            <p class="hint">
+              A running engine restarts to load a changed list, and is unavailable
+              for a few minutes while it does. A stopped one picks the list up
+              when you start it.
+            </p>
+          </article>
+
+          <article class="card span2">
+            <h3>What the apps need</h3>
+            <p class="muted">
+              Nothing, beyond this. Translation is served from the indexer's own
+              address -- the same one already set in the app under Settings,
+              Connection Settings, KaPost Indexer -- so there is no second domain
+              to publish and no new setting for anybody to fill in. If the KaPosts
+              API is reachable, so is translation.
+            </p>
+            <dl class="kv">
+              <div><dt>Endpoint</dt><dd><code>POST /translate</code> on the KaPosts API</dd></div>
+              <div><dt>Languages offered</dt><dd><code>GET /translate/languages</code></dd></div>
+              <div><dt>Identity</dt><dd>None. It is the one endpoint that takes no pubkey, and post text is never logged.</dd></div>
+              <div><dt>Cache</dt><dd>Keyed on the post's transaction id and target language, kept permanently.</dd></div>
+            </dl>
+          </article>
+
+          <article class="card span2 uninstall-card" data-uninstall="translate"></article>
         </div>
       </div>
 

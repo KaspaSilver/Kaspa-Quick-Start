@@ -118,6 +118,14 @@ export const DEFAULT_APPS_CONFIG = {
         network: 'mainnet',
         publish: { api: false, chat: false },
         fcmProjectId: '',
+        // Server-side translation of KaPosts. Its engine is a container of its
+        // own -- gigabytes of language models -- so this is only the setting;
+        // whether the engine exists at all is the `translate` service.
+        translate: {
+            // Every language here is a model held in memory for as long as the
+            // engine runs, so this list is a memory bill, not a preference.
+            languages: 'en,es,pt,fr,de,ru,zh,ja,ko,ar',
+        },
     },
     desktop: {
         enabled: false,
@@ -196,6 +204,8 @@ export function loadAppsConfig() {
         // publish is a nested object, so a shallow merge would drop any key the
         // saved copy happens not to carry.
         if (defaults.publish) cfg[name].publish = { ...defaults.publish, ...(saved.publish ?? {}) };
+        // Same for translate, added later than the file most people have.
+        if (defaults.translate) cfg[name].translate = { ...defaults.translate, ...(saved.translate ?? {}) };
     }
 
     // Earlier versions defaulted Nextcloud to 8080, which is this panel's port,
@@ -347,6 +357,9 @@ export function writeAppsEnv(cfg) {
         KACHAT_NETWORK: cfg.kachat.network,
         KACHAT_NODE_PORT: cfg.kachat.network === 'testnet-10' ? 17210 : 17110,
         KACHAT_FCM_PROJECT_ID: cfg.kachat.fcmProjectId,
+        // Read by the translation engine at startup and by nothing else. It
+        // only loads what is listed here, so changing it means recreating it.
+        LT_LOAD_ONLY: cfg.kachat.translate?.languages || 'en,es,pt,fr,de,ru,zh,ja,ko,ar',
         // Both the image tag and the build arg, so switching refs actually
         // rebuilds rather than re-tagging the layers already cached.
         KACHAT_DESKTOP_REF: cfg.desktop?.ref || 'main',

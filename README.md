@@ -301,6 +301,7 @@ bind-mounting a RocksDB database into Docker Desktop is painfully slow.
 | `bridge`  | built from the release binary | stratum server for miners (only when mining is on) |
 | `kachat-app` + `kachat-db` | built from KaChat-Indexer | chat/KaPosts indexer and its Postgres (only when KaChat is on) |
 | `nextcloud` + db/redis/imaginary | `nextcloud:stable` + ffmpeg | private cloud (only when Nextcloud is on) |
+| `libretranslate` | `libretranslate/libretranslate` | translates KaPosts for the indexer, offline (only when Translation is installed) |
 
 Nothing here starts anything else. Installing the bridge does not start the
 node, and no compose service declares a dependency on `kaspad` — the bridge and

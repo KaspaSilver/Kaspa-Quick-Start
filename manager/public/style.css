@@ -1929,3 +1929,14 @@ select { font-family: var(--mono); font-size: 13.5px; }
 @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; animation: none !important; }
 }
+
+/* The language picker on the indexer's Translation tab. Two or three columns
+   rather than a list: two dozen checkboxes in one column is a page of scrolling
+   to compare a set somebody is choosing as a whole. */
+.lang-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+    gap: 2px 14px;
+    margin: 12px 0;
+}
+.lang-grid .check { margin: 0; }
