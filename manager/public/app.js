@@ -536,8 +536,12 @@ function actionJobEnded(job) {
     if (pendingAction.jobId === null) earlyEnds.set(job.id, job);
 }
 
+/** Jobs the overlay has been closed on, so a reconnect does not reopen them. */
+const dismissedJobs = new Set();
+
 function closeAction() {
     if (!pendingAction?.finished) return;
+    if (pendingAction.jobId) dismissedJobs.add(pendingAction.jobId);
     clearInterval(progressTimer);
     progressTimer = null;
     $('action-overlay').hidden = true;
@@ -5319,6 +5323,36 @@ function pushJobLine(line) {
     renderLogTile(JOB_LOG_KEY);
 }
 
+/**
+ * A job that this page is not already watching -- because it was started before
+ * the page loaded, or queued behind the one that just finished.
+ *
+ * Refreshing the browser during a half-hour rebuild used to lose it entirely:
+ * the job carried on in the manager, the page came back with no overlay and an
+ * Update button that looked ready, and pressing it queued a second rebuild
+ * behind the first. The work is on the server and always was; only the window
+ * onto it was tied to the page.
+ */
+function adoptRunningJob(job, note) {
+    // Watching something of our own that has not finished. That one wins.
+    if (pendingAction && !pendingAction.finished) return;
+    // Closed by hand once already. The job stream re-sends its snapshot every
+    // time it reconnects, and a dropped connection is not a reason to put an
+    // overlay back over somebody who has read it and moved on.
+    if (dismissedJobs.has(job.id)) return;
+    if (pendingAction) closeAction();
+
+    const action = openAction({ key: null, title: job.name, note });
+    // Elapsed from when the job really started, not from when this page noticed.
+    const began = Date.parse(job.startedAt ?? '');
+    if (!Number.isNaN(began)) action.startedAt = began;
+
+    // Replaying what it has printed also puts the progress bar where it belongs.
+    for (const line of job.lines ?? []) actionAppend(line);
+    adoptActionJob(job.id);
+    tickElapsed();
+}
+
 function connectJobs() {
     jobStream?.close();
     jobStream = new EventSource('/api/jobs/stream');
@@ -5330,11 +5364,22 @@ function connectJobs() {
         if (job.status !== 'running') return;
         for (const line of job.lines ?? []) pushJobLine(line);
         renderQueue(job.pending);
+        adoptRunningJob(
+            job,
+            'This was already running when the page loaded. It runs in the manager, not in the browser, so refreshing or closing the tab never interrupted it.',
+        );
     });
     jobStream.addEventListener('start', (event) => {
         const job = JSON.parse(event.data);
         renderQueue(job.pending);
         pushJobLine(`\n> ${job.name}`);
+
+        // The overlay is open on a job that has finished, and another was
+        // waiting behind it. Follow that one rather than leaving it to run with
+        // nothing on screen -- which is the same hole a refresh used to open.
+        if (pendingAction?.finished) {
+            return adoptRunningJob({ ...job, lines: [], startedAt: null }, 'This was queued behind the one that just finished.');
+        }
         // Nothing pops up any more, so a job with no log of its own on screen
         // says once that it has started.
         if (!inlineJobHandles(job.name) && !pendingAction) toast(`${job.name}…`);
