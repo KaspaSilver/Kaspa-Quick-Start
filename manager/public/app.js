@@ -2667,7 +2667,7 @@ async function loadKachatKaposts() {
  * Three states the indexer distinguishes, and the wording has to keep them
  * apart because two of them look like "off":
  *
- *   key absent   -> the thirteen it ships with
+ *   key absent   -> whatever set it ships with
  *   key present  -> exactly that list
  *   present, empty -> nothing at all
  *
@@ -2696,15 +2696,15 @@ async function loadKachatBroadcasts() {
         const settings = await kachat('settings');
 
         // An indexer built before this feature answers without these fields at
-        // all. It still tracks its thirteen, in code, so reporting "none
-        // tracked" would be the opposite of the truth.
+        // all. It still tracks the set it was built with, in code, so reporting
+        // "none tracked" would be the opposite of the truth.
         if (!Array.isArray(settings.available_broadcast_channels)) {
             channelState = { tracked: [], defaults: [], configured: false, unsupported: true };
             $('kachat-channels-tag').textContent = 'not configurable';
             $('kachat-channels-tag').className = 'tag';
             $('kachat-channels').innerHTML =
                 '<p class="verdict">This indexer is older than per-channel tracking, so it follows the ' +
-                'thirteen it was built with and they cannot be changed from here. Update it under the ' +
+                'channels it was built with and they cannot be changed from here. Update it under the ' +
                 'Updates tab to choose between them.</p>';
             $('kachat-channel-new').disabled = true;
             $('kachat-channel-add').disabled = true;
@@ -2728,18 +2728,26 @@ async function loadKachatBroadcasts() {
     channelState.counts = counts;
     channelState.total = total;
     setChannelsDirty(false);
-    document.getElementById('kachat-channels-none')?.remove();
     renderChannels(counts, total);
     renderChannelSelects();
     await loadBroadcastRows();
 }
 
 function renderChannels(counts, total) {
-    // A channel with rows but no longer tracked still gets a card, switched
-    // off: the count is real and feeds the total, so dropping it would make the
-    // total look wrong.
-    const stored = Object.keys(counts).filter((c) => !channelState.tracked.includes(c));
-    const names = [...channelState.tracked, ...stored].sort();
+    // Three things get a card, all of them switched off unless tracked:
+    //
+    //   tracked   what the indexer is collecting.
+    //   stored    a channel with rows that is no longer tracked. The count is
+    //             real and feeds the total, so dropping it would make the total
+    //             look wrong.
+    //   offered   a channel the indexer ships as a default. Without these, one
+    //             added upstream after somebody saved their own list is
+    //             invisible here -- not tracked and no rows, so nothing to
+    //             render -- and the only way to find it is to already know the
+    //             name and type it in.
+    const names = [
+        ...new Set([...channelState.tracked, ...Object.keys(counts), ...channelState.defaults]),
+    ].sort();
 
     const tag = $('kachat-channels-tag');
     const n = channelState.tracked.length;
@@ -2749,8 +2757,8 @@ function renderChannels(counts, total) {
     const card = (name) => {
         const on = channelState.tracked.includes(name);
         // Only a channel the indexer does not ship with can be removed outright;
-        // the default thirteen are switched off instead, so the list it came
-        // with stays recoverable.
+        // the ones it ships are switched off instead, so the list it came with
+        // stays recoverable. How many that is, is upstream's to decide.
         const removable = !channelState.defaults.includes(name);
         return `<div class="channel-card${on ? '' : ' off'}${on ? '' : ' untracked'}">
           <div class="head">
@@ -2761,6 +2769,11 @@ function renderChannels(counts, total) {
           <div class="count">${fmtNum(counts[name] || 0)}</div>
         </div>`;
     };
+
+    // Anything this function appended last time. It is called on every poll and
+    // again on every toggle, and insertAdjacentHTML does not replace: without
+    // this, flipping two switches leaves two notices.
+    document.getElementById('kachat-channels-none')?.remove();
 
     $('kachat-channels').innerHTML =
         names.map(card).join('') +
@@ -2774,7 +2787,33 @@ function renderChannels(counts, total) {
             'afterend',
             '<p class="verdict bad" id="kachat-channels-none">Nothing is tracked, so no broadcasts are being stored at all.</p>',
         );
+        return;
     }
+
+    // A saved list is a decision and is never overridden, so a channel the
+    // indexer has started shipping since it was saved is pointed at rather than
+    // added. Only for a list somebody actually saved: an indexer with no list
+    // configured follows its own defaults and has nothing to miss.
+    const missing = channelState.configured
+        ? channelState.defaults.filter((c) => !channelState.tracked.includes(c))
+        : [];
+    if (!missing.length) return;
+
+    $('kachat-channels').insertAdjacentHTML(
+        'afterend',
+        `<p class="verdict" id="kachat-channels-none">
+           The indexer now ships ${missing.length === 1 ? 'a channel' : `${missing.length} channels`} your saved
+           list does not track: ${missing.map((c) => `#${escapeHtml(c)}`).join(', ')}.
+           <button type="button" class="ghost" id="kachat-channels-adopt">Track ${missing.length === 1 ? 'it' : 'them'}</button>
+         </p>`,
+    );
+    $('kachat-channels-adopt').addEventListener('click', () => {
+        channelState.tracked = [...channelState.tracked, ...missing];
+        setChannelsDirty(true);
+        renderChannels(channelState.counts, channelState.total);
+        renderChannelSelects();
+        toast('Added. Save and apply to start collecting them.');
+    });
 }
 
 /** Marks the list as changed but not yet sent. */
