@@ -601,13 +601,18 @@ async function runAction({ key, title, note, request }) {
     }
 
     // Something that finished inside the request itself, with no job to watch.
+    // "Already on the newest version" is a real answer, and an overlay that
+    // only ever says Done would hide it.
     if (!response?.jobId) {
+        if (response?.message) actionAppend(response.message);
         finishAction({ status: 'succeeded' });
         return action.done;
     }
     adoptActionJob(response.jobId);
     return action.done;
 }
+
+const ACTION_VERBS = { start: 'Starting', stop: 'Stopping', restart: 'Restarting' };
 
 // Each service is switched on in whatever way its own API expects.
 /**
@@ -1178,13 +1183,19 @@ document.addEventListener('click', async (event) => {
     }
 });
 
+// The same three actions as the sidebar switch, so the same overlay.
 for (const button of document.querySelectorAll('[data-node]')) {
     button.addEventListener('click', async () => {
-        try {
-            await api(`/api/node/${button.dataset.node}`, { method: 'POST' });
-        } catch (e) {
-            toast(e.message, 'bad');
-        }
+        const action = button.dataset.node;
+        await runAction({
+            key: 'node',
+            title: `${ACTION_VERBS[action] ?? action} the node`,
+            note:
+                action === 'stop'
+                    ? 'The container stops and keeps everything: its chain data, its image, and the container itself.'
+                    : 'Nothing is rebuilt and no chain data is touched.',
+            request: () => api(`/api/node/${action}`, { method: 'POST' }),
+        });
     });
 }
 
@@ -1231,13 +1242,16 @@ $('apply-update').addEventListener('click', async () => {
             'Your chain data is kept, so there is no resync.',
     );
     if (!ok) return;
-    try {
-        const r = await api('/api/update/apply', { method: 'POST', body: { version: latestRelease.latest } });
-        if (r.alreadyCurrent) return toast('Already on the newest version.', 'good');
-        $('apply-update').disabled = true;
-    } catch (e) {
-        toast(e.message, 'bad');
-    }
+
+    await runAction({
+        key: 'node',
+        title: `Updating kaspad to ${latestRelease.latest}`,
+        note: 'The image is rebuilt and the node restarted onto it. Chain data is kept, so there is no resync.',
+        request: async () => {
+            const r = await api('/api/update/apply', { method: 'POST', body: { version: latestRelease.latest } });
+            return r.alreadyCurrent ? { ...r, message: 'Already on the newest version. Nothing to do.' } : r;
+        },
+    });
 });
 
 // --- release picker ---
@@ -1298,12 +1312,12 @@ $('install-release').addEventListener('click', async () => {
     ) {
         return;
     }
-    try {
-        await api('/api/update/apply', { method: 'POST', body: { version } });
-        $('install-release').disabled = true;
-    } catch (e) {
-        toast(e.message, 'bad');
-    }
+    await runAction({
+        key: 'node',
+        title: `Installing kaspad ${version}`,
+        note: 'The image is rebuilt at that version. Chain data is kept, so there is no resync.',
+        request: () => api('/api/update/apply', { method: 'POST', body: { version } }),
+    });
 });
 
 // --------------------------------------------------------------- settings ---
@@ -1948,11 +1962,13 @@ $('mining-save').addEventListener('click', async () => {
 
 for (const button of document.querySelectorAll('[data-bridge]')) {
     button.addEventListener('click', async () => {
-        try {
-            await api(`/api/mining/${button.dataset.bridge}`, { method: 'POST' });
-        } catch (e) {
-            toast(e.message, 'bad');
-        }
+        const action = button.dataset.bridge;
+        await runAction({
+            key: 'mining',
+            title: `${ACTION_VERBS[action] ?? action} the stratum bridge`,
+            note: 'Miners connected to it lose their connection and reconnect on their own.',
+            request: () => api(`/api/mining/${action}`, { method: 'POST' }),
+        });
     });
 }
 
@@ -2385,22 +2401,27 @@ for (const name of ['kachat', 'desktop', 'nextcloud']) {
 
     $(`${name}-update`).addEventListener('click', async () => {
         if (!confirm(`Rebuild ${name} from the newest commit?\n\nIt will be unavailable while it rebuilds.`)) return;
-        try {
-            await api(`/api/apps/${name}/update`, { method: 'POST' });
-            $(`${name}-update`).disabled = true;
-        } catch (e) {
-            toast(e.message, 'bad');
-        }
+        await runAction({
+            key: name,
+            title: `Rebuilding ${appsState?.apps?.[name]?.label ?? name}`,
+            note: 'Compiled from the newest commit, which takes a while. It is unavailable until it finishes, and a build that fails leaves the running one alone.',
+            request: () => api(`/api/apps/${name}/update`, { method: 'POST' }),
+        });
     });
 }
 
+// Restart, and whatever else gets one of these later. The same container
+// actions as the sidebar switches, so they get the same overlay.
 for (const button of document.querySelectorAll('[data-app-action]')) {
     button.addEventListener('click', async () => {
-        try {
-            await api(`/api/apps/${button.dataset.appAction}`, { method: 'POST' });
-        } catch (e) {
-            toast(e.message, 'bad');
-        }
+        const [name, action] = button.dataset.appAction.split('/');
+        const verb = ACTION_VERBS[action] ?? action;
+        await runAction({
+            key: name,
+            title: `${verb} ${appsState?.apps?.[name]?.label ?? name}`,
+            note: 'Nothing is rebuilt and nothing is removed.',
+            request: () => api(`/api/apps/${button.dataset.appAction}`, { method: 'POST' }),
+        });
     });
 }
 
@@ -3785,11 +3806,13 @@ $('kassigner-check').addEventListener('click', async () => {
 });
 
 $('kassigner-fetch').addEventListener('click', async () => {
-    try {
-        await api('/api/kassigner', { method: 'PUT', body: { enabled: true, tag: $('kassigner-release').value || null } });
-    } catch (e) {
-        toast(e.message, 'bad');
-    }
+    const tag = $('kassigner-release').value || null;
+    await runAction({
+        key: 'kassigner',
+        title: tag ? `Fetching KasSigner ${tag}` : 'Fetching the newest KasSigner firmware',
+        note: 'Downloaded from the release and checked against the hashes it publishes.',
+        request: () => api('/api/kassigner', { method: 'PUT', body: { enabled: true, tag } }),
+    });
 });
 
 // ---------------------------------------------------------------- proxies ---
