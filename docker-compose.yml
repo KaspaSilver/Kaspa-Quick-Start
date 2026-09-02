@@ -343,7 +343,7 @@ services:
     environment:
       # Every loaded language is a model held in memory. Ten is upstream's
       # default and already a few gigabytes.
-      LT_LOAD_ONLY: ${LT_LOAD_ONLY:-en,es,pt,fr,de,ru,zh,ja,ko,ar}
+      LT_LOAD_ONLY: ${LT_LOAD_ONLY:-en,es,pt,fr,de,ru,zh,ja,ko,ar,vi}
       LT_DISABLE_WEB_UI: "true"
       LT_THREADS: ${LT_THREADS:-4}
     volumes:

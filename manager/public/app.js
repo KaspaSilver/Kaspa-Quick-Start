@@ -3147,8 +3147,11 @@ function chosenLanguages() {
 
 function updateTranslateCount() {
     const count = chosenLanguages().length;
+    // No per-language size estimate. The number that is actually knowable is
+    // the ceiling the container runs under; how much of it a given model takes
+    // is a guess, and a guess printed to one decimal place reads as a fact.
     $('translate-count').textContent = count
-        ? `${count} language${count === 1 ? '' : 's'} — roughly ${(count * 0.4).toFixed(1)}GB of models`
+        ? `${count} language${count === 1 ? '' : 's'} selected, sharing the engine's 4GB.`
         : 'Nothing selected, which the engine will refuse.';
 }
 

@@ -124,7 +124,7 @@ export const DEFAULT_APPS_CONFIG = {
         translate: {
             // Every language here is a model held in memory for as long as the
             // engine runs, so this list is a memory bill, not a preference.
-            languages: 'en,es,pt,fr,de,ru,zh,ja,ko,ar',
+            languages: 'en,es,pt,fr,de,ru,zh,ja,ko,ar,vi',
         },
     },
     desktop: {
@@ -188,6 +188,28 @@ export function reservedHostPorts() {
     return ports;
 }
 
+/**
+ * Every language set this panel has ever shipped as its default.
+ *
+ * A default that has been written to disk is indistinguishable from a choice,
+ * and this file is saved whenever anything else on it changes -- so the first
+ * unrelated save freezes the language list at whatever the default was that
+ * day, and the indexer adding a language can never reach that install again.
+ *
+ * A saved list that is exactly one of these was nobody's decision, so it moves
+ * forward with the default. Anything else is a real choice and is left alone,
+ * including a list that merely resembles one.
+ */
+const SUPERSEDED_LANGUAGE_SETS = new Set([
+    // Before the indexer added Vietnamese (KaChat-Indexer a3ef567).
+    'en,es,pt,fr,de,ru,zh,ja,ko,ar',
+]);
+
+function upgradeLanguages(translate) {
+    if (!SUPERSEDED_LANGUAGE_SETS.has(translate?.languages)) return translate;
+    return { ...translate, languages: DEFAULT_APPS_CONFIG.kachat.translate.languages };
+}
+
 export function loadAppsConfig() {
     const stored = readJson(APPS_STATE_FILE, {});
 
@@ -206,6 +228,7 @@ export function loadAppsConfig() {
         if (defaults.publish) cfg[name].publish = { ...defaults.publish, ...(saved.publish ?? {}) };
         // Same for translate, added later than the file most people have.
         if (defaults.translate) cfg[name].translate = { ...defaults.translate, ...(saved.translate ?? {}) };
+        if (defaults.translate) cfg[name].translate = upgradeLanguages(cfg[name].translate);
     }
 
     // Earlier versions defaulted Nextcloud to 8080, which is this panel's port,
@@ -359,7 +382,7 @@ export function writeAppsEnv(cfg) {
         KACHAT_FCM_PROJECT_ID: cfg.kachat.fcmProjectId,
         // Read by the translation engine at startup and by nothing else. It
         // only loads what is listed here, so changing it means recreating it.
-        LT_LOAD_ONLY: cfg.kachat.translate?.languages || 'en,es,pt,fr,de,ru,zh,ja,ko,ar',
+        LT_LOAD_ONLY: cfg.kachat.translate?.languages || 'en,es,pt,fr,de,ru,zh,ja,ko,ar,vi',
         // Both the image tag and the build arg, so switching refs actually
         // rebuilds rather than re-tagging the layers already cached.
         KACHAT_DESKTOP_REF: cfg.desktop?.ref || 'main',
