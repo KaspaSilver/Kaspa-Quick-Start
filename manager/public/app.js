@@ -457,10 +457,14 @@ function openAction({ key, title, note }) {
     // box for those seconds reads as nothing having happened.
     actionAppend(`> ${title}…`);
     // Hidden rather than disabled-and-labelled: the bar says how far along this
-    // is, and no button at all says there is no way out of it yet.
+    // is, and Cancel is the only thing to press until it finishes.
     const close = $('action-close');
     close.disabled = true;
     close.hidden = true;
+    const cancel = $('action-cancel');
+    cancel.hidden = true;
+    cancel.disabled = false;
+    cancel.textContent = 'Cancel';
     resetProgress();
     $('action-overlay').hidden = false;
     return action;
@@ -490,6 +494,8 @@ function actionLine(jobId, line) {
 function adoptActionJob(jobId) {
     if (!pendingAction) return;
     pendingAction.jobId = jobId;
+    // Nothing can be cancelled until there is something to name.
+    $('action-cancel').hidden = false;
     for (const line of earlyLines.get(jobId) ?? []) actionAppend(line);
     earlyLines.clear();
     const ended = earlyEnds.get(jobId);
@@ -500,12 +506,20 @@ function adoptActionJob(jobId) {
 /** The job is over. Only now is there a way out of this. */
 function finishAction(job) {
     if (!pendingAction || pendingAction.finished) return;
+    const cancelled = job.status === 'cancelled';
     const ok = job.status === 'succeeded';
-    actionAppend(ok ? '\n✓ Done.' : `\n✗ Failed: ${job.error ?? 'it did not finish'}`);
+    actionAppend(
+        cancelled
+            ? '\n■ Cancelled. Anything it had already done is still done.'
+            : ok
+              ? '\n✓ Done.'
+              : `\n✗ Failed: ${job.error ?? 'it did not finish'}`,
+    );
 
     pendingAction.finished = true;
     $('action-spinner').hidden = true;
-    $('action-title').textContent = `${pendingAction.title} — ${ok ? 'done' : 'failed'}`;
+    $('action-cancel').hidden = true;
+    $('action-title').textContent = `${pendingAction.title} — ${cancelled ? 'cancelled' : ok ? 'done' : 'failed'}`;
 
     // Full either way: the bar tracks the job reaching its end, not the job
     // succeeding. Which of those happened is the colour, the title and the last
@@ -513,7 +527,7 @@ function finishAction(job) {
     clearInterval(progressTimer);
     progressTimer = null;
     tickElapsed();
-    $('action-bar').className = `action-bar${ok ? '' : ' failed'}`;
+    $('action-bar').className = `action-bar${ok || cancelled ? '' : ' failed'}`;
     $('action-bar-fill').style.width = '100%';
     $('action-bar').setAttribute('aria-valuenow', '100');
 
@@ -583,6 +597,43 @@ document.addEventListener(
     },
     true,
 );
+
+
+/**
+ * Stop the job the overlay is watching.
+ *
+ * Confirmed, and the confirmation is the honest part: cancelling does not
+ * rewind. A build keeps the layers it finished, an uninstall does not put back
+ * what it removed, and a container that was half-way up is left wherever the
+ * kill found it. What it buys is not spending the next half hour on something
+ * you no longer want.
+ */
+$('action-cancel').addEventListener('click', async () => {
+    const action = pendingAction;
+    if (!action?.jobId || action.finished) return;
+    if (
+        !confirm(
+            `Cancel "${action.title}"?\n\n` +
+                'Whatever it has already done stays done -- this stops it where it is rather than undoing it. ' +
+                'A build keeps the parts it finished, so starting again does not start from the beginning.',
+        )
+    ) {
+        return;
+    }
+
+    const button = $('action-cancel');
+    button.disabled = true;
+    button.textContent = 'Cancelling…';
+    try {
+        await api(`/api/jobs/${action.jobId}/cancel`, { method: 'POST' });
+    } catch (e) {
+        // It finished on its own between the click and the request, most
+        // likely. The end event says which, so this only reports and waits.
+        actionAppend(`Could not cancel: ${e.message}`);
+        button.disabled = false;
+        button.textContent = 'Cancel';
+    }
+});
 
 /**
  * Runs one of them: opens the overlay, starts the job, and resolves when the
@@ -5428,7 +5479,10 @@ function connectJobs() {
             refreshStatus();
             return;
         }
-        toast(job.status === 'succeeded' ? `${job.name}: done` : `${job.name}: failed`, job.status === 'succeeded' ? 'good' : 'bad');
+        toast(
+            { succeeded: `${job.name}: done`, cancelled: `${job.name}: cancelled` }[job.status] ?? `${job.name}: failed`,
+            { succeeded: 'good', cancelled: '' }[job.status] ?? 'bad',
+        );
         refreshStatus();
         loadProxies();
         loadMining();

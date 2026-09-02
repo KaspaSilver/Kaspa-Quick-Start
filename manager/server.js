@@ -725,6 +725,16 @@ route('GET', /^\/api\/jobs\/stream$/, async (req, res) => {
 
 route('GET', /^\/api\/jobs\/current$/, async (req, res) => sendJson(res, 200, { job: jobs.snapshot(), busy: jobs.busy }));
 
+/**
+ * Stop a job. What it had already done stays done -- the overlay says so before
+ * it asks -- and the next job in the queue starts as soon as this one lets go.
+ */
+route('POST', /^\/api\/jobs\/([a-z0-9-]+)\/cancel$/, async (req, res, match) => {
+    const result = jobs.cancel(match[1]);
+    if (!result.cancelled) return fail(res, 409, result.reason ?? 'That job cannot be cancelled.');
+    sendJson(res, 202, { ok: true, ...result });
+});
+
 // ------------------------------------------------------------------ updates --
 
 route('GET', /^\/api\/update\/check$/, async (req, res, match, url) => {

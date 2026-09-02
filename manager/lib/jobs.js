@@ -1,4 +1,6 @@
 import { EventEmitter } from 'node:events';
+import { jobContext } from './jobcontext.js';
+import { killJob } from './dockerctl.js';
 
 /**
  * Runs the long operations the UI kicks off -- image builds, certificate
@@ -71,16 +73,22 @@ class JobRunner extends EventEmitter {
         this.emit('start', job);
 
         Promise.resolve()
-            .then(() => fn(log))
+            .then(() => jobContext.run({ id: job.id }, () => fn(log)))
             .then(
                 (result) => {
-                    job.status = 'succeeded';
+                    // A cancelled job can still finish cleanly: killing docker
+                    // compose halfway through `up` leaves it having done part
+                    // of the work and exiting 0. What was asked for is what
+                    // this reports.
+                    job.status = job.cancelled ? 'cancelled' : 'succeeded';
                     job.result = result ?? null;
                 },
                 (err) => {
-                    job.status = 'failed';
-                    job.error = err?.message || String(err);
-                    log(`! ${job.error}`);
+                    // The error from a killed process describes the killing,
+                    // not a fault. Somebody pressed cancel; say that.
+                    job.status = job.cancelled ? 'cancelled' : 'failed';
+                    job.error = job.cancelled ? 'Cancelled.' : err?.message || String(err);
+                    log(job.cancelled ? '! Cancelled.' : `! ${job.error}`);
                 },
             )
             .finally(() => {
@@ -91,6 +99,44 @@ class JobRunner extends EventEmitter {
                 // Whatever is next starts now, not when somebody asks again.
                 this.#drain();
             });
+    }
+
+    /**
+     * Stops a job, whether it has started or not.
+     *
+     * A queued one simply never runs. A running one has its processes killed,
+     * and what it had already done stays done: a half-finished build keeps its
+     * layers, a half-finished uninstall does not put back what it removed. The
+     * panel says so before asking.
+     */
+    cancel(id) {
+        const queued = this.queue.findIndex(({ job }) => job.id === id);
+        if (queued !== -1) {
+            const [{ job }] = this.queue.splice(queued, 1);
+            job.status = 'cancelled';
+            job.error = 'Cancelled before it started.';
+            job.finishedAt = new Date().toISOString();
+            this.emit('end', { ...job, pending: this.pending });
+            return { cancelled: true, started: false };
+        }
+
+        if (this.current?.id !== id || this.current.status !== 'running') {
+            return { cancelled: false, reason: 'That job is not running.' };
+        }
+
+        // Marked first: whichever way the function ends after its processes
+        // die, the end handler has to know this was asked for.
+        this.current.cancelled = true;
+        this.emit('line', { jobId: id, line: 'Cancelling. Docker is being asked to stop.' });
+        this.current.lines.push('Cancelling. Docker is being asked to stop.');
+        const killed = killJob(id);
+        if (!killed) {
+            this.emit('line', {
+                jobId: id,
+                line: 'Nothing was running to stop, so this ends as soon as the step in progress returns.',
+            });
+        }
+        return { cancelled: true, started: true, killed };
     }
 
     snapshot() {

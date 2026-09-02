@@ -2,6 +2,34 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { COMPOSE_FILE, CONF_DIR, PORTS_OVERRIDE, STACK_LOCAL } from './paths.js';
+import { jobContext } from './jobcontext.js';
+
+/**
+ * Processes spawned by a job that is still running, so cancelling has something
+ * to kill. Only `run` registers here -- `streamLogs` follows a container's
+ * output and stopping a job has no business stopping that.
+ */
+const LIVE = new Set();
+
+/**
+ * Ends the processes a job started. SIGTERM, because docker and certbot both
+ * clean up on it; a build that is killed leaves its finished layers in the
+ * cache, so starting again picks up where this left off rather than at the
+ * beginning.
+ */
+export function killJob(jobId) {
+    let killed = 0;
+    for (const entry of LIVE) {
+        if (entry.jobId !== jobId) continue;
+        try {
+            entry.child.kill('SIGTERM');
+            killed += 1;
+        } catch {
+            /* already gone */
+        }
+    }
+    return killed;
+}
 
 const KASPAD_CONTAINER = process.env.KASPAD_CONTAINER || 'kaspa-node-kaspad';
 const PROXY_CONTAINER = process.env.PROXY_CONTAINER || 'kaspa-node-proxy';
@@ -40,6 +68,9 @@ export class CommandError extends Error {
 export function run(cmd, args, { onLine, timeoutMs = 15 * 60_000, cwd = STACK_LOCAL, env } = {}) {
     return new Promise((resolve, reject) => {
         const child = spawn(cmd, args, { cwd, env: { ...process.env, ...env } });
+        // Whichever job's function this was called from, however far down.
+        const entry = { child, jobId: jobContext.getStore()?.id ?? null };
+        if (entry.jobId) LIVE.add(entry);
         let stdout = '';
         let stderr = '';
         let pending = '';
@@ -67,10 +98,12 @@ export function run(cmd, args, { onLine, timeoutMs = 15 * 60_000, cwd = STACK_LO
         });
         child.on('error', (err) => {
             clearTimeout(timer);
+            LIVE.delete(entry);
             reject(new CommandError(`failed to run ${cmd}: ${err.message}`, { code: -1, stdout, stderr }));
         });
         child.on('close', (code) => {
             clearTimeout(timer);
+            LIVE.delete(entry);
             if (pending && onLine) onLine(pending);
             if (code === 0) resolve({ stdout, stderr, code });
             else reject(new CommandError(`${cmd} exited with code ${code}: ${stderr.trim() || stdout.trim()}`, { code, stdout, stderr }));
