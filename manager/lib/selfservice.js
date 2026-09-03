@@ -277,13 +277,23 @@ const CONTAINERS = [
     'kaspa-node-kachat',
     'kaspa-node-kachat-db',
     'kaspa-node-kachat-desktop',
+    'kaspa-node-libretranslate',
+    'kaspa-node-gift',
     'kaspa-node-nextcloud',
     'kaspa-node-nextcloud-db',
     'kaspa-node-nextcloud-redis',
     'kaspa-node-nextcloud-imaginary',
-    // Last, because this is the panel: removing it ends the session watching.
-    'kaspa-node-manager',
 ];
+
+/**
+ * The panel, removed on its own at the very end.
+ *
+ * It used to go with the rest, in the first step, which meant the screen that
+ * asked for this vanished before the removal had done anything and the person
+ * who pressed the button never saw a word of it. Everything it can narrate
+ * happens first; it is taken away last, and its disappearing is the finish.
+ */
+const PANEL_CONTAINER = 'kaspa-node-manager';
 
 const VOLUMES = [
     'kaspa-node-data',
@@ -292,6 +302,8 @@ const VOLUMES = [
     'kaspa-node-kachat-app-data',
     'kaspa-node-nextcloud-db-data',
     'kaspa-node-nextcloud-data',
+    'kaspa-node-gift-data',
+    'kaspa-node-libretranslate-models',
 ];
 
 // Pulled by the stack but not built by it, so they may well be shared with
@@ -323,22 +335,41 @@ export async function teardown() {
         throw new Error(`Refusing to remove ${STACK_HOST}: it has no parent directory to work from.`);
     }
 
+    // Ordered so the panel can report on it. Everything up to the last block
+    // leaves the manager running, so the overlay showing this is fed by the
+    // same docker logs the sidecar is writing; the last block takes the panel
+    // away and the log ends there because there is nothing left to carry it.
     const script = `
 set -u
 echo "Removing containers"
-for c in ${CONTAINERS.join(' ')}; do docker rm -f "$c" >/dev/null 2>&1 || true; done
+for c in ${CONTAINERS.join(' ')}; do
+  docker rm -f "$c" >/dev/null 2>&1 && echo "  removed $c" || true
+done
 
 echo "Removing images the stack built"
 docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null \\
   | grep '^kaspa-one-click/' \\
-  | while read -r i; do docker rmi -f "$i" >/dev/null 2>&1 || true; done
+  | grep -v '^kaspa-one-click/manager' \\
+  | while read -r i; do docker rmi -f "$i" >/dev/null 2>&1 && echo "  removed $i" || true; done
 
 echo "Removing base images (skipped where something else still uses them)"
-for i in ${BASE_IMAGES.join(' ')}; do docker rmi "$i" >/dev/null 2>&1 || true; done
+for i in ${BASE_IMAGES.join(' ')}; do
+  docker rmi "$i" >/dev/null 2>&1 && echo "  removed $i" || echo "  kept $i, something else uses it"
+done
 
-echo "Removing volumes"
-for v in ${VOLUMES.join(' ')}; do docker volume rm -f "$v" >/dev/null 2>&1 || true; done
+echo "Removing volumes. This is the chain data and every app's files."
+for v in ${VOLUMES.join(' ')}; do
+  docker volume rm -f "$v" >/dev/null 2>&1 && echo "  removed $v" || true
+done
 
+echo "Removing the control panel itself. This is where the log stops."
+sleep 2
+docker rm -f ${PANEL_CONTAINER} >/dev/null 2>&1 || true
+docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null \\
+  | grep '^kaspa-one-click/manager' \\
+  | while read -r i; do docker rmi -f "$i" >/dev/null 2>&1 || true; done
+
+# Only once every container is off it.
 docker network rm kaspa-node-net >/dev/null 2>&1 || true
 # Our images are gone by now, so their build cache is dangling and this reclaims
 # it. Without -a, cache that other projects still reference is left alone.

@@ -2440,7 +2440,40 @@ route('POST', /^\/api\/system\/teardown$/, async (req, res) => {
     try {
         const started = await selfservice.teardown();
         log(`teardown started in ${started.container}; this panel is about to go away`);
-        sendJson(res, 200, started);
+
+        // The removal runs in a container of its own, because it has to delete
+        // the image this panel is running from and docker will not remove an
+        // image a running container is using. Its output is the only account of
+        // what happened, so it is followed and republished as a job -- which is
+        // what puts it on the overlay, right up until the step that removes
+        // this panel and takes the log with it.
+        const job = jobs.start('Remove everything', async (onLine) => {
+            onLine('Removing everything this stack put on the machine. Docker itself is left installed.');
+            onLine('This panel goes last, and its disappearing is what finishing looks like.');
+
+            for (let attempt = 0; attempt < 20; attempt += 1) {
+                if ((await dockerctl.containerState(started.container)).exists) break;
+                await new Promise((r) => setTimeout(r, 500));
+            }
+
+            await new Promise((resolve) => {
+                const stop = dockerctl.streamLogs(started.container, onLine, { tail: 0 });
+                // Nothing here resolves in the ordinary case: this container is
+                // removed part-way through and the process ends with it. The
+                // timeout is only so a teardown that somehow fails to reach us
+                // does not leave a job running for the rest of the day.
+                setTimeout(() => {
+                    try {
+                        stop();
+                    } catch {
+                        /* already gone */
+                    }
+                    resolve();
+                }, 30 * 60_000).unref?.();
+            });
+        });
+
+        sendJson(res, 202, { ...started, jobId: job.id });
     } catch (err) {
         fail(res, 400, err.message);
     }

@@ -1909,7 +1909,8 @@
               the removing, and is the one thing left behind, because it cannot
               delete the image it is running from. Clear it with
               <code>docker rmi docker:cli</code>.</li>
-            <li>There is no undo, and no confirmation after this one.</li>
+            <li>There is no undo, and no cancelling once it starts. The log
+              appears on screen and runs until this panel is removed.</li>
           </ul>
           <label class="stack">Type <code>DELETE EVERYTHING</code> to confirm
             <span class="row">
@@ -1917,7 +1918,6 @@
               <button type="button" id="global-teardown-btn" class="danger" disabled>Remove everything</button>
             </span>
           </label>
-          <div id="global-teardown-result" class="verdict" hidden></div>
         </article>
 
       </div>

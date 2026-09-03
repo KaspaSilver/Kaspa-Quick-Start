@@ -494,8 +494,9 @@ function actionLine(jobId, line) {
 function adoptActionJob(jobId) {
     if (!pendingAction) return;
     pendingAction.jobId = jobId;
-    // Nothing can be cancelled until there is something to name.
-    $('action-cancel').hidden = false;
+    // Nothing can be cancelled until there is something to name, and some
+    // things are not cancellable at all.
+    $('action-cancel').hidden = pendingAction.cancellable === false;
     for (const line of earlyLines.get(jobId) ?? []) actionAppend(line);
     earlyLines.clear();
     const ended = earlyEnds.get(jobId);
@@ -599,6 +600,40 @@ document.addEventListener(
 );
 
 
+
+/**
+ * For the one action that ends by removing the panel.
+ *
+ * Nothing will ever report that it finished, because the thing that would do
+ * the reporting is what gets removed. So the panel going quiet is the signal,
+ * and it is confirmed rather than assumed: two failed health checks in a row,
+ * three seconds apart, so a single dropped request does not declare the stack
+ * gone while it is still working.
+ */
+function watchForPanelGone() {
+    let misses = 0;
+    const timer = setInterval(async () => {
+        if (!pendingAction?.terminal || pendingAction.finished) return clearInterval(timer);
+        try {
+            const res = await fetch('/healthz', { cache: 'no-store' });
+            if (res.ok) {
+                misses = 0;
+                return;
+            }
+            misses += 1;
+        } catch {
+            misses += 1;
+        }
+        if (misses < 2) return;
+
+        clearInterval(timer);
+        actionAppend('');
+        actionAppend('The panel has been removed, so there is nothing left here to report from.');
+        actionAppend('The last steps -- its own image, the network and the install directory -- finish in the container doing the removing.');
+        finishAction({ status: 'succeeded' });
+    }, 3000);
+}
+
 /**
  * Stop the job the overlay is watching.
  *
@@ -640,12 +675,20 @@ $('action-cancel').addEventListener('click', async () => {
  * job has finished -- not when the overlay is dismissed, which is the user's
  * own time and nothing should wait for it.
  */
-async function runAction({ key, title, note, request }) {
+async function runAction({ key, title, note, request, cancellable = true, terminal = false }) {
     if (pendingAction) {
         toast('Something else is running. Wait for it to finish.', 'bad');
         return null;
     }
     const action = openAction({ key, title, note });
+    // Some things must not be stopped half way. Removing everything is the one:
+    // it deletes the panel itself, so a cancel would land on a stack that is
+    // partly gone with nothing left to finish taking it apart.
+    action.cancellable = cancellable;
+    // And this one ends by taking the panel away, so the log stopping is the
+    // result rather than a fault.
+    action.terminal = terminal;
+    if (terminal) watchForPanelGone();
 
     let response;
     try {
@@ -5744,14 +5787,17 @@ $('global-teardown-btn').addEventListener('click', async () => {
     if (!confirm('Remove the node, all its data and this panel?\n\nThis cannot be undone. Docker itself stays installed.')) return;
 
     $('global-teardown-btn').disabled = true;
-    try {
-        await api('/api/system/teardown', { method: 'POST', body: { confirm: TEARDOWN_PHRASE } });
-        kResult(
-            'global-teardown-result',
-            'Removing everything. This panel will stop responding shortly, which is what finishing looks like.',
-        );
-    } catch (e) {
-        kResult('global-teardown-result', e.message, true);
-        $('global-teardown-btn').disabled = false;
-    }
+    const job = await runAction({
+        key: null,
+        title: 'Removing everything',
+        note:
+            'Every container, image, volume and file this stack created, including this panel. ' +
+            'It cannot be cancelled: half a teardown leaves a stack with nothing left to finish taking it apart.',
+        cancellable: false,
+        terminal: true,
+        request: () => api('/api/system/teardown', { method: 'POST', body: { confirm: TEARDOWN_PHRASE } }),
+    });
+    // Only reached when it never started -- the phrase was wrong, or docker
+    // refused to launch the container that does the removing.
+    if (!job?.ok) $('global-teardown-btn').disabled = false;
 });
