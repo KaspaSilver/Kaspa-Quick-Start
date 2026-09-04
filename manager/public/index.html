@@ -2006,7 +2006,13 @@
 
     <!-- ---------------------------------------------------------- support -->
     <section id="tab-global" class="tab">
-      <div class="grid">
+      <nav class="subnav" aria-label="Global settings">
+        <button class="subtab-btn active" data-subtab="global-panel">Panel</button>
+        <button class="subtab-btn" data-subtab="global-teardown">Remove everything</button>
+      </nav>
+
+      <div id="sub-global-panel" class="subtab active">
+        <div class="grid">
 
         <article class="card span2" id="password-card">
           <h3>Admin password</h3>
@@ -2076,6 +2082,15 @@
           <div id="global-update-result" class="verdict" hidden></div>
         </article>
 
+        </div>
+      </div>
+
+      <!-- On its own tab, and last. It was a card at the bottom of the same
+           page as the password and the update button, which are the two
+           things somebody comes to this screen for -- so the control that
+           deletes the node and its chain data sat one scroll below them. -->
+      <div id="sub-global-teardown" class="subtab">
+        <div class="grid">
         <article class="card span2 danger-zone">
           <h3>Remove everything</h3>
           <p class="muted">
@@ -2104,7 +2119,7 @@
             </span>
           </label>
         </article>
-
+        </div>
       </div>
     </section>
 
