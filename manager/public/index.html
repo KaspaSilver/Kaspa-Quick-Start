@@ -2007,13 +2007,14 @@
     <!-- ---------------------------------------------------------- support -->
     <section id="tab-global" class="tab">
       <nav class="subnav" aria-label="Global settings">
-        <button class="subtab-btn active" data-subtab="global-panel">Panel</button>
+        <button class="subtab-btn active" data-subtab="global-password">Password</button>
+        <button class="subtab-btn" data-subtab="global-address">Address</button>
+        <button class="subtab-btn" data-subtab="global-update">Updates</button>
         <button class="subtab-btn" data-subtab="global-teardown">Remove everything</button>
       </nav>
 
-      <div id="sub-global-panel" class="subtab active">
+      <div id="sub-global-password" class="subtab active">
         <div class="grid">
-
         <article class="card span2" id="password-card">
           <h3>Admin password</h3>
           <p class="muted" id="password-state">–</p>
@@ -2035,7 +2036,11 @@
           </p>
           <p class="hint" id="password-result" hidden></p>
         </article>
+        </div>
+      </div>
 
+      <div id="sub-global-address" class="subtab">
+        <div class="grid">
         <article class="card span2">
           <h3>Panel address</h3>
           <p class="muted" id="panel-port-state">–</p>
@@ -2051,7 +2056,13 @@
           </p>
           <p class="hint" id="panel-port-result" hidden></p>
         </article>
+        </div>
+      </div>
 
+      <!-- Updating takes the panel offline for a minute or two, which is not
+           something to leave one scroll under a password field. -->
+      <div id="sub-global-update" class="subtab">
+        <div class="grid">
         <article class="card span2">
           <h3>Update the control panel</h3>
           <p class="muted">
@@ -2081,14 +2092,12 @@
           </p>
           <div id="global-update-result" class="verdict" hidden></div>
         </article>
-
         </div>
       </div>
 
-      <!-- On its own tab, and last. It was a card at the bottom of the same
-           page as the password and the update button, which are the two
-           things somebody comes to this screen for -- so the control that
-           deletes the node and its chain data sat one scroll below them. -->
+      <!-- Last, and on its own. It deletes the node, its chain data and this
+           panel, and it used to sit at the bottom of the same page as the two
+           things anybody actually opens this screen for. -->
       <div id="sub-global-teardown" class="subtab">
         <div class="grid">
         <article class="card span2 danger-zone">
