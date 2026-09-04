@@ -25,6 +25,35 @@ export const ENV_FILE = path.join(BOT_DIR, 'bot.env');
 /** Every key the watcher reads, and which ones it refuses to start without. */
 const REQUIRED = ['MINING_ADDRESS', 'PRIVATE_KEY_HEX', 'RECEIVER_ALIAS', 'RECEIVER_PUBKEY_X'];
 
+/**
+ * The notification text, and what can be put in it.
+ *
+ * The default is exactly what the watcher sent before this was a setting, so a
+ * bot that predates it and one that has never been edited say the same thing.
+ *
+ * Newlines travel as a literal backslash-n. An env file has no way to carry a
+ * real one -- every value is a single line -- so the template is stored escaped
+ * and the watcher unescapes it. That also means a message can be written on
+ * several lines here without the file format having an opinion about it.
+ */
+export const DEFAULT_MESSAGE = 'Reward: {reward} KAS\nBalance: {balance} KAS';
+
+export const PLACEHOLDERS = {
+    reward: 'the block reward, in KAS',
+    balance: "the mining address's balance afterwards, in KAS",
+    txid: 'the transaction that paid the reward',
+    address: 'the mining address being watched',
+    network: 'mainnet or testnet-10',
+    time: 'when the reward arrived, on the machine running the bot',
+};
+
+// A message is encrypted into a transaction payload and written to the chain,
+// so its length is not free, and neither is it unbounded.
+const MESSAGE_MAX = 500;
+
+const escapeNewlines = (text) => String(text).replace(/\r\n?|\n/g, '\\n');
+const unescapeNewlines = (text) => String(text).replace(/\\n/g, '\n');
+
 const ADDRESS_RE = /^kaspa(test)?:[a-z0-9]{55,}$/i;
 const HEX64_RE = /^[0-9a-f]{64}$/i;
 // The alias is a short handle KaChat shows on a sent message. Upstream does not
@@ -59,6 +88,8 @@ export function readConfig() {
         receiverAlias: env.RECEIVER_ALIAS ?? '',
         receiverPubkeyX: env.RECEIVER_PUBKEY_X ?? '',
         minRewardKas: Number(env.MIN_REWARD_KAS ?? 0),
+        // Shown with real newlines; stored with escaped ones.
+        message: unescapeNewlines(env.MESSAGE_TEMPLATE || DEFAULT_MESSAGE),
         hasKey: Boolean(env.PRIVATE_KEY_HEX),
         // Every required value present, which is the difference between a bot
         // that will start and one that exits on its first line.
@@ -90,7 +121,59 @@ export function validate(input, { existingKey = false } = {}) {
     const min = Number(input.minRewardKas ?? 0);
     if (!Number.isFinite(min) || min < 0) problems.push('The minimum reward must be zero or more.');
 
+    problems.push(...messageProblems(input.message));
+
     return problems;
+}
+
+/**
+ * What is wrong with a message template, if anything.
+ *
+ * Checked here rather than left to the bot, because the bot only finds out when
+ * a block is found -- which might be next week -- and the failure would be a
+ * notification that never arrives with nothing on screen to explain it.
+ */
+export function messageProblems(message) {
+    const text = message === undefined || message === null ? DEFAULT_MESSAGE : String(message);
+    const problems = [];
+
+    if (!text.trim()) return ['The message cannot be empty.'];
+    if (text.length > MESSAGE_MAX) {
+        problems.push(`The message is ${text.length} characters; ${MESSAGE_MAX} is the most that fits comfortably.`);
+    }
+
+    const unknown = [...text.matchAll(/\{([^{}]*)\}/g)]
+        .map((m) => m[1])
+        .filter((name) => !Object.hasOwn(PLACEHOLDERS, name));
+    if (unknown.length) {
+        problems.push(
+            `${unknown.map((n) => `{${n}}`).join(', ')} ${unknown.length === 1 ? 'is not something' : 'are not things'} ` +
+                `the bot can fill in. It knows ${Object.keys(PLACEHOLDERS).map((n) => `{${n}}`).join(', ')}.`,
+        );
+    }
+    // An unpaired brace reaches the bot as a formatting error at the moment a
+    // block is found, which is the worst possible time to discover it.
+    if (text.replace(/\{[^{}]*\}/g, '').match(/[{}]/)) {
+        problems.push('There is a { or } on its own. Braces are only for placeholders.');
+    }
+
+    return problems;
+}
+
+/** Fills a template in the same way the bot will, for the preview. */
+export function renderMessage(message, sample = {}) {
+    const values = {
+        reward: '112.50000000',
+        balance: '1043.21000000',
+        txid: '1943b508e4d1c0f9a7b6e5d4c3b2a1908f7e6d5c4b3a29180f1e2d3c4b5a6978',
+        address: 'kaspa:qrxmpl…',
+        network: 'mainnet',
+        time: '2026-09-04 14:22:07',
+        ...sample,
+    };
+    return String(message ?? DEFAULT_MESSAGE).replace(/\{([^{}]*)\}/g, (whole, name) =>
+        Object.hasOwn(values, name) ? values[name] : whole,
+    );
 }
 
 /**
@@ -110,6 +193,11 @@ export function writeConfig(input) {
         RECEIVER_ALIAS: String(input.receiverAlias ?? '').trim(),
         RECEIVER_PUBKEY_X: String(input.receiverPubkeyX ?? '').trim().toLowerCase(),
         MIN_REWARD_KAS: String(Number(input.minRewardKas ?? 0)),
+        MESSAGE_TEMPLATE: escapeNewlines(
+            input.message === undefined || input.message === null || !String(input.message).trim()
+                ? unescapeNewlines(existing.MESSAGE_TEMPLATE || DEFAULT_MESSAGE)
+                : input.message,
+        ),
     };
 
     const body =

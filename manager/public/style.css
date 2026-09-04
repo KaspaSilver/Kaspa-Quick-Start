@@ -1991,3 +1991,13 @@ select { font-family: var(--mono); font-size: 13.5px; }
     .action-bar.working > span { animation: none; }
 }
 .action-foot .mono { font-family: var(--mono); font-size: 12px; min-width: 4.5rem; text-align: right; }
+
+/* The message preview on the bot's setup tab. Short, so it sizes to what is in
+   it rather than opening a screen of black under a two-line message. */
+.logview.preview {
+    height: auto;
+    max-height: 12rem;
+    min-height: 2.4rem;
+    font-size: 12.5px;
+    padding: 8px 10px;
+}

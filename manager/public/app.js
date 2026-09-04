@@ -4474,6 +4474,36 @@ document.addEventListener('click', async (event) => {
  * one is stored, never the value, so nothing on this tab is worth a screenshot
  * and leaving the page open in an office is not a mistake.
  */
+/**
+ * What the bot will actually send, with the placeholders filled in.
+ *
+ * Rendered here as well as on the server, from the same list of names, because
+ * the alternative is a round trip on every keystroke -- and because the first
+ * time somebody sees whether their message works should not be the first time
+ * this node finds a block.
+ */
+const BOT_SAMPLE = {
+    reward: '112.50000000',
+    balance: '1043.21000000',
+    txid: '1943b508e4d1c0f9a7b6e5d4c3b2a1908f7e6d5c4b3a29180f1e2d3c4b5a6978',
+    address: 'kaspa:qrxmpl…',
+    network: 'mainnet',
+    time: '2026-09-04 14:22:07',
+};
+
+function renderBotPreview() {
+    const text = $('bot-message').value;
+    $('bot-message-preview').textContent = text.replace(/\{([^{}]*)\}/g, (whole, name) =>
+        Object.hasOwn(BOT_SAMPLE, name) ? BOT_SAMPLE[name] : whole,
+    );
+}
+
+$('bot-message').addEventListener('input', renderBotPreview);
+$('bot-message-reset').addEventListener('click', () => {
+    $('bot-message').value = 'Reward: {reward} KAS\nBalance: {balance} KAS';
+    renderBotPreview();
+});
+
 let botState = null;
 
 async function loadBot() {
@@ -4515,6 +4545,8 @@ async function loadBot() {
     fill('bot-alias', config.receiverAlias);
     fill('bot-pubkey', config.receiverPubkeyX);
     fill('bot-min', String(config.minRewardKas ?? 0));
+    fill('bot-message', config.message ?? '');
+    renderBotPreview();
     fill('bot-ref', app.ref);
     if (document.activeElement !== $('bot-network')) $('bot-network').value = app.network;
 
@@ -4538,6 +4570,7 @@ $('bot-save').addEventListener('click', async () => {
         receiverPubkeyX: $('bot-pubkey').value.trim(),
         privateKeyHex: $('bot-key').value.trim(),
         minRewardKas: Number($('bot-min').value || 0),
+        message: $('bot-message').value,
         network: $('bot-network').value,
         ref: $('bot-ref').value.trim() || 'main',
     };

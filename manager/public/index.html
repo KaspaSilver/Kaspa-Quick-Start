@@ -1579,6 +1579,23 @@
               </span>
             </label>
 
+            <label class="stack">Message
+              <textarea id="bot-message" rows="3" spellcheck="false"></textarea>
+              <span class="hint">
+                What arrives on your phone. The bot fills in anything in braces:
+                <code>{reward}</code>, <code>{balance}</code>, <code>{txid}</code>,
+                <code>{address}</code>, <code>{network}</code>, <code>{time}</code>.
+                Everything else is sent as you write it, emoji included.
+              </span>
+            </label>
+            <div class="notice">
+              <p class="muted" style="margin:0 0 4px">A block found now would send:</p>
+              <pre id="bot-message-preview" class="logview preview"></pre>
+            </div>
+            <div class="row">
+              <button type="button" id="bot-message-reset" class="ghost">Use the default message</button>
+            </div>
+
             <div class="row">
               <label class="inline">Minimum reward
                 <input id="bot-min" type="number" min="0" step="0.1" value="0" size="6"> KAS
