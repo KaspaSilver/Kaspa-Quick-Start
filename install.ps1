@@ -427,3 +427,25 @@ Write-Host ''
 Write-Host 'Follow along with: docker logs -f kaspa-node-manager' -ForegroundColor DarkGray
 Write-Host 'And the node, once you have started it: docker logs -f kaspa-node-kaspad' -ForegroundColor DarkGray
 Write-Host ''
+
+# ------------------------------------------------------------------- open ---
+#
+# The last thing, and the one thing anybody wants after all of that: the panel,
+# open. Offered rather than done, because an installer that seizes the browser
+# on a machine somebody is working on is a rude thing to be.
+#
+# Skipped when nobody is there to answer: -Yes, or a host with no interactive
+# console, where Read-Host either throws or blocks a scripted install forever.
+if (-not $Yes -and [Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
+    $url = "http://localhost:$GuiPort"
+    Write-Host ''
+    Write-Host "  Press Enter to open the panel at $url, or Ctrl-C to leave it. " -NoNewline
+    try {
+        [void](Read-Host)
+        Start-Process $url
+        Ok "Opened $url"
+    } catch {
+        Write-Host ''
+        Warn "Could not open a browser. The panel is at $url"
+    }
+}

@@ -74,7 +74,8 @@ Usage: install.sh [options]
   --version <vX.Y.Z>    kaspad release to install (default: newest)
   --stack-repo <o/r>    Repo to fetch this stack from
   --stack-ref <ref>     Branch or tag of that repo
-  --yes, -y             Do not ask for confirmation
+  --yes, -y             Do not ask for confirmation, and do not offer to
+                        open the panel at the end
   --skip-docker-install Fail instead of installing Docker
 USAGE
             exit 0 ;;
@@ -690,3 +691,61 @@ sleep 3
 $DOCKER_SUDO docker logs --tail 25 kaspa-node-manager 2>&1 || true
 printf '\n%sFollow along with:%s docker logs -f kaspa-node-manager\n' "$DIM" "$R"
 printf '%sAnd the node, once you have started it:%s docker logs -f kaspa-node-kaspad\n\n' "$DIM" "$R"
+
+# ------------------------------------------------------------------- open ---
+#
+# The last thing, and the one thing anybody wants after all of that: the panel,
+# open. Offered rather than done, because an installer that seizes the browser
+# on a machine somebody is working on is a rude thing to be.
+
+# Which command opens a URL here, or nothing when this machine has no browser
+# to open one with -- a server over SSH, a container, a CI runner.
+browser_opener() {
+    if [ "$(uname -s)" = "Darwin" ] && command -v open >/dev/null 2>&1; then
+        printf 'open\n'
+        return 0
+    fi
+    # WSL reaches a browser on the Windows side, where there is no DISPLAY to
+    # look for, so it is checked before the desktop test rather than after.
+    if command -v wslview >/dev/null 2>&1; then
+        printf 'wslview\n'
+        return 0
+    fi
+    if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v xdg-open >/dev/null 2>&1; then
+        printf 'xdg-open\n'
+        return 0
+    fi
+    return 1
+}
+
+offer_to_open_panel() {
+    [ "$ASSUME_YES" = "1" ] && return 0
+    # Read from the terminal, never from stdin: this script is usually running
+    # as `curl … | bash`, where stdin is the rest of the script and a `read`
+    # would eat it.
+    #
+    # Opened rather than tested for existence. /dev/tty is a file on plenty of
+    # machines that have no controlling terminal behind it -- a detached build,
+    # a container, a CI runner -- where it exists, passes -e, and then fails on
+    # the first write. Under `set -e` that ends the install on its last line,
+    # after everything has already succeeded.
+    { : > /dev/tty; } 2>/dev/null || return 0
+
+    local opener
+    opener="$(browser_opener)" || return 0
+
+    local url="http://localhost:$GUI_PORT"
+    printf '\n  %sPress Enter to open the panel%s at %s%s%s, or Ctrl-C to leave it. ' \
+        "$B" "$R" "$B" "$url" "$R" > /dev/tty
+    read -r _ < /dev/tty || return 0
+
+    if "$opener" "$url" >/dev/null 2>&1; then
+        printf '\n'
+        ok "Opened $url"
+    else
+        printf '\n'
+        warn "Could not open a browser. The panel is at $url"
+    fi
+}
+
+offer_to_open_panel
