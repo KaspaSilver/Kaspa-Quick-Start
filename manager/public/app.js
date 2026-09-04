@@ -2119,7 +2119,7 @@ async function loadApps() {
     renderAppState('desktop', r.apps.desktop);
 
     // --- Nextcloud ---
-    $('nextcloud-ref').value = c.nextcloud.ref;
+    // No ref: it is built on a docker tag, not a branch of anything.
     $('nextcloud-pub-web').checked = c.nextcloud.publish.web;
     $('nextcloud-port').value = c.nextcloud.hostPort;
     $('nextcloud-user').value = c.nextcloud.adminUser;
@@ -2320,7 +2320,9 @@ function toggleRefCustom(name) {
     $(`${name}-ref-custom-row`).hidden = $(`${name}-ref`).value !== REF_CUSTOM;
 }
 
-for (const name of ['kachat', 'desktop', 'nextcloud']) {
+// Only the apps built from a git ref. Nextcloud is built on a docker tag and
+// has no branches to pick between.
+for (const name of ['kachat', 'desktop']) {
     $(`${name}-ref`).addEventListener('change', () => {
         toggleRefCustom(name);
         if ($(`${name}-ref`).value === REF_CUSTOM) $(`${name}-ref-custom`).focus();
@@ -2343,7 +2345,7 @@ for (const name of ['kachat', 'desktop', 'nextcloud']) {
 
 /** Loads the pickers from cache when the apps page does. */
 async function loadRefPickers() {
-    for (const name of ['kachat', 'desktop', 'nextcloud']) {
+    for (const name of ['kachat', 'desktop']) {
         const current = appsState?.config?.[name]?.ref ?? 'main';
         try {
             fillRefPicker(name, await api(`/api/apps/${name}/refs`), current);
@@ -2374,7 +2376,10 @@ function collectAppConfig(name) {
     }
     return {
         enabled: Boolean(appsState?.config?.nextcloud?.enabled),
-        ref: appRef('nextcloud'),
+        // Carried through untouched. The saved value is meaningless for an app
+        // built on a docker tag, but dropping it from the document would fail
+        // the server's validation of the whole apps config.
+        ref: appsState?.config?.nextcloud?.ref ?? 'main',
         publish: { web: $('nextcloud-pub-web').checked },
         hostPort: Number($('nextcloud-port').value),
         adminUser: $('nextcloud-user').value.trim(),
@@ -2388,7 +2393,9 @@ function collectAppConfig(name) {
  * runs the same save: the whole config is sent either way, so pressing it from
  * here is the same operation under a name that fits where it sits.
  */
-for (const app of ['kachat', 'desktop', 'nextcloud']) {
+// Nextcloud has no Rebuild: there is no branch to rebuild *from*, and Update
+// already pulls the tag and rebuilds on it.
+for (const app of ['kachat', 'desktop']) {
     $(`${app}-rebuild`).addEventListener('click', async () => {
         const err = $(`${app}-error`);
         err.hidden = true;
@@ -2485,14 +2492,21 @@ for (const name of ['kachat', 'desktop', 'nextcloud']) {
         try {
             const r = await api(`/api/apps/${name}/check`);
             $(`${name}-update`).disabled = !r.updateAvailable;
+            // An app built on somebody else's image has no commits and no
+            // branch, so it is described as what it is: a tag, and the image
+            // that tag currently names.
+            const source = r.image ? `the ${r.image} tag` : `${r.repo}@${r.ref}`;
+            const version = r.image ? 'image' : 'commit';
             if (r.neverBuilt) {
-                notice.textContent = `${r.repo}@${r.ref} is at ${r.shortSha}: "${r.message}". Nothing built yet, so press Apply settings to build it.`;
+                notice.textContent = `${source} is at ${r.shortSha}. Nothing built here yet, so install it first.`;
             } else if (r.updateAvailable) {
                 notice.className = 'verdict bad';
-                notice.textContent = `There is an update: ${r.shortSha}, "${r.message}". You are running ${String(r.builtSha).slice(0, 7)}.`;
+                notice.textContent = r.image
+                    ? `${r.image} has moved: it is now ${r.shortSha}, and this was built on ${String(r.builtSha).replace(/^sha256:/, '').slice(0, 12)}.`
+                    : `There is an update: ${r.shortSha}, "${r.message}". You are running ${String(r.builtSha).slice(0, 7)}.`;
             } else {
                 notice.className = 'verdict ok';
-                notice.textContent = `You are up to date, running ${r.shortSha}, the newest commit on ${r.ref}.`;
+                notice.textContent = `You are up to date, running the ${version} ${source} points at now (${r.shortSha}).`;
             }
         } catch (e) {
             notice.className = 'verdict bad';

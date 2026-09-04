@@ -1904,7 +1904,7 @@ route('PUT', /^\/api\/apps\/(kachat|desktop|nextcloud)$/, async (req, res, match
     sendJson(res, 202, { ok: true, jobId: job.id, config: cfg });
 });
 
-route('GET', /^\/api\/apps\/(kachat|desktop|nextcloud|bot)\/refs$/, async (req, res, match, url) => {
+route('GET', /^\/api\/apps\/(kachat|desktop|bot)\/refs$/, async (req, res, match, url) => {
     try {
         sendJson(res, 200, await apps.listRefs(match[1], { force: url.searchParams.get('force') === '1' }));
     } catch (err) {
@@ -2075,7 +2075,11 @@ route('POST', /^\/api\/apps\/(kachat|desktop|nextcloud|bot)\/update$/, async (re
 
     const app = apps.APPS[name];
     const job = jobs.start(`Update ${app.label}`, async (onLine) => {
-        onLine(`Rebuilding ${app.label} from ${app.repo}@${cfg[name].ref}...`);
+        onLine(
+            app.image
+                ? `Rebuilding ${app.label} on the current ${app.image}, plus what this stack adds to it...`
+                : `Rebuilding ${app.label} from ${app.repo}@${cfg[name].ref}...`,
+        );
         // Which of the app's services actually has a build, taken from the same
         // list the installer uses rather than named again here. It used to be a
         // filter for two service names, and every app that is not one of those
@@ -2086,7 +2090,12 @@ route('POST', /^\/api\/apps\/(kachat|desktop|nextcloud|bot)\/update$/, async (re
         if (!buildable.length) throw new Error(`${app.label} has nothing to build.`);
         // --no-cache: the build context is a git ref, and Docker would otherwise
         // reuse the layer it already has for that same ref string.
-        await dockerctl.compose(['build', '--no-cache', ...buildable], {
+        //
+        // --pull as well, because an app built on somebody else's image is
+        // updated by that image moving. Without it the build is repeated
+        // against the copy of nextcloud:stable already on the machine, which is
+        // the very thing being updated away from.
+        await dockerctl.compose(['build', '--no-cache', '--pull', ...buildable], {
             onLine,
             profile: app.profile,
             timeoutMs: 120 * 60_000,

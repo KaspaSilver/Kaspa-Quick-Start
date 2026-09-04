@@ -285,6 +285,10 @@ services:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
 
+  # The official image plus ffmpeg, which is what generates video thumbnails.
+  # Nothing here comes from a repository of ours: the panel's update button
+  # checks the nextcloud:stable tag on Docker Hub and rebuilds on whatever it
+  # currently points at.
   nextcloud:
     image: kaspa-one-click/nextcloud:1
     build:
@@ -303,8 +307,14 @@ services:
       NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD:-}
       NEXTCLOUD_TRUSTED_DOMAINS: ${NEXTCLOUD_TRUSTED_DOMAINS:-localhost}
       TRUSTED_PROXIES: 172.16.0.0/12
+      # Read by previews.config.php, and only used when Imaginary was given one.
+      NEXTCLOUD_IMAGINARY_SECRET: ${NEXTCLOUD_IMAGINARY_SECRET:-}
     volumes:
       - nextcloud-data:/var/www/html
+      # The image loads every *.config.php in that directory. Mounted rather
+      # than baked in, so it can be corrected without a rebuild, and read-only
+      # so Nextcloud's own config writes never land in it.
+      - ${STACK_DIR}/nextcloud/previews.config.php:/var/www/html/config/previews.config.php:ro
     networks:
       - kaspa
     depends_on:

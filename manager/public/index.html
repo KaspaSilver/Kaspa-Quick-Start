@@ -1438,27 +1438,24 @@
           <article class="card span2">
             <h3>Source and updates</h3>
             <p class="muted">
-              Tracks <code>KaspaSilver/KaChat-NextCloud</code> and checks it for
-              commits newer than the one this image was built from. Your files and
+              This is the official <code>nextcloud:stable</code> image with ffmpeg
+              added for video thumbnails — nothing here is a fork. A tag is not a
+              version: <code>stable</code> means a different image every few
+              weeks, so checking asks Docker Hub what it points at now and
+              compares that with what this one was built from. Your files and
               database are on their own volumes, so a rebuild leaves them alone.
             </p>
-            <label class="inline">Branch / tag
-              <select id="nextcloud-ref"><option value="main">main</option></select>
-              <button type="button" class="ghost mini" id="nextcloud-refs-scan" title="Look up the branches and tags this repository has">Rescan</button>
-            </label>
-            <label class="inline" id="nextcloud-ref-custom-row" hidden>Ref
-              <input id="nextcloud-ref-custom" size="24" placeholder="branch, tag or commit">
-            </label>
             <div id="nextcloud-build" class="verdict"></div>
             <div id="nextcloud-update-status" class="verdict">Not checked yet.</div>
             <div class="row">
               <button type="button" id="nextcloud-check" class="ghost">Check for updates</button>
               <button type="button" id="nextcloud-update" class="primary" disabled>Update</button>
-              <button type="button" id="nextcloud-rebuild" class="ghost">Rebuild from this branch</button>
             </div>
             <p class="hint">
-              Rebuild is what to press after changing the branch. Update is for
-              staying on the branch you are already on.
+              Updating pulls the current <code>nextcloud:stable</code>, rebuilds on
+              it and restarts the container. Nextcloud upgrades its own database
+              on first start afterwards, which can take a few minutes on a large
+              instance.
             </p>
           </article>
         </div>

@@ -113,7 +113,11 @@ export const APPS = {
 
     nextcloud: {
         label: 'Nextcloud',
-        repo: 'KaspaSilver/KaChat-NextCloud',
+        // Not a repository of ours. It is the official image with ffmpeg added
+        // for video thumbnails, so what it tracks is a docker tag, and "is
+        // there an update" is a question for the registry rather than GitHub.
+        repo: null,
+        image: 'nextcloud:stable',
         profile: 'nextcloud',
         services: ['nextcloud-db', 'nextcloud-redis', 'nextcloud-imaginary', 'nextcloud'],
         // A file server: nothing to do with the chain, so never gated on it.
@@ -570,9 +574,65 @@ export async function listRefs(name, { force = false } = {}) {
     return value;
 }
 
+/**
+ * Whether the tag an app is built on has moved, for an app built on somebody
+ * else's image rather than on a repository of ours.
+ *
+ * A tag is not a version: `nextcloud:stable` means something different every
+ * few weeks and the same name refers to a new image each time. The only honest
+ * answer is what the registry currently calls that tag, compared with the
+ * digest the local image was pulled at.
+ *
+ * Anonymous, because the image is public: the registry hands out a pull token
+ * to anyone who asks.
+ */
+async function checkImageUpstream(app) {
+    const [repository, tag] = app.image.split(':');
+    const path = repository.includes('/') ? repository : `library/${repository}`;
+
+    const auth = await fetch(
+        `https://auth.docker.io/token?service=registry.docker.io&scope=repository:${path}:pull`,
+        { signal: AbortSignal.timeout(15_000) },
+    );
+    if (!auth.ok) throw new Error(`Docker Hub would not issue a token (${auth.status}).`);
+    const { token } = await auth.json();
+
+    // HEAD, because the digest is in the header and the body is a manifest
+    // nobody here reads. Both media types are accepted: an image published as
+    // a multi-architecture list answers with one, a single image with the other.
+    const manifest = await fetch(`https://registry-1.docker.io/v2/${path}/manifests/${tag}`, {
+        method: 'HEAD',
+        headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: [
+                'application/vnd.oci.image.index.v1+json',
+                'application/vnd.docker.distribution.manifest.list.v2+json',
+                'application/vnd.oci.image.manifest.v1+json',
+                'application/vnd.docker.distribution.manifest.v2+json',
+            ].join(', '),
+        },
+        signal: AbortSignal.timeout(15_000),
+    });
+    if (!manifest.ok) throw new Error(`Docker Hub returned ${manifest.status} for ${app.image}.`);
+
+    const latestSha = manifest.headers.get('docker-content-digest') || '';
+    return {
+        repo: app.image,
+        ref: tag,
+        image: app.image,
+        latestSha,
+        shortSha: latestSha.replace(/^sha256:/, '').slice(0, 12),
+        message: `the current ${app.image} on Docker Hub`,
+        author: null,
+        date: manifest.headers.get('last-modified') || null,
+        url: `https://hub.docker.com/_/${repository.replace(/^library\//, '')}`,
+    };
+}
+
 export async function checkUpstream(name, cfg) {
     const app = APPS[name];
     if (!app) throw new Error(`Unknown app "${name}".`);
+    if (app.image) return checkImageUpstream(app);
     const ref = cfg[name].ref;
 
     const res = await fetch(`https://api.github.com/repos/${app.repo}/commits/${encodeURIComponent(ref)}`, {

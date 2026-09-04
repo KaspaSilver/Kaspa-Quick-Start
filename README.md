@@ -10,10 +10,9 @@ bind and which ports to publish before you press Start. **To go public, switch
 on the ports you want in the panel and open them on your router.**
 A stratum bridge is included, so miners and ASICs can point straight at your
 node, with a dashboard for hashrate, workers and blocks found. The
-[KaChat indexer](https://github.com/KaspaSilver/KaChat-Indexer),
-[Nextcloud](https://github.com/KaspaSilver/KaChat-NextCloud) and the
-[block notifier bot](https://github.com/KaspaSilver/Kaspa-Block-Notifier) can be
-switched on from the same panel, each tracking its own repository.
+[KaChat indexer](https://github.com/KaspaSilver/KaChat-Indexer), Nextcloud and
+the [block notifier bot](https://github.com/KaspaSilver/Kaspa-Block-Notifier) can
+be switched on from the same panel, each tracking its own source.
 
 This repository is packaging only. The node itself is stock
 [kaspad](https://github.com/kaspanet/rusty-kaspa). The installer builds its
@@ -248,9 +247,11 @@ and it talks to whichever node and indexer you point it at from inside the app.
 It does not wait for this node to sync, because it does not have to.
 
 **Nextcloud.** Your own cloud for the files, photos and video KaChat shares and
-backs up, from [KaChat-NextCloud](https://github.com/KaspaSilver/KaChat-NextCloud).
-Video thumbnails (ffmpeg) and iPhone HEIC previews (Imaginary) are configured for
-you. Publish it on a port, or give it a domain and HTTPS under Proxy and domains,
+backs up. The official `nextcloud:stable` image with ffmpeg added, and previews
+switched on for you: photos and iPhone HEIC through a separate Imaginary
+container, video thumbnails through ffmpeg, plus PDF, SVG, audio cover art,
+text and OpenDocument. Nextcloud enables none of that by default. Updating
+checks what the `nextcloud:stable` tag points at now and rebuilds on it. Publish it on a port, or give it a domain and HTTPS under Proxy and domains,
 remember to add that domain to its trusted-domains list too, or Nextcloud will
 refuse the request.
 
