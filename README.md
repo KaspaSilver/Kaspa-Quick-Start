@@ -10,9 +10,10 @@ bind and which ports to publish before you press Start. **To go public, switch
 on the ports you want in the panel and open them on your router.**
 A stratum bridge is included, so miners and ASICs can point straight at your
 node, with a dashboard for hashrate, workers and blocks found. The
-[KaChat indexer](https://github.com/KaspaSilver/KaChat-Indexer) and
-[Nextcloud](https://github.com/KaspaSilver/KaChat-NextCloud) can be switched on
-from the same panel, each tracking its own repository.
+[KaChat indexer](https://github.com/KaspaSilver/KaChat-Indexer),
+[Nextcloud](https://github.com/KaspaSilver/KaChat-NextCloud) and the
+[block notifier bot](https://github.com/KaspaSilver/Kaspa-Block-Notifier) can be
+switched on from the same panel, each tracking its own repository.
 
 This repository is packaging only. The node itself is stock
 [kaspad](https://github.com/kaspanet/rusty-kaspa). The installer builds its
@@ -302,6 +303,7 @@ bind-mounting a RocksDB database into Docker Desktop is painfully slow.
 | `kachat-app` + `kachat-db` | built from KaChat-Indexer | chat/KaPosts indexer and its Postgres (only when KaChat is on) |
 | `nextcloud` + db/redis/imaginary | `nextcloud:stable` + ffmpeg | private cloud (only when Nextcloud is on) |
 | `libretranslate` | `libretranslate/libretranslate` | translates KaPosts for the indexer, offline (only when Translation is installed) |
+| `kachat-bot` | built from Kaspa-Block-Notifier | messages your phone when this node finds a block (only when KaChat Bot is installed) |
 
 Nothing here starts anything else. Installing the bridge does not start the
 node, and no compose service declares a dependency on `kaspad` — the bridge and

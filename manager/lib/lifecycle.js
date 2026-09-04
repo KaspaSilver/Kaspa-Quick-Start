@@ -107,6 +107,19 @@ export const UNITS = {
         buildable: ['nextcloud'],
         data: 'every file, photo and calendar stored in it',
     },
+    bot: {
+        label: 'KaChat Bot',
+        profile: 'bot',
+        services: ['kachat-bot'],
+        containers: ['kaspa-node-kachat-bot'],
+        primary: 'kaspa-node-kachat-bot',
+        // It stores nothing. What it knows is in conf/bot/bot.env, which is
+        // configuration rather than data and is not this function's to delete.
+        volumes: [],
+        images: ['kaspa-one-click/kachat-bot'],
+        buildable: ['kachat-bot'],
+        data: 'nothing it collected. Its settings, including the wallet key, stay in the stack directory',
+    },
     gift: {
         label: 'KaChat Gift Service',
         profile: 'gift',

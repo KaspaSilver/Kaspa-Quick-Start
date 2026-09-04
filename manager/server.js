@@ -40,6 +40,7 @@ import * as publish from './lib/publish.js';
 import * as portcheck from './lib/portcheck.js';
 import * as gift from './lib/gift.js';
 import * as lifecycle from './lib/lifecycle.js';
+import * as bot from './lib/bot.js';
 import { nodeSnapshot, rpc } from './lib/rpc.js';
 import { jobs } from './lib/jobs.js';
 import {
@@ -1883,12 +1884,65 @@ route('PUT', /^\/api\/apps\/(kachat|desktop|nextcloud)$/, async (req, res, match
     sendJson(res, 202, { ok: true, jobId: job.id, config: cfg });
 });
 
-route('GET', /^\/api\/apps\/(kachat|desktop|nextcloud)\/refs$/, async (req, res, match, url) => {
+route('GET', /^\/api\/apps\/(kachat|desktop|nextcloud|bot)\/refs$/, async (req, res, match, url) => {
     try {
         sendJson(res, 200, await apps.listRefs(match[1], { force: url.searchParams.get('force') === '1' }));
     } catch (err) {
         fail(res, 502, err.message);
     }
+});
+
+// ---------------------------------------------------------------- kachat bot --
+
+/**
+ * The block notifier's settings.
+ *
+ * One of them is a wallet key, so this is the shape of every route here: it
+ * goes in, it never comes back out, and an empty one on the way in means "keep
+ * the one you have" rather than "clear it".
+ */
+route('GET', /^\/api\/bot$/, async (req, res) => {
+    const cfg = apps.loadAppsConfig();
+    sendJson(res, 200, {
+        config: bot.readConfig(),
+        app: { ref: cfg.bot.ref, network: cfg.bot.network },
+        container: await lifecycle.status('bot'),
+        blockers: apps.appBlockers('bot', cfg, loadNodeConfig()),
+        node: { network: loadNodeConfig().network },
+        build: apps.readBuildRecord('bot'),
+    });
+});
+
+route('PUT', /^\/api\/bot$/, async (req, res) => {
+    const body = await readBody(req);
+    const problems = bot.validate(body, { existingKey: bot.hasKey() });
+    if (problems.length) return fail(res, 400, 'That is not usable yet.', { details: problems });
+
+    bot.writeConfig(body);
+
+    const cfg = apps.loadAppsConfig();
+    if (body.network) cfg.bot.network = body.network === 'testnet-10' ? 'testnet-10' : 'mainnet';
+    if (body.ref) cfg.bot.ref = String(body.ref).trim() || 'main';
+    apps.saveAppsConfig(cfg);
+    apps.writeAppsEnv(cfg);
+
+    // Its settings are read once, at startup, from a file the container has
+    // already mounted -- so a running bot has to be recreated, and a stopped
+    // one is left stopped. Saving a setting has never started anything here.
+    const state = await lifecycle.status('bot');
+    if (!state.installed || !state.running) {
+        return sendJson(res, 200, { ok: true, config: bot.readConfig(), restarted: false });
+    }
+
+    const job = jobs.start('Restart KaChat Bot', async (onLine) => {
+        onLine('Recreating the bot so it reads the new settings.');
+        await dockerctl.compose(['up', '-d', '--no-deps', '--force-recreate', 'kachat-bot'], {
+            onLine,
+            profile: 'bot',
+            timeoutMs: 10 * 60_000,
+        });
+    });
+    sendJson(res, 202, { ok: true, jobId: job.id, config: bot.readConfig(), restarted: true });
 });
 
 // ------------------------------------------------------------- translation --
@@ -1975,7 +2029,7 @@ route('POST', /^\/api\/apps\/nextcloud\/admin\/password$/, async (req, res) => {
     }
 });
 
-route('GET', /^\/api\/apps\/(kachat|desktop|nextcloud)\/check$/, async (req, res, match) => {
+route('GET', /^\/api\/apps\/(kachat|desktop|nextcloud|bot)\/check$/, async (req, res, match) => {
     const name = match[1];
     try {
         const upstream = await apps.checkUpstream(name, apps.loadAppsConfig());
@@ -1994,7 +2048,7 @@ route('GET', /^\/api\/apps\/(kachat|desktop|nextcloud)\/check$/, async (req, res
     }
 });
 
-route('POST', /^\/api\/apps\/(kachat|desktop|nextcloud)\/update$/, async (req, res, match) => {
+route('POST', /^\/api\/apps\/(kachat|desktop|nextcloud|bot)\/update$/, async (req, res, match) => {
     const name = match[1];
     const cfg = apps.loadAppsConfig();
     if (!cfg[name].enabled) return fail(res, 409, `${apps.APPS[name].label} is switched off.`);
@@ -2002,9 +2056,17 @@ route('POST', /^\/api\/apps\/(kachat|desktop|nextcloud)\/update$/, async (req, r
     const app = apps.APPS[name];
     const job = jobs.start(`Update ${app.label}`, async (onLine) => {
         onLine(`Rebuilding ${app.label} from ${app.repo}@${cfg[name].ref}...`);
+        // Which of the app's services actually has a build, taken from the same
+        // list the installer uses rather than named again here. It used to be a
+        // filter for two service names, and every app that is not one of those
+        // two -- KaChat-Desktop, now the bot -- passed no service names at all,
+        // which tells compose to build every service it can see. That includes
+        // kaspad, from source.
+        const buildable = lifecycle.unitFor(name)?.buildable ?? [];
+        if (!buildable.length) throw new Error(`${app.label} has nothing to build.`);
         // --no-cache: the build context is a git ref, and Docker would otherwise
         // reuse the layer it already has for that same ref string.
-        await dockerctl.compose(['build', '--no-cache', ...app.services.filter((sv) => sv === 'kachat-app' || sv === 'nextcloud')], {
+        await dockerctl.compose(['build', '--no-cache', ...buildable], {
             onLine,
             profile: app.profile,
             timeoutMs: 120 * 60_000,
@@ -2621,6 +2683,7 @@ async function bootstrap() {
 
     const appsCfg = apps.loadAppsConfig();
     apps.ensureSecrets();
+    bot.ensureEnvFile();
     apps.writeAppsEnv(appsCfg);
     apps.renderAppsPortsOverride(appsCfg);
 

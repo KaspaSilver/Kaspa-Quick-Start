@@ -79,6 +79,22 @@ export const APPS = {
         },
         adminPort: null,
     },
+    bot: {
+        label: 'KaChat Bot',
+        repo: 'KaspaSilver/Kaspa-Block-Notifier',
+        profile: 'bot',
+        services: ['kachat-bot'],
+        // It subscribes to the node's UTXO changes, so it wants a node that is
+        // up -- but not a synced one. A node still catching up simply has not
+        // found the block yet.
+        needsSyncedNode: false,
+        container: 'kaspa-node-kachat-bot',
+        // Nothing to publish: it dials out to the node and to the network, and
+        // listens on nothing at all.
+        publish: null,
+        ports: {},
+        adminPort: null,
+    },
     gift: {
         label: 'KaChat Gift Service',
         repo: 'KaspaSilver/KaChat-Gift-Service',
@@ -133,6 +149,14 @@ export const DEFAULT_APPS_CONFIG = {
         // Useless unpublished: the whole point is opening it in a browser.
         publish: { web: true },
         hostPort: 5173,
+    },
+    bot: {
+        enabled: false,
+        ref: 'main',
+        // Everything else it needs -- the addresses, the alias, the wallet key
+        // -- is in conf/bot/bot.env, because one of them is a key and this file
+        // is not the place for one.
+        network: 'mainnet',
     },
     gift: {
         enabled: false,
@@ -344,6 +368,31 @@ export function appBlockers(name, cfg, nodeCfg) {
             );
         }
     }
+
+    if (name === 'bot' && cfg.bot?.enabled) {
+        // It watches for rewards over gRPC and sends the notification over
+        // wRPC Borsh, so it needs both. Neither has to be published: it is a
+        // container on the same network as the node.
+        if (!nodeCfg.services.grpc) {
+            blockers.push(
+                'The bot watches for block rewards over gRPC, and that listener is switched off. ' +
+                    'Turn gRPC on under Kaspad, Ports. It does not have to be public.',
+            );
+        }
+        if (!nodeCfg.services.borsh) {
+            blockers.push(
+                'The bot sends its notification over wRPC Borsh, and that listener is switched off. ' +
+                    'Turn wRPC Borsh on under Kaspad, Ports. It does not have to be public.',
+            );
+        }
+        if (nodeCfg.network !== cfg.bot.network) {
+            blockers.push(
+                `The bot is set to ${cfg.bot.network} but your node is running ${nodeCfg.network}. ` +
+                    'These have to match, or it watches an address on a chain the node is not following.',
+            );
+        }
+    }
+
     return blockers;
 }
 
@@ -386,6 +435,11 @@ export function writeAppsEnv(cfg) {
         // Both the image tag and the build arg, so switching refs actually
         // rebuilds rather than re-tagging the layers already cached.
         KACHAT_DESKTOP_REF: cfg.desktop?.ref || 'main',
+        BOT_REF: cfg.bot?.ref || 'main',
+        BOT_NETWORK: cfg.bot?.network || 'mainnet',
+        // The node's ports move with its network, and the bot dials both.
+        BOT_NODE_GRPC_PORT: cfg.bot?.network === 'testnet-10' ? 16210 : 16110,
+        BOT_NODE_BORSH_PORT: cfg.bot?.network === 'testnet-10' ? 17210 : 17110,
         NEXTCLOUD_ADMIN_USER: cfg.nextcloud.adminUser,
         NEXTCLOUD_TRUSTED_DOMAINS: cfg.nextcloud.trustedDomains,
     });

@@ -314,6 +314,48 @@ services:
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
+  # ---- KaChat Bot -----------------------------------------------------------
+  #
+  # Watches this node for block rewards landing on a mining address and sends
+  # each one to a phone as an encrypted KaChat message. Built from
+  # KaspaSilver/Kaspa-Block-Notifier, the same way the indexer is built from its
+  # own repository, so the panel's update button moves it forward.
+  #
+  # Upstream reaches the node through host-gateway, because it assumes a node
+  # running on the docker host. Here the node is a container on this network, so
+  # it is named directly and nothing has to be published to the host for the bot
+  # to work.
+  #
+  # It holds a wallet key, which is why its settings are a file mounted from
+  # conf/bot rather than values in .env: that file is written 0600 by the panel
+  # and .env is not.
+  kachat-bot:
+    image: kaspa-one-click/kachat-bot:${BOT_REF:-main}
+    build:
+      context: ${BOT_REPO:-https://github.com/KaspaSilver/Kaspa-Block-Notifier.git}#${BOT_REF:-main}
+    container_name: kaspa-node-kachat-bot
+    hostname: kachat-bot
+    profiles: ["bot"]
+    restart: unless-stopped
+    environment:
+      # The node on this network, not the docker host. Ports follow the network,
+      # the same way the indexer's do.
+      NODE_GRPC: kaspad:${BOT_NODE_GRPC_PORT:-16110}
+      NODE_WRPC: ws://kaspad:${BOT_NODE_BORSH_PORT:-17110}
+      KASPA_NETWORK: ${BOT_NETWORK:-mainnet}
+      PYTHONUNBUFFERED: "1"
+    # Everything that identifies a wallet lives here, written by the panel and
+    # readable only by its owner. `required: false` so a stack that has never
+    # set the bot up can still run every other compose command.
+    env_file:
+      - path: ./conf/bot/bot.env
+        required: false
+    networks:
+      - kaspa
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
   # ---- Translation ----------------------------------------------------------
   #
   # The engine behind the indexer's POST /translate: KaPosts are translated

@@ -277,6 +277,7 @@ const CONTAINERS = [
     'kaspa-node-kachat',
     'kaspa-node-kachat-db',
     'kaspa-node-kachat-desktop',
+    'kaspa-node-kachat-bot',
     'kaspa-node-libretranslate',
     'kaspa-node-gift',
     'kaspa-node-nextcloud',

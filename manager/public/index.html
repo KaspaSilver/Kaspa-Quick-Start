@@ -97,6 +97,17 @@
         </label>
       </div>
       <div class="nav-row">
+        <button class="nav-item" data-tab="bot" title="KaChat Bot">
+          <span class="nav-dot" data-health="bot"></span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="8" width="16" height="11" rx="2"/><path d="M12 8V4"/><circle cx="12" cy="3" r="1.4"/><path d="M9 13h.01M15 13h.01"/><path d="M9.5 16.5h5"/></svg>
+          <span class="label">KaChat Bot</span>
+        </button>
+        <label class="switch mini" title="Start or stop the bot">
+          <input type="checkbox" data-service="bot" aria-label="Start or stop the bot">
+          <span class="track"></span>
+        </label>
+      </div>
+      <div class="nav-row">
         <button class="nav-item" data-tab="gift" title="KaChat Gift Service">
           <span class="nav-dot" data-health="gift"></span>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11h16v9H4z"/><path d="M3 7h18v4H3z"/><path d="M12 7v13"/><path d="M12 7S9.5 3.5 7.5 4.6 9 7 12 7zm0 0s2.5-3.5 4.5-2.4S15 7 12 7z"/></svg>
@@ -1462,6 +1473,166 @@
 </section>
 
     <!-- ------------------------------------------------------------ gift -->
+    <section id="tab-bot" class="tab">
+      <nav class="subnav" aria-label="KaChat Bot">
+        <button class="subtab-btn active" data-subtab="bot-overview">Overview</button>
+        <button class="subtab-btn" data-subtab="bot-setup">Setup</button>
+        <button class="subtab-btn" data-subtab="bot-updates">Updates</button>
+        <button class="subtab-btn" data-subtab="bot-uninstall">Uninstall</button>
+      </nav>
+
+      <div id="sub-bot-overview" class="subtab active">
+        <div class="grid">
+          <article class="card span2">
+            <div class="toggle-row">
+              <div class="toggle-text">
+                <strong>KaChat Bot</strong>
+                <span class="muted">
+                  Watches this node for block rewards landing on your mining
+                  address, and sends each one to your phone as a KaChat message.
+                </span>
+              </div>
+              <span id="bot-state" class="tag off">off</span>
+            </div>
+            <div class="notice">
+              <p>
+                The message is a Kaspa transaction you send to yourself, with the
+                notification encrypted into its payload. Nothing is posted to a
+                server and no push service is involved: KaChat reads it off the
+                chain and only your key can decrypt it.
+              </p>
+              <p class="muted">
+                Each notification costs about 0.002 KAS in fees, paid from the
+                wallet whose key you give it below. Nothing is ever sent
+                anywhere else.
+              </p>
+            </div>
+            <p class="error" id="bot-error" hidden></p>
+            <div id="bot-notice" class="verdict" hidden></div>
+          </article>
+
+          <article class="card">
+            <h3>What it is watching</h3>
+            <dl class="kv">
+              <div><dt>Mining address</dt><dd id="bot-shows-mining" class="wrap">–</dd></div>
+              <div><dt>Notifies</dt><dd id="bot-shows-alias">–</dd></div>
+              <div><dt>Minimum reward</dt><dd id="bot-shows-min">–</dd></div>
+              <div><dt>Wallet key</dt><dd id="bot-shows-key">–</dd></div>
+              <div><dt>Network</dt><dd id="bot-shows-network">–</dd></div>
+            </dl>
+            <p class="hint">
+              Its own log is the record of what it has sent. It is under All
+              logs, as <code>kaspa-node-kachat-bot</code>.
+            </p>
+          </article>
+
+          <article class="card">
+            <h3>Before it can work</h3>
+            <ul class="plain" id="bot-requirements">
+              <li>The node needs its gRPC and wRPC Borsh listeners on, under
+                Kaspad, Ports. Neither has to be published.</li>
+              <li>You need to be mining to this node, with rewards paid to the
+                address below.</li>
+              <li>The sending wallet needs a little KAS for fees.</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+
+      <div id="sub-bot-setup" class="subtab">
+        <div class="grid">
+          <article class="card span2">
+            <h3>Set the bot up</h3>
+            <p class="muted">
+              Four things, and one of them is a wallet key. It is written to a
+              file only its owner can read, it is never shown again, and it never
+              goes into the panel's own settings file.
+            </p>
+
+            <label class="stack">Mining address
+              <input id="bot-mining" placeholder="kaspa:q…" size="70" autocomplete="off" spellcheck="false">
+              <span class="hint">The address your miner is paid to. This is the one the bot watches.</span>
+            </label>
+
+            <label class="stack">Receiver alias
+              <input id="bot-alias" placeholder="your KaChat alias" size="32" autocomplete="off" spellcheck="false">
+              <span class="hint">
+                The alias KaChat shows on a message you have sent. Open a
+                message you sent in <a href="https://kaspa.stream" target="_blank" rel="noopener">kaspa.stream</a>
+                and read it off there.
+              </span>
+            </label>
+
+            <label class="stack">Receiver public key
+              <input id="bot-pubkey" placeholder="64 hex characters" size="70" autocomplete="off" spellcheck="false">
+              <span class="hint">
+                The x-only public key of the KaChat account that receives the
+                notification: 64 hex characters, no 02 or 03 in front.
+              </span>
+            </label>
+
+            <label class="stack">Sending wallet private key
+              <input id="bot-key" type="password" placeholder="64 hex characters" size="70" autocomplete="off" spellcheck="false">
+              <span class="hint" id="bot-key-hint">
+                The wallet that pays the fee for each notification. Use a wallet
+                kept for this, not one holding anything you would miss.
+              </span>
+            </label>
+
+            <div class="row">
+              <label class="inline">Minimum reward
+                <input id="bot-min" type="number" min="0" step="0.1" value="0" size="6"> KAS
+              </label>
+              <label class="inline">Network
+                <select id="bot-network">
+                  <option value="mainnet">Mainnet</option>
+                  <option value="testnet-10">Testnet-10</option>
+                </select>
+              </label>
+            </div>
+            <p class="hint">
+              A minimum of zero notifies on every reward. Raising it filters out
+              the small ones.
+            </p>
+
+            <div class="row">
+              <button type="button" id="bot-save" class="primary">Save settings</button>
+              <span class="muted" id="bot-save-note"></span>
+            </div>
+            <p class="error" id="bot-setup-error" hidden></p>
+          </article>
+        </div>
+      </div>
+
+      <div id="sub-bot-updates" class="subtab">
+        <div class="grid">
+          <article class="card span2">
+            <h3>Updates</h3>
+            <p class="muted">
+              Built straight from
+              <a href="https://github.com/KaspaSilver/Kaspa-Block-Notifier" target="_blank" rel="noopener">KaspaSilver/Kaspa-Block-Notifier</a>,
+              so this checks that repository and rebuilds from it.
+            </p>
+            <label class="inline">Branch or tag
+              <input id="bot-ref" placeholder="main" size="18" autocomplete="off">
+            </label>
+            <div class="row">
+              <button type="button" id="bot-check" class="ghost">Check for updates</button>
+              <button type="button" id="bot-update" class="primary" disabled>Rebuild</button>
+            </div>
+            <div id="bot-update-status" class="verdict" hidden></div>
+            <p class="hint" id="bot-build">Not built yet.</p>
+          </article>
+        </div>
+      </div>
+
+      <div id="sub-bot-uninstall" class="subtab">
+        <div class="grid">
+          <article class="card span2 uninstall-card" data-uninstall="bot"></article>
+        </div>
+      </div>
+    </section>
+
     <section id="tab-gift" class="tab">
       <nav class="subnav" aria-label="Gift service">
         <button class="subtab-btn active" data-subtab="gift-overview">Overview</button>

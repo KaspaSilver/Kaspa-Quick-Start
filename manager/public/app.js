@@ -151,6 +151,7 @@ function selectTab(name) {
     // Read on arrival rather than polled: nothing on it changes by itself.
     if (name === 'global') loadGlobal().catch(() => {});
     if (name === 'gift') loadGift().catch(() => {});
+    if (name === 'bot') loadBot().catch(() => {});
     // On the drawer layout, picking a destination should get out of the way.
     if (MOBILE()) closeDrawer();
 }
@@ -733,6 +734,7 @@ const SERVICE_ACTIONS = {
     kachat: start('kachat'),
     desktop: start('desktop'),
     nextcloud: start('nextcloud'),
+    bot: start('bot'),
     // No sidebar row: its switch lives on the indexer's Translation tab.
     translate: start('translate'),
     gift: start('gift'),
@@ -747,6 +749,7 @@ const SERVICE_NAMES = {
     kassigner: 'KasSigner',
     nextcloud: 'Nextcloud',
     gift: 'the gift service',
+    bot: 'the KaChat Bot',
     translate: 'the translation engine',
     proxy: 'the reverse proxy',
 };
@@ -4257,6 +4260,7 @@ const UNINSTALL_COPY = {
     desktop: 'nothing: it keeps no state of its own',
     nextcloud: 'every file, photo and calendar stored in it',
     gift: 'the record of who has already claimed a gift',
+    bot: 'nothing it collected. Its settings, including the wallet key, stay in the stack directory and are kept',
     node: 'the entire synced blockchain. Tens of gigabytes, and days of syncing to get back',
     kassigner: 'the downloaded firmware and the record of what was verified. A device you have already flashed is unaffected',
     mining: "the bridge's own share and block records",
@@ -4457,6 +4461,137 @@ document.addEventListener('click', async (event) => {
         title: `Uninstalling ${state?.label ?? key}`,
         note: `Removing ${what}. Stopping partway through would leave half of it behind, so this runs to the end.`,
         request: () => api(`/api/services/${key}/uninstall`, { method: 'POST', body: { confirm: key, keepData } }),
+    });
+});
+
+// ---------------------------------------------------------------- kachat bot ---
+
+/**
+ * The block notifier: a bot that messages you when this node finds a block.
+ *
+ * It is the first app here whose configuration includes a wallet key, so the
+ * screen is built around that. The key goes one way. What comes back is whether
+ * one is stored, never the value, so nothing on this tab is worth a screenshot
+ * and leaving the page open in an office is not a mistake.
+ */
+let botState = null;
+
+async function loadBot() {
+    try {
+        botState = await api('/api/bot');
+    } catch {
+        return;
+    }
+    const { config, app, container, blockers, node } = botState;
+
+    // lifecycle.status says `installed` where a container state says `exists`;
+    // the badge vocabulary is shared with every other service either way.
+    const asContainer = { exists: container?.installed, running: container?.running, status: container?.status };
+    $('bot-state').textContent = containerWord(asContainer);
+    $('bot-state').className = `tag ${!container?.installed ? 'off' : container.running ? 'ok' : ''}`;
+    setNavHealth('bot', !container?.installed ? 'absent' : container.running ? 'ok' : 'bad');
+
+    $('bot-shows-mining').textContent = config.miningAddress || 'not set';
+    $('bot-shows-alias').textContent = config.receiverAlias ? `@${config.receiverAlias}` : 'not set';
+    $('bot-shows-min').textContent = config.minRewardKas > 0 ? `${config.minRewardKas} KAS` : 'every reward';
+    $('bot-shows-key').textContent = config.hasKey ? 'stored' : 'not set';
+    $('bot-shows-network').textContent = app.network + (node.network === app.network ? '' : ` — the node is on ${node.network}`);
+
+    // Anything that stops it working, said once, at the top.
+    const notice = $('bot-notice');
+    const missing = !config.complete ? 'It is not set up yet: fill in the Setup tab and save.' : null;
+    const problems = [...(blockers ?? []), missing].filter(Boolean);
+    notice.hidden = !problems.length;
+    notice.className = 'verdict bad';
+    notice.textContent = problems.join(' ');
+
+    // Only filled from the server when the field is not being typed into, so a
+    // poll landing mid-edit does not take the text out from under somebody.
+    const fill = (id, value) => {
+        const box = $(id);
+        if (document.activeElement !== box) box.value = value;
+    };
+    fill('bot-mining', config.miningAddress);
+    fill('bot-alias', config.receiverAlias);
+    fill('bot-pubkey', config.receiverPubkeyX);
+    fill('bot-min', String(config.minRewardKas ?? 0));
+    fill('bot-ref', app.ref);
+    if (document.activeElement !== $('bot-network')) $('bot-network').value = app.network;
+
+    // The key box stays empty always: an empty one means "keep the stored one".
+    $('bot-key-hint').textContent = config.hasKey
+        ? 'A key is stored. Leave this empty to keep it, or paste a new one to replace it.'
+        : 'The wallet that pays the fee for each notification. Use a wallet kept for this, not one holding anything you would miss.';
+
+    $('bot-build').textContent = botState.build?.sha
+        ? `Built from ${String(botState.build.sha).slice(0, 7)} on ${new Date(botState.build.builtAt).toLocaleString()}`
+        : 'Not built yet.';
+}
+
+$('bot-save').addEventListener('click', async () => {
+    const error = $('bot-setup-error');
+    error.hidden = true;
+
+    const body = {
+        miningAddress: $('bot-mining').value.trim(),
+        receiverAlias: $('bot-alias').value.trim(),
+        receiverPubkeyX: $('bot-pubkey').value.trim(),
+        privateKeyHex: $('bot-key').value.trim(),
+        minRewardKas: Number($('bot-min').value || 0),
+        network: $('bot-network').value,
+        ref: $('bot-ref').value.trim() || 'main',
+    };
+
+    const button = $('bot-save');
+    button.disabled = true;
+    try {
+        const r = await api('/api/bot', { method: 'PUT', body });
+        // Out of the DOM the moment it is accepted. It is not needed again, and
+        // a form left holding a wallet key is one browser autofill away from
+        // being somewhere else.
+        $('bot-key').value = '';
+        $('bot-save-note').textContent = r.restarted
+            ? 'Saved. The bot is restarting to read it.'
+            : 'Saved. It takes effect when the bot starts.';
+    } catch (e) {
+        error.hidden = false;
+        error.textContent = e.message;
+    } finally {
+        button.disabled = false;
+        setTimeout(() => loadBot().catch(() => {}), 1200);
+    }
+});
+
+$('bot-check').addEventListener('click', async () => {
+    const notice = $('bot-update-status');
+    notice.hidden = false;
+    notice.className = 'verdict';
+    notice.textContent = 'Checking GitHub…';
+    try {
+        const r = await api('/api/apps/bot/check');
+        $('bot-update').disabled = !r.updateAvailable;
+        if (r.neverBuilt) {
+            notice.textContent = `${r.repo}@${r.ref} is at ${r.shortSha}: "${r.message}". Nothing built yet, so install it first.`;
+        } else if (r.updateAvailable) {
+            notice.className = 'verdict bad';
+            notice.textContent = `There is an update: ${r.shortSha}, "${r.message}". You are running ${String(r.builtSha).slice(0, 7)}.`;
+        } else {
+            notice.className = 'verdict ok';
+            notice.textContent = `You are up to date, running ${r.shortSha}, the newest commit on ${r.ref}.`;
+        }
+    } catch (e) {
+        notice.className = 'verdict bad';
+        notice.textContent = e.message;
+    }
+});
+
+$('bot-update').addEventListener('click', async () => {
+    if (!confirm('Rebuild the bot from the newest commit?\n\nIt stops sending notifications while it rebuilds.')) return;
+    await runAction({
+        key: 'bot',
+        title: 'Rebuilding KaChat Bot',
+        note: 'Built from the newest commit on the branch above. It is not sending anything until it finishes.',
+        request: () => api('/api/apps/bot/update', { method: 'POST' }),
     });
 });
 
