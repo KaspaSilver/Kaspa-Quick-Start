@@ -17,12 +17,50 @@ export async function publicIp() {
     return null;
 }
 
-/** Strips a full hostname down to the DuckDNS label, so both forms are accepted. */
-export const normalizeDomains = (input) =>
-    String(input || '')
-        .split(/[\s,]+/)
-        .map((d) => d.trim().toLowerCase().replace(/\.duckdns\.org\.?$/, ''))
-        .filter(Boolean);
+/**
+ * The DuckDNS account's own label, from any name under it.
+ *
+ *   testing.duckdns.org          -> testing
+ *   sub.testing.duckdns.org      -> testing
+ *   a.b.testing.duckdns.org      -> testing
+ *   testing                      -> testing
+ *
+ * DuckDNS's API only ever addresses the account: `domains=testing`. A record
+ * under it is not something you register, so the label is what every request
+ * has to carry -- and stripping only the suffix, which is what this used to do,
+ * sent `sub.testing`, which DuckDNS refuses.
+ */
+export function accountLabel(input) {
+    const name = String(input || '').trim().toLowerCase().replace(/\.$/, '');
+    if (!name) return '';
+    if (name.endsWith('.duckdns.org')) {
+        // Whatever is left, the account is its last label: everything in front
+        // is a name under the account rather than part of it.
+        return name.slice(0, -'.duckdns.org'.length).split('.').filter(Boolean).pop() ?? '';
+    }
+    // A bare label is somebody typing just their account name, which the
+    // settings field has always accepted. Anything else with a dot in it is
+    // some other provider's hostname, and has no DuckDNS account behind it --
+    // 'example.com' is not the account 'com'.
+    return name.includes('.') ? '' : name;
+}
+
+/** True for a name under a DuckDNS account rather than the account's own name. */
+export function isSubdomain(input) {
+    const name = String(input || '').trim().toLowerCase().replace(/\.$/, '');
+    if (!name.endsWith('.duckdns.org')) return false;
+    return name.slice(0, -'.duckdns.org'.length).includes('.');
+}
+
+/** Every DuckDNS account named in a list, in the form the API wants. */
+export const normalizeDomains = (input) => [
+    ...new Set(
+        String(input || '')
+            .split(/[\s,]+/)
+            .map(accountLabel)
+            .filter(Boolean),
+    ),
+];
 
 /**
  * A subdomain plus a token is the whole condition for refreshing. There is no

@@ -42,6 +42,20 @@ domain = os.environ.get("CERTBOT_DOMAIN", "")
 if not domain.endswith(".duckdns.org"):
     sys.exit("This hook only handles DuckDNS names, and CERTBOT_DOMAIN was: " + (domain or "empty"))
 sub = domain[: -len(".duckdns.org")]
+
+# A name under an account, like sub.testing.duckdns.org. DuckDNS sets the TXT
+# record on the account -- there is no way to address a name under it -- so the
+# record would go to _acme-challenge.testing.duckdns.org while Let's Encrypt
+# asks at _acme-challenge.sub.testing.duckdns.org. Refused rather than done
+# wrongly: a validation that fails costs an hour of rate limit, and a TXT
+# record written to the account is one that some other certificate was relying
+# on. These names are issued over port 80 instead, and the panel routes them
+# that way; this is the guard for anything that gets here another way.
+if "." in sub:
+    sys.exit(
+        "DuckDNS can only set a TXT record on an account, not on " + domain + ". "
+        "Issue this one over http-01 instead."
+    )
 token = os.environ["DUCKDNS_TOKEN"]
 cleanup = len(sys.argv) > 1 and sys.argv[1] == "cleanup"
 value = "" if cleanup else os.environ.get("CERTBOT_VALIDATION", "")

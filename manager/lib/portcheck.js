@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import dnsPromises from 'node:dns/promises';
 import crypto from 'node:crypto';
 import { hasCertificate } from './nginx.js';
 import { selfTest } from './certbot.js';
@@ -122,6 +123,28 @@ async function probeChallenge(target, { scheme = 'http' } = {}) {
 }
 
 /**
+ * Where a name actually points, which is the question a subdomain raises.
+ *
+ * A name under a DuckDNS account -- sub.testing.duckdns.org -- is not something
+ * you register anywhere: it either resolves because the provider answers for
+ * names under yours, or it does not resolve at all, and the difference is
+ * invisible in this panel until a certificate request fails. So it is looked
+ * up and compared against this connection's address, rather than assumed
+ * either way.
+ *
+ * Not an error when it fails. A name that does not resolve yet is the ordinary
+ * state of one somebody added a minute ago.
+ */
+async function resolveDomain(domain) {
+    if (!domain) return null;
+    try {
+        return { domain, addresses: await dnsPromises.resolve4(domain), error: null };
+    } catch (err) {
+        return { domain, addresses: [], error: err.code === 'ENOTFOUND' || err.code === 'ENODATA' ? 'It does not resolve.' : err.message };
+    }
+}
+
+/**
  * The whole picture: what this machine does, and what the internet can see.
  *
  * The local half is the more useful one when something is wrong, because it
@@ -129,10 +152,11 @@ async function probeChallenge(target, { scheme = 'http' } = {}) {
  * which look identical from outside and need opposite fixes.
  */
 export async function check(domain = null, { httpPort = 80, httpsPort = 443, bindHttp = 80, bindHttps = 443, dnsChallenge = false } = {}) {
-    const [state, published, ip] = await Promise.all([
+    const [state, published, ip, dns] = await Promise.all([
         containerState(PROXY_CONTAINER),
         publishedPorts(PROXY_CONTAINER),
         publicIp(),
+        resolveDomain(domain),
     ]);
 
     // The host side of each mapping, not the container side.
@@ -184,5 +208,5 @@ export async function check(domain = null, { httpPort = 80, httpsPort = 443, bin
     // With DNS-01 available, an unreachable http port costs the ability to
     // serve plain http and nothing else. Saying so is the difference between a
     // failed check and a working setup that happens to skip a port.
-    return { ip, local, outside, error, dnsChallenge };
+    return { ip, local, outside, error, dnsChallenge, dns: dns && { ...dns, pointsHere: dns.addresses.includes(ip) } };
 }

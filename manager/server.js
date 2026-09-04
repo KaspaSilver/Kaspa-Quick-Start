@@ -1266,9 +1266,17 @@ route('POST', /^\/api\/setup\/([a-z]+)$/, async (req, res, match) => {
     const existing = body.domain ? loadDomains().find((d) => d.domain === String(body.domain).trim().toLowerCase()) : null;
     if (body.domain && !existing) return fail(res, 400, `${body.domain} is not one of your domains.`);
 
-    const [subdomain] = existing ? [null] : duckdns.normalizeDomains(body.subdomain);
-    if (!existing && (!subdomain || !/^[a-z0-9-]{1,63}$/.test(subdomain))) {
-        return fail(res, 400, 'Enter the DuckDNS subdomain you created, without the .duckdns.org.');
+    // The name being published and the DuckDNS account behind it are no longer
+    // the same thing. "mining.yournode" publishes on mining.yournode.duckdns.org
+    // while the account that gets refreshed, and that holds the token, is
+    // "yournode" -- a name under an account is not registered anywhere.
+    const wanted = String(body.subdomain || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\.duckdns\.org\.?$/, '');
+    const subdomain = existing ? null : duckdns.accountLabel(wanted);
+    if (!existing && !/^[a-z0-9-]{1,63}(\.[a-z0-9-]{1,63}){0,3}$/.test(wanted)) {
+        return fail(res, 400, 'Enter the DuckDNS name you created, without the .duckdns.org.');
     }
 
     const storedToken = loadManagerConfig().duckdns.token;
@@ -1290,7 +1298,7 @@ route('POST', /^\/api\/setup\/([a-z]+)$/, async (req, res, match) => {
             .filter(Boolean),
     };
 
-    const domain = existing ? existing.domain : `${subdomain}.duckdns.org`;
+    const domain = existing ? existing.domain : `${wanted}.duckdns.org`;
 
     const job = jobs.start(`Publish ${plan.service.label} on ${domain}`, async (onLine) => {
         // --- the name -------------------------------------------------------
@@ -1298,6 +1306,12 @@ route('POST', /^\/api\/setup\/([a-z]+)$/, async (req, res, match) => {
             onLine(`Using ${domain}, which is already on this panel.`);
         } else {
             onLine(`Saving ${domain} and telling DuckDNS where this machine is.`);
+            if (wanted !== subdomain) {
+                onLine(
+                    `${domain} is a name under ${subdomain}.duckdns.org. There is nothing to create for it at ` +
+                        `duckdns.org -- the account is what gets refreshed, and names under it follow.`,
+                );
+            }
             const mgr = loadManagerConfig();
             // DuckDNS refreshes every name on the account in one call, so a
             // second service on a second name adds to the list rather than
@@ -1389,6 +1403,12 @@ route('POST', /^\/api\/setup\/([a-z]+)$/, async (req, res, match) => {
             onLine(`${domain} already has a certificate, so it is left alone.`);
         } else {
             const viaDns = duckdnsFor(domain);
+            if (!viaDns && duckdns.isSubdomain(domain)) {
+                onLine(
+                    `${domain} is a name under ${duckdnsAccountFor(domain)}.duckdns.org, and DuckDNS can only put a TXT ` +
+                        'record on the account itself, so this one proves itself over port 80.',
+                );
+            }
             onLine(
                 viaDns
                     ? "Asking Let's Encrypt for a certificate, proving the name with a DuckDNS TXT record. This needs no open ports."
@@ -2160,12 +2180,29 @@ const renderOptions = () => ({ publicHttpsPort: loadManagerConfig().proxy.public
  * request, so it works on a network where port 80 already belongs to something
  * else, and it keeps working if that ever changes.
  */
+/**
+ * The DuckDNS credentials for proving ownership of a name over DNS, or null
+ * when that cannot be done for this name.
+ *
+ * It cannot be done for a name *under* an account. DuckDNS's API sets the TXT
+ * record on the account itself, so the challenge for sub.testing.duckdns.org
+ * would be answered at _acme-challenge.testing.duckdns.org while Let's Encrypt
+ * asks at _acme-challenge.sub.testing.duckdns.org. That is not a wildcard
+ * question or a timing one: the record is put in the wrong place, and every
+ * such request would fail after burning a rate limit. Those names prove
+ * themselves over port 80 instead.
+ */
 function duckdnsFor(domain) {
-    const name = String(domain || '').toLowerCase();
-    if (!name.endsWith('.duckdns.org')) return null;
+    const label = duckdns.accountLabel(domain);
+    if (!label || !String(domain || '').toLowerCase().endsWith('.duckdns.org')) return null;
+    if (duckdns.isSubdomain(domain)) return null;
     const token = loadManagerConfig().duckdns.token;
-    return token ? { subdomain: name.slice(0, -'.duckdns.org'.length), token } : null;
+    return token ? { subdomain: label, token } : null;
 }
+
+/** The account behind a name, whether or not DNS-01 is possible for it. */
+const duckdnsAccountFor = (domain) =>
+    String(domain || '').toLowerCase().endsWith('.duckdns.org') ? duckdns.accountLabel(domain) : null;
 
 /**
  * Renewal runs over every certificate at once, so it needs the credentials if

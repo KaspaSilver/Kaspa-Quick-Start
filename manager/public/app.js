@@ -4178,6 +4178,24 @@ $('ports-check').addEventListener('click', async () => {
             rows.push(line(null, `Could not check from outside: ${r.error ?? 'unknown reason'}.`));
         }
 
+        // Where the name points, which is the question a subdomain raises and
+        // the one thing here that is not about ports. A name under a DuckDNS
+        // account is not registered anywhere: it either resolves because the
+        // provider answers for names under yours, or it does not resolve at
+        // all, and until a certificate request fails those look identical.
+        if (r.dns) {
+            rows.push(
+                line(
+                    r.dns.error ? false : r.dns.pointsHere,
+                    r.dns.error
+                        ? `${r.dns.domain} does not resolve: ${r.dns.error} Nothing can reach it by name until it does.`
+                        : r.dns.pointsHere
+                          ? `${r.dns.domain} resolves to ${r.dns.addresses.join(', ')}, which is this connection.`
+                          : `${r.dns.domain} resolves to ${r.dns.addresses.join(', ')}, which is not this connection (${r.ip}).`,
+                ),
+            );
+        }
+
         const bothOpen = r.outside && r.outside.http?.open && r.outside.https?.open;
         // A DuckDNS name is proved with a TXT record, so a closed http port
         // costs the ability to serve plain http and nothing else. Reporting
@@ -5051,8 +5069,13 @@ $('setup-next').addEventListener('click', () => {
     }
 
     if (step === 1) {
+        // A name under the one you created is allowed: mining.yournode
+        // publishes on mining.yournode.duckdns.org, and there is nothing to
+        // create for it at duckdns.org -- only the account is registered.
         const name = $('setup-subdomain').value.trim().toLowerCase().replace(/\.duckdns\.org\.?$/, '');
-        if (!/^[a-z0-9-]{1,63}$/.test(name)) return toast('Enter the name you created at duckdns.org.', 'bad');
+        if (!/^[a-z0-9-]{1,63}(\.[a-z0-9-]{1,63}){0,3}$/.test(name)) {
+            return toast('Enter the name you created at duckdns.org, optionally with a name in front of it.', 'bad');
+        }
         $('setup-subdomain').value = name;
     }
 

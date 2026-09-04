@@ -2262,9 +2262,17 @@
       </ol>
       <label class="inline">
         Your name
-        <input id="setup-subdomain" placeholder="yournode" size="18" autocomplete="off">
+        <input id="setup-subdomain" placeholder="yournode" size="24" autocomplete="off">
         <span class="suffix">.duckdns.org</span>
       </label>
+      <p class="hint">
+        A name in front of it works too: <code>mining.yournode</code> publishes on
+        <code>mining.yournode.duckdns.org</code>. There is nothing to add at
+        duckdns.org for one of those -- only <code>yournode</code> is an account,
+        and it is what gets kept pointed at this machine. Certificates for those
+        names are issued over port 80, because DuckDNS can only put the record
+        DNS validation needs on the account itself.
+      </p>
       <p class="hint" id="setup-ip">–</p>
     </section>
 
