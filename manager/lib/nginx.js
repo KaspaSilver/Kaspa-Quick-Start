@@ -145,7 +145,14 @@ export function upstreamFor(proxy, nodeConfig) {
         case 'desktop':
         case 'nextcloud': {
             const app = APPS[proxy.target.kind];
-            return { scheme: 'http', host: app.publish.hostname, port: app.publish.port, websocket: app.publish.websocket, grpc: false };
+            return {
+                scheme: 'http',
+                host: app.publish.hostname,
+                port: app.publish.port,
+                websocket: app.publish.websocket,
+                grpc: false,
+                maxBodySize: app.publish.maxBodySize ?? null,
+            };
         }
         default:
             return {
@@ -252,10 +259,31 @@ function locationBlock(up, proxy, indent = '        ', { strip = null } = {}) {
     }
     lines.push(...passTo(up, proxy, i, strip));
     lines.push(`${i}proxy_http_version 1.1;`);
-    lines.push(`${i}proxy_set_header Host $host;`);
-    lines.push(`${i}proxy_set_header X-Real-IP $remote_addr;`);
+    // $http_host, not $host. They differ in exactly one way that matters here:
+    // $host discards the port. An app behind this proxy on anything other than
+    // 443 then believes it is on 443, and every absolute URL it builds -- every
+    // redirect, every asset link -- comes out pointing at a port it does not
+    // live on. This stack can be bound to 8443 precisely because another
+    // machine holds 443, so those links land on that other machine, which is a
+    // confusing way to find out.
+    lines.push(`${i}proxy_set_header Host $http_host;`);
+    // X-Forwarded-For only, deliberately no X-Real-IP.
+    //
+    // Both carry the same fact, and the second one breaks Nextcloud. Its image
+    // runs mod_remoteip trusting X-Real-IP, so Apache rewrites REMOTE_ADDR to
+    // the visitor's address before PHP sees it -- at which point Nextcloud's own
+    // trusted-proxy check compares that visitor against the proxy ranges, fails,
+    // and discards X-Forwarded-Proto. The result is an app that believes every
+    // request arrived over plain http and redirects accordingly.
+    //
+    // Without it REMOTE_ADDR stays the proxy, the check passes, the protocol is
+    // honoured, and Nextcloud reads the real client out of X-Forwarded-For
+    // itself. Nothing this header was carrying is lost.
     lines.push(`${i}proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`);
     lines.push(`${i}proxy_set_header X-Forwarded-Proto $scheme;`);
+    // An app that stores files wants no limit of its own here; nginx's 1m
+    // default rejects anything worth uploading.
+    if (up.maxBodySize != null) lines.push(`${i}client_max_body_size ${up.maxBodySize};`);
     if (up.websocket) {
         lines.push(`${i}proxy_set_header Upgrade $http_upgrade;`);
         lines.push(`${i}proxy_set_header Connection $connection_upgrade;`);
@@ -263,7 +291,12 @@ function locationBlock(up, proxy, indent = '        ', { strip = null } = {}) {
         lines.push(`${i}proxy_read_timeout 3600s;`);
         lines.push(`${i}proxy_send_timeout 3600s;`);
     } else {
-        lines.push(`${i}proxy_read_timeout 300s;`);
+        // Long enough for a big upload or a server-side file operation to
+        // finish. A file server routinely holds a request open for minutes, and
+        // 300s cut those off mid-transfer.
+        lines.push(`${i}proxy_read_timeout 3600s;`);
+        lines.push(`${i}proxy_send_timeout 3600s;`);
+        lines.push(`${i}proxy_request_buffering off;`);
     }
     lines.push(`${i}proxy_buffering off;`);
     if (proxy.auth?.enabled) {
@@ -299,6 +332,7 @@ function extraLocations(proxy) {
             port: route.port,
             websocket: Boolean(route.websocket ?? publish.websocket),
             grpc: false,
+            maxBodySize: route.maxBodySize ?? publish.maxBodySize ?? null,
         };
         lines.push(`    location ^~ ${route.location} {`);
         lines.push(locationBlock(up, proxy));
@@ -408,7 +442,9 @@ export function renderDomain(domain, hosts, nodeConfig, { publicHttpsPort = 443 
         out.push('    ssl_session_timeout 1d;');
         out.push('    add_header Strict-Transport-Security "max-age=31536000" always;');
         out.push('');
-        out.push('    client_max_body_size 32m;');
+        // The ceiling for anything that does not set its own. 32m turned away
+        // a phone video, which is the ordinary thing to send to a file server.
+        out.push('    client_max_body_size 512m;');
         out.push('');
         out.push(...RESOLVER);
         out.push('');

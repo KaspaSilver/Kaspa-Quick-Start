@@ -3964,11 +3964,13 @@ async function loadProxies() {
     // is to do. It goes back to full width once the settings are under it.
     $('tab-proxy').classList.toggle('alone', !on);
 
-    for (const id of ['proxy-reload', 'proxy-renew', 'dd-now']) {
+    for (const id of ['proxy-reload', 'proxy-renew', 'dd-now', 'proxy-add']) {
         const button = $(id);
         button.disabled = !on;
         button.title = on ? '' : 'Turn the reverse proxy on first.';
     }
+
+    renderProxyHosts();
 
     // The one table on this page is the service view, which reads the same
     // proxy list back from its own endpoint.
@@ -4008,6 +4010,74 @@ async function loadPublish() {
 
 /** What a target kind reads as, for "in use by" and for taken-domain options. */
 const serviceLabel = (kind) => publishState.services.find((s) => s.kind === kind)?.label ?? 'another proxy host';
+
+/**
+ * Every proxy host as it actually is, rather than as a service.
+ *
+ * Public addresses answers "what can this panel publish", which is the right
+ * question for the apps it runs and the wrong one for anything it does not:
+ * only a raw host can point at another machine on the network, and only this
+ * list can show that one does.
+ */
+function renderProxyHosts() {
+    const body = $('proxy-body');
+    if (!body) return;
+
+    if (!proxies.length) {
+        body.innerHTML = '<tr><td colspan="4" class="muted">No proxy hosts yet.</td></tr>';
+        return;
+    }
+
+    body.innerHTML = proxies
+        .map((p) => {
+            const path = (p.path ?? '/') === '/' ? '' : ` ${escapeHtml(p.path)}`;
+            const target =
+                p.target?.kind === 'custom'
+                    ? `${escapeHtml(p.target.scheme ?? 'http')}://${escapeHtml(p.target.host ?? '?')}:${escapeHtml(String(p.target.port ?? '?'))}`
+                    : escapeHtml(targetKinds[p.target?.kind]?.label ?? p.target?.kind ?? 'unknown');
+            // A host that is switched off still holds its name, so say so
+            // rather than let it look like the others.
+            const off = p.enabled === false ? ' <span class="tag off">disabled</span>' : '';
+            const https =
+                p.ssl?.mode === 'letsencrypt'
+                    ? p.certificate
+                        ? '<span class="tag ok">certificate</span>'
+                        : '<span class="tag">requested</span>'
+                    : '<span class="tag off">plain http</span>';
+            return `<tr>
+                <td><strong>${escapeHtml(p.domain)}</strong>${path}${off}</td>
+                <td>${target}</td>
+                <td>${https}</td>
+                <td>
+                    <button type="button" class="ghost mini" data-edit-proxy="${escapeHtml(p.id)}">Edit</button>
+                    <button type="button" class="ghost mini danger" data-del-proxy="${escapeHtml(p.id)}">Remove</button>
+                </td>
+            </tr>`;
+        })
+        .join('');
+}
+
+$('proxy-add').addEventListener('click', () => openProxyDialog(null));
+
+$('proxy-body').addEventListener('click', async (event) => {
+    const { editProxy, delProxy } = event.target.dataset ?? {};
+    if (editProxy) return openProxyDialog(proxies.find((p) => p.id === editProxy));
+    if (!delProxy) return;
+
+    const proxy = proxies.find((p) => p.id === delProxy);
+    // Removing a host takes a name off the internet, which is not a thing to do
+    // on a mis-click. The certificate is deliberately left on disk: it is still
+    // valid, and putting the name back should not mean asking for another.
+    if (!confirm(`Stop answering for ${proxy?.domain}?\n\nThe nginx configuration for it is removed. Its certificate is kept.`)) {
+        return;
+    }
+    try {
+        await api(`/api/proxies/${delProxy}`, { method: 'DELETE' });
+        await loadProxies();
+    } catch (e) {
+        toast(e.message, 'bad');
+    }
+});
 
 function renderPublishServices() {
     const { services, domains } = publishState;

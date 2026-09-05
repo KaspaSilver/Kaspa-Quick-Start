@@ -123,7 +123,15 @@ export const APPS = {
         // A file server: nothing to do with the chain, so never gated on it.
         needsSyncedNode: false,
         container: 'kaspa-node-nextcloud',
-        publish: { hostname: 'nextcloud', port: 80, websocket: false },
+        publish: {
+            hostname: 'nextcloud',
+            port: 80,
+            websocket: false,
+            // Nextcloud is a file server: an upload is one request that runs to
+            // whatever size the person is storing, so the proxy imposes no limit
+            // of its own. Nextcloud's own settings decide.
+            maxBodySize: '0',
+        },
         ports: {
             web: { port: 80, label: 'Nextcloud web', hostPort: 8080 },
         },

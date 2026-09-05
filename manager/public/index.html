@@ -1771,6 +1771,13 @@
 
     <!-- ----------------------------------------------------------- proxy -->
     <section id="tab-proxy" class="tab">
+      <nav class="subnav" aria-label="Proxy and domains">
+        <button class="subtab-btn active" data-subtab="proxy-overview">Overview</button>
+        <button class="subtab-btn" data-subtab="proxy-advanced">Advanced</button>
+        <button class="subtab-btn" data-subtab="proxy-uninstall">Uninstall</button>
+      </nav>
+
+      <div id="sub-proxy-overview" class="subtab active">
       <!--
         One card: what it is, and the switch that starts it. Three stacked cards
         for a single switch read as three separate things, and left most of the
@@ -1868,12 +1875,58 @@
           </div>
         </article>
       </div>
-
-          <div class="grid">
-        <article class="card span2 uninstall-card" data-uninstall="proxy"></article>
       </div>
 
-</section>
+      <!--
+        The service view answers "what can this panel publish", which is the
+        right question for the apps it runs and the wrong one for anything it
+        does not. Only a raw host can point somewhere else entirely, and only
+        this list can show that one does.
+      -->
+      <div id="sub-proxy-advanced" class="subtab">
+        <div class="grid">
+          <article class="card span2">
+            <h3>Proxy hosts</h3>
+            <p class="muted">
+              Every name this machine answers for, and what it forwards each one
+              to. The ones Public addresses set up appear here too — this is the
+              same list, with the details it does not ask about.
+            </p>
+            <table class="proxies">
+              <thead>
+                <tr><th>Address</th><th>Forwards to</th><th>HTTPS</th><th></th></tr>
+              </thead>
+              <tbody id="proxy-body"></tbody>
+            </table>
+            <div class="row">
+              <button type="button" id="proxy-add" class="primary">Add proxy host</button>
+            </div>
+            <div class="notice">
+              <p>
+                <strong>Another machine can sit behind this one.</strong> Only one
+                machine on your network can hold port 443, but it does not have to
+                be the machine running the service. Choose
+                <strong>Custom host:port</strong> and give this proxy the other
+                machine's address on your network, and it will forward that name
+                to it — certificate and all, handled here.
+              </p>
+              <p>
+                So a second machine running something else needs no proxy, no
+                certificate and no forwarded port of its own. It serves plain http
+                on your network, this machine terminates HTTPS in front of it, and
+                each name goes where it belongs.
+              </p>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <div id="sub-proxy-uninstall" class="subtab">
+        <div class="grid">
+          <article class="card span2 uninstall-card" data-uninstall="proxy"></article>
+        </div>
+      </div>
+    </section>
 
     <!-- ------------------------------------------------------------ logs -->
     <section id="tab-logs" class="tab">
