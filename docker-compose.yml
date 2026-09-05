@@ -315,6 +315,11 @@ services:
       # than baked in, so it can be corrected without a rebuild, and read-only
       # so Nextcloud's own config writes never land in it.
       - ${STACK_DIR}/nextcloud/previews.config.php:/var/www/html/config/previews.config.php:ro
+      # Installs Contacts, Calendar, Notes, Tasks and Talk. One directory
+      # mounted at both hooks rather than two copies of the same script: the
+      # first run is a new instance, the second catches one that predates it.
+      - ${STACK_DIR}/nextcloud/hooks/apps:/docker-entrypoint-hooks.d/post-installation:ro
+      - ${STACK_DIR}/nextcloud/hooks/apps:/docker-entrypoint-hooks.d/post-upgrade:ro
     networks:
       - kaspa
     depends_on:

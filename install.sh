@@ -392,7 +392,10 @@ fetch_stack() {
         rm -rf "$STACK_DIR/${item:?}"
         cp -R "$src_dir/$item" "$STACK_DIR/$item"
     done
-    chmod +x "$STACK_DIR/kaspad/entrypoint.sh" "$STACK_DIR/kachat/run-admin.sh" "$STACK_DIR/uninstall.sh" 2>/dev/null || true
+    # The Nextcloud hook is skipped silently by that image's entrypoint if it is
+    # not executable, so it is not left to whatever the copy preserved.
+    chmod +x "$STACK_DIR/kaspad/entrypoint.sh" "$STACK_DIR/kachat/run-admin.sh" "$STACK_DIR/uninstall.sh" \
+             "$STACK_DIR/nextcloud/hooks/apps/10-apps.sh" 2>/dev/null || true
 
     mkdir -p "$STACK_DIR/conf" "$STACK_DIR/proxy/conf.d" "$STACK_DIR/proxy/snippets" \
              "$STACK_DIR/proxy/letsencrypt" "$STACK_DIR/proxy/webroot"

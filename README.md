@@ -250,8 +250,15 @@ It does not wait for this node to sync, because it does not have to.
 backs up. The official `nextcloud:stable` image with ffmpeg added, and previews
 switched on for you: photos and iPhone HEIC through a separate Imaginary
 container, video thumbnails through ffmpeg, plus PDF, SVG, audio cover art,
-text and OpenDocument. Nextcloud enables none of that by default. Updating
-checks what the `nextcloud:stable` tag points at now and rebuilds on it. Publish it on a port, or give it a domain and HTTPS under Proxy and domains,
+text and OpenDocument. Nextcloud enables none of that by default.
+
+It also comes with Contacts, Calendar, Notes, Tasks and Talk, installed on
+first run by a hook the image itself calls. Talk's chat and one-to-one calls
+work as they are; group calls with more than a handful of people want a TURN
+server, which this stack does not run.
+
+Updating checks what the `nextcloud:stable` tag points at now and rebuilds on
+it. Publish it on a port, or give it a domain and HTTPS under Proxy and domains,
 remember to add that domain to its trusted-domains list too, or Nextcloud will
 refuse the request.
 
