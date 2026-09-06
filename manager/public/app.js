@@ -1201,8 +1201,31 @@ function fmtCountdown(seconds) {
     return m ? `in ${h}h ${m}m` : `in ${h}h`;
 }
 
+// A port switch the user just flipped, kept where they put it until the node
+// reports the same thing back. Flipping a port restarts the node, and a status
+// poll landing mid restart would otherwise redraw the switch from the state it
+// is leaving -- which is the "flips back on its own" this fixes.
+const pendingPorts = new Map(); // `${key}:${axis}` -> { value, until }
+// Last table markup written, so a poll that changed nothing skips the DOM write
+// -- what keeps the switches from churning (and feeling laggy) under the pointer.
+let lastPortsHtml = '';
+
 function renderPorts(s) {
     const publishedSet = new Set(s.published.map((p) => (p.container || '').split('/')[0]));
+    const now = Date.now();
+
+    // The switch shows intent; the node's own reading catches up a few seconds
+    // later. When it matches -- or the grace window lapses -- the hold is done.
+    const effective = (key, axis, serverOn) => {
+        const id = `${key}:${axis}`;
+        const held = pendingPorts.get(id);
+        if (!held) return serverOn;
+        if (held.value === serverOn || now > held.until) {
+            pendingPorts.delete(id);
+            return serverOn;
+        }
+        return held.value;
+    };
 
     const sw = (p, axis, on, enabled, title) =>
         `<label class="switch" title="${escapeHtml(title)}">
@@ -1210,29 +1233,42 @@ function renderPorts(s) {
            <span class="track"></span>
          </label>`;
 
-    $('ports-body').innerHTML = (s.portMatrix || [])
+    const html = (s.portMatrix || [])
         .map((p) => {
             const live = publishedSet.has(String(p.port));
-            const state = !p.listening
-                ? { cls: 'off', text: 'not listening' }
-                : !p.published
-                  ? { cls: 'warn', text: 'listening, but only reachable from inside this machine' }
-                  : live
-                    ? { cls: 'ok', text: 'listening and reachable from outside' }
-                    : { cls: '', text: 'applying…' };
+            const listeningOn = effective(p.key, 'listening', p.listening);
+            const publishedOn = effective(p.key, 'published', p.published);
+            // The dot keeps telling the truth about what the node is doing, so a
+            // held switch reads as "applying…" until the change actually lands.
+            const applying = listeningOn !== p.listening || publishedOn !== p.published;
+            const state = applying
+                ? { cls: '', text: 'applying…' }
+                : !p.listening
+                  ? { cls: 'off', text: 'not listening' }
+                  : !p.published
+                    ? { cls: 'warn', text: 'listening, but only reachable from inside this machine' }
+                    : live
+                      ? { cls: 'ok', text: 'listening and reachable from outside' }
+                      : { cls: '', text: 'applying…' };
             const listening = p.canToggleListening
-                ? sw(p, 'listening', p.listening, true, p.listeningNote)
+                ? sw(p, 'listening', listeningOn, true, p.listeningNote)
                 : `<span class="locked" title="${escapeHtml(p.listeningNote)}">always</span>`;
             const title = `${p.name}: ${state.text}${p.required ? '. This is the one to forward on your router to be a public node.' : ''}`;
             return `<tr title="${escapeHtml(title)}">
       <td class="port"><span class="dot ${state.cls}"></span>${p.port}</td>
       <td>${escapeHtml(p.name)}${p.required ? ' <span class="tag">required</span>' : ''}</td>
       <td class="toggle">${listening}</td>
-      <td class="toggle">${sw(p, 'published', p.published, true, p.note)}</td>
+      <td class="toggle">${sw(p, 'published', publishedOn, true, p.note)}</td>
       <td><button class="ghost" data-portcheck="${p.port}" ${p.published ? '' : 'disabled'}>Test</button></td>
     </tr>`;
         })
         .join('');
+    // Steady state renders the identical string every poll; skipping the write
+    // then leaves the switches (and any focus/press state) alone.
+    if (html !== lastPortsHtml) {
+        lastPortsHtml = html;
+        $('ports-body').innerHTML = html;
+    }
 }
 
 // Flipping either switch restarts the node with that change applied.
@@ -1240,11 +1276,16 @@ $('ports-body').addEventListener('change', async (event) => {
     const { port: key, axis } = event.target.dataset ?? {};
     if (!key || !axis) return;
     const value = event.target.checked;
+    // Hold the intent so the next status poll cannot redraw it back while the
+    // node restarts with the change. renderPorts clears the hold once the node
+    // reports the same value, or after this grace window if it never takes.
+    pendingPorts.set(`${key}:${axis}`, { value, until: Date.now() + 60_000 });
     event.target.disabled = true;
     try {
-        const r = await api(`/api/ports/${key}`, { method: 'POST', body: { [axis]: value } });
+        await api(`/api/ports/${key}`, { method: 'POST', body: { [axis]: value } });
     } catch (e) {
-        // Put the switch back; the node was not changed.
+        // The node was not changed; drop the hold and put the switch back.
+        pendingPorts.delete(`${key}:${axis}`);
         event.target.checked = !value;
         toast(e.message, 'bad');
     } finally {
@@ -2398,14 +2439,16 @@ function collectAppConfig(name) {
 // already pulls the tag and rebuilds on it.
 for (const app of ['kachat', 'desktop']) {
     $(`${app}-rebuild`).addEventListener('click', async () => {
-        const err = $(`${app}-error`);
-        err.hidden = true;
-        try {
-            await api(`/api/apps/${app}`, { method: 'PUT', body: { config: collectAppConfig(app) } });
-            setTimeout(loadApps, 2000);
-        } catch (e) {
-            toast(e.message, 'bad');
-        }
+        $(`${app}-error`).hidden = true;
+        // Same streaming overlay the Update button and the sidebar switches use,
+        // so a rebuild shows its build log instead of a silent spinner.
+        await runAction({
+            key: app,
+            title: `Rebuilding ${appsState?.apps?.[app]?.label ?? app}`,
+            note: 'Compiled from source, which takes a while. It stays up until the new build is ready, and a build that fails leaves the running one alone.',
+            request: () => api(`/api/apps/${app}`, { method: 'PUT', body: { config: collectAppConfig(app) } }),
+        });
+        loadApps();
     });
 }
 
