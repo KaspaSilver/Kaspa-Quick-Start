@@ -61,9 +61,17 @@ export const SERVICES = [
     {
         key: 'panel',
         kind: 'manager',
-        sharedPath: '/panel',
+        // The panel is a single-page app whose HTML pulls /app.js, /style.css
+        // and every /api call from the root of the name it is served on. Put it
+        // under a prefix like /panel and the page loads but its script and API
+        // resolve to whatever owns the root instead -- which is how a shared
+        // name ends up serving the panel's shell wrapped around another
+        // service's guts. So, like the indexer, it can only be the thing at the
+        // root of a name: give it one of its own, a prefix in front of an
+        // existing name included.
+        rootOnly: true,
         label: 'This control panel',
-        detail: 'Everything on this page, from anywhere.',
+        detail: 'Everything on this page, from anywhere. Needs a name of its own.',
         afterNote: 'This panel is at https://{domain}. It drives the Docker daemon, so keep the admin password somewhere safe.',
     },
 ];

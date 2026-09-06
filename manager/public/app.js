@@ -5107,7 +5107,12 @@ async function openSetup(key) {
 
     // A name and token already saved means this is someone's second service, so
     // the first two steps are a confirmation rather than a chore.
-    if (info.duckdns?.subdomain) $('setup-subdomain').value = info.duckdns.subdomain;
+    // A second service on an account you already have defaults to a name in
+    // front of it -- panel.kachat, not kachat, which the first service is
+    // already answering for at the root. That way the obvious next step is a
+    // working subdomain rather than a clash. The prefix is only a suggestion:
+    // change panel to kqs, mining, anything.
+    if (info.duckdns?.subdomain) $('setup-subdomain').value = `${key}.${info.duckdns.subdomain}`;
     $('setup-token-note').hidden = !info.duckdns?.hasToken;
     $('setup-token').placeholder = info.duckdns?.hasToken ? 'unchanged' : 'from duckdns.org';
     $('setup-ip').textContent = info.publicIp
@@ -5149,7 +5154,7 @@ function renderDomainChoices() {
                 .join(', ');
 
             const note = blocked
-                ? `${serviceLabel(d.usedBy)} is at the root, and this has to be`
+                ? `${serviceLabel(d.usedBy)} is at the root, so give this one a name in front of it instead`
                 : mine
                   ? `already serving this${mine.path === '/' ? '' : ` at ${mine.path}`}`
                   : others.length
@@ -5169,10 +5174,21 @@ function renderDomainChoices() {
         })
         .join('')
         .concat(
-            `<label class="domain-choice">
+            (() => {
+                // The one choice that is always here: a name of its own. With an
+                // account already set up that means a prefix in front of it --
+                // kqs.kachat.duckdns.org -- which is what a service that must own
+                // a root does when the roots you have are taken. Without one it
+                // is a brand new DuckDNS name.
+                const acct = setupState.plan?.duckdns?.subdomain;
+                const hint = acct
+                    ? `a new DuckDNS name, or a prefix in front of <code>${escapeHtml(acct)}.duckdns.org</code> — like <code>kqs.${escapeHtml(acct)}.duckdns.org</code>`
+                    : 'free, and kept pointed here for you';
+                return `<label class="domain-choice">
         <input type="radio" name="setup-domain" value="" checked>
-        <span><strong>Create another DuckDNS name</strong><small>free, and kept pointed here for you</small></span>
-      </label>`,
+        <span><strong>Give it a name of its own</strong><small>${hint}</small></span>
+      </label>`;
+            })(),
         );
 }
 

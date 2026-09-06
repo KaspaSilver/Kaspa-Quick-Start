@@ -1275,7 +1275,12 @@ route('POST', /^\/api\/setup\/([a-z]+)$/, async (req, res, match) => {
         .trim()
         .toLowerCase()
         .replace(/\.duckdns\.org\.?$/, '');
-    const subdomain = existing ? null : duckdns.accountLabel(wanted);
+    // From the full name, not the stripped one: accountLabel treats a bare
+    // "panel.kachat" as some other provider's hostname and returns nothing,
+    // whereas "panel.kachat.duckdns.org" is unambiguously the account "kachat"
+    // with a name in front. Publishing a prefix in front of an existing name
+    // depends on getting "kachat" here, so the right account is refreshed.
+    const subdomain = existing ? null : duckdns.accountLabel(`${wanted}.duckdns.org`);
     if (!existing && !/^[a-z0-9-]{1,63}(\.[a-z0-9-]{1,63}){0,3}$/.test(wanted)) {
         return fail(res, 400, 'Enter the DuckDNS name you created, without the .duckdns.org.');
     }
