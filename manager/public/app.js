@@ -5090,7 +5090,7 @@ let setupState = { key: null, step: 1, plan: null, mode: 'new', domain: null };
 
 async function openSetup(key) {
     const service = publishState.services.find((s) => s.key === key);
-    setupState = { key, step: 1, plan: null, mode: 'new', domain: null };
+    setupState = { key, step: 1, plan: null, mode: 'new', newKind: 'fresh', domain: null };
 
     $('setup-title').textContent = `Publish ${service?.label ?? key}`;
     $('setup-error').hidden = true;
@@ -5105,14 +5105,9 @@ async function openSetup(key) {
     }
     setupState.plan = info;
 
-    // A name and token already saved means this is someone's second service, so
-    // the first two steps are a confirmation rather than a chore.
-    // A second service on an account you already have defaults to a name in
-    // front of it -- panel.kachat, not kachat, which the first service is
-    // already answering for at the root. That way the obvious next step is a
-    // working subdomain rather than a clash. The prefix is only a suggestion:
-    // change panel to kqs, mining, anything.
-    if (info.duckdns?.subdomain) $('setup-subdomain').value = `${key}.${info.duckdns.subdomain}`;
+    // The name field starts empty on purpose. In the prefix flow it asks only
+    // for the part that goes in front of a name you already have, so a default
+    // there would be a name to delete rather than a head start.
     $('setup-token-note').hidden = !info.duckdns?.hasToken;
     $('setup-token').placeholder = info.duckdns?.hasToken ? 'unchanged' : 'from duckdns.org';
     $('setup-ip').textContent = info.publicIp
@@ -5175,19 +5170,27 @@ function renderDomainChoices() {
         .join('')
         .concat(
             (() => {
-                // The one choice that is always here: a name of its own. With an
-                // account already set up that means a prefix in front of it --
-                // kqs.kachat.duckdns.org -- which is what a service that must own
-                // a root does when the roots you have are taken. Without one it
-                // is a brand new DuckDNS name.
+                // Two ways to get a name of its own, kept apart because they are
+                // different jobs. A prefix in front of a name you already have --
+                // kqs.kachat.duckdns.org -- needs nothing created at duckdns.org
+                // and reuses the account already kept pointed here. A fresh name
+                // is a brand-new account for something unrelated. With no account
+                // yet only the fresh one makes sense, so that is all that shows.
                 const acct = setupState.plan?.duckdns?.subdomain;
-                const hint = acct
-                    ? `a new DuckDNS name, or a prefix in front of <code>${escapeHtml(acct)}.duckdns.org</code> — like <code>kqs.${escapeHtml(acct)}.duckdns.org</code>`
-                    : 'free, and kept pointed here for you';
-                return `<label class="domain-choice">
-        <input type="radio" name="setup-domain" value="" checked>
-        <span><strong>Give it a name of its own</strong><small>${hint}</small></span>
-      </label>`;
+                const rows = [];
+                if (acct) {
+                    rows.push(`<label class="domain-choice">
+        <input type="radio" name="setup-domain" value="" data-newkind="prefix" checked>
+        <span><strong>Give it a name of its own</strong><small>use <code>${escapeHtml(acct)}.duckdns.org</code> with a name in front — like <code>kqs.${escapeHtml(acct)}.duckdns.org</code>. Nothing to add at duckdns.org.</small></span>
+      </label>`);
+                }
+                rows.push(`<label class="domain-choice">
+        <input type="radio" name="setup-domain" value="" data-newkind="fresh"${acct ? '' : ' checked'}>
+        <span><strong>${acct ? 'Add a fresh DuckDNS name' : 'Create a free DuckDNS name'}</strong><small>${
+            acct ? 'a brand-new name for something else — like <code>othername.duckdns.org</code>' : 'free, and kept pointed here for you'
+        }</small></span>
+      </label>`);
+                return rows.join('');
             })(),
         );
 }
@@ -5206,11 +5209,31 @@ $('setup-domain-list').addEventListener('click', async (event) => {
     }
 });
 
+/**
+ * The full DuckDNS name being entered, minus the .duckdns.org suffix. The
+ * prefix flow's field holds only the part in front, so the account it sits
+ * under -- fixed by the choice made on the first step -- is added back here.
+ */
+function enteredName() {
+    const field = $('setup-subdomain').value.trim().toLowerCase().replace(/\.duckdns\.org\.?$/, '');
+    if (setupState.newKind === 'prefix') {
+        const acct = setupState.plan?.duckdns?.subdomain || '';
+        return field && acct ? `${field}.${acct}` : '';
+    }
+    return field;
+}
+
+/**
+ * The token step earns its place only when there is no token yet. A name in
+ * front of one you already have, or a fresh name under the same account, both
+ * ride the token already saved -- asking for it again is a step with one
+ * possible answer, "leave it blank".
+ */
+const needsToken = () => setupState.mode === 'new' && !setupState.plan?.duckdns?.hasToken;
+
 /** The name this run will publish on, whichever way it was chosen. */
 const setupDomain = () =>
-    setupState.mode === 'existing'
-        ? setupState.domain
-        : `${$('setup-subdomain').value.trim().toLowerCase()}.duckdns.org`;
+    setupState.mode === 'existing' ? setupState.domain : `${enteredName()}.duckdns.org`;
 
 function renderSetupStep() {
     const { step, plan } = setupState;
@@ -5220,6 +5243,23 @@ function renderSetupStep() {
     $('setup-back').hidden = step === (publishState.domains.length ? 0 : 1);
     $('setup-next').hidden = step === 3;
     $('setup-run').hidden = step !== 3;
+
+    // Step 1 wears two faces: a prefix in front of a name you have, which asks
+    // for just that prefix against a fixed suffix, and a fresh DuckDNS name,
+    // which is the old create-it-first walkthrough.
+    if (step === 1) {
+        const prefix = setupState.newKind === 'prefix';
+        const acct = setupState.plan?.duckdns?.subdomain || '';
+        $('setup-step1-head').textContent = prefix ? 'Name it' : 'Create a free DuckDNS name';
+        $('setup-create-steps').hidden = prefix;
+        $('setup-step1-hint').hidden = prefix;
+        $('setup-name-label').textContent = prefix ? 'Name in front' : 'Your name';
+        $('setup-subdomain').placeholder = prefix ? 'kqs' : 'yournode';
+        $('setup-suffix').textContent = prefix ? `.${acct}.duckdns.org` : '.duckdns.org';
+        $('setup-step1-intro').innerHTML = prefix
+            ? `Put a name in front of <code>${escapeHtml(acct)}.duckdns.org</code>. Type only the part that goes in front — <code>kqs</code> publishes on <code>kqs.${escapeHtml(acct)}.duckdns.org</code>. There is nothing to create at duckdns.org: <code>${escapeHtml(acct)}</code> is the account, and it is already kept pointed here. The certificate is issued over port 80.`
+            : 'DuckDNS gives you a name like <code>yournode.duckdns.org</code> and keeps it pointed at this machine even when your home connection changes address. It is free and needs no card.';
+    }
 
     if (step !== 3) return;
 
@@ -5258,44 +5298,71 @@ $('setup-next').addEventListener('click', () => {
     $('setup-error').hidden = true;
 
     if (step === 0) {
-        const chosen = document.querySelector('input[name="setup-domain"]:checked')?.value ?? '';
-        setupState.mode = chosen ? 'existing' : 'new';
-        setupState.domain = chosen || null;
-        // A name already here needs nothing else: no token to save, and the
-        // certificate is issued without a contact address.
-        setupState.step = chosen ? 3 : 1;
+        const picked = document.querySelector('input[name="setup-domain"]:checked');
+        const chosen = picked?.value ?? '';
+        if (chosen) {
+            // A name already here needs nothing else: no name to enter, no token
+            // to save, the certificate issued without a contact address.
+            setupState.mode = 'existing';
+            setupState.domain = chosen;
+            setupState.step = 3;
+            renderSetupStep();
+            return;
+        }
+        // The two ways to a name of its own. Either starts from an empty field,
+        // because the prefix flow asks only for the part in front and a default
+        // there is just something to clear.
+        setupState.mode = 'new';
+        setupState.newKind = picked?.dataset.newkind === 'prefix' ? 'prefix' : 'fresh';
+        setupState.domain = null;
+        $('setup-subdomain').value = '';
+        setupState.step = 1;
         renderSetupStep();
         return;
     }
 
     if (step === 1) {
-        // A name under the one you created is allowed: mining.yournode
-        // publishes on mining.yournode.duckdns.org, and there is nothing to
-        // create for it at duckdns.org -- only the account is registered.
-        const name = $('setup-subdomain').value.trim().toLowerCase().replace(/\.duckdns\.org\.?$/, '');
-        if (!/^[a-z0-9-]{1,63}(\.[a-z0-9-]{1,63}){0,3}$/.test(name)) {
-            return toast('Enter the name you created at duckdns.org, optionally with a name in front of it.', 'bad');
+        // A name under the one you created is allowed: kqs.kachat publishes on
+        // kqs.kachat.duckdns.org. In the prefix flow the field is just the part
+        // in front, so the account is added before the name is checked.
+        const prefix = setupState.newKind === 'prefix';
+        if (prefix && !$('setup-subdomain').value.trim()) {
+            return toast('Type the part that goes in front, like kqs.', 'bad');
         }
-        $('setup-subdomain').value = name;
+        if (!/^[a-z0-9-]{1,63}(\.[a-z0-9-]{1,63}){0,3}$/.test(enteredName())) {
+            return toast(
+                prefix ? 'That is not a valid name to put in front.' : 'Enter the name you created at duckdns.org, optionally with a name in front of it.',
+                'bad',
+            );
+        }
+        // The token step only exists when there is no token yet.
+        setupState.step = needsToken() ? 2 : 3;
+        renderSetupStep();
+        return;
     }
 
     if (step === 2) {
-        // A name already on this panel needs no token: either it is already
-        // being refreshed, or it is not a DuckDNS name in the first place.
         if (!$('setup-token').value.trim() && !setupState.plan?.duckdns?.hasToken) {
             return toast('Paste the token from duckdns.org.', 'bad');
         }
+        setupState.step = 3;
+        renderSetupStep();
+        return;
     }
-
-    setupState.step = Math.min(3, step + 1);
-    renderSetupStep();
 });
 
 $('setup-back').addEventListener('click', () => {
     const { step, mode } = setupState;
-    // Coming back from the plan on an existing name lands on the list it was
-    // chosen from, not on the DuckDNS steps it never saw.
-    setupState.step = step === 3 && mode === 'existing' ? 0 : Math.max(publishState.domains.length ? 0 : 1, step - 1);
+    // Retrace the path forward took: from the plan, back to the token step only
+    // if it was shown, otherwise to the name; an existing name skipped both and
+    // lands on the list it was chosen from.
+    if (step === 3) {
+        setupState.step = mode === 'existing' ? 0 : needsToken() ? 2 : 1;
+    } else if (step === 2) {
+        setupState.step = 1;
+    } else {
+        setupState.step = publishState.domains.length ? 0 : 1;
+    }
     renderSetupStep();
 });
 
@@ -5307,7 +5374,7 @@ $('setup-run').addEventListener('click', async () => {
     const { key, mode, domain } = setupState;
     const body = {
         domain: mode === 'existing' ? domain : undefined,
-        subdomain: mode === 'existing' ? undefined : $('setup-subdomain').value.trim(),
+        subdomain: mode === 'existing' ? undefined : enteredName(),
         token: $('setup-token').value.trim(),
         auth: $('setup-auth').checked
             ? { enabled: true, user: $('setup-auth-user').value.trim(), password: $('setup-auth-pass').value }

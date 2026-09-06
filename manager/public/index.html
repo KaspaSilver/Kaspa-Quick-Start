@@ -2398,25 +2398,23 @@
 
     <!-- 1: the name ------------------------------------------------------- -->
     <section class="setup-step" data-step="1">
-      <p class="step-head"><span class="step-num">1</span> Name it</p>
-      <p class="muted">
+      <p class="step-head"><span class="step-num">1</span> <span id="setup-step1-head">Name it</span></p>
+      <p class="muted" id="setup-step1-intro">
         DuckDNS gives you a name like <code>yournode.duckdns.org</code> and keeps
         it pointed at this machine even when your home connection changes
-        address. It is free and needs no card. Already have one? Put a prefix in
-        front of it below and skip these steps — there is nothing to add at
-        duckdns.org for a name in front of an account.
+        address. It is free and needs no card.
       </p>
-      <ol class="steps">
+      <ol class="steps" id="setup-create-steps">
         <li>Open <a href="https://www.duckdns.org/" target="_blank" rel="noreferrer noopener">duckdns.org ↗</a> and sign in with an account you already have.</li>
         <li>Type a name into the <strong>domain</strong> box and press <strong>add domain</strong>.</li>
         <li>Copy the <strong>token</strong> shown at the top of that page. It is the password for the name.</li>
       </ol>
       <label class="inline">
-        Your name
+        <span id="setup-name-label">Your name</span>
         <input id="setup-subdomain" placeholder="yournode" size="24" autocomplete="off">
-        <span class="suffix">.duckdns.org</span>
+        <span class="suffix" id="setup-suffix">.duckdns.org</span>
       </label>
-      <p class="hint">
+      <p class="hint" id="setup-step1-hint">
         A name in front of it works too: <code>mining.yournode</code> publishes on
         <code>mining.yournode.duckdns.org</code>. There is nothing to add at
         duckdns.org for one of those -- only <code>yournode</code> is an account,
