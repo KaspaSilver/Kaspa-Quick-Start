@@ -145,7 +145,12 @@ export const DEFAULT_APPS_CONFIG = {
         ref: 'main',
         network: 'mainnet',
         publish: { api: false, chat: false },
+        // Android push (Firebase). Only the non-secret project id lives here; the
+        // service-account.json is written to conf/push/ by the Push Service panel.
         fcmProjectId: '',
+        // Apple push (iOS). Non-secret identifiers only -- the .p8 key file lives
+        // in conf/push/, written by the Push Service panel, never in this file.
+        apns: { enabled: false, teamId: '', keyId: '', topic: 'com.kachat.app', environment: 'production' },
         // Server-side translation of KaPosts. Its engine is a container of its
         // own -- gigabytes of language models -- so this is only the setting;
         // whether the engine exists at all is the `translate` service.
@@ -265,6 +270,9 @@ export function loadAppsConfig() {
         // Same for translate, added later than the file most people have.
         if (defaults.translate) cfg[name].translate = { ...defaults.translate, ...(saved.translate ?? {}) };
         if (defaults.translate) cfg[name].translate = upgradeLanguages(cfg[name].translate);
+        // apns is nested too, and newer than most saved files, so a shallow
+        // merge would drop keys an older apps.json never wrote.
+        if (defaults.apns) cfg[name].apns = { ...defaults.apns, ...(saved.apns ?? {}) };
     }
 
     // Earlier versions defaulted Nextcloud to 8080, which is this panel's port,
@@ -304,6 +312,23 @@ export function validateAppsConfig(input) {
     const fcm = String(k.fcmProjectId ?? '').trim();
     if (fcm && !/^[a-z0-9-]{1,64}$/.test(fcm)) errors.push('FCM project id may only contain lowercase letters, digits and dashes.');
     cfg.kachat.fcmProjectId = fcm;
+
+    // Apple push identifiers (non-secret). The .p8 key itself is uploaded to
+    // conf/push/ separately and never travels through this config.
+    const a = k.apns ?? {};
+    const apns = { ...DEFAULT_APPS_CONFIG.kachat.apns };
+    apns.enabled = Boolean(a.enabled);
+    const teamId = String(a.teamId ?? '').trim().toUpperCase();
+    if (teamId && !/^[A-Z0-9]{10}$/.test(teamId)) errors.push('APNs Team ID must be 10 letters or digits.');
+    apns.teamId = teamId;
+    const keyId = String(a.keyId ?? '').trim().toUpperCase();
+    if (keyId && !/^[A-Z0-9]{10}$/.test(keyId)) errors.push('APNs Key ID must be 10 letters or digits.');
+    apns.keyId = keyId;
+    const topic = String(a.topic ?? 'com.kachat.app').trim();
+    if (topic && !/^[A-Za-z0-9.-]{1,155}$/.test(topic)) errors.push('APNs topic (iOS bundle id) contains invalid characters.');
+    apns.topic = topic || 'com.kachat.app';
+    apns.environment = ['production', 'sandbox'].includes(a.environment) ? a.environment : 'production';
+    cfg.kachat.apns = apns;
 
     // --- KaChat Desktop ---
     const d = input.desktop ?? {};
@@ -441,6 +466,12 @@ export function writeAppsEnv(cfg) {
         KACHAT_NETWORK: cfg.kachat.network,
         KACHAT_NODE_PORT: cfg.kachat.network === 'testnet-10' ? 17210 : 17110,
         KACHAT_FCM_PROJECT_ID: cfg.kachat.fcmProjectId,
+        // Apple push identifiers (iOS). The .p8 key file is not here -- it is
+        // bind-mounted from conf/push/ (see docker-compose.yml APNS_KEY_PATH).
+        KACHAT_APNS_TEAM_ID: cfg.kachat.apns?.teamId || '',
+        KACHAT_APNS_KEY_ID: cfg.kachat.apns?.keyId || '',
+        KACHAT_APNS_TOPIC: cfg.kachat.apns?.topic || '',
+        KACHAT_APNS_ENVIRONMENT: cfg.kachat.apns?.environment || 'production',
         // Read by the translation engine at startup and by nothing else. It
         // only loads what is listed here, so changing it means recreating it.
         LT_LOAD_ONLY: cfg.kachat.translate?.languages || 'en,es,pt,fr,de,ru,zh,ja,ko,ar,vi',

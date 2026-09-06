@@ -149,11 +149,22 @@ services:
       # is the LibreTranslate beside it. Here it is a container of its own.
       LIBRETRANSLATE_URL: ${LIBRETRANSLATE_URL:-http://libretranslate:5000}
       INTERNAL_PUSH_SECRET: ${KACHAT_PUSH_SECRET:-}
+      # Mobile push (Firebase/Android + Apple/iOS). The non-secret identifiers
+      # come from the Push Service panel via .env; the key files are bind-mounted
+      # read-only from conf/push (written 0600 by that panel), not baked in.
       FCM_PROJECT_ID: ${KACHAT_FCM_PROJECT_ID:-}
-      FCM_SERVICE_ACCOUNT_PATH: /app/data/fcm/service-account.json
+      FCM_SERVICE_ACCOUNT_PATH: /push/fcm/service-account.json
+      APNS_TOPIC: ${KACHAT_APNS_TOPIC:-}
+      APNS_KEY_ID: ${KACHAT_APNS_KEY_ID:-}
+      APNS_TEAM_ID: ${KACHAT_APNS_TEAM_ID:-}
+      APNS_ENVIRONMENT: ${KACHAT_APNS_ENVIRONMENT:-production}
+      APNS_KEY_PATH: /push/apns/AuthKey.p8
       RUST_LOG: info
     volumes:
       - kachat-app-data:/app/data
+      # Mobile push credentials (Firebase service-account.json + Apple .p8),
+      # written 0600 by the Push Service panel. Read-only to the indexer.
+      - ${STACK_DIR}/conf/push:/push:ro
       # Upstream runs these containers with host networking, so its launch
       # scripts hardcode localhost as the database and bind the admin API to
       # loopback. Neither holds on a bridge network. These are the same scripts

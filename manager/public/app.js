@@ -152,6 +152,7 @@ function selectTab(name) {
     if (name === 'global') loadGlobal().catch(() => {});
     if (name === 'gift') loadGift().catch(() => {});
     if (name === 'bot') loadBot().catch(() => {});
+    if (name === 'push') loadPush().catch(() => {});
     // On the drawer layout, picking a destination should get out of the way.
     if (MOBILE()) closeDrawer();
 }
@@ -4971,6 +4972,62 @@ $('gift-rebuild').addEventListener('click', async () => {
     } catch (e) {
         toast(e.message, 'bad');
     }
+});
+
+// -------------------------------------------------------------------- push ---
+// The Push Service panel: FCM (Android) + APNs (iPhone) credentials for the
+// KaChat indexer. Loaded on arrival, saved through /api/push.
+async function loadPush() {
+    let d;
+    try {
+        d = await api('/api/push');
+    } catch {
+        return;
+    }
+    $('push-fcm-project').value = d.fcmProjectId || '';
+    $('push-apns-team').value = d.apns?.teamId || '';
+    $('push-apns-keyid').value = d.apns?.keyId || '';
+    $('push-apns-topic').value = d.apns?.topic || 'com.kachat.app';
+    $('push-apns-env').value = d.apns?.environment || 'production';
+    // Never fill the key boxes: the panel does not read keys back out, and an
+    // empty box means "keep what is saved".
+    $('push-fcm-key').value = '';
+    $('push-apns-key').value = '';
+    const setPill = (id, present) => {
+        const n = $(id);
+        n.textContent = present ? 'key saved' : 'no key';
+        n.className = present ? 'pill' : 'pill warn';
+    };
+    setPill('push-fcm-status', d.credentials?.fcm);
+    setPill('push-apns-status', d.credentials?.apns);
+    const on = (d.credentials?.fcm ? 1 : 0) + (d.credentials?.apns ? 1 : 0);
+    const tag = $('push-state');
+    tag.textContent = on === 2 ? 'both set' : on === 1 ? 'partly set' : 'not set';
+    tag.className = on === 2 ? 'tag ok' : on === 1 ? 'tag warn' : 'tag off';
+}
+
+$('push-save').addEventListener('click', async () => {
+    const body = {
+        fcmProjectId: $('push-fcm-project').value.trim(),
+        apns: {
+            teamId: $('push-apns-team').value.trim(),
+            keyId: $('push-apns-keyid').value.trim(),
+            topic: $('push-apns-topic').value.trim(),
+            environment: $('push-apns-env').value,
+        },
+    };
+    // Keys travel only when the box is non-empty; blank keeps the saved one.
+    const fcmKey = $('push-fcm-key').value.trim();
+    const apnsKey = $('push-apns-key').value.trim();
+    if (fcmKey) body.fcmServiceAccount = fcmKey;
+    if (apnsKey) body.apnsKey = apnsKey;
+
+    await runAction({
+        key: 'push',
+        title: 'Save push settings',
+        request: () => api('/api/push/config', { method: 'POST', body }),
+    });
+    await loadPush();
 });
 
 // ------------------------------------------------------------ setup wizard ---

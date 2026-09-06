@@ -39,6 +39,7 @@ import * as selfservice from './lib/selfservice.js';
 import * as publish from './lib/publish.js';
 import * as portcheck from './lib/portcheck.js';
 import * as gift from './lib/gift.js';
+import * as push from './lib/push.js';
 import * as lifecycle from './lib/lifecycle.js';
 import * as bot from './lib/bot.js';
 import { nodeSnapshot, rpc } from './lib/rpc.js';
@@ -2492,6 +2493,84 @@ route('POST', /^\/api\/gift\/settings$/, async (req, res) => {
     apps.saveAppsConfig(appsCfg);
     const written = writeGiftConfig();
     sendJson(res, 200, { ok: true, config: g, service: { mode: written.mode, amountKas: written.amountKas } });
+});
+
+// -------------------------------------------------------------------- push --
+// Mobile push for the KaChat indexer: Android via Firebase (FCM) and iPhone via
+// Apple (APNs). Modelled on the gift service -- the non-secret identifiers live
+// in apps.json/.env, the key files are written 0600 under conf/push/ and
+// bind-mounted into the indexer. Only relevant to whoever operates the KaChat
+// mobile apps and owns their Firebase project / Apple developer account.
+
+route('GET', /^\/api\/push$/, async (req, res) => {
+    const k = apps.loadAppsConfig().kachat ?? {};
+    const container = await dockerctl.containerState('kaspa-node-kachat');
+    sendJson(res, 200, {
+        enabled: Boolean(k.enabled),
+        fcmProjectId: k.fcmProjectId ?? '',
+        apns: k.apns ?? apps.DEFAULT_APPS_CONFIG.kachat.apns,
+        // Whether the key files are actually on disk. The panel never reads them
+        // back out -- it only ever says present or not.
+        credentials: { apns: push.hasApns(), fcm: push.hasFcm() },
+        container,
+    });
+});
+
+route('POST', /^\/api\/push\/config$/, async (req, res) => {
+    const body = await readBody(req);
+    try {
+        // Keys first: a saved key id with no key file is a half-configured
+        // platform, and the indexer will not enable one of those.
+        if (body.apnsKey) push.saveApnsKey(body.apnsKey);
+        if (body.fcmServiceAccount) push.saveFcmKey(body.fcmServiceAccount);
+
+        // Merge the push fields into the whole document and validate it, but
+        // persist only the validated kachat block so gift/bot/etc. keep their
+        // stored settings untouched.
+        const current = apps.loadAppsConfig();
+        const merged = {
+            ...current,
+            kachat: {
+                ...current.kachat,
+                fcmProjectId: body.fcmProjectId ?? current.kachat.fcmProjectId,
+                apns: { ...current.kachat.apns, ...(body.apns ?? {}) },
+            },
+        };
+        const { cfg, errors } = apps.validateAppsConfig(merged);
+        if (errors.length) return fail(res, 400, 'The push settings have problems.', { details: errors });
+
+        current.kachat = cfg.kachat;
+        apps.saveAppsConfig(current);
+        apps.writeAppsEnv(current);
+
+        // The indexer reads push settings only at startup, so a change is not
+        // live until it restarts. Only worth doing when the app is switched on;
+        // otherwise the new settings apply the next time it starts.
+        if (current.kachat.enabled) {
+            const job = jobs.start('Apply push settings', async (onLine) => {
+                onLine('Restarting the KaChat indexer so it picks up the new push settings...');
+                await dockerctl.compose(['up', '-d', '--force-recreate', 'kachat-app'], {
+                    onLine,
+                    profile: apps.APPS.kachat.profile,
+                    timeoutMs: 20 * 60_000,
+                });
+                onLine('Done. Push notifications now use the new settings.');
+            });
+            return sendJson(res, 202, {
+                ok: true,
+                jobId: job.id,
+                apns: current.kachat.apns,
+                credentials: { apns: push.hasApns(), fcm: push.hasFcm() },
+            });
+        }
+        sendJson(res, 200, {
+            ok: true,
+            apns: current.kachat.apns,
+            credentials: { apns: push.hasApns(), fcm: push.hasFcm() },
+        });
+    } catch (err) {
+        fail(res, 400, err.message);
+    }
 });
 
 // ------------------------------------------------------------ global system --

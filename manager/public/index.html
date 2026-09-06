@@ -141,6 +141,13 @@
           <span class="track"></span>
         </label>
       </div>
+      <div class="nav-row">
+        <button class="nav-item" data-tab="push" title="Push Service">
+          <span class="nav-dot" data-health="push"></span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 16v-5a6 6 0 10-12 0v5l-1.5 2h15z"/><path d="M10 20.5a2 2 0 004 0"/></svg>
+          <span class="label">Push Service</span>
+        </button>
+      </div>
 
       <p class="nav-group-title">Network</p>
       <div class="nav-row">
@@ -1767,6 +1774,66 @@
         </div>
       </div>
 
+</section>
+
+    <!-- ------------------------------------------------------------ push -->
+    <section id="tab-push" class="tab">
+      <div class="grid">
+        <article class="card span2">
+          <div class="toggle-row">
+            <div class="toggle-text"><strong>Push Service</strong>
+              <span class="muted">Mobile push notifications for the KaChat indexer — Android via Firebase, iPhone via Apple.</span>
+            </div>
+            <span id="push-state" class="tag off">not set</span>
+          </div>
+          <div class="notice">
+            <p><strong>This is only for people who run the KaChat mobile apps.</strong> Every value below
+            belongs to <em>your own</em> Firebase project (Android) and Apple developer account (iOS) — the
+            same accounts your App Store and Play Store listings are published under. If you just run a node
+            or indexer, leave this blank: the indexer works fine without it, it simply won't send push.</p>
+          </div>
+          <p class="hint">Keys are stored on this machine only, owner-readable (0600), and never leave the box.
+          The panel never shows a saved key back — an empty key box means “keep the one already saved”.</p>
+        </article>
+
+        <article class="card span2">
+          <h3>Android — Firebase Cloud Messaging</h3>
+          <div class="row">
+            <label class="inline">Project ID <input id="push-fcm-project" size="24" autocomplete="off" spellcheck="false" placeholder="my-firebase-project"></label>
+            <span id="push-fcm-status" class="pill">no key</span>
+          </div>
+          <label>Service account JSON
+            <textarea id="push-fcm-key" rows="6" spellcheck="false" autocomplete="off" placeholder='Firebase console → Project settings → Service accounts → Generate new private key. Paste the whole JSON. Leave blank to keep the saved one.'></textarea>
+          </label>
+        </article>
+
+        <article class="card span2">
+          <h3>iPhone — Apple Push Notification service</h3>
+          <div class="row">
+            <label class="inline">Team ID <input id="push-apns-team" size="12" maxlength="10" autocomplete="off" spellcheck="false" placeholder="RP4Z22SFSD"></label>
+            <label class="inline">Key ID <input id="push-apns-keyid" size="12" maxlength="10" autocomplete="off" spellcheck="false" placeholder="from the key you made"></label>
+          </div>
+          <div class="row">
+            <label class="inline">Topic (bundle id) <input id="push-apns-topic" size="22" autocomplete="off" spellcheck="false" placeholder="com.kachat.app"></label>
+            <label class="inline">Environment
+              <select id="push-apns-env">
+                <option value="production">production</option>
+                <option value="sandbox">sandbox</option>
+              </select>
+            </label>
+            <span id="push-apns-status" class="pill">no key</span>
+          </div>
+          <label>Auth key (.p8)
+            <textarea id="push-apns-key" rows="6" spellcheck="false" autocomplete="off" placeholder="Apple Developer → Keys → your APNs key. Paste the whole AuthKey_XXXX.p8, from its BEGIN line to its END line. Leave blank to keep the saved one."></textarea>
+          </label>
+        </article>
+
+        <article class="card span2">
+          <div class="row"><button id="push-save" class="primary">Save push settings</button></div>
+          <p class="hint">Saving restarts the KaChat indexer to load the new settings (about two minutes). If the indexer is switched off, they apply the next time it starts.</p>
+          <div id="push-result" class="verdict" hidden></div>
+        </article>
+      </div>
 </section>
 
     <!-- ----------------------------------------------------------- proxy -->
