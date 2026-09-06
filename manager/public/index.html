@@ -481,26 +481,30 @@
 
           <div class="node-section" id="earnings-section">
             <h3>Projected earnings</h3>
-              <label class="inline">
-                Hashrate
+              <div class="earn-row">
+                <label for="earn-hashrate">Hashrate</label>
                 <input id="earn-hashrate" type="number" min="0" step="any" size="8">
                 <select id="earn-unit">
                   <option value="1e9">GH/s</option>
                   <option value="1e12" selected>TH/s</option>
                   <option value="1e15">PH/s</option>
                 </select>
-                <button type="button" id="earn-reset" class="ghost">Use my miners</button>
+                <label class="switch-field" title="Track your connected miners' hashrate live">
+                  <span class="switch mini"><input type="checkbox" id="earn-live"><span class="track"></span></span>
+                  <span>Use my miners</span>
+                </label>
                 <span class="tag" id="earn-source">–</span>
-              </label>
+              </div>
               <p class="hint tight">
-                Type any hashrate to see what it would earn. <strong>Use my miners</strong>
-                puts the figure your connected miners are reporting back in the box.
+                <strong>Use my miners</strong> on keeps the box tracking what your
+                connected miners are reporting, so the earnings below follow them live.
+                Turn it off to type any hashrate and see what it would earn.
               </p>
               <div class="grid stats" id="earn-grid">
-                <div class="stat"><span id="earn-day">–</span><small>per day</small></div>
-                <div class="stat"><span id="earn-1">–</span><small>1 month</small></div>
-                <div class="stat"><span id="earn-6">–</span><small>6 months</small></div>
-                <div class="stat"><span id="earn-12">–</span><small>12 months</small></div>
+                <div class="stat"><span id="earn-day">–</span><small class="fiat" id="earn-day-fiat"></small><small>per day</small></div>
+                <div class="stat"><span id="earn-1">–</span><small class="fiat" id="earn-1-fiat"></small><small>1 month</small></div>
+                <div class="stat"><span id="earn-6">–</span><small class="fiat" id="earn-6-fiat"></small><small>6 months</small></div>
+                <div class="stat"><span id="earn-12">–</span><small class="fiat" id="earn-12-fiat"></small><small>12 months</small></div>
               </div>
               <dl class="kv vertical">
                 <div><dt>Your share of the network</dt><dd id="earn-share">–</dd></div>
@@ -534,7 +538,7 @@
               <h3>Recent blocks</h3>
               <div class="scroll-x">
               <table class="blocks">
-              <thead><tr><th>Found</th><th>Worker</th><th>Blue score</th><th>Hash</th></tr></thead>
+              <thead><tr><th>Found</th><th>Worker</th><th>Reward</th><th>Blue score</th><th>Hash</th></tr></thead>
               <tbody id="blocks-body"></tbody>
               </table>
               </div>

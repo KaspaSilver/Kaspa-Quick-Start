@@ -185,6 +185,31 @@ export async function connectedMinerIps(logs) {
     return [...ips];
 }
 
+/**
+ * Which address each worker is mining from, learned from the handshake the
+ * bridge logs once per connection:
+ *
+ *   [HANDSHAKE] authorized 192.168.3.88:50132 worker='KS7LITE' app='IceRiverMiner-v1.1'
+ *
+ * That line scrolls out of a tail after a while, so what is seen is remembered:
+ * a miner connected for hours logged its address once, long ago, and the panel
+ * should still be able to link to its dashboard. Merging into a kept map means a
+ * single reconnect is enough to learn an address, and it is never unlearned
+ * until the worker reconnects from somewhere else.
+ */
+const workerIps = new Map();
+
+export function learnWorkerIps(logs) {
+    for (const m of String(logs || '').matchAll(/\[HANDSHAKE\]\s+authorized\s+(\d+\.\d+\.\d+\.\d+):\d+\s+worker='([^']*)'/g)) {
+        const [, ip, worker] = m;
+        if (worker) workerIps.set(worker, ip);
+    }
+    return workerIps;
+}
+
+/** The address last seen for a worker, or null if none has been observed. */
+export const workerIp = (worker) => workerIps.get(worker) ?? null;
+
 // ------------------------------------------------------------------- stats --
 
 /**

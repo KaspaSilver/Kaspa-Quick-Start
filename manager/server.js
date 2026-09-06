@@ -28,6 +28,7 @@ import * as certbot from './lib/certbot.js';
 import * as duckdns from './lib/duckdns.js';
 import * as updater from './lib/updater.js';
 import * as bridge from './lib/bridge.js';
+import * as price from './lib/price.js';
 import * as apps from './lib/apps.js';
 import * as kachatProxy from './lib/kachat-proxy.js';
 import * as syncProgress from './lib/sync-progress.js';
@@ -1535,7 +1536,7 @@ route('GET', /^\/api\/mining$/, async (req, res) => {
     const cfg = bridge.loadBridgeConfig();
     const [state, stats, version] = await Promise.all([
         dockerctl.containerState(dockerctl.BRIDGE_CONTAINER),
-        cfg.enabled ? bridge.fetchStats() : Promise.resolve(null),
+        cfg.enabled ? bridgeStatsWithIps() : Promise.resolve(null),
         dockerctl.imageVersion(dockerctl.BRIDGE_CONTAINER),
     ]);
     sendJson(res, 200, {
@@ -1592,6 +1593,23 @@ async function applyProxyState(enabled, onLine = () => {}) {
     await dockerctl.compose(['up', '-d', 'proxy'], { onLine, profile: 'proxy', timeoutMs: 5 * 60_000 });
 }
 
+/**
+ * The bridge's stats, with each worker's mining address filled in from the
+ * connection handshakes in its log. The address is what lets the panel link a
+ * worker straight to its own dashboard, which for the common IceRiver on a home
+ * network is a page on that box. Best-effort: a worker whose handshake is not
+ * in the log tail simply has no link until it reconnects.
+ */
+async function bridgeStatsWithIps() {
+    const stats = await bridge.fetchStats();
+    if (stats?.reachable && stats.workers?.length) {
+        const logs = await dockerctl.logs(dockerctl.BRIDGE_CONTAINER, 1500).catch(() => '');
+        bridge.learnWorkerIps(logs);
+        stats.workers = stats.workers.map((w) => ({ ...w, ip: bridge.workerIp(w.worker) }));
+    }
+    return stats;
+}
+
 /** Block reward, the next reduction, and what today's rate would pay. */
 async function miningEconomics(stats, hashrateOverride = null) {
     const nodeCfg = loadNodeConfig();
@@ -1612,6 +1630,9 @@ async function miningEconomics(stats, hashrateOverride = null) {
 
     return {
         reward,
+        // What the earnings, and a found block's reward, are worth today. Best
+        // effort and cached: absent when the price service cannot be reached.
+        price: await price.kaspaPrice(),
         networkHashrate: net,
         projection:
             hashrate > 0 && net.value > 0
@@ -1685,7 +1706,7 @@ route('POST', /^\/api\/mining\/scan$/, async (req, res) => {
 route('GET', /^\/api\/mining\/stats$/, async (req, res) => {
     const cfg = bridge.loadBridgeConfig();
     if (!cfg.enabled) return sendJson(res, 200, { enabled: false, reachable: false, workers: [], blocks: [] });
-    sendJson(res, 200, { enabled: true, ...(await bridge.fetchStats()) });
+    sendJson(res, 200, { enabled: true, ...(await bridgeStatsWithIps()) });
 });
 
 route('POST', /^\/api\/mining\/(start|stop|restart)$/, async (req, res, match) => {

@@ -1667,6 +1667,10 @@ async function loadMining() {
     $('mining-version').textContent = r.version || '';
     renderStratumTargets(c);
     renderEconomics(r);
+    syncMinersToggle();
+    // renderEconomics just drew the live figure; if the user is in what-if mode
+    // put their typed hashrate back in charge of the numbers.
+    if (!useMyMiners) recalcProjection();
     setNavHealth('mining', !c.enabled ? 'off' : r.container?.running ? 'ok' : 'bad');
 }
 
@@ -1721,12 +1725,20 @@ function renderWorkers(workers) {
         .map((w) => {
             const status = w.status || 'offline';
             const bad = (Number(w.stale) || 0) + (Number(w.invalid) || 0);
+            const ip = /^\d+\.\d+\.\d+\.\d+$/.test(String(w.ip || '')) ? w.ip : null;
             const title =
                 `${w.worker || 'worker'} is ${status}` +
                 (w.wallet ? `\nPaying ${w.wallet}` : '') +
+                (ip ? `\nMining from ${ip} — click the name for its dashboard` : '') +
                 `\n${fmtNum(w.stale)} stale, ${fmtNum(w.invalid)} invalid`;
+            const label = escapeHtml(w.worker || '–');
+            // The name links to the miner's own web dashboard when its address is
+            // known -- for an IceRiver on the LAN that is a page on the box.
+            const name = ip
+                ? `<a href="http://${escapeHtml(ip)}/" target="_blank" rel="noreferrer noopener">${label}</a>`
+                : label;
             return `<tr title="${escapeHtml(title)}">
-        <td class="name"><span class="dot ${status === 'online' ? 'ok' : status === 'idle' ? 'warn' : ''}"></span>${escapeHtml(w.worker || '–')}</td>
+        <td class="name"><span class="dot ${status === 'online' ? 'ok' : status === 'idle' ? 'warn' : ''}"></span>${name}</td>
         <td>${fmtHashrate(w.hashrate)}</td>
         <td>${w.currentDifficulty ? fmtNum(Math.round(w.currentDifficulty)) : '–'}</td>
         <td>${fmtNum(w.shares)}${bad ? `<small class="sub">${fmtNum(bad)} bad</small>` : ''}</td>
@@ -1739,15 +1751,23 @@ function renderWorkers(workers) {
 
 function renderBlocks(blocks) {
     if (!blocks.length) {
-        $('blocks-body').innerHTML = '<tr><td colspan="4" class="empty">No blocks found yet.</td></tr>';
+        $('blocks-body').innerHTML = '<tr><td colspan="5" class="empty">No blocks found yet.</td></tr>';
         return;
     }
+    // Every block a solo miner finds pays the coinbase subsidy in full, and the
+    // bridge does not report the amount, so this is the current block reward --
+    // exact for anything recent, since it only steps down once a month.
+    const rewardKas = Number(lastEconomics?.reward?.currentKas) || null;
+    const rewardCell = rewardKas
+        ? `${trimKas(rewardKas)} KAS${lastPrice ? `<small class="sub">${fmtFiat(rewardKas * lastPrice)}</small>` : ''}`
+        : '–';
     $('blocks-body').innerHTML = blocks
         .slice(0, 25)
         .map(
             (b) => `<tr>
       <td class="name">${escapeHtml(b.timestamp || '–')}</td>
       <td class="name">${escapeHtml(b.worker || '–')}</td>
+      <td>${rewardCell}</td>
       <td>${escapeHtml(b.bluescore || '–')}</td>
       <td><span class="trunc" title="${escapeHtml(b.hash || '')}">${escapeHtml(b.hash || '–')}</span></td>
     </tr>`,
@@ -1791,6 +1811,20 @@ function fmtDaysUntil(seconds) {
 }
 
 let lastEconomics = null;
+let lastPrice = null;
+
+const MINERS_KEY = 'kaspa-node-use-miners';
+// Default on: someone opening this is usually watching their own miners, not
+// modelling a stranger's. Off is the deliberate "what if I had X" mode.
+let useMyMiners = localStorage.getItem(MINERS_KEY) !== '0';
+
+/** A KAS amount as an approximate fiat figure, or '' when there is no price. */
+const fmtFiat = (usd) => {
+    if (!Number.isFinite(usd) || usd <= 0) return '';
+    if (usd >= 1000) return `~$${Math.round(usd).toLocaleString()}`;
+    if (usd >= 1) return `~$${usd.toFixed(2)}`;
+    return `~$${usd.toFixed(4)}`;
+};
 
 /** Block reward, the next reduction, and what today's rate would pay. */
 const trimKas = (kas) => kas.toFixed(8).replace(/0+$/, '').replace(/\.$/, '');
@@ -1803,6 +1837,7 @@ const trimKas = (kas) => kas.toFixed(8).replace(/0+$/, '').replace(/\.$/, '');
  */
 function renderEconomics(r) {
     lastEconomics = r;
+    lastPrice = Number(r.price?.usd) || null;
     const reward = r.reward;
     if (!reward) {
         $('m-reward').textContent = '–';
@@ -1823,8 +1858,10 @@ function renderEconomics(r) {
 
 function renderProjection(p, net) {
     if (!p) return;
-    // Do not fight the user while they are typing a what-if figure.
-    if (document.activeElement !== $('earn-hashrate')) {
+    // While "use my miners" is on the box mirrors the live figure; leave it
+    // alone otherwise, so a typed what-if is not overwritten from under the
+    // cursor or by a poll.
+    if (useMyMiners && document.activeElement !== $('earn-hashrate')) {
         const unit = Number($('earn-unit').value);
         $('earn-hashrate').value = p.hashrate ? (p.hashrate / unit).toFixed(3).replace(/\.?0+$/, '') : '';
     }
@@ -1835,21 +1872,18 @@ function renderProjection(p, net) {
     $('earn-6').textContent = fmtKas(byMonths[6] ?? 0);
     $('earn-12').textContent = fmtKas(byMonths[12] ?? 0);
 
-    // Say plainly whether these numbers come from real miners or a typed
-    // what-if, and do not offer a button that would fill in a zero.
+    // The same figures in fiat, when a price is to hand. Quiet when it is not.
+    $('earn-day-fiat').textContent = lastPrice ? fmtFiat((p.perDayKas ?? 0) * lastPrice) : '';
+    $('earn-1-fiat').textContent = lastPrice ? fmtFiat((byMonths[1] ?? 0) * lastPrice) : '';
+    $('earn-6-fiat').textContent = lastPrice ? fmtFiat((byMonths[6] ?? 0) * lastPrice) : '';
+    $('earn-12-fiat').textContent = lastPrice ? fmtFiat((byMonths[12] ?? 0) * lastPrice) : '';
+
+    // Say plainly whether these numbers come from real miners or a typed what-if.
     const hasMeasured = Number(p.measured) > 0;
     const usingMeasured = hasMeasured && !p.hypothetical;
     const source = $('earn-source');
     source.textContent = usingMeasured ? 'from your miners' : p.hashrate > 0 ? 'what-if' : 'no hashrate';
     source.className = `tag ${usingMeasured ? 'ok' : 'off'}`;
-
-    const reset = $('earn-reset');
-    reset.disabled = !hasMeasured || usingMeasured;
-    reset.title = !hasMeasured
-        ? 'No miners are connected, so there is no measured hashrate to use.'
-        : usingMeasured
-          ? 'Already showing your miners\' reported hashrate.'
-          : 'Put your miners\' reported hashrate back in the box.';
 
     $('earn-share').textContent = p.share > 0 ? `${(p.share * 100).toPrecision(3)}%` : '–';
     $('earn-nethash').textContent = net?.value
@@ -1884,9 +1918,23 @@ const recalcProjection = () => {
     refreshProjection(value * unit);
 };
 
+/** Keep the switch and the box agreeing: on locks the box to the live figure. */
+function syncMinersToggle() {
+    $('earn-live').checked = useMyMiners;
+    const box = $('earn-hashrate');
+    box.readOnly = useMyMiners;
+    box.classList.toggle('locked', useMyMiners);
+}
+
 $('earn-hashrate').addEventListener('input', debounce(recalcProjection, 400));
-$('earn-unit').addEventListener('change', recalcProjection);
-$('earn-reset').addEventListener('click', () => refreshProjection(null));
+$('earn-unit').addEventListener('change', () => (useMyMiners ? refreshProjection(null) : recalcProjection()));
+$('earn-live').addEventListener('change', (e) => {
+    useMyMiners = e.target.checked;
+    localStorage.setItem(MINERS_KEY, useMyMiners ? '1' : '0');
+    syncMinersToggle();
+    if (useMyMiners) refreshProjection(null);
+    else recalcProjection();
+});
 
 function renderStratumTargets(cfg) {
     const lanIp = miningLan?.ip;
@@ -2119,6 +2167,10 @@ async function refreshMiningStats() {
     if (!miningConfig?.enabled) return;
     try {
         const [stats, state] = await Promise.all([api('/api/mining/stats'), api('/api/mining')]);
+        // In "use my miners" mode the earnings follow the miners live, so redraw
+        // them from the same fetch. Do it first: it refreshes the block reward
+        // and price the blocks table reads. A what-if is left untouched.
+        if (useMyMiners) renderEconomics(state);
         renderMiningState(state.container, stats.enabled ? stats : null);
     } catch {
         /* transient; the next tick retries */

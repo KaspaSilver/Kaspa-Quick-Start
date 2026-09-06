@@ -648,6 +648,17 @@ dialog .row label { flex: 1; min-width: 110px; }
     overflow-wrap: anywhere;
 }
 .stat small { color: var(--muted); font-size: 12px; }
+/* The fiat line sits between the KAS figure and its caption, and holds its
+   height so the row does not jump when there is no price to show. */
+.stat .fiat { display: block; min-height: 14px; color: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* The projection's hashrate row: label, box, unit, the live toggle, the tag. */
+.earn-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.earn-row > label[for="earn-hashrate"] { color: var(--muted); }
+.earn-row input#earn-hashrate { width: auto; flex: 0 1 10em; }
+.earn-row input#earn-hashrate.locked { opacity: 0.6; }
+.switch-field { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.switch-field > span:last-child { color: var(--muted); font-size: 13px; }
 
 /* Wide tables scroll inside their card rather than the page. */
 .scroll-x { overflow-x: auto; }
