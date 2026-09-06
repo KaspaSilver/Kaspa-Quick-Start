@@ -541,9 +541,39 @@ table.proxies td:last-child { text-align: right; white-space: nowrap; }
 .args { max-height: 220px; }
 .tail { margin-left: auto; font-size: 12px; }
 
-.update-status { padding: 10px 12px; background: var(--panel-2); border-radius: 8px; font-size: 14px; }
-.update-status.available { color: var(--accent); }
-.update-status.current { color: var(--ok); }
+.update-status {
+    padding: 11px 13px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    font-size: 14px;
+    transition: box-shadow .3s ease, border-color .3s ease, background .3s ease, color .3s ease;
+}
+/* An update waiting is the one thing on this page worth interrupting for, so it
+   is lit and it breathes. */
+.update-status.available {
+    color: var(--accent-glow);
+    font-weight: 600;
+    border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+    background: color-mix(in srgb, var(--accent) 11%, var(--panel-2));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent), 0 0 28px -6px var(--accent-glow);
+    animation: update-pulse 2.4s ease-in-out infinite;
+}
+.update-status.current {
+    color: var(--ok);
+    border-color: color-mix(in srgb, var(--ok) 45%, transparent);
+    background: color-mix(in srgb, var(--ok) 9%, var(--panel-2));
+    box-shadow: 0 0 22px -10px var(--ok);
+}
+.update-status.error {
+    color: var(--danger);
+    border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+    background: color-mix(in srgb, var(--danger) 9%, var(--panel-2));
+}
+@keyframes update-pulse {
+    0%, 100% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent), 0 0 22px -8px var(--accent-glow); }
+    50% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent), 0 0 36px -3px var(--accent-glow); }
+}
 
 /* ---------------------------------------------------------------- dialog */
 
@@ -2000,4 +2030,46 @@ select { font-family: var(--mono); font-size: 13.5px; }
     min-height: 2.4rem;
     font-size: 12.5px;
     padding: 8px 10px;
+}
+
+/* ============================================================ glow & pop === */
+/* Turned up so state reads at a glance: a running service, a toggle that is on,
+   an update waiting -- each lights when it means something. Everything stays on
+   the accent ring the banner already uses, and every animation here sits inside
+   the prefers-reduced-motion switch above. */
+
+/* Sidebar health dots, lit like the action-overlay dots, so the app list glows
+   with whatever is actually running. */
+.nav-dot.ok { box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 16%, transparent), 0 0 10px -1px var(--ok); }
+.nav-dot.warn { box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 16%, transparent), 0 0 10px -1px var(--warn); }
+.nav-dot.bad { box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 16%, transparent), 0 0 10px -1px var(--danger); }
+
+/* A toggle that is on is a light that is on. */
+.switch input:checked + .track { box-shadow: 0 0 15px -3px var(--accent-glow); }
+
+/* Cards lift toward the light on hover: a small, consistent sign a whole panel
+   is interactive. */
+.card { transition: box-shadow .28s ease; }
+.card:hover {
+    box-shadow: 0 1px 0 rgba(125, 216, 202, 0.1) inset, var(--glow-soft), 0 12px 32px -20px rgba(0, 0, 0, 0.9);
+}
+
+/* Primary buttons carry a touch more ring; the update button is the loudest
+   thing on its page. */
+button.primary { transition: box-shadow .2s ease, background .2s ease, transform .08s ease; }
+button.primary:active:not(:disabled) { transform: translateY(1px); }
+#global-update-btn { box-shadow: 0 0 24px -7px var(--accent-glow); }
+#global-update-btn:hover:not(:disabled) { box-shadow: 0 0 32px -3px var(--accent-glow); }
+
+/* State tags get a matching halo so "on"/"key saved" reads lit, not just tinted. */
+.tag.ok { box-shadow: 0 0 16px -8px var(--ok); }
+.tag.warn { box-shadow: 0 0 16px -8px var(--warn); }
+
+/* Light mode keeps the pop but drops the neon: its shadows are soft, not lit. */
+@media (prefers-color-scheme: light) {
+    .update-status.available { animation: none; box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent); }
+    .nav-dot.ok, .nav-dot.warn, .nav-dot.bad,
+    .switch input:checked + .track,
+    #global-update-btn, #global-update-btn:hover:not(:disabled),
+    .tag.ok, .tag.warn { box-shadow: none; }
 }

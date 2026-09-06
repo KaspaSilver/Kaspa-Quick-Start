@@ -2584,7 +2584,7 @@ route('GET', /^\/api\/system$/, async (req, res) => {
 });
 
 route('GET', /^\/api\/system\/panel-latest$/, async (req, res, match, url) => {
-    const repo = (url.searchParams.get('repo') || 'KaspaSilver/Quick-Start-Kaspa').trim();
+    const repo = (url.searchParams.get('repo') || 'KaspaSilver/Kaspa-Quick-Start').trim();
     const ref = (url.searchParams.get('ref') || 'main').trim();
     try {
         const latest = await selfservice.latestCommit({ repo, ref });
@@ -2607,7 +2607,7 @@ route('POST', /^\/api\/system\/panel-update$/, async (req, res) => {
     const body = await readBody(req);
     try {
         const started = await selfservice.updatePanel({
-            repo: String(body.repo || 'KaspaSilver/Quick-Start-Kaspa').trim(),
+            repo: String(body.repo || 'KaspaSilver/Kaspa-Quick-Start').trim(),
             ref: String(body.ref || 'main').trim(),
         });
         log(`panel update started in ${started.container}`);

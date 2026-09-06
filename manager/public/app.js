@@ -1318,20 +1318,20 @@ $('check-update').addEventListener('click', async () => {
 
         if (r.updateAvailable) {
             status.className = 'update-status available';
-            status.textContent = `${r.latest} is available (you run ${r.current || 'an unknown version'}).`;
+            status.textContent = `⬆ ${r.latest} is available (you run ${r.current || 'an unknown version'}).`;
             if (!r.hasLinuxAsset) {
                 status.textContent += ' That release has no linux build attached, so it cannot be installed automatically.';
             }
         } else {
             status.className = 'update-status current';
-            status.textContent = `You are up to date. Running ${r.current || '?'}, and that is the newest release.`;
+            status.textContent = `✓ Up to date — running ${r.current || '?'}, the newest release.`;
         }
         if (r.notes) {
             $('release-notes').hidden = false;
             $('release-notes-body').textContent = r.notes;
         }
     } catch (e) {
-        status.className = 'update-status';
+        status.className = 'update-status error';
         status.textContent = e.message;
     }
 });
@@ -6038,24 +6038,30 @@ $('global-check-btn').addEventListener('click', async () => {
     const repo = $('global-repo').value.trim();
     const ref = $('global-ref').value.trim();
     button.disabled = true;
-    $('global-check-status').textContent = 'Checking…';
+    const el = $('global-check-status');
+    el.className = 'update-status';
+    el.textContent = 'Checking…';
     try {
         const q = new URLSearchParams({ repo, ref });
         const r = await api(`/api/system/panel-latest?${q}`);
         const when = r.latest.date ? new Date(r.latest.date).toLocaleString() : 'unknown date';
         if (r.upToDate === true) {
-            $('global-check-status').textContent = `Up to date. ${ref} is at ${r.latest.shortSha}, ${when}.`;
+            el.className = 'update-status current';
+            el.textContent = `✓ Up to date — ${ref} is at ${r.latest.shortSha}, ${when}.`;
         } else if (r.upToDate === false) {
             const behind = r.compare?.behind ? `, ${r.compare.behind} commit${r.compare.behind === 1 ? '' : 's'} ahead of yours` : '';
-            $('global-check-status').textContent = `Update available: ${r.latest.shortSha}${behind}. ${r.latest.message}`;
+            el.className = 'update-status available';
+            el.textContent = `⬆ Update available — ${r.latest.shortSha}${behind}. ${r.latest.message}`;
         } else {
             // No recorded sha, which is every install that has not used this
             // button yet. Saying "up to date" here would be a guess.
-            $('global-check-status').textContent =
+            el.className = 'update-status';
+            el.textContent =
                 `${ref} is at ${r.latest.shortSha} (${when}). This install has no recorded commit, so there is nothing to compare it against yet.`;
         }
     } catch (e) {
-        $('global-check-status').textContent = e.message;
+        el.className = 'update-status error';
+        el.textContent = e.message;
     } finally {
         button.disabled = false;
     }
