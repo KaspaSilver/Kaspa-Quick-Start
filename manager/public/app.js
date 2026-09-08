@@ -2356,7 +2356,7 @@ function renderPublicCheck(r) {
     v.className = `tag ${yes ? 'ok' : 'off'}`;
 
     $('public-facts').hidden = false;
-    $('public-ip').textContent = r.ip || '–';
+    $('public-node-ip').textContent = r.ip || '–';
     $('public-port').textContent = r.exposed ? `${r.port}` : `${r.port} — not published to the host`;
     $('public-probe').textContent =
         r.probe?.open === true
@@ -6460,9 +6460,11 @@ $('global-update-btn').addEventListener('click', async () => {
 
     button.disabled = true;
     try {
+        // Baseline, so a previous failed update is not mistaken for this one's.
+        const baseAt = await api('/api/system').then((s) => s.lastUpdate?.at ?? null).catch(() => null);
         await api('/api/system/panel-update', { method: 'POST', body: { repo, ref } });
-        kResult('global-update-result', 'Rebuilding. This page will drop out and come back on its own.');
-        waitForPanel();
+        kResult('global-update-result', 'Rebuilding. Watch the log; this page reloads itself when the new panel is up.');
+        showPanelUpdateOverlay(repo, ref, baseAt);
     } catch (e) {
         kResult('global-update-result', e.message, true);
         button.disabled = false;
@@ -6470,32 +6472,109 @@ $('global-update-btn').addEventListener('click', async () => {
 });
 
 /**
- * Polls until the panel answers again. The rebuild takes it away mid-request,
- * so failures here are expected and are not worth showing until it has been
- * gone long enough to mean something.
+ * The panel update is a detached sidecar, not a job, so it does not ride the
+ * normal job overlay. This drives the same overlay box by hand: it streams the
+ * sidecar's log live, then watches for the panel to drop out for the rebuild
+ * and come back, at which point it reloads onto the new version. A build that
+ * fails leaves the old panel running, which the status file reports, so that
+ * path offers a way out instead of waiting forever.
  */
-function waitForPanel() {
+function showPanelUpdateOverlay(repo, ref, baseAt) {
+    const log = $('action-log');
+    const close = $('action-close');
+    // A finished sentinel keeps the job-stream handlers out of this overlay and
+    // lets the shared Close button work without the job machinery.
+    pendingAction = { finished: true, jobId: null, resolve() {} };
+
+    $('action-title').textContent = `Updating the panel from ${repo}@${ref}`;
+    $('action-note').textContent =
+        'The page drops out while it rebuilds, then reloads itself when the new panel is up. Your node keeps running.';
+    log.textContent = '';
+    $('action-spinner').hidden = false;
+    $('action-cancel').hidden = true;
+    close.hidden = true;
+    close.disabled = true;
+    $('action-bar').className = 'action-bar';
+    $('action-bar-fill').style.width = '';
+    $('action-overlay').hidden = false;
+
+    const append = (line) => {
+        const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+        log.textContent += `${line}\n`;
+        if (atBottom) log.scrollTop = log.scrollHeight;
+    };
+    append('> Starting the update...');
+
+    // Live output from the sidecar. It outlives this manager, so the stream just
+    // goes quiet when the panel is replaced; healthz is what confirms the end.
+    let stream = null;
+    try {
+        stream = new EventSource('/api/logs/stream?container=panel-update');
+        stream.addEventListener('line', (ev) => {
+            try {
+                append(JSON.parse(ev.data).line);
+            } catch {
+                /* ignore a malformed frame */
+            }
+        });
+        stream.onerror = () => {}; // expected the moment the panel restarts
+    } catch {
+        /* no live log; the healthz watch below still finishes the job */
+    }
+
+    const stopStream = () => {
+        try {
+            stream?.close();
+        } catch {
+            /* already closed */
+        }
+    };
+
+    const finish = ({ failed, message } = {}) => {
+        stopStream();
+        if (message) append(message);
+        $('action-spinner').hidden = true;
+        $('action-bar').className = `action-bar${failed ? ' failed' : ''}`;
+        $('action-bar-fill').style.width = '100%';
+        close.hidden = false;
+        close.disabled = false;
+        close.focus();
+        $('global-update-btn').disabled = false;
+    };
+
     const deadline = Date.now() + 10 * 60_000;
-    let wasDown = false;
+    let wentDown = false;
 
     const tick = async () => {
         try {
             const res = await fetch('/healthz', { cache: 'no-store' });
-            if (res.ok) {
-                if (wasDown) return location.reload();
-                // Still the old panel: it has not gone down yet.
+            if (res.ok && wentDown) {
+                append('\nThe new panel is up. Reloading...');
+                stopStream();
+                return location.reload();
             }
         } catch {
-            wasDown = true;
+            wentDown = true;
         }
+
+        // A failed build never takes the panel down, so the old one keeps
+        // answering. Its result lands in the status file.
+        if (!wentDown) {
+            const last = await api('/api/system').then((s) => s.lastUpdate).catch(() => null);
+            if (last && last.at !== baseAt && last.result === 'fail') {
+                return finish({ failed: true, message: `\nThe update did not finish: ${last.error || 'the build failed. Your old panel is still running.'}` });
+            }
+        }
+
         if (Date.now() > deadline) {
-            kResult('global-update-result', 'The panel has not come back after ten minutes. Check `docker logs kaspa-node-panel-update`.', true);
-            $('global-update-btn').disabled = false;
-            return;
+            return finish({
+                failed: true,
+                message: '\nThe panel has not come back after ten minutes. The log above shows how far it got.',
+            });
         }
-        setTimeout(tick, 3000);
+        setTimeout(tick, 2500);
     };
-    setTimeout(tick, 4000);
+    setTimeout(tick, 3000);
 }
 
 // Nothing else in the panel is guarded like this, because nothing else deletes

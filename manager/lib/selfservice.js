@@ -208,7 +208,7 @@ async function composeFileArgs() {
     return `-f "${STACK_HOST}/docker-compose.yml"`;
 }
 
-export async function updatePanel({ repo = 'KaspaSilver/Quick-Start-Kaspa', ref = 'main' } = {}) {
+export async function updatePanel({ repo = 'KaspaSilver/Kaspa-Quick-Start', ref = 'main' } = {}) {
     if (!REPO_RE.test(repo)) throw new Error(`"${repo}" is not a valid owner/repo.`);
     if (!REF_RE.test(ref)) throw new Error(`"${ref}" is not a valid branch, tag or commit.`);
 

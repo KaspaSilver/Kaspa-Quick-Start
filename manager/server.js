@@ -647,6 +647,9 @@ const containerFor = (url) => {
         case 'bridge': return dockerctl.BRIDGE_CONTAINER;
         case 'kachat': return dockerctl.KACHAT_CONTAINER;
         case 'nextcloud': return dockerctl.NEXTCLOUD_CONTAINER;
+        // The detached sidecar that rebuilds the panel, so its progress can be
+        // streamed into the update overlay while it runs.
+        case 'panel-update': return 'kaspa-node-panel-update';
         default: return dockerctl.KASPAD_CONTAINER;
     }
 };
