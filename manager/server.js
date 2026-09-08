@@ -2092,6 +2092,39 @@ route('GET', /^\/api\/kachat\/translate$/, async (req, res) => {
     });
 });
 
+// Downloads any argos model a requested language needs but the volume does not
+// have yet. Models pivot through English, so each language needs en->X and
+// X->en; already-installed pairs are skipped, and a language with no upstream
+// model is reported rather than failing. Run inside the libretranslate
+// container with its bundled venv python.
+const LT_MODEL_INSTALL = `
+import sys
+import argostranslate.package as pkg
+
+want = [c.strip() for c in sys.argv[1].split(',') if c.strip() and c.strip() != 'en']
+pkg.update_package_index()
+installed = {(x.from_code, x.to_code) for x in pkg.get_installed_packages()}
+available = {(p.from_code, p.to_code): p for p in pkg.get_available_packages()}
+
+missing = []
+for code in want:
+    for pair in (('en', code), (code, 'en')):
+        if pair not in installed and pair in available:
+            missing.append(pair)
+
+if not missing:
+    print('All requested language models are already present.')
+else:
+    for (frm, to) in missing:
+        print('Downloading model %s -> %s ...' % (frm, to), flush=True)
+        pkg.install_from_path(available[(frm, to)].download())
+    print('Downloaded %d model(s).' % len(missing))
+
+unavailable = sorted({c for c in want if ('en', c) not in available and (c, 'en') not in available})
+if unavailable:
+    print('No upstream model for: %s (these will not load).' % ', '.join(unavailable))
+`;
+
 route('PUT', /^\/api\/kachat\/translate$/, async (req, res) => {
     const body = await readBody(req);
     const languages = normaliseLanguages(body.languages);
@@ -2115,8 +2148,22 @@ route('PUT', /^\/api\/kachat\/translate$/, async (req, res) => {
         });
 
     const job = jobs.start('Reload the translation engine', async (onLine) => {
-        onLine(`Loading: ${languages.split(',').join(', ')}.`);
-        onLine('Any language it does not already have is downloaded now, which takes a few minutes.');
+        onLine(`Languages: ${languages.split(',').join(', ')}.`);
+        // The engine only auto-downloads models onto an empty volume, so once
+        // it has run once, adding a language and restarting would just reload
+        // what is already there -- the new language would never appear. So fetch
+        // any missing model first (they persist on the volume, so this is a
+        // one-time cost per language), then restart to load the full set.
+        onLine('Checking which language models are already downloaded...');
+        try {
+            await dockerctl.compose(
+                ['exec', '-T', 'libretranslate', '/app/venv/bin/python', '-c', LT_MODEL_INSTALL, languages],
+                { onLine, profile: 'translate', timeoutMs: 60 * 60_000 },
+            );
+        } catch (err) {
+            onLine(`Could not fetch missing models (${err.message}). Restarting with whatever is already downloaded.`);
+        }
+        onLine('Restarting the engine to load them...');
         await dockerctl.compose(['up', '-d', '--no-deps', '--force-recreate', 'libretranslate'], {
             onLine,
             profile: 'translate',
