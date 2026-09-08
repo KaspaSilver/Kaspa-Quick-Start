@@ -289,6 +289,8 @@ function selectSubtab(section, name) {
     if (name === 'public') loadPublicMap().catch(() => {});
     // The go-public wizard reads live state each time it is opened.
     if (name === 'public-howto') loadGoPublic().catch(() => {});
+    // The ROI calculator seeds itself from the connected miners on open.
+    if (name === 'mining-roi') loadRoi().catch(() => {});
     // A KaChat panel loads when it is opened rather than all of them upfront.
     if (name.startsWith('kachat-')) refreshKachatPanel();
     // Its own call: refreshKachatPanel gives up when the indexer is not
@@ -2497,6 +2499,96 @@ $('howto-externalip-save').addEventListener('click', async () => {
 $('howto-check').addEventListener('click', () => {
     selectSubtab(document.getElementById('tab-kaspad'), 'public');
     runPublicCheck();
+});
+
+// --- mining ROI calculator -------------------------------------------------
+
+const fmtMoney = (n) =>
+    `$${(Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/**
+ * When the miner pays for itself. The earnings side comes from the same
+ * projection the Overview uses (KAS per day at this hashrate, times the live
+ * price); the cost side is the electricity the miner draws. Net of the two
+ * against the purchase price gives the payback date.
+ */
+async function recalcRoi() {
+    const hs = Number($('roi-hashrate').value) * Number($('roi-unit').value);
+    const watts = Number($('roi-watts').value) || 0;
+    const kwh = Number($('roi-kwh').value) || 0;
+    const cost = Number($('roi-cost').value) || 0;
+    if (!Number.isFinite(hs) || hs < 0) return;
+
+    let r;
+    try {
+        r = await api(`/api/mining/projection?hashrate=${encodeURIComponent(hs)}`);
+    } catch {
+        return;
+    }
+    const perDayKas = r.projection?.perDayKas ?? 0;
+    const price = Number(r.price?.usd) || 0;
+    const gross = perDayKas * price;
+    const power = (watts / 1000) * 24 * kwh;
+    const net = gross - power;
+
+    $('roi-daily-kas').textContent = fmtKas(perDayKas);
+    $('roi-daily-gross').textContent = price ? fmtMoney(gross) : 'no price';
+    $('roi-daily-power').textContent = fmtMoney(power);
+    $('roi-daily-net').textContent = price ? fmtMoney(net) : '–';
+    $('roi-month').textContent = price ? fmtMoney(net * 30.44) : '–';
+    $('roi-year').textContent = price ? fmtMoney(net * 365) : '–';
+
+    if (price && cost > 0 && net > 0) {
+        const days = cost / net;
+        $('roi-days').textContent =
+            days >= 365 ? `${(days / 365).toFixed(1)} years (about ${Math.round(days).toLocaleString()} days)` : `${Math.round(days)} days`;
+        const date = new Date(Date.now() + days * 86_400_000);
+        $('roi-date').textContent = date.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+    } else {
+        const never = price && net <= 0 && cost > 0;
+        $('roi-days').textContent = never ? 'it does not pay off at these numbers' : '–';
+        $('roi-date').textContent = never ? 'never at these numbers' : '–';
+    }
+
+    $('roi-note').textContent = !price
+        ? 'Earnings in money need a live Kaspa price, which the panel could not fetch just now. The KAS per day figure still holds.'
+        : net <= 0 && (watts > 0 || cost > 0)
+          ? 'At these numbers the electricity costs more than the miner earns, so it never pays itself back. Cheaper power, a more efficient miner or a higher price would change that.'
+          : "Based on today's difficulty, block reward and Kaspa price. All three move over time, so the real date will differ.";
+}
+
+const recalcRoiSoon = debounce(recalcRoi, 400);
+
+async function loadRoi() {
+    // Seed the hashrate from the connected miners the first time, so the tab is
+    // useful before anyone types anything. Left alone once it has a value.
+    if (!$('roi-hashrate').value) {
+        try {
+            const r = await api('/api/mining/projection');
+            const measured = Number(r.projection?.measured) || 0;
+            if (measured > 0) $('roi-hashrate').value = (measured / Number($('roi-unit').value)).toFixed(3).replace(/\.?0+$/, '');
+        } catch {
+            /* leave it empty; the user can type one */
+        }
+    }
+    recalcRoi();
+}
+
+for (const id of ['roi-hashrate', 'roi-watts', 'roi-kwh', 'roi-cost']) {
+    $(id).addEventListener('input', recalcRoiSoon);
+}
+$('roi-unit').addEventListener('change', recalcRoi);
+
+$('roi-use-miners').addEventListener('click', async () => {
+    try {
+        const r = await api('/api/mining/projection');
+        const measured = Number(r.projection?.measured) || 0;
+        if (measured <= 0) return toast('No miners are reporting a hashrate right now.', 'bad');
+        $('roi-hashrate').value = (measured / Number($('roi-unit').value)).toFixed(3).replace(/\.?0+$/, '');
+        recalcRoi();
+    } catch (e) {
+        toast(e.message, 'bad');
+    }
 });
 
 // ------------------------------------------------------------------- apps ---

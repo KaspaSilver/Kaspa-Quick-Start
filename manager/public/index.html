@@ -610,6 +610,7 @@
       <nav class="subnav" aria-label="Mining">
         <button class="subtab-btn active" data-subtab="mining-overview">Overview</button>
         <button class="subtab-btn" data-subtab="mining-connect">Connect Your Miner</button>
+        <button class="subtab-btn" data-subtab="mining-roi">ROI calculator</button>
         <button class="subtab-btn" data-subtab="mining-settings">Settings</button>
         <button class="subtab-btn" data-subtab="mining-uninstall">Uninstall</button>
       </nav>
@@ -685,7 +686,7 @@
           <div class="mining-tables">
             <div class="mining-col" id="mining-workers-card" hidden>
               <h3>Workers</h3>
-              <div class="scroll-x">
+              <div class="scroll-x scroll-cap">
               <table class="workers">
               <thead>
               <tr>
@@ -699,7 +700,7 @@
             </div>
             <div class="mining-col" id="mining-blocks-card" hidden>
               <h3>Recent blocks</h3>
-              <div class="scroll-x">
+              <div class="scroll-x scroll-cap">
               <table class="blocks">
               <thead><tr><th>Found</th><th>Worker</th><th>Reward</th><th>Blue score</th><th>Hash</th></tr></thead>
               <tbody id="blocks-body"></tbody>
@@ -710,6 +711,50 @@
         </article>
 
         
+      </div>
+
+      <div id="sub-mining-roi" class="subtab">
+        <article class="card span2">
+          <h3>ROI calculator</h3>
+          <p class="muted">
+            Work out when your miner pays for itself, from what it earns now and
+            what it costs to run. These are today's numbers, so treat the date as
+            a guide: difficulty, the block reward and the Kaspa price all move.
+          </p>
+          <div class="roi-grid">
+            <label class="inline">
+              Hashrate
+              <input id="roi-hashrate" type="number" min="0" step="any" size="8">
+              <select id="roi-unit">
+                <option value="1e9">GH/s</option>
+                <option value="1e12" selected>TH/s</option>
+                <option value="1e15">PH/s</option>
+              </select>
+              <button type="button" class="ghost mini" id="roi-use-miners">Use my miners</button>
+            </label>
+            <label class="inline">Miner power <input id="roi-watts" type="number" min="0" step="any" size="6"> watts</label>
+            <label class="inline">Electricity price <input id="roi-kwh" type="number" min="0" step="any" size="6"> per kWh</label>
+            <label class="inline">Miner cost <input id="roi-cost" type="number" min="0" step="any" size="8"></label>
+          </div>
+
+          <div class="grid stats" id="roi-stats">
+            <div class="stat"><span id="roi-daily-kas">–</span><small>KAS per day</small></div>
+            <div class="stat"><span id="roi-daily-gross">–</span><small>earned per day</small></div>
+            <div class="stat"><span id="roi-daily-power">–</span><small>power cost per day</small></div>
+            <div class="stat"><span id="roi-daily-net">–</span><small>profit per day</small></div>
+          </div>
+
+          <dl class="kv vertical">
+            <div><dt>Profit per month</dt><dd id="roi-month">–</dd></div>
+            <div><dt>Profit per year</dt><dd id="roi-year">–</dd></div>
+            <div><dt>Pays for itself in</dt><dd id="roi-days">–</dd></div>
+            <div><dt>Fully paid off on</dt><dd id="roi-date">–</dd></div>
+          </dl>
+          <p class="hint" id="roi-note">
+            Enter your numbers above. Amounts use whatever currency you type in;
+            the Kaspa price comes from the live rate in US dollars.
+          </p>
+        </article>
       </div>
 
       <div id="sub-mining-connect" class="subtab">

@@ -2155,3 +2155,12 @@ button.primary:active:not(:disabled) { transform: translateY(1px); }
 .howto-body .field-with-btn { width: 100%; max-width: 440px; }
 .howto-router { margin: 0; padding-left: 20px; color: var(--muted); display: grid; gap: 6px; }
 @media (max-width: 640px) { .howto-body { margin-left: 0; } }
+
+/* Cap tall lists (workers, recent blocks) to about five rows, then scroll,
+   with the header staying put. */
+.scroll-cap { max-height: 17rem; overflow-y: auto; }
+.scroll-cap table thead th { position: sticky; top: 0; background: var(--panel); z-index: 1; }
+
+/* ROI calculator inputs */
+.roi-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin: 12px 0; }
+.roi-grid .inline { gap: 6px; }
