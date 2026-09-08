@@ -218,6 +218,8 @@ function selectSubtab(section, name) {
     }
     // The kaspad log only streams while it is on screen.
     setKaspadLog(name === 'kaspadlog');
+    // The world map is fetched the first time "Am I public?" is opened.
+    if (name === 'public') loadPublicMap().catch(() => {});
     // A KaChat panel loads when it is opened rather than all of them upfront.
     if (name.startsWith('kachat-')) refreshKachatPanel();
     // Its own call: refreshKachatPanel gives up when the indexer is not
@@ -2186,6 +2188,108 @@ function setMiningPolling(active) {
         miningTimer = setInterval(refreshMiningStats, 5000);
     }
 }
+
+// --- "Am I public?" ---------------------------------------------------------
+
+const MAP_W = 1000;
+const MAP_H = 500;
+let publicMapLoaded = false;
+
+// The world map is a ~40KB static asset, fetched the first time this tab is
+// opened rather than carried in the page everyone loads. Equirectangular, so a
+// longitude/latitude maps to x/y with the same projection it was drawn with.
+async function loadPublicMap() {
+    if (publicMapLoaded) return;
+    publicMapLoaded = true;
+    try {
+        const res = await fetch('/world.svg');
+        if (!res.ok) throw new Error(String(res.status));
+        $('public-map').innerHTML = await res.text();
+    } catch {
+        publicMapLoaded = false; // let the next open try again
+    }
+}
+
+const lonToX = (lon) => ((Number(lon) + 180) / 360) * MAP_W;
+const latToY = (lat) => ((90 - Number(lat)) / 180) * MAP_H;
+
+/** Drop a pulsing pin at a location, or clear it when there is none. */
+function pingLocation(geo) {
+    const pings = $('public-map').querySelector('#world-pings');
+    if (!pings) return;
+    pings.textContent = '';
+    if (!geo || !Number.isFinite(geo.lat) || !Number.isFinite(geo.lon)) return;
+
+    const NS = 'http://www.w3.org/2000/svg';
+    const g = document.createElementNS(NS, 'g');
+    g.setAttribute('class', 'ping');
+    g.setAttribute('transform', `translate(${lonToX(geo.lon)} ${latToY(geo.lat)})`);
+    for (const [cls, r] of [['ping-wave', 6], ['ping-wave delay', 6], ['ping-dot', 3.5]]) {
+        const c = document.createElementNS(NS, 'circle');
+        c.setAttribute('class', cls);
+        c.setAttribute('r', String(r));
+        g.appendChild(c);
+    }
+    pings.appendChild(g);
+}
+
+async function runPublicCheck() {
+    const btn = $('public-run');
+    btn.disabled = true;
+    const v = $('public-verdict');
+    v.textContent = 'testing…';
+    v.className = 'tag';
+    await loadPublicMap();
+    try {
+        const r = await api('/api/node/public-check', { method: 'POST' });
+        renderPublicCheck(r);
+    } catch (e) {
+        v.textContent = 'test failed';
+        v.className = 'tag off';
+        toast(e.message, 'bad');
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+function renderPublicCheck(r) {
+    const yes = r.public === true;
+    const v = $('public-verdict');
+    v.textContent = yes ? 'public ✓' : 'not reachable';
+    v.className = `tag ${yes ? 'ok' : 'off'}`;
+
+    $('public-facts').hidden = false;
+    $('public-ip').textContent = r.ip || '–';
+    $('public-port').textContent = r.exposed ? `${r.port}` : `${r.port} — not published to the host`;
+    $('public-probe').textContent =
+        r.probe?.open === true
+            ? `yes — ${r.probe.detail}`
+            : r.probe?.open === false
+              ? `no — ${r.probe.detail}`
+              : r.probe?.detail || 'could not test';
+    $('public-inbound').textContent = `${r.peers?.inbound ?? 0} in, ${r.peers?.outbound ?? 0} out`;
+
+    const where = r.geo && (r.geo.city || r.geo.country) ? [r.geo.city, r.geo.country].filter(Boolean).join(', ') : null;
+    $('public-where').textContent = !where
+        ? ''
+        : yes
+          ? `Found you near ${where}.`
+          : `This connection looks like it is near ${where}.`;
+
+    const help = $('public-help');
+    if (yes) {
+        help.hidden = true;
+    } else {
+        help.hidden = false;
+        help.innerHTML = !r.exposed
+            ? `Your P2P port is not published to the host. Turn it on under <strong>Ports</strong>, then forward TCP port ${r.port} on your router to this machine.`
+            : `The port is published here, so the next step is your router: forward TCP port ${r.port} to this machine. Some home routers also refuse to connect back to your own address, which makes this test read worse than it is — an inbound peer above is the real proof.`;
+    }
+
+    pingLocation(r.geo);
+}
+
+$('public-run').addEventListener('click', runPublicCheck);
 
 // ------------------------------------------------------------------- apps ---
 

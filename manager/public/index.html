@@ -215,6 +215,7 @@
     <section id="tab-kaspad" class="tab active">
       <nav class="subnav" aria-label="Kaspad">
         <button class="subtab-btn active" data-subtab="overview">Overview</button>
+        <button class="subtab-btn" data-subtab="public">Am I public?</button>
         <button class="subtab-btn" data-subtab="settings">Settings</button>
         <button class="subtab-btn" data-subtab="updates">Updates</button>
         <button class="subtab-btn" data-subtab="kaspadlog">Log</button>
@@ -420,6 +421,43 @@
               <summary>Release notes</summary>
               <pre id="release-notes-body"></pre>
             </details>
+          </article>
+        </div>
+      </div>
+
+      <div id="sub-public" class="subtab">
+        <div class="grid">
+          <article class="card span2" id="public-card">
+            <div class="node-head">
+              <h3>Am I public?</h3>
+              <span id="public-verdict" class="tag">not checked</span>
+              <button type="button" class="primary" id="public-run">Run the test</button>
+            </div>
+            <p class="muted">
+              A public node accepts connections from other nodes, which is what
+              lets it share blocks and help the network rather than only leaning on
+              it. This asks a handful of places around the internet to open a
+              connection to your P2P port, exactly as a peer would, and checks with
+              kaspad whether anyone has already dialled in.
+            </p>
+            <p class="hint" id="public-privacy">
+              Running the test tells check-host.net this connection's public address
+              so it can try to reach it — the same address every node you talk to
+              already sees. It only runs when you press the button.
+            </p>
+
+            <div class="public-map-wrap">
+              <div id="public-map" class="public-map" aria-hidden="true"></div>
+              <p class="public-map-cap" id="public-where"></p>
+            </div>
+
+            <dl class="kv vertical" id="public-facts" hidden>
+              <div><dt>Public address</dt><dd id="public-ip">–</dd></div>
+              <div><dt>P2P port</dt><dd id="public-port">–</dd></div>
+              <div><dt>Reached from outside</dt><dd id="public-probe">–</dd></div>
+              <div><dt>Peers dialled in</dt><dd id="public-inbound">–</dd></div>
+            </dl>
+            <p class="hint" id="public-help" hidden></p>
           </article>
         </div>
       </div>

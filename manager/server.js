@@ -29,6 +29,7 @@ import * as duckdns from './lib/duckdns.js';
 import * as updater from './lib/updater.js';
 import * as bridge from './lib/bridge.js';
 import * as price from './lib/price.js';
+import * as geoip from './lib/geoip.js';
 import * as apps from './lib/apps.js';
 import * as kachatProxy from './lib/kachat-proxy.js';
 import * as syncProgress from './lib/sync-progress.js';
@@ -2729,6 +2730,51 @@ route('GET', /^\/api\/portcheck$/, async (req, res, match, url) => {
         note: open
             ? 'Reachable from this machine using its public address.'
             : 'No answer. That usually means the port is closed, but if this node is behind a home router it can also just mean the router will not loop a connection back to itself. Worth checking from another network before you change anything.',
+    });
+});
+
+/**
+ * "Am I public?" -- does the Kaspa network reach this node from outside.
+ *
+ * Two answers, because they fail differently. The direct one asks places on the
+ * internet to open a TCP connection to the P2P port, the same thing a peer
+ * would do: that is the honest external test, and it needs the address told to
+ * check-host.net (the same address every node this one talks to already sees).
+ * The corroborating one is the inbound peer count from kaspad itself -- nobody
+ * can dial in on a closed port, so an inbound peer is proof the door is open
+ * even if the prober is having a bad day.
+ *
+ * Location is only for the map: the pin it drops is this connection's rough
+ * city, looked up from the same public address. Absent is fine; the verdict
+ * does not depend on it.
+ */
+route('POST', /^\/api\/node\/public-check$/, async (req, res) => {
+    const cfg = loadNodeConfig();
+    const port = ports(cfg).p2p;
+    const exposed = Boolean(cfg.expose.p2p);
+
+    const ip = await duckdns.publicIp();
+    if (!ip) return fail(res, 502, 'Could not work out this connection\'s public address.');
+
+    const [probe, geo, snapshot] = await Promise.all([
+        portcheck.probeTcp(ip, port).catch((err) => ({ open: null, detail: err.message, link: null })),
+        geoip.locate(ip),
+        nodeSnapshot().catch(() => null),
+    ]);
+
+    const peers = Array.isArray(snapshot?.peers?.peerInfo) ? snapshot.peers.peerInfo : [];
+    const inbound = peers.filter((p) => p.isOutbound === false).length;
+
+    sendJson(res, 200, {
+        ip,
+        port,
+        exposed,
+        probe,
+        peers: { total: peers.length, inbound, outbound: peers.length - inbound },
+        geo,
+        // Reachable if the world connected, or -- prober aside -- if a peer has
+        // already dialled in. Either one is proof the P2P port is open.
+        public: probe.open === true || inbound > 0,
     });
 });
 

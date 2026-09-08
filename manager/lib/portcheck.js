@@ -61,7 +61,7 @@ async function collect(started, interpret) {
 }
 
 /** A plain connection: something at that address accepts traffic on that port. */
-async function probeTcp(ip, port) {
+export async function probeTcp(ip, port) {
     const r = await collect(
         await ask(`/check-tcp?host=${encodeURIComponent(`${ip}:${port}`)}&max_nodes=${NODES}`),
         (a) => Array.isArray(a) && a[0] && !a[0].error,
