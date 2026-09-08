@@ -244,6 +244,59 @@ export function saveWallet({ privateKeyHex, address }) {
     return { address: env.WALLET_ADDRESS || '', hasKey: Boolean(env.PRIVATE_KEY_HEX) };
 }
 
+/** The env key each single-field save maps to. Network/ref live in apps.json. */
+const FIELD_TO_ENV = {
+    miningAddress: 'MINING_ADDRESS',
+    receiverAlias: 'RECEIVER_ALIAS',
+    receiverPubkeyX: 'RECEIVER_PUBKEY_X',
+    minRewardKas: 'MIN_REWARD_KAS',
+    message: 'MESSAGE_TEMPLATE',
+};
+
+/** What is wrong with one field on its own, so it can be saved independently. */
+export function validateField(field, value) {
+    const v = String(value ?? '');
+    switch (field) {
+        case 'miningAddress':
+            return ADDRESS_RE.test(v.trim()) ? [] : ['The mining address does not look like a Kaspa address.'];
+        case 'receiverAlias':
+            return ALIAS_RE.test(v.trim()) ? [] : ['The receiver alias is missing, or has characters that would break the message payload.'];
+        case 'receiverPubkeyX':
+            return HEX64_RE.test(v.trim()) ? [] : ['The receiver public key must be 64 hexadecimal characters (x-only, no 02/03 prefix).'];
+        case 'minRewardKas': {
+            const n = Number(v);
+            return Number.isFinite(n) && n >= 0 ? [] : ['The minimum reward must be zero or more.'];
+        }
+        case 'message':
+            return messageProblems(v);
+        case 'network':
+            return ['mainnet', 'testnet-10'].includes(v) ? [] : ['Choose mainnet or testnet-10.'];
+        case 'ref':
+            return v.trim() ? [] : ['Enter a branch, tag or commit.'];
+        default:
+            return ['Unknown field.'];
+    }
+}
+
+/**
+ * Saves one field, leaving the rest of the config alone. This is what lets each
+ * field have its own save button: a value locked in here survives a refresh,
+ * and saving one never depends on the others being filled in yet.
+ */
+export function savePartial(patch) {
+    const env = readEnv();
+    for (const [field, envKey] of Object.entries(FIELD_TO_ENV)) {
+        if (!Object.hasOwn(patch, field)) continue;
+        let value = String(patch[field] ?? '').trim();
+        if (field === 'receiverPubkeyX') value = value.toLowerCase();
+        else if (field === 'minRewardKas') value = String(Number(patch[field] ?? 0));
+        else if (field === 'message') value = escapeNewlines(String(patch[field] ?? ''));
+        env[envKey] = value;
+    }
+    writeEnvFile(env);
+    return readConfig();
+}
+
 /**
  * Makes sure the file the compose service points at exists.
  *

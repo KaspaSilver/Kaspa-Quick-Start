@@ -2102,6 +2102,53 @@ route('PUT', /^\/api\/bot$/, async (req, res) => {
 });
 
 /**
+ * Saves one field on its own, so each has its own Save button and a value
+ * locked in here survives a refresh. Network and ref live in apps.json; the
+ * rest live in the bot's env file.
+ */
+route('POST', /^\/api\/bot\/field$/, async (req, res) => {
+    const body = await readBody(req);
+    const field = String(body.field ?? '');
+    const problems = bot.validateField(field, body.value);
+    if (problems.length) return fail(res, 400, problems[0], { details: problems });
+
+    if (field === 'network' || field === 'ref') {
+        const cfg = apps.loadAppsConfig();
+        if (field === 'network') cfg.bot.network = body.value === 'testnet-10' ? 'testnet-10' : 'mainnet';
+        else cfg.bot.ref = String(body.value).trim() || 'main';
+        apps.saveAppsConfig(cfg);
+        apps.writeAppsEnv(cfg);
+    } else {
+        bot.savePartial({ [field]: body.value });
+    }
+    // Deliberately no restart: saving a field locks it in, it takes effect the
+    // next time the bot starts. "Save settings" is what restarts a running bot.
+    sendJson(res, 200, { ok: true, config: bot.readConfig() });
+});
+
+/**
+ * Sends a test notification: one real KaChat message now, with sample figures,
+ * so the setup can be proven without waiting for a block. Runs the bot's own
+ * image with --test, on the bot network and env, and streams what it says.
+ */
+route('POST', /^\/api\/bot\/test$/, async (req, res) => {
+    const state = await lifecycle.status('bot');
+    if (!state.installed) return fail(res, 409, 'Install the KaChat Bot first.');
+    if (!bot.readConfig().complete) {
+        return fail(res, 409, 'Fill in and save the mining address, alias, receiver key and wallet first.');
+    }
+    const job = jobs.start('Send a test notification', async (onLine) => {
+        onLine('Sending a test notification through the bot. This is a real message and costs a small fee.');
+        await dockerctl.compose(
+            ['run', '--rm', '-T', '--no-deps', '--entrypoint', 'python', 'kachat-bot', 'watcher.py', '--test'],
+            { onLine, profile: 'bot', timeoutMs: 3 * 60_000 },
+        );
+        onLine('If it reported the message sent, it is on its way to your KaChat alias. An empty wallet means fund it first.');
+    });
+    sendJson(res, 202, { ok: true, jobId: job.id });
+});
+
+/**
  * The sending wallet: its address (to fund) and balance. Derives the address
  * from a stored-but-unrecorded key if needed, and reads the balance from the
  * node's UTXO index.

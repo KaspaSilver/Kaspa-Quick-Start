@@ -5257,7 +5257,10 @@ $('bot-wallet-create').addEventListener('click', async () => {
     try {
         await api('/api/bot/wallet', { method: 'POST' });
         toast('Wallet created. Fund the address shown.');
-        await loadBot();
+        // Refresh only the wallet card, never the whole form: anything typed in
+        // the fields above but not yet saved must not be wiped by this.
+        $('bot-shows-key').textContent = 'stored';
+        await loadBotWallet(true);
     } catch (e) {
         toast(e.message, 'bad');
         $('bot-wallet-create').disabled = false;
@@ -5275,7 +5278,9 @@ $('bot-wallet-regen').addEventListener('click', async () => {
     try {
         await api('/api/bot/wallet', { method: 'POST', body: { force: true } });
         toast('New wallet created.');
-        await loadBot();
+        // Only the wallet card, not the form above it.
+        $('bot-shows-key').textContent = 'stored';
+        await loadBotWallet(true);
     } catch (e) {
         toast(e.message, 'bad');
     }
@@ -5341,6 +5346,41 @@ $('bot-save').addEventListener('click', async () => {
         button.disabled = false;
         setTimeout(() => loadBot().catch(() => {}), 1200);
     }
+});
+
+// Each field has its own Save button (data-bot-field names the field, data-bot-
+// input the box). Saving one locks it in on its own, so a value survives the
+// next refresh and setup does not have to be finished in a single go.
+for (const button of document.querySelectorAll('[data-bot-field]')) {
+    button.addEventListener('click', async () => {
+        const field = button.dataset.botField;
+        const value = $(button.dataset.botInput).value;
+        const original = button.textContent;
+        button.disabled = true;
+        try {
+            await api('/api/bot/field', { method: 'POST', body: { field, value } });
+            button.textContent = 'Saved ✓';
+            setTimeout(() => {
+                button.textContent = original;
+                button.disabled = false;
+            }, 1400);
+        } catch (e) {
+            toast(e.message, 'bad');
+            button.disabled = false;
+        }
+    });
+}
+
+// A test notification proves the setup end to end: one real KaChat message now,
+// streamed in the overlay so the result (sent, or "fund the wallet first") is
+// visible. key null so closing the overlay does not reload and wipe the form.
+$('bot-test').addEventListener('click', async () => {
+    await runAction({
+        key: null,
+        title: 'Sending a test notification',
+        note: 'One real KaChat message now, with sample figures. It costs a small fee from the sending wallet.',
+        request: () => api('/api/bot/test', { method: 'POST' }),
+    });
 });
 
 $('bot-check').addEventListener('click', async () => {

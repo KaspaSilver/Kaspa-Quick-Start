@@ -1778,12 +1778,18 @@
             </p>
 
             <label class="stack">Mining address
-              <input id="bot-mining" placeholder="kaspa:q…" size="70" autocomplete="off" spellcheck="false">
+              <span class="field-with-btn">
+                <input id="bot-mining" placeholder="kaspa:q…" size="70" autocomplete="off" spellcheck="false">
+                <button type="button" class="ghost mini" data-bot-field="miningAddress" data-bot-input="bot-mining">Save</button>
+              </span>
               <span class="hint">The address your miner is paid to. This is the one the bot watches.</span>
             </label>
 
             <label class="stack">Receiver alias
-              <input id="bot-alias" placeholder="your KaChat alias" size="32" autocomplete="off" spellcheck="false">
+              <span class="field-with-btn">
+                <input id="bot-alias" placeholder="your KaChat alias" size="32" autocomplete="off" spellcheck="false">
+                <button type="button" class="ghost mini" data-bot-field="receiverAlias" data-bot-input="bot-alias">Save</button>
+              </span>
               <span class="hint">
                 The alias KaChat shows on a message you have sent. Open a
                 message you sent in <a href="https://kaspa.stream" target="_blank" rel="noopener">kaspa.stream</a>
@@ -1792,7 +1798,10 @@
             </label>
 
             <label class="stack">Receiver public key
-              <input id="bot-pubkey" placeholder="64 hex characters" size="70" autocomplete="off" spellcheck="false">
+              <span class="field-with-btn">
+                <input id="bot-pubkey" placeholder="64 hex characters" size="70" autocomplete="off" spellcheck="false">
+                <button type="button" class="ghost mini" data-bot-field="receiverPubkeyX" data-bot-input="bot-pubkey">Save</button>
+              </span>
               <span class="hint">
                 The x-only public key of the KaChat account that receives the
                 notification: 64 hex characters, no 02 or 03 in front.
@@ -1859,18 +1868,21 @@
             </div>
             <div class="row">
               <button type="button" id="bot-message-reset" class="ghost">Use the default message</button>
+              <button type="button" class="ghost mini" data-bot-field="message" data-bot-input="bot-message">Save message</button>
             </div>
 
             <div class="row">
               <label class="inline">Minimum reward
                 <input id="bot-min" type="number" min="0" step="0.1" value="0" size="6"> KAS
               </label>
+              <button type="button" class="ghost mini" data-bot-field="minRewardKas" data-bot-input="bot-min">Save</button>
               <label class="inline">Network
                 <select id="bot-network">
                   <option value="mainnet">Mainnet</option>
                   <option value="testnet-10">Testnet-10</option>
                 </select>
               </label>
+              <button type="button" class="ghost mini" data-bot-field="network" data-bot-input="bot-network">Save</button>
             </div>
             <p class="hint">
               A minimum of zero notifies on every reward. Raising it filters out
@@ -1879,8 +1891,14 @@
 
             <div class="row">
               <button type="button" id="bot-save" class="primary">Save settings</button>
+              <button type="button" id="bot-test" class="ghost">Test notification</button>
               <span class="muted" id="bot-save-note"></span>
             </div>
+            <p class="hint">
+              Save settings writes everything at once and restarts a running bot;
+              each field also has its own Save so you can lock one in as you go.
+              Test notification sends one real message now to prove it works.
+            </p>
             <p class="error" id="bot-setup-error" hidden></p>
           </article>
         </div>
