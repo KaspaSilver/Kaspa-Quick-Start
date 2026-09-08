@@ -215,6 +215,8 @@ export async function status(key) {
         running: state.running,
         status: state.status,
         health: state.health,
+        // When it came up, so callers can show an uptime.
+        startedAt: state.startedAt,
     };
 }
 

@@ -1445,15 +1445,46 @@ label.stack > textarea {
 /* The status dot in front of a service name. */
 .svc-dot {
     display: inline-block;
-    width: 8px;
-    height: 8px;
+    flex: 0 0 auto;
+    width: 12px;
+    height: 12px;
     border-radius: 50%;
-    margin-right: 6px;
     background: var(--muted);
 }
-.svc-dot.ok { background: var(--ok); }
-.svc-dot.warn { background: var(--warn); }
-.svc-dot.bad { background: var(--danger); }
+/* Online reads green and lit, down reads red and lit, so a glance is enough. */
+.svc-dot.ok { background: var(--ok); box-shadow: 0 0 9px 2px color-mix(in srgb, var(--ok) 75%, transparent); }
+.svc-dot.warn { background: var(--warn); box-shadow: 0 0 9px 2px color-mix(in srgb, var(--warn) 75%, transparent); }
+.svc-dot.bad { background: var(--danger); box-shadow: 0 0 9px 2px color-mix(in srgb, var(--danger) 80%, transparent); }
+
+/* Compact service squares with a soft glow. */
+.services-grid {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    margin: 6px 0 4px;
+}
+.svc-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px 12px;
+    box-shadow: 0 1px 10px rgba(0, 0, 0, 0.25);
+    transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+}
+.svc-card:hover {
+    border-color: var(--accent-dim);
+    box-shadow: 0 0 0 1px var(--accent-dim), 0 6px 20px rgba(0, 0, 0, 0.35);
+    transform: translateY(-1px);
+}
+.svc-meta { min-width: 0; }
+.svc-meta strong { display: block; font-size: 14px; line-height: 1.2; }
+.svc-meta small { color: var(--muted); font-size: 12px; }
+@media (prefers-reduced-motion: reduce) {
+    .svc-card, .svc-card:hover { transition: none; transform: none; }
+}
 
 /* A disclosure for detail that would otherwise dominate a panel: the numbers
    worth a glance stay as tiles, the long tail folds away behind this. */

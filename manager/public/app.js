@@ -3124,6 +3124,30 @@ const kWords = (s) => String(s || '').replace(/_/g, ' ');
 const kTile = (label, value, cls = '') =>
     `<div class="stat"><span class="${cls}">${escapeHtml(String(value))}</span><small>${escapeHtml(label)}</small></div>`;
 
+/** One service square: a bold online/down dot, the name, then its state. */
+const svcTile = (name, dotClass, label) =>
+    `<div class="svc-card"><span class="svc-dot ${dotClass}"></span><div class="svc-meta"><strong>${escapeHtml(name)}</strong><small>${escapeHtml(label)}</small></div></div>`;
+
+const svcLabel = (status, detail) => kWords(status) + (detail ? `, ${detail}` : '');
+
+/**
+ * The translation engine as a service square. It is a container the panel runs,
+ * not something the indexer reports, so its state and uptime come from the
+ * panel's own view of it.
+ */
+async function translateTile() {
+    const { engine: e = {} } = await api('/api/kachat/translate');
+    const dot = !e.installed ? '' : e.running ? 'ok' : 'bad';
+    const label = !e.installed
+        ? 'not installed'
+        : !e.running
+          ? 'stopped'
+          : e.startedAt
+            ? `up ${fmtDuration(e.startedAt)}`
+            : 'running';
+    return svcTile('Translation', dot, label);
+}
+
 /** Turns the chat indexer's nested metrics object into flat label/value pairs. */
 function kFlatten(obj, prefix = '') {
     let out = [];
@@ -3172,25 +3196,21 @@ async function loadKachatOverview() {
         $('kachat-health-tag').className = 'tag off';
     }
 
+    // Services: the indexer's own subservices, plus the translation engine the
+    // panel runs alongside it. The dot carries online/down; the name leads.
+    let tiles = [];
     try {
         const services = await kachat('services');
-        $('kachat-services').innerHTML = services.length
-            ? services
-                  .map(
-                      // The name leads, not the status: five tiles all reading
-                      // "healthy" says nothing, and the dot carries that anyway.
-                      (s) =>
-                          `<div class="stat"><span class="small"><span class="svc-dot ${kDot(s.status)}"></span>${escapeHtml(
-                              s.name,
-                          )}</span><small>${escapeHtml(kWords(s.status))}${
-                              s.detail ? `, ${escapeHtml(s.detail)}` : ''
-                          }</small></div>`,
-                  )
-                  .join('')
-            : '<p class="muted">No services reported.</p>';
+        tiles = services.map((s) => svcTile(s.name, kDot(s.status), svcLabel(s.status, s.detail)));
     } catch {
-        $('kachat-services').innerHTML = '<p class="muted">Waiting for the indexer.</p>';
+        /* indexer down; the translation tile below still stands on its own */
     }
+    try {
+        tiles.push(await translateTile());
+    } catch {
+        /* leave translation out rather than block the rest */
+    }
+    $('kachat-services').innerHTML = tiles.length ? tiles.join('') : '<p class="muted">Waiting for the indexer.</p>';
 
     try {
         const s = await kachat('stats');
