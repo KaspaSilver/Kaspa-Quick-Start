@@ -3,7 +3,7 @@
     One-command installer for a public Kaspa node with a web control panel.
 
 .DESCRIPTION
-    irm https://raw.githubusercontent.com/KaspaSilver/Quick-Start-Kaspa/main/install.ps1 | iex
+    irm https://raw.githubusercontent.com/KaspaSilver/Kaspa-Quick-Start/main/install.ps1 | iex
 
     Installs Docker Desktop if it is missing, fetches the stack, builds a kaspad
     image from the official rusty-kaspa release and starts the node (always with
@@ -25,7 +25,7 @@ param(
     [string] $Password   = $env:KASPA_ADMIN_PASSWORD,
     [switch] $NoPassword,
     [string] $Version    = $env:KASPA_VERSION,
-    [string] $StackRepo  = $(if ($env:KASPA_STACK_REPO) { $env:KASPA_STACK_REPO } else { 'KaspaSilver/Quick-Start-Kaspa' }),
+    [string] $StackRepo  = $(if ($env:KASPA_STACK_REPO) { $env:KASPA_STACK_REPO } else { 'KaspaSilver/Kaspa-Quick-Start' }),
     [string] $StackRef   = $(if ($env:KASPA_STACK_REF) { $env:KASPA_STACK_REF } else { 'main' }),
     [string] $UpstreamRepo = 'kaspanet/rusty-kaspa',
     [switch] $Yes,
@@ -51,6 +51,29 @@ function Confirm-Step {
 
 # --------------------------------------------------------------- docker ----
 
+# winget installs Docker into a new PATH entry, but this PowerShell session was
+# started with the old PATH and never sees it -- so `docker` stays "not found"
+# in the very session that just installed it, and the user has to close the
+# window and run the script again. This rebuilds $env:Path from the registry
+# (Machine + User) the way a fresh shell would, and makes sure Docker's own bin
+# is on it, so the same session picks the CLI up the moment it is installed.
+function Update-SessionPath {
+    $parts = @(
+        [Environment]::GetEnvironmentVariable('Path', 'Machine'),
+        [Environment]::GetEnvironmentVariable('Path', 'User')
+    ) | Where-Object { $_ }
+    if ($parts) { $env:Path = ($parts -join ';') }
+
+    foreach ($bin in @(
+        (Join-Path $env:ProgramFiles 'Docker\Docker\resources\bin'),
+        (Join-Path $env:ProgramFiles 'Docker\Docker')
+    )) {
+        if ((Test-Path $bin) -and (";$env:Path;" -notlike "*;$bin;*")) {
+            $env:Path = "$env:Path;$bin"
+        }
+    }
+}
+
 function Test-Docker {
     if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { return $false }
     docker info 2>&1 | Out-Null
@@ -62,6 +85,10 @@ function Wait-Docker {
     Say 'Waiting for the Docker daemon (Docker Desktop can take a minute to start)'
     $deadline = (Get-Date).AddSeconds($Seconds)
     while ((Get-Date) -lt $deadline) {
+        # Re-read PATH every loop: Docker registers its CLI partway through
+        # starting up, and this session would otherwise keep using the PATH it
+        # launched with and never notice it arrived.
+        Update-SessionPath
         if (Test-Docker) { Ok 'Docker is running'; return $true }
         Start-Sleep -Seconds 3
     }
@@ -88,6 +115,7 @@ function Install-Docker {
 }
 
 function Initialize-Docker {
+    Update-SessionPath
     if (Test-Docker) { Ok 'Docker is already installed and running'; }
     else {
         if (Get-Command docker -ErrorAction SilentlyContinue) {
@@ -291,45 +319,11 @@ ADMIN_PASSWORD_HASH=$existingHash
 # before the user walks away from a long build.
 $isLoopback = $Bind -eq '127.0.0.1' -or $Bind -eq '::1' -or $Bind -eq 'localhost' -or $Bind.StartsWith('127.')
 
-# Ask when nobody said either way. The flags are for scripted installs; a person
-# running this by hand should be offered the choice rather than have to know
-# that -Password exists. Asked before the long build, not after it.
-if (-not $Password -and -not $NoPassword -and -not $existingHash -and -not $Yes) {
-    Write-Host ''
-    Write-Host 'The panel controls the Docker daemon on this machine.'
-    if ($isLoopback) {
-        Write-Host "It is bound to $Bind, so a password is optional. Set one anyway if you may" -ForegroundColor DarkGray
-        Write-Host 'ever want to reach it from another machine or put it on a domain.' -ForegroundColor DarkGray
-    } else {
-        Write-Host "You asked for it on $Bind, so it needs one." -ForegroundColor Yellow
-    }
-
-    while ($true) {
-        $first = Read-Host 'Panel password (leave empty for none)' -AsSecureString
-        $plain = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR(
-            [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($first))
-
-        if ([string]::IsNullOrEmpty($plain)) {
-            if ($isLoopback) {
-                Warn 'No password. The panel stays reachable from this machine only.'
-                break
-            }
-            Warn 'A password is required when the panel is not on loopback.'
-            continue
-        }
-        if ($plain.Length -lt 8) { Warn 'Use at least 8 characters.'; continue }
-
-        $second = Read-Host 'Repeat it' -AsSecureString
-        $plain2 = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR(
-            [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($second))
-        if ($plain -ne $plain2) { Warn 'Those did not match.'; continue }
-
-        $Password = $plain
-        Ok 'Password set. You will be asked for it when you open the panel.'
-        break
-    }
-}
-
+# The password is no longer typed here. On the default loopback bind the panel
+# asks for one on first open, which is easier to get right than a hidden prompt
+# and does not hold up a long build. -Password still works for a scripted
+# install, and a non-loopback bind without one is refused below, because there
+# the panel would be exposed before that first-run prompt could be answered.
 $authState = 'none'
 if ($Password)          { $authState = 'set' }
 elseif ($NoPassword)    { $authState = 'cleared' }
@@ -380,10 +374,11 @@ switch ($authState) {
     'set'  { Write-Host '  Sign in         with the password you supplied' -ForegroundColor DarkGray }
     'kept' { Write-Host '  Sign in         with the password from your previous install' -ForegroundColor DarkGray }
     default {
-        Write-Host '  Sign in         not required' -ForegroundColor Green
         if ($isLoopback) {
-            Write-Host "                  the panel is bound to $Bind, so only this machine can open it" -ForegroundColor DarkGray
+            Write-Host '  Password        set it in the panel when you first open it' -ForegroundColor Green
+            Write-Host "                  the panel is bound to $Bind, so only this machine can reach it until you do" -ForegroundColor DarkGray
         } else {
+            Write-Host '  Sign in         not required' -ForegroundColor Green
             Write-Host "                  WARNING: bound to $Bind with no password" -ForegroundColor Yellow
         }
     }

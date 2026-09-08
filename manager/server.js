@@ -1603,10 +1603,15 @@ async function applyProxyState(enabled, onLine = () => {}) {
  */
 async function bridgeStatsWithIps() {
     const stats = await bridge.fetchStats();
-    if (stats?.reachable && stats.workers?.length) {
+    if (stats?.reachable) {
+        // One log read serves both: worker addresses for the dashboard links,
+        // and the rejected-block tally the stats API does not carry. Read even
+        // with no workers connected, since a block can still be rejected.
         const logs = await dockerctl.logs(dockerctl.BRIDGE_CONTAINER, 1500).catch(() => '');
         bridge.learnWorkerIps(logs);
+        bridge.learnBlockOutcomes(logs);
         stats.workers = stats.workers.map((w) => ({ ...w, ip: bridge.workerIp(w.worker) }));
+        if (stats.summary) stats.summary.rejectedBlocks = bridge.rejectedBlockCount();
     }
     return stats;
 }

@@ -2,7 +2,7 @@
 #
 # One-command installer for a public Kaspa node with a web control panel.
 #
-#   curl -fsSL https://raw.githubusercontent.com/KaspaSilver/Quick-Start-Kaspa/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/KaspaSilver/Kaspa-Quick-Start/main/install.sh | bash
 #
 # Installs Docker if it is missing, fetches the stack, builds a kaspad image
 # from the official rusty-kaspa release, and starts:
@@ -20,7 +20,7 @@ set -euo pipefail
 
 # ------------------------------------------------------------------ config --
 
-STACK_REPO="${KASPA_STACK_REPO:-KaspaSilver/Quick-Start-Kaspa}"
+STACK_REPO="${KASPA_STACK_REPO:-KaspaSilver/Kaspa-Quick-Start}"
 STACK_REF="${KASPA_STACK_REF:-main}"
 UPSTREAM_REPO="${KASPA_UPSTREAM_REPO:-kaspanet/rusty-kaspa}"
 STACK_DIR="${KASPA_STACK_DIR:-$HOME/.kaspa-node}"
@@ -534,51 +534,13 @@ write_env
 # offered the choice rather than have to know that --password exists. It is
 # asked once, before the long build, because a question at the end of an hour of
 # compiling is a question nobody is there to answer.
-prompt_for_password() {
-    [ "$ASSUME_YES" = "1" ] && return 0
-    [ -n "$ADMIN_PASSWORD" ] && return 0
-    [ "$CLEAR_PASSWORD" = "1" ] && return 0
-    [ "$ENV_HAD_PASSWORD" = "1" ] && return 0
-    [ -e /dev/tty ] || return 0
-
-    printf '\n%sThe panel controls the Docker daemon on this machine.%s\n' "$B" "$R" > /dev/tty
-    if is_loopback_bind; then
-        printf '%sIt is bound to %s, so a password is optional. Set one anyway if you\n' "$DIM" "$MANAGER_BIND" > /dev/tty
-        printf 'may ever want to reach it from another machine or put it on a domain.%s\n' "$R" > /dev/tty
-    else
-        printf '%sYou asked for it on %s, so it needs one.%s\n' "$YLW" "$MANAGER_BIND" "$R" > /dev/tty
-    fi
-
-    local first second
-    while :; do
-        printf 'Panel password (leave empty for none): ' > /dev/tty
-        # -s so it is not echoed; the newline it swallows is printed back.
-        read -rs first < /dev/tty || first=""
-        printf '\n' > /dev/tty
-
-        if [ -z "$first" ]; then
-            if is_loopback_bind; then
-                warn "No password. The panel stays reachable from this machine only."
-                return 0
-            fi
-            warn "A password is required when the panel is not on loopback."
-            continue
-        fi
-        if [ "${#first}" -lt 8 ]; then
-            warn "Use at least 8 characters."
-            continue
-        fi
-
-        printf 'Repeat it: ' > /dev/tty
-        read -rs second < /dev/tty || second=""
-        printf '\n' > /dev/tty
-        [ "$first" = "$second" ] || { warn "Those did not match."; continue; }
-
-        ADMIN_PASSWORD="$first"
-        ok "Password set. You will be asked for it when you open the panel."
-        return 0
-    done
-}
+# The password is no longer typed at the terminal. On the default loopback
+# bind the panel prompts for one on first open, where it is easier to get right
+# than a hidden `read` and does not hold up a long build. The --password flag
+# still works for a scripted install, and a non-loopback bind without one is
+# still refused below, because there the panel is exposed before that first-run
+# prompt could ever be answered.
+prompt_for_password() { :; }
 # Docker accepts a duplicate mapping and then fails to start the container, with
 # an error naming neither of the two things fighting over the port.
 if [ "$GUI_PORT" = "$HTTP_PORT" ] || [ "$GUI_PORT" = "$HTTPS_PORT" ]; then
@@ -639,11 +601,12 @@ case "$AUTH_STATE" in
     kept)
         printf '  Sign in         %swith the password from your previous install%s\n' "$DIM" "$R" ;;
     *)
-        printf '  Sign in         %snot required%s\n' "$GRN" "$R"
         if is_loopback_bind; then
-            printf '                  %sthe panel is bound to %s, so only this machine can open it%s\n' \
+            printf '  Password        %sset it in the panel when you first open it%s\n' "$GRN" "$R"
+            printf '                  %sthe panel is bound to %s, so only this machine can reach it until you do%s\n' \
                 "$DIM" "$MANAGER_BIND" "$R"
         else
+            printf '  Sign in         %snot required%s\n' "$GRN" "$R"
             printf '                  %sWARNING: bound to %s with no password%s\n' "$YLW" "$MANAGER_BIND" "$R"
         fi
         ;;

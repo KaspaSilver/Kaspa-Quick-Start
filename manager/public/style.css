@@ -2117,3 +2117,16 @@ button.primary:active:not(:disabled) { transform: translateY(1px); }
 @media (prefers-reduced-motion: reduce) {
     .public-map .ping-wave { animation: none; opacity: 0.4; }
 }
+
+/* First-run password screen (reuses .login / .login-card) ------------------ */
+.login-card .firstrun-title { margin: 2px 0 0; font-size: 18px; }
+.login-card .linklike {
+    background: none;
+    border: 0;
+    color: var(--muted);
+    text-decoration: underline;
+    cursor: pointer;
+    font: inherit;
+    padding: 6px 0 0;
+}
+.login-card .linklike:hover { color: var(--accent); }

@@ -120,6 +120,73 @@ $('logout').addEventListener('click', async () => {
     showLogin();
 });
 
+// --- first run: set the admin password on the panel, not in the terminal ---
+
+// Remembered per browser so the prompt does not return every visit once it has
+// been answered -- set, or deliberately skipped.
+const SETUP_KEY = 'kaspa-node-setup-done';
+
+function showFirstRun() {
+    $('firstrun').classList.remove('hidden');
+    $('login').classList.add('hidden');
+    $('app').classList.add('hidden');
+    stopPolling();
+}
+
+/** Wait for the panel to restart (setting a password replaces it), then reload. */
+async function waitForPanelReload() {
+    const deadline = Date.now() + 120_000;
+    let wentDown = false;
+    while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 1500));
+        try {
+            const res = await fetch('/healthz', { cache: 'no-store' });
+            if (res.ok && wentDown) return location.reload();
+        } catch {
+            wentDown = true;
+        }
+    }
+    location.reload();
+}
+
+$('firstrun-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const err = $('firstrun-error');
+    err.hidden = true;
+    const password = $('firstrun-password').value;
+    const repeat = $('firstrun-repeat').value;
+    if (password.length < 8) {
+        err.textContent = 'Use at least 8 characters.';
+        err.hidden = false;
+        return;
+    }
+    if (password !== repeat) {
+        err.textContent = 'The two passwords are not the same.';
+        err.hidden = false;
+        return;
+    }
+    const btn = event.target.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    try {
+        // No `current`: this only runs when none is set, where the route is open.
+        await api('/api/auth/password', { method: 'POST', body: { password } });
+        localStorage.setItem(SETUP_KEY, '1');
+        const status = $('firstrun-status');
+        status.hidden = false;
+        status.textContent = 'Password set. The panel is restarting and will ask you to sign in…';
+        await waitForPanelReload();
+    } catch (e) {
+        err.textContent = e.message;
+        err.hidden = false;
+        btn.disabled = false;
+    }
+});
+
+$('firstrun-skip').addEventListener('click', () => {
+    localStorage.setItem(SETUP_KEY, '1');
+    showApp();
+});
+
 // --------------------------------------------------------- navigation ---
 
 const SIDEBAR_KEY = 'kaspa-node-sidebar';
@@ -1701,6 +1768,7 @@ function renderMiningState(container, stats) {
     $('m-hashrate').textContent = fmtHashrate(s.poolHashrate);
     $('m-workers').textContent = fmtNum(s.activeWorkers);
     $('m-blocks').textContent = fmtNum(s.totalBlocks);
+    $('m-rejected').textContent = fmtNum(s.rejectedBlocks ?? 0);
     $('m-shares').textContent = fmtNum(s.totalShares);
     $('m-nethash').textContent = fmtRawHashrate(s.networkHashrate);
     $('m-netdiff').textContent = s.networkDifficulty ? Number(s.networkDifficulty).toExponential(3) : '–';
@@ -6173,7 +6241,13 @@ api('/api/session')
             note.textContent =
                 'The stored password cannot be read, so none will be accepted. It was truncated by an old bug in how the hash was saved. Clear ADMIN_PASSWORD_HASH in the .env file in your install directory, recreate the panel container, and set a new password from Global settings.';
         }
-        if (s.authenticated) {
+        // No password and this browser has not answered the first-run prompt:
+        // invite them to set one here rather than expecting the installer to
+        // have printed it. Skipping is allowed -- the panel is loopback-only
+        // without one -- and is remembered so it does not nag.
+        if (!s.required && localStorage.getItem(SETUP_KEY) !== '1') {
+            showFirstRun();
+        } else if (s.authenticated) {
             showApp();
             loadServices().catch(() => {});
         } else showLogin();

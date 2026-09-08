@@ -23,7 +23,32 @@
     </label>
     <button type="submit" class="primary">Sign in</button>
     <p class="error" id="login-error" hidden></p>
-    <p class="hint">The installer printed this password when it finished. Only a scrambled version of it is saved, so it cannot be read back out of the files.</p>
+    <p class="hint">This is the password you set the first time you opened the panel. Only a scrambled version of it is saved, so it cannot be read back out of the files.</p>
+  </form>
+</section>
+
+<!-- --------------------------------------------------------- first run -->
+<section id="firstrun" class="login hidden">
+  <form class="login-card" id="firstrun-form">
+    <div class="brand"><img class="mark" src="kaspa-mark.png" alt="" width="22" height="22"> Kaspa Quick Start</div>
+    <h2 class="firstrun-title">Welcome — set an admin password</h2>
+    <p class="muted">
+      This panel controls Docker on this machine, so a password keeps it yours.
+      Set one now; you will need it to publish the panel on a domain later, and
+      to reach it from anywhere but this computer.
+    </p>
+    <label>
+      New password
+      <input type="password" id="firstrun-password" autocomplete="new-password" minlength="8" required>
+    </label>
+    <label>
+      Repeat it
+      <input type="password" id="firstrun-repeat" autocomplete="new-password" minlength="8" required>
+    </label>
+    <button type="submit" class="primary">Set password &amp; continue</button>
+    <p class="error" id="firstrun-error" hidden></p>
+    <p class="hint" id="firstrun-status" hidden></p>
+    <button type="button" class="linklike" id="firstrun-skip">Skip for now — only this machine can reach the panel</button>
   </form>
 </section>
 
@@ -505,6 +530,7 @@
             <div class="stat"><span id="m-hashrate">–</span><small>pool hashrate</small></div>
             <div class="stat"><span id="m-workers">–</span><small>active workers</small></div>
             <div class="stat"><span id="m-blocks">–</span><small>blocks found</small></div>
+            <div class="stat"><span id="m-rejected">–</span><small title="Blocks you solved that the node turned down — stale (a beat too late) or invalid. Counted from the bridge's log while the panel is watching.">blocks rejected</small></div>
             <div class="stat"><span id="m-shares">–</span><small>shares accepted</small></div>
             </div>
             <dl class="kv">

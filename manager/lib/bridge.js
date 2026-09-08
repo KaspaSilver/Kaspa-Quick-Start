@@ -210,6 +210,30 @@ export function learnWorkerIps(logs) {
 /** The address last seen for a worker, or null if none has been observed. */
 export const workerIp = (worker) => workerIps.get(worker) ?? null;
 
+/**
+ * Blocks the node turned down, learned from the bridge log. The stats API only
+ * counts the ones it accepted (totalBlocks), so a rejected block is invisible
+ * without this -- and a miner that finds blocks only to have them rejected is
+ * exactly the case worth surfacing. The bridge names it precisely:
+ *
+ *   ===== BLOCK REJECTED BY KASPA NODE: STALE ===== Hash: <hash>
+ *   ===== BLOCK REJECTED BY KASPA NODE: INVALID ===== Hash: <hash>
+ *
+ * Kept by hash so re-reading the same tail never double-counts, and so the
+ * count outlives the line scrolling past the end of the tail it was seen in.
+ * STALE means it was found a beat too late; INVALID means it failed validation.
+ */
+const rejectedBlocks = new Map();
+
+export function learnBlockOutcomes(logs) {
+    for (const m of String(logs || '').matchAll(/BLOCK REJECTED BY KASPA NODE:\s*(\w+)\s*=+\s*Hash:\s*([0-9a-fA-F]+)/g)) {
+        rejectedBlocks.set(m[2].toLowerCase(), m[1].toLowerCase());
+    }
+    return rejectedBlocks;
+}
+
+export const rejectedBlockCount = () => rejectedBlocks.size;
+
 // ------------------------------------------------------------------- stats --
 
 /**
