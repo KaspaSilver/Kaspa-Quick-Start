@@ -2135,3 +2135,23 @@ button.primary:active:not(:disabled) { transform: translateY(1px); }
 .field-with-btn { display: flex; gap: 6px; align-items: center; }
 .field-with-btn input { flex: 1; min-width: 0; }
 .field-with-btn input:disabled { opacity: 0.6; }
+
+/* "How to go public" wizard ------------------------------------------------ */
+.howto-steps { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 12px; }
+.howto-step { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+.howto-step.done { border-color: var(--accent-dim); }
+.howto-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.howto-num {
+    flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%;
+    background: var(--panel); border: 1px solid var(--line); color: var(--muted);
+    display: inline-flex; align-items: center; justify-content: center; font-weight: 650;
+}
+.howto-step.done .howto-num { background: var(--accent-dim); border-color: var(--accent); color: var(--accent-glow); }
+.howto-text { flex: 1; min-width: 220px; }
+.howto-text strong { display: block; }
+.howto-text p { margin: 4px 0 0; }
+.howto-status { flex: 0 0 auto; }
+.howto-body { margin: 12px 0 0 38px; display: grid; gap: 8px; justify-items: start; }
+.howto-body .field-with-btn { width: 100%; max-width: 440px; }
+.howto-router { margin: 0; padding-left: 20px; color: var(--muted); display: grid; gap: 6px; }
+@media (max-width: 640px) { .howto-body { margin-left: 0; } }

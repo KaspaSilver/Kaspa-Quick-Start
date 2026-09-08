@@ -287,6 +287,8 @@ function selectSubtab(section, name) {
     setKaspadLog(name === 'kaspadlog');
     // The world map is fetched the first time "Am I public?" is opened.
     if (name === 'public') loadPublicMap().catch(() => {});
+    // The go-public wizard reads live state each time it is opened.
+    if (name === 'public-howto') loadGoPublic().catch(() => {});
     // A KaChat panel loads when it is opened rather than all of them upfront.
     if (name.startsWith('kachat-')) refreshKachatPanel();
     // Its own call: refreshKachatPanel gives up when the indexer is not
@@ -2387,6 +2389,115 @@ function renderPublicCheck(r) {
 }
 
 $('public-run').addEventListener('click', runPublicCheck);
+
+// --- "How to go public" wizard ---------------------------------------------
+//
+// Every control here drives the same endpoint the real setting does, so a flip
+// in the wizard shows up in Overview or Settings and the other way round. The
+// wizard is a friendlier front door to those settings, not a second copy of
+// the state.
+
+function setHowtoStep(key, done, label) {
+    $(`howto-step-${key}`).classList.toggle('done', done);
+    const status = $(`howto-status-${key}`);
+    if (status) {
+        status.textContent = label;
+        status.className = `tag howto-status ${done ? 'ok' : 'off'}`;
+    }
+}
+
+function reflectHowtoAuto() {
+    const auto = $('howto-externalip-auto').checked;
+    $('howto-externalip').disabled = auto;
+    $('howto-externalip-detect').disabled = auto;
+    $('howto-externalip').placeholder = auto ? 'kept up to date for you' : 'your public address';
+}
+
+async function loadGoPublic() {
+    let s;
+    try {
+        s = await api('/api/node/go-public');
+    } catch {
+        return;
+    }
+    $('howto-port').textContent = s.port;
+    $('howto-router-port').textContent = s.port;
+    $('howto-router-lan').textContent = s.lan || "this computer's local IP address";
+
+    $('howto-p2p').checked = s.p2pPublished;
+    setHowtoStep('p2p', s.p2pPublished, s.p2pPublished ? 'on' : 'off');
+
+    const open = s.bindAddress === '0.0.0.0' || s.bindAddress === '::';
+    $('howto-bind').checked = open;
+    setHowtoStep('bind', open, open ? 'on' : 'this machine only');
+
+    if (document.activeElement !== $('howto-externalip')) $('howto-externalip').value = s.externalip;
+    $('howto-externalip-auto').checked = s.externalipAuto;
+    reflectHowtoAuto();
+    const ipDone = Boolean(s.externalip) || s.externalipAuto;
+    setHowtoStep('ip', ipDone, s.externalipAuto ? 'auto' : s.externalip ? 'set' : 'not set');
+}
+
+$('howto-p2p').addEventListener('change', async (e) => {
+    await runAction({
+        key: null,
+        title: e.target.checked ? 'Opening the P2P port' : 'Closing the P2P port',
+        note: 'The node restarts to apply this.',
+        request: () => api('/api/ports/p2p', { method: 'POST', body: { published: e.target.checked } }),
+    });
+    loadGoPublic();
+    refreshStatus().catch(() => {});
+});
+
+$('howto-bind').addEventListener('change', async (e) => {
+    await runAction({
+        key: null,
+        title: e.target.checked ? 'Publishing ports on 0.0.0.0' : 'Restricting ports to this machine',
+        note: 'The node restarts to apply this.',
+        request: () => api('/api/ports/bind', { method: 'POST', body: { address: e.target.checked ? '0.0.0.0' : '127.0.0.1' } }),
+    });
+    loadGoPublic();
+    refreshStatus().catch(() => {});
+});
+
+$('howto-externalip-auto').addEventListener('change', reflectHowtoAuto);
+
+$('howto-externalip-detect').addEventListener('click', async () => {
+    const btn = $('howto-externalip-detect');
+    btn.disabled = true;
+    try {
+        const { ip } = await api('/api/node/external-ip');
+        $('howto-externalip').value = ip;
+        toast(`Filled in ${ip}. Press Save address to apply it.`);
+    } catch (e) {
+        toast(e.message, 'bad');
+    } finally {
+        reflectHowtoAuto();
+    }
+});
+
+$('howto-externalip-save').addEventListener('click', async () => {
+    let config;
+    try {
+        ({ config } = await api('/api/config'));
+    } catch (e) {
+        return toast(e.message, 'bad');
+    }
+    config.peering.externalip = $('howto-externalip').value.trim();
+    config.peering.externalipAuto = $('howto-externalip-auto').checked;
+    await runAction({
+        key: null,
+        title: 'Saving your address',
+        note: 'The node restarts so it advertises the new address.',
+        request: () => api('/api/config', { method: 'PUT', body: { config } }),
+    });
+    loadGoPublic();
+});
+
+$('howto-check').addEventListener('click', () => {
+    selectSubtab(document.getElementById('tab-kaspad'), 'public');
+    runPublicCheck();
+});
 
 // ------------------------------------------------------------------- apps ---
 

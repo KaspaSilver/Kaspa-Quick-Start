@@ -527,6 +527,20 @@ route('GET', /^\/api\/node\/external-ip$/, async (req, res) => {
     sendJson(res, 200, { ip });
 });
 
+/** The handful of settings the "How to go public" wizard switches on. */
+route('GET', /^\/api\/node\/go-public$/, async (req, res) => {
+    const cfg = loadNodeConfig();
+    const lan = await network.primaryLanAddress().catch(() => null);
+    sendJson(res, 200, {
+        port: ports(cfg).p2p,
+        p2pPublished: Boolean(cfg.expose.p2p),
+        bindAddress: cfg.expose.bindAddress || '0.0.0.0',
+        externalip: cfg.peering.externalip || '',
+        externalipAuto: Boolean(cfg.peering.externalipAuto),
+        lan: lan?.ip ?? null,
+    });
+});
+
 /**
  * Keeps the address kaspad advertises to peers in step with a changing
  * connection -- dynamic DNS for --externalip.

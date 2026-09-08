@@ -240,6 +240,7 @@
     <section id="tab-kaspad" class="tab active">
       <nav class="subnav" aria-label="Kaspad">
         <button class="subtab-btn active" data-subtab="overview">Overview</button>
+        <button class="subtab-btn" data-subtab="public-howto">How to go public</button>
         <button class="subtab-btn" data-subtab="public">Am I public?</button>
         <button class="subtab-btn" data-subtab="settings">Settings</button>
         <button class="subtab-btn" data-subtab="updates">Updates</button>
@@ -456,6 +457,96 @@
             </details>
           </article>
         </div>
+      </div>
+
+      <div id="sub-public-howto" class="subtab">
+        <article class="card span2 howto">
+          <h3>How to go public</h3>
+          <p class="muted">
+            A public node lets other nodes connect to you, so you help carry the
+            Kaspa network instead of only leaning on it. There are three things to
+            switch on right here, and one thing to do on your router. Go top to
+            bottom, and each step turns green once it is set.
+          </p>
+
+          <ol class="howto-steps">
+            <li class="howto-step" id="howto-step-p2p">
+              <div class="howto-head">
+                <span class="howto-num">1</span>
+                <div class="howto-text">
+                  <strong>Open the P2P port on this machine</strong>
+                  <p class="muted">This is port <code id="howto-port">16111</code>, the door other nodes use to reach you. Turning this on tells this machine to hand that port out so your router can point at it. It is the same switch as Kaspad, Ports.</p>
+                </div>
+                <span class="tag howto-status" id="howto-status-p2p">off</span>
+                <label class="switch" title="Open the P2P port"><input type="checkbox" id="howto-p2p"><span class="track"></span></label>
+              </div>
+            </li>
+
+            <li class="howto-step" id="howto-step-bind">
+              <div class="howto-head">
+                <span class="howto-num">2</span>
+                <div class="howto-text">
+                  <strong>Let the outside reach it</strong>
+                  <p class="muted">Open ports can be limited to this one computer, or opened to your whole network and the internet. Turn this on to make them reachable from outside. This is the "Publish on 0.0.0.0" setting.</p>
+                </div>
+                <span class="tag howto-status" id="howto-status-bind">off</span>
+                <label class="switch" title="Publish on 0.0.0.0"><input type="checkbox" id="howto-bind"><span class="track"></span></label>
+              </div>
+            </li>
+
+            <li class="howto-step" id="howto-step-ip">
+              <div class="howto-head">
+                <span class="howto-num">3</span>
+                <div class="howto-text">
+                  <strong>Tell the network your address</strong>
+                  <p class="muted">Other nodes need to know where to find you. Fill in your public address, or let the panel keep it up to date for you. This is the same setting as Kaspad, Settings, Peering.</p>
+                </div>
+                <span class="tag howto-status" id="howto-status-ip">not set</span>
+              </div>
+              <div class="howto-body">
+                <div class="field-with-btn">
+                  <input id="howto-externalip" placeholder="your public address">
+                  <button type="button" class="ghost mini" id="howto-externalip-detect">Use current IP</button>
+                </div>
+                <label class="check"><input type="checkbox" id="howto-externalip-auto"> Keep it up to date for me, and restart the node if my address changes</label>
+                <button type="button" class="primary mini" id="howto-externalip-save">Save address</button>
+              </div>
+            </li>
+
+            <li class="howto-step" id="howto-step-router">
+              <div class="howto-head">
+                <span class="howto-num">4</span>
+                <div class="howto-text">
+                  <strong>Open the port on your router</strong>
+                  <p class="muted">This is the one step that is not on this machine, because only your router can let the internet in. It usually takes a few minutes.</p>
+                </div>
+              </div>
+              <div class="howto-body">
+                <ol class="howto-router">
+                  <li>Open your router's settings page in a web browser. Its address is usually <code>192.168.0.1</code> or <code>192.168.1.1</code>. On Windows, open Command Prompt, type <code>ipconfig</code>, and look for "Default Gateway". On a Mac, look under System Settings, Network, Details, TCP/IP, next to "Router".</li>
+                  <li>Sign in. The username and password are often printed on a sticker on the router itself.</li>
+                  <li>Find the page called <strong>Port Forwarding</strong>. It is sometimes tucked under Advanced, NAT, Firewall, or "Virtual Server".</li>
+                  <li>Add a rule that sends <strong>TCP port <span id="howto-router-port">16111</span></strong> to this computer at <strong><span id="howto-router-lan">its local address</span></strong>. Use the same number for the internal and external port.</li>
+                  <li>Save the rule. Some routers need a reboot before it takes effect.</li>
+                </ol>
+                <p class="hint">
+                  Not sure where the setting is on your exact router? <a href="https://portforward.com/router.htm" target="_blank" rel="noreferrer noopener">portforward.com</a> has step by step guides for almost every model. If your address changes on its own, turning on "keep it up to date" in step 3 saves you redoing step 3, but the router rule itself always stays in place.
+                </p>
+              </div>
+            </li>
+
+            <li class="howto-step" id="howto-step-check">
+              <div class="howto-head">
+                <span class="howto-num">5</span>
+                <div class="howto-text">
+                  <strong>Check that it worked</strong>
+                  <p class="muted">Run the public test. If it comes back green, other nodes can reach you. Fresh inbound connections can still take a little while to show up after that.</p>
+                </div>
+                <button type="button" class="primary" id="howto-check">Open the public test</button>
+              </div>
+            </li>
+          </ol>
+        </article>
       </div>
 
       <div id="sub-public" class="subtab">
