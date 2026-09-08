@@ -335,6 +335,7 @@ function sanitizeNodeConfig(input) {
     const ip = String(p.externalip || '').trim();
     if (ip && !/^[0-9a-fA-F.:]+(:\d{1,5})?$/.test(ip)) errors.push('External IP is not a valid address.');
     cfg.peering.externalip = ip;
+    cfg.peering.externalipAuto = Boolean(p.externalipAuto);
 
     const ua = String(p.uacomment || '').trim();
     if (ua && !/^[\w .:/+-]{1,64}$/.test(ua)) errors.push('User agent comment may only contain letters, digits and . : / + - _');
@@ -514,8 +515,56 @@ route('PUT', /^\/api\/config$/, async (req, res) => {
 
     saveNodeConfig(cfg);
     const job = jobs.start('Apply node configuration', (onLine) => applyNodeConfig(cfg, onLine));
+    // The auto-follow flag may have just changed; (re)arm the watcher to match.
+    scheduleExternalIpWatch(log);
     sendJson(res, 202, { ok: true, jobId: job.id, config: cfg });
 });
+
+/** This connection's public address, for the "Use current IP" button. */
+route('GET', /^\/api\/node\/external-ip$/, async (req, res) => {
+    const ip = await duckdns.publicIp();
+    if (!ip) return fail(res, 502, 'Could not work out this connection\'s public address.');
+    sendJson(res, 200, { ip });
+});
+
+/**
+ * Keeps the address kaspad advertises to peers in step with a changing
+ * connection -- dynamic DNS for --externalip.
+ *
+ * Off unless the node asks for it. When on, it rechecks the public address on a
+ * timer and, only when it has actually changed, rewrites externalip and
+ * restarts the node. The restart is real work, so it runs through the job
+ * console like any other node change, and the "only on change" guard is what
+ * stops it bouncing the node every quarter hour for nothing.
+ */
+let externalIpTimer = null;
+const EXTERNAL_IP_INTERVAL_MS = 15 * 60_000;
+
+function scheduleExternalIpWatch(log = () => {}) {
+    if (externalIpTimer) clearInterval(externalIpTimer);
+    externalIpTimer = null;
+    if (!loadNodeConfig().peering?.externalipAuto) return;
+
+    const tick = async () => {
+        const cfg = loadNodeConfig();
+        if (!cfg.peering?.externalipAuto) return;
+        const ip = await duckdns.publicIp().catch(() => null);
+        if (!ip || ip === cfg.peering.externalip) return;
+        // Something else is mid-job. Persist nothing and leave the difference in
+        // place, so the next tick sees it still needs doing and retries.
+        if (jobs.busy) return;
+
+        const was = cfg.peering.externalip || '(none)';
+        cfg.peering.externalip = ip;
+        saveNodeConfig(cfg);
+        jobs.start(`External IP changed (${was} → ${ip}) — updating the node`, (onLine) => applyNodeConfig(cfg, onLine));
+        log(`external-ip: ${was} -> ${ip}`);
+    };
+
+    externalIpTimer = setInterval(() => tick().catch(() => {}), EXTERNAL_IP_INTERVAL_MS);
+    externalIpTimer.unref?.();
+    tick().catch(() => {}); // once now, so enabling it takes effect immediately
+}
 
 route('POST', /^\/api\/ports\/(p2p|grpc|borsh|json)$/, async (req, res, match) => {
     const key = match[1];
@@ -2938,6 +2987,7 @@ async function bootstrap() {
 
     syncProgress.start(log);
     duckdns.scheduleFromConfig(log);
+    scheduleExternalIpWatch(log);
 
     // Certificates are valid for 90 days; a daily attempt is what certbot's own
     // packaging recommends and is a no-op until one is close to expiry.

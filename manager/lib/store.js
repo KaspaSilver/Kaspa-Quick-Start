@@ -70,6 +70,10 @@ export const DEFAULT_NODE_CONFIG = {
     },
     peering: {
         externalip: '',
+        // When on, the manager rechecks this connection's public address on a
+        // timer and, if it has changed, rewrites externalip and restarts the
+        // node -- dynamic DNS for the address kaspad advertises to peers.
+        externalipAuto: false,
         uacomment: '',
         connectPeers: [],
         addPeers: [],

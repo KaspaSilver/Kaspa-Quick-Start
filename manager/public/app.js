@@ -1567,6 +1567,8 @@ async function loadSettings() {
     $('cfg-asyncthreads').value = c.tuning.asyncThreads ?? '';
 
     $('cfg-externalip').value = c.peering.externalip;
+    $('cfg-externalip-auto').checked = Boolean(c.peering.externalipAuto);
+    reflectExternalIpAuto();
     $('cfg-uacomment').value = c.peering.uacomment;
     $('cfg-addpeers').value = (c.peering.addPeers || []).join('\n');
     $('cfg-connectpeers').value = (c.peering.connectPeers || []).join('\n');
@@ -1607,6 +1609,7 @@ function collectConfig() {
         },
         peering: {
             externalip: $('cfg-externalip').value,
+            externalipAuto: $('cfg-externalip-auto').checked,
             uacomment: $('cfg-uacomment').value,
             addPeers: lines('cfg-addpeers'),
             connectPeers: lines('cfg-connectpeers'),
@@ -1629,6 +1632,32 @@ $('settings-form').addEventListener('submit', async (event) => {
 });
 
 $('settings-reset').addEventListener('click', () => loadSettings());
+
+// When auto-follow is on the manager owns the External IP, so the manual field
+// and its button step aside rather than pretend to be in charge.
+function reflectExternalIpAuto() {
+    const auto = $('cfg-externalip-auto').checked;
+    $('cfg-externalip').disabled = auto;
+    $('cfg-externalip-detect').disabled = auto;
+    $('cfg-externalip').placeholder = auto ? 'kept in step with your connection' : 'auto-detected';
+}
+
+$('cfg-externalip-auto').addEventListener('change', reflectExternalIpAuto);
+
+$('cfg-externalip-detect').addEventListener('click', async () => {
+    const btn = $('cfg-externalip-detect');
+    btn.disabled = true;
+    try {
+        const { ip } = await api('/api/node/external-ip');
+        $('cfg-externalip').value = ip;
+        toast(`Filled in ${ip}. Save settings to apply it.`);
+    } catch (e) {
+        toast(e.message, 'bad');
+    } finally {
+        // Leave it disabled if auto took over in the meantime; otherwise re-enable.
+        reflectExternalIpAuto();
+    }
+});
 
 // ----------------------------------------------------------------- mining ---
 

@@ -388,7 +388,15 @@
 
           <article class="card">
             <h3>Peering</h3>
-            <label>External IP <input id="cfg-externalip" placeholder="auto-detected"></label>
+            <label>External IP
+              <span class="field-with-btn">
+                <input id="cfg-externalip" placeholder="auto-detected">
+                <button type="button" class="ghost mini" id="cfg-externalip-detect" title="Fill in this connection's current public address">Use current IP</button>
+              </span>
+            </label>
+            <label class="check" title="Rechecks this connection's public address every 15 minutes and, if it has changed, updates the External IP and restarts the node — so a node on a changing home IP keeps advertising the right address to peers.">
+              <input type="checkbox" id="cfg-externalip-auto"> Keep it in step with my connection (restart the node when my IP changes)
+            </label>
             <label>User agent comment <input id="cfg-uacomment" placeholder="optional"></label>
             <label>Additional peers <textarea id="cfg-addpeers" rows="3" placeholder="one host:port per line"></textarea></label>
             <label>Connect only to <textarea id="cfg-connectpeers" rows="2" placeholder="one host:port per line, leave empty for normal operation"></textarea></label>

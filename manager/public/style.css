@@ -2130,3 +2130,8 @@ button.primary:active:not(:disabled) { transform: translateY(1px); }
     padding: 6px 0 0;
 }
 .login-card .linklike:hover { color: var(--accent); }
+
+/* An input with a small action button beside it (e.g. External IP → detect). */
+.field-with-btn { display: flex; gap: 6px; align-items: center; }
+.field-with-btn input { flex: 1; min-width: 0; }
+.field-with-btn input:disabled { opacity: 0.6; }
