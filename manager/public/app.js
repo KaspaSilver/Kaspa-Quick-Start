@@ -1420,10 +1420,25 @@ for (const button of document.querySelectorAll('[data-node]')) {
 
 let latestRelease = null;
 
+/**
+ * The one update-status look, shared by every "Check for updates" in the panel
+ * so kaspad, mining and every app read the same way as Global settings: a lit,
+ * breathing arrow when an update is waiting, a calm green tick when current,
+ * red on error, and plain for "nothing to compare yet". `state` is one of
+ * 'checking' | 'info' | 'available' | 'current' | 'error'.
+ */
+function setUpdateStatus(el, state, text) {
+    if (!el) return;
+    el.hidden = false;
+    const cls = { available: 'available', current: 'current', error: 'error' }[state] ?? '';
+    el.className = cls ? `update-status ${cls}` : 'update-status';
+    const prefix = state === 'available' ? '⬆ ' : state === 'current' ? '✓ ' : '';
+    el.textContent = `${prefix}${text}`;
+}
+
 $('check-update').addEventListener('click', async () => {
     const status = $('update-status');
-    status.className = 'update-status';
-    status.textContent = 'Checking GitHub…';
+    setUpdateStatus(status, 'checking', 'Checking GitHub…');
     try {
         const r = await api('/api/update/check');
         latestRelease = r;
@@ -1431,22 +1446,20 @@ $('check-update').addEventListener('click', async () => {
         $('apply-update').disabled = !r.updateAvailable || !r.hasLinuxAsset;
 
         if (r.updateAvailable) {
-            status.className = 'update-status available';
-            status.textContent = `⬆ ${r.latest} is available (you run ${r.current || 'an unknown version'}).`;
+            let text = `${r.latest} is available (you run ${r.current || 'an unknown version'}).`;
             if (!r.hasLinuxAsset) {
-                status.textContent += ' That release has no linux build attached, so it cannot be installed automatically.';
+                text += ' That release has no linux build attached, so it cannot be installed automatically.';
             }
+            setUpdateStatus(status, 'available', text);
         } else {
-            status.className = 'update-status current';
-            status.textContent = `✓ Up to date — running ${r.current || '?'}, the newest release.`;
+            setUpdateStatus(status, 'current', `Up to date — running ${r.current || '?'}, the newest release.`);
         }
         if (r.notes) {
             $('release-notes').hidden = false;
             $('release-notes-body').textContent = r.notes;
         }
     } catch (e) {
-        status.className = 'update-status error';
-        status.textContent = e.message;
+        setUpdateStatus(status, 'error', e.message);
     }
 });
 
@@ -2266,6 +2279,28 @@ for (const button of document.querySelectorAll('[data-bridge]')) {
     });
 }
 
+// The bridge ships inside the node's release, so a mining update is a node
+// update. This checks the same upstream and points at where to do it, using
+// the shared update-status look.
+$('mining-check').addEventListener('click', async () => {
+    const el = $('mining-update-status');
+    setUpdateStatus(el, 'checking', 'Checking GitHub…');
+    try {
+        const r = await api('/api/update/check');
+        if (r.updateAvailable) {
+            setUpdateStatus(
+                el,
+                'available',
+                `${r.latest} is available (the bridge runs ${r.current || 'the current node release'}). Update the node under Kaspad, Updates to move the bridge to it as well.`,
+            );
+        } else {
+            setUpdateStatus(el, 'current', `Up to date — the bridge ships with node ${r.current || 'the newest release'}.`);
+        }
+    } catch (e) {
+        setUpdateStatus(el, 'error', e.message);
+    }
+});
+
 async function refreshMiningStats() {
     if (!miningConfig?.enabled) return;
     try {
@@ -2986,9 +3021,7 @@ for (const name of ['kachat', 'desktop', 'nextcloud']) {
         // live on their own tab, and its `-notice` element is on Overview, so
         // writing there would put the answer on a page nobody is looking at.
         const notice = $(`${name}-update-status`) ?? $(`${name}-notice`);
-        notice.hidden = false;
-        notice.className = 'verdict';
-        notice.textContent = 'Checking GitHub…';
+        setUpdateStatus(notice, 'checking', 'Checking GitHub…');
         try {
             const r = await api(`/api/apps/${name}/check`);
             $(`${name}-update`).disabled = !r.updateAvailable;
@@ -2998,19 +3031,20 @@ for (const name of ['kachat', 'desktop', 'nextcloud']) {
             const source = r.image ? `the ${r.image} tag` : `${r.repo}@${r.ref}`;
             const version = r.image ? 'image' : 'commit';
             if (r.neverBuilt) {
-                notice.textContent = `${source} is at ${r.shortSha}. Nothing built here yet, so install it first.`;
+                setUpdateStatus(notice, 'info', `${source} is at ${r.shortSha}. Nothing built here yet, so install it first.`);
             } else if (r.updateAvailable) {
-                notice.className = 'verdict bad';
-                notice.textContent = r.image
-                    ? `${r.image} has moved: it is now ${r.shortSha}, and this was built on ${String(r.builtSha).replace(/^sha256:/, '').slice(0, 12)}.`
-                    : `There is an update: ${r.shortSha}, "${r.message}". You are running ${String(r.builtSha).slice(0, 7)}.`;
+                setUpdateStatus(
+                    notice,
+                    'available',
+                    r.image
+                        ? `${r.image} has moved: it is now ${r.shortSha}, and this was built on ${String(r.builtSha).replace(/^sha256:/, '').slice(0, 12)}.`
+                        : `Update available: ${r.shortSha}, "${r.message}". You are running ${String(r.builtSha).slice(0, 7)}.`,
+                );
             } else {
-                notice.className = 'verdict ok';
-                notice.textContent = `You are up to date, running the ${version} ${source} points at now (${r.shortSha}).`;
+                setUpdateStatus(notice, 'current', `Up to date, running the ${version} ${source} points at now (${r.shortSha}).`);
             }
         } catch (e) {
-            notice.className = 'verdict bad';
-            notice.textContent = e.message;
+            setUpdateStatus(notice, 'error', e.message);
         }
     });
 
@@ -4419,24 +4453,20 @@ $('kassigner-releases-scan').addEventListener('click', async () => {
 
 $('kassigner-check').addEventListener('click', async () => {
     const status = $('kassigner-update-status');
-    status.className = 'verdict';
-    status.textContent = 'Checking GitHub…';
+    setUpdateStatus(status, 'checking', 'Checking GitHub…');
     try {
         const releases = await loadKassignerReleases({ force: true });
         const newest = releases.find((r) => !r.prerelease) ?? releases[0];
         const have = kassignerState?.release;
         if (!have) {
-            status.textContent = `${newest.tag} is the newest release. Nothing is downloaded here yet.`;
+            setUpdateStatus(status, 'info', `${newest.tag} is the newest release. Nothing is downloaded here yet.`);
         } else if (have === newest.tag) {
-            status.className = 'verdict ok';
-            status.textContent = `You have ${have}, which is the newest.`;
+            setUpdateStatus(status, 'current', `You have ${have}, which is the newest.`);
         } else {
-            status.className = 'verdict bad';
-            status.textContent = `${newest.tag} is out, and you have ${have}.`;
+            setUpdateStatus(status, 'available', `${newest.tag} is out, and you have ${have}.`);
         }
     } catch (e) {
-        status.className = 'verdict bad';
-        status.textContent = e.message;
+        setUpdateStatus(status, 'error', e.message);
     }
 });
 
@@ -5219,24 +5249,19 @@ $('bot-save').addEventListener('click', async () => {
 
 $('bot-check').addEventListener('click', async () => {
     const notice = $('bot-update-status');
-    notice.hidden = false;
-    notice.className = 'verdict';
-    notice.textContent = 'Checking GitHub…';
+    setUpdateStatus(notice, 'checking', 'Checking GitHub…');
     try {
         const r = await api('/api/apps/bot/check');
         $('bot-update').disabled = !r.updateAvailable;
         if (r.neverBuilt) {
-            notice.textContent = `${r.repo}@${r.ref} is at ${r.shortSha}: "${r.message}". Nothing built yet, so install it first.`;
+            setUpdateStatus(notice, 'info', `${r.repo}@${r.ref} is at ${r.shortSha}: "${r.message}". Nothing built yet, so install it first.`);
         } else if (r.updateAvailable) {
-            notice.className = 'verdict bad';
-            notice.textContent = `There is an update: ${r.shortSha}, "${r.message}". You are running ${String(r.builtSha).slice(0, 7)}.`;
+            setUpdateStatus(notice, 'available', `Update available: ${r.shortSha}, "${r.message}". You are running ${String(r.builtSha).slice(0, 7)}.`);
         } else {
-            notice.className = 'verdict ok';
-            notice.textContent = `You are up to date, running ${r.shortSha}, the newest commit on ${r.ref}.`;
+            setUpdateStatus(notice, 'current', `Up to date, running ${r.shortSha}, the newest commit on ${r.ref}.`);
         }
     } catch (e) {
-        notice.className = 'verdict bad';
-        notice.textContent = e.message;
+        setUpdateStatus(notice, 'error', e.message);
     }
 });
 
@@ -6647,29 +6672,23 @@ $('global-check-btn').addEventListener('click', async () => {
     const ref = $('global-ref').value.trim();
     button.disabled = true;
     const el = $('global-check-status');
-    el.className = 'update-status';
-    el.textContent = 'Checking…';
+    setUpdateStatus(el, 'checking', 'Checking…');
     try {
         const q = new URLSearchParams({ repo, ref });
         const r = await api(`/api/system/panel-latest?${q}`);
         const when = r.latest.date ? new Date(r.latest.date).toLocaleString() : 'unknown date';
         if (r.upToDate === true) {
-            el.className = 'update-status current';
-            el.textContent = `✓ Up to date — ${ref} is at ${r.latest.shortSha}, ${when}.`;
+            setUpdateStatus(el, 'current', `Up to date — ${ref} is at ${r.latest.shortSha}, ${when}.`);
         } else if (r.upToDate === false) {
             const behind = r.compare?.behind ? `, ${r.compare.behind} commit${r.compare.behind === 1 ? '' : 's'} ahead of yours` : '';
-            el.className = 'update-status available';
-            el.textContent = `⬆ Update available — ${r.latest.shortSha}${behind}. ${r.latest.message}`;
+            setUpdateStatus(el, 'available', `Update available — ${r.latest.shortSha}${behind}. ${r.latest.message}`);
         } else {
             // No recorded sha, which is every install that has not used this
             // button yet. Saying "up to date" here would be a guess.
-            el.className = 'update-status';
-            el.textContent =
-                `${ref} is at ${r.latest.shortSha} (${when}). This install has no recorded commit, so there is nothing to compare it against yet.`;
+            setUpdateStatus(el, 'info', `${ref} is at ${r.latest.shortSha} (${when}). This install has no recorded commit, so there is nothing to compare it against yet.`);
         }
     } catch (e) {
-        el.className = 'update-status error';
-        el.textContent = e.message;
+        setUpdateStatus(el, 'error', e.message);
     } finally {
         button.disabled = false;
     }

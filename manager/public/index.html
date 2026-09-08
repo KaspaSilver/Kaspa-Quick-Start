@@ -625,6 +625,11 @@
           <div id="mining-blockers" class="verdict bad" hidden></div>
           <p class="error" id="mining-error" hidden></p>
 
+          <div class="row">
+            <button type="button" id="mining-check" class="ghost">Check for updates</button>
+          </div>
+          <div id="mining-update-status" class="update-status" hidden></div>
+
           <div id="mining-live" hidden>
             <div class="grid stats">
             <div class="stat"><span id="m-hashrate">–</span><small>pool hashrate</small></div>
@@ -1345,7 +1350,7 @@
               </select>
             </label>
             <div id="kachat-build" class="verdict"></div>
-            <div id="kachat-update-status" class="verdict">Not checked yet.</div>
+            <div id="kachat-update-status" class="update-status">Not checked yet.</div>
             <div class="row">
               <button type="button" id="kachat-check" class="ghost">Check for updates</button>
               <button type="button" id="kachat-update" class="primary" disabled>Update</button>
@@ -1521,7 +1526,7 @@
               <input id="desktop-ref-custom" size="24" placeholder="branch, tag or commit">
             </label>
             <div id="desktop-build" class="verdict"></div>
-            <div id="desktop-update-status" class="verdict">Not checked yet.</div>
+            <div id="desktop-update-status" class="update-status">Not checked yet.</div>
             <div class="row">
               <button type="button" id="desktop-check" class="ghost">Check for updates</button>
               <button type="button" id="desktop-update" class="primary" disabled>Update</button>
@@ -1672,7 +1677,7 @@
               database are on their own volumes, so a rebuild leaves them alone.
             </p>
             <div id="nextcloud-build" class="verdict"></div>
-            <div id="nextcloud-update-status" class="verdict">Not checked yet.</div>
+            <div id="nextcloud-update-status" class="update-status">Not checked yet.</div>
             <div class="row">
               <button type="button" id="nextcloud-check" class="ghost">Check for updates</button>
               <button type="button" id="nextcloud-update" class="primary" disabled>Update</button>
@@ -1860,7 +1865,7 @@
               <button type="button" id="bot-check" class="ghost">Check for updates</button>
               <button type="button" id="bot-update" class="primary" disabled>Rebuild</button>
             </div>
-            <div id="bot-update-status" class="verdict" hidden></div>
+            <div id="bot-update-status" class="update-status" hidden></div>
             <p class="hint" id="bot-build">Not built yet.</p>
           </article>
         </div>
@@ -2321,7 +2326,7 @@
               <button type="button" class="ghost mini" id="kassigner-releases-scan" title="Look up every release">Rescan</button>
             </label>
             <div id="kassigner-build" class="verdict"></div>
-            <div id="kassigner-update-status" class="verdict">Not checked yet.</div>
+            <div id="kassigner-update-status" class="update-status">Not checked yet.</div>
             <div class="row">
               <button type="button" id="kassigner-check" class="ghost">Check for updates</button>
               <button type="button" id="kassigner-fetch" class="primary">Download and verify</button>
