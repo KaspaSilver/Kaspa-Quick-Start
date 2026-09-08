@@ -186,10 +186,15 @@ export function renderMessage(message, sample = {}) {
 export function writeConfig(input) {
     const existing = readEnv();
     const key = String(input.privateKeyHex ?? '').trim() || existing.PRIVATE_KEY_HEX || '';
+    // A different key means the stored address belongs to the old one, so drop
+    // it and let the next wallet read re-derive from the new key. An unchanged
+    // key keeps its address.
+    const keyChanged = key.toLowerCase() !== String(existing.PRIVATE_KEY_HEX ?? '').toLowerCase();
 
-    const values = {
+    writeEnvFile({
         MINING_ADDRESS: String(input.miningAddress ?? '').trim(),
         PRIVATE_KEY_HEX: key,
+        WALLET_ADDRESS: keyChanged ? '' : existing.WALLET_ADDRESS || '',
         RECEIVER_ALIAS: String(input.receiverAlias ?? '').trim(),
         RECEIVER_PUBKEY_X: String(input.receiverPubkeyX ?? '').trim().toLowerCase(),
         MIN_REWARD_KAS: String(Number(input.minRewardKas ?? 0)),
@@ -198,12 +203,17 @@ export function writeConfig(input) {
                 ? unescapeNewlines(existing.MESSAGE_TEMPLATE || DEFAULT_MESSAGE)
                 : input.message,
         ),
-    };
+    });
+    return readConfig();
+}
 
+/** Writes the env file, 0600, from a plain object. The one place that does it. */
+function writeEnvFile(values) {
     const body =
         '# Written by the Kaspa Quick Start panel. Contains a wallet key.\n' +
         '# Edits here are overwritten the next time the KaChat Bot tab is saved.\n' +
         Object.entries(values)
+            .filter(([, value]) => value !== undefined && value !== null)
             .map(([name, value]) => `${name}=${value}`)
             .join('\n') +
         '\n';
@@ -213,7 +223,25 @@ export function writeConfig(input) {
     // Set every time, not only on creation: a file from an earlier version, or
     // restored from a backup, must not stay readable by everything on the box.
     fs.chmodSync(ENV_FILE, 0o600);
-    return readConfig();
+}
+
+/** The address the bot sends from, if one has been recorded. */
+export const walletAddress = () => readEnv().WALLET_ADDRESS || '';
+
+/** The stored wallet key. Only ever returned to the loopback panel on request. */
+export const walletKey = () => readEnv().PRIVATE_KEY_HEX || '';
+
+/**
+ * Stores a generated (or derived) wallet without disturbing the rest of the
+ * config. The key and its address travel together, so a later address read
+ * never belongs to a different key.
+ */
+export function saveWallet({ privateKeyHex, address }) {
+    const env = readEnv();
+    if (privateKeyHex !== undefined) env.PRIVATE_KEY_HEX = String(privateKeyHex).trim();
+    if (address !== undefined) env.WALLET_ADDRESS = String(address).trim();
+    writeEnvFile(env);
+    return { address: env.WALLET_ADDRESS || '', hasKey: Boolean(env.PRIVATE_KEY_HEX) };
 }
 
 /**

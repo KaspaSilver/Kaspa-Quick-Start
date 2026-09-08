@@ -5208,7 +5208,105 @@ async function loadBot() {
     $('bot-build').textContent = botState.build?.sha
         ? `Built from ${String(botState.build.sha).slice(0, 7)} on ${new Date(botState.build.builtAt).toLocaleString()}`
         : 'Not built yet.';
+
+    loadBotWallet(Boolean(container?.installed)).catch(() => {});
 }
+
+// --- bot sending wallet ----------------------------------------------------
+
+function renderQr(el, text) {
+    el.textContent = '';
+    if (!text || typeof window.qrcode !== 'function') return;
+    try {
+        const qr = window.qrcode(0, 'M'); // type 0 = auto-size, medium correction
+        qr.addData(text);
+        qr.make();
+        el.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+    } catch {
+        /* an address too long for a QR is not worth a broken tab */
+    }
+}
+
+async function loadBotWallet(installed) {
+    let w;
+    try {
+        w = await api('/api/bot/wallet');
+    } catch {
+        return;
+    }
+    const has = w.hasKey && w.address;
+    $('bot-wallet-none').hidden = has;
+    $('bot-wallet-have').hidden = !has;
+    // Cannot create one until the image exists to generate it from.
+    $('bot-wallet-create').disabled = !installed;
+    $('bot-wallet-create-note').textContent = installed
+        ? 'The panel creates it for you using the bot\'s own Kaspa library.'
+        : 'Install the KaChat Bot first; the wallet is created from its own Kaspa library.';
+
+    if (has) {
+        $('bot-wallet-address').value = w.address;
+        renderQr($('bot-wallet-qr'), w.address);
+        $('bot-wallet-balance').textContent =
+            w.balanceKas === null || w.balanceKas === undefined ? 'unknown (is the node running?)' : `${fmtKas(w.balanceKas)} KAS`;
+        $('bot-wallet-key').hidden = true;
+    }
+}
+
+$('bot-wallet-create').addEventListener('click', async () => {
+    $('bot-wallet-create').disabled = true;
+    try {
+        await api('/api/bot/wallet', { method: 'POST' });
+        toast('Wallet created. Fund the address shown.');
+        await loadBot();
+    } catch (e) {
+        toast(e.message, 'bad');
+        $('bot-wallet-create').disabled = false;
+    }
+});
+
+$('bot-wallet-regen').addEventListener('click', async () => {
+    if (
+        !confirm(
+            'Replace the sending wallet?\n\nThis creates a NEW key and address. Any KAS on the current wallet stays with the OLD key, which you lose access to here unless you have revealed and saved it. Reveal and back it up first if it holds anything.',
+        )
+    ) {
+        return;
+    }
+    try {
+        await api('/api/bot/wallet', { method: 'POST', body: { force: true } });
+        toast('New wallet created.');
+        await loadBot();
+    } catch (e) {
+        toast(e.message, 'bad');
+    }
+});
+
+$('bot-wallet-refresh').addEventListener('click', () => loadBotWallet(true).catch(() => {}));
+
+$('bot-wallet-copy').addEventListener('click', async () => {
+    try {
+        await navigator.clipboard.writeText($('bot-wallet-address').value);
+        toast('Address copied.');
+    } catch {
+        toast('Could not copy. Select the address and copy it by hand.', 'bad');
+    }
+});
+
+$('bot-wallet-reveal').addEventListener('click', async () => {
+    const box = $('bot-wallet-key');
+    if (!box.hidden) {
+        box.hidden = true;
+        return;
+    }
+    try {
+        const r = await api('/api/bot/wallet/reveal', { method: 'POST' });
+        box.hidden = false;
+        box.className = 'verdict';
+        box.textContent = `Private key (keep it secret): ${r.privateKeyHex}`;
+    } catch (e) {
+        toast(e.message, 'bad');
+    }
+});
 
 $('bot-save').addEventListener('click', async () => {
     const error = $('bot-setup-error');

@@ -1844,6 +1844,23 @@ async function applyAppConfig(name, cfg, onLine = () => {}) {
         onLine(`Could not record the upstream commit: ${err.message}`);
     }
 
+    // The bot needs a wallet to pay for the notifications it sends. Rather than
+    // make someone paste a private key, create one here from the bot's own
+    // Kaspa library the moment its image exists, so installing it leaves a
+    // funded-and-ready address waiting on the KaChat Bot tab. Only when there
+    // is not one already, so a reinstall never abandons a funded wallet.
+    if (name === 'bot' && !bot.hasKey()) {
+        try {
+            onLine('Creating the notification wallet...');
+            const wallet = await botGenerateWallet(cfg.bot.network);
+            bot.saveWallet({ privateKeyHex: wallet.privateKeyHex, address: wallet.address });
+            onLine(`Sending wallet created: ${wallet.address}`);
+            onLine('Fund it with a little KAS, then set who to watch and who to notify on the KaChat Bot tab.');
+        } catch (err) {
+            onLine(`Could not create the wallet automatically (${err.message}). Create it on the KaChat Bot tab instead.`);
+        }
+    }
+
     // Nextcloud reads its trusted domains only while installing, so a change
     // made later has to be applied to the running instance or it silently does
     // nothing. Failure here is worth reporting but not worth failing the job:
@@ -2011,6 +2028,26 @@ route('GET', /^\/api\/apps\/(kachat|desktop|bot)\/refs$/, async (req, res, match
     }
 });
 
+// The bot's wallet is created and its address derived by the bot's own image,
+// running gen_wallet.py against the same Kaspa SDK it sends with, so the
+// address is always exactly the one it will spend from.
+const botImageTag = () => `kaspa-one-click/kachat-bot:${(readEnvFile().BOT_REF || 'main').trim()}`;
+
+async function botGenerateWallet(network, fromKey = null) {
+    const args = ['run', '--rm', '--entrypoint', 'python', botImageTag(), 'gen_wallet.py', '--network', network || 'mainnet'];
+    if (fromKey) args.push('--from-key', fromKey);
+    const { stdout } = await dockerctl.docker(args, { timeoutMs: 60_000 });
+    const line = stdout.trim().split('\n').filter(Boolean).pop() || '';
+    let parsed;
+    try {
+        parsed = JSON.parse(line);
+    } catch {
+        throw new Error('The wallet generator returned unexpected output.');
+    }
+    if (!parsed.address) throw new Error('The wallet generator did not return an address.');
+    return parsed;
+}
+
 // ---------------------------------------------------------------- kachat bot --
 
 /**
@@ -2062,6 +2099,84 @@ route('PUT', /^\/api\/bot$/, async (req, res) => {
         });
     });
     sendJson(res, 202, { ok: true, jobId: job.id, config: bot.readConfig(), restarted: true });
+});
+
+/**
+ * The sending wallet: its address (to fund) and balance. Derives the address
+ * from a stored-but-unrecorded key if needed, and reads the balance from the
+ * node's UTXO index.
+ */
+route('GET', /^\/api\/bot\/wallet$/, async (req, res) => {
+    const cfg = apps.loadAppsConfig();
+    const hasKey = bot.hasKey();
+    let address = bot.walletAddress();
+
+    // A pasted key has no recorded address; derive it once from the bot image.
+    if (!address && hasKey && (await lifecycle.status('bot')).installed) {
+        try {
+            address = (await botGenerateWallet(cfg.bot.network, bot.walletKey())).address;
+            bot.saveWallet({ address });
+        } catch {
+            /* leave it empty; the panel explains the address is not known yet */
+        }
+    }
+
+    let balanceKas = null;
+    if (address) {
+        try {
+            const r = await rpc.call('getBalanceByAddress', { address }, 6000);
+            balanceKas = Number(r?.balance ?? 0) / 1e8;
+        } catch {
+            /* node not reachable or still syncing; balance stays unknown */
+        }
+    }
+
+    sendJson(res, 200, { hasKey, address, balanceKas, network: cfg.bot.network });
+});
+
+/** Creates a fresh sending wallet. Refuses to overwrite a funded one blindly. */
+route('POST', /^\/api\/bot\/wallet$/, async (req, res) => {
+    const body = await readBody(req);
+    if (bot.walletKey() && !body.force) {
+        return fail(res, 409, 'A wallet already exists. Creating another abandons any funds on the current one.', {
+            details: ['Reveal and back up the current key first, then confirm to replace it.'],
+        });
+    }
+    const state = await lifecycle.status('bot');
+    if (!state.installed) {
+        return fail(res, 409, 'Install the KaChat Bot first. The wallet is created with its own Kaspa library.');
+    }
+
+    const cfg = apps.loadAppsConfig();
+    try {
+        const wallet = await botGenerateWallet(cfg.bot.network);
+        const saved = bot.saveWallet({ privateKeyHex: wallet.privateKeyHex, address: wallet.address });
+        if (state.running) {
+            const job = jobs.start('Load the new wallet into the bot', async (onLine) => {
+                onLine(`New sending wallet: ${saved.address}`);
+                await dockerctl.compose(['up', '-d', '--no-deps', '--force-recreate', 'kachat-bot'], {
+                    onLine,
+                    profile: 'bot',
+                    timeoutMs: 10 * 60_000,
+                });
+            });
+            return sendJson(res, 202, { ok: true, jobId: job.id, address: saved.address });
+        }
+        sendJson(res, 200, { ok: true, address: saved.address });
+    } catch (err) {
+        fail(res, 502, err.message);
+    }
+});
+
+/**
+ * Hands back the wallet key. Only reachable on the loopback panel, and only
+ * when asked -- the same treatment as the Nextcloud admin password. It is the
+ * user's own key, and backing it up is the whole point of showing it.
+ */
+route('POST', /^\/api\/bot\/wallet\/reveal$/, async (req, res) => {
+    const key = bot.walletKey();
+    if (!key) return fail(res, 404, 'No wallet key is stored.');
+    sendJson(res, 200, { privateKeyHex: key });
 });
 
 // ------------------------------------------------------------- translation --

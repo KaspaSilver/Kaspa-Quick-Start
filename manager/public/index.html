@@ -1799,13 +1799,50 @@
               </span>
             </label>
 
-            <label class="stack">Sending wallet private key
-              <input id="bot-key" type="password" placeholder="64 hex characters" size="70" autocomplete="off" spellcheck="false">
-              <span class="hint" id="bot-key-hint">
-                The wallet that pays the fee for each notification. Use a wallet
-                kept for this, not one holding anything you would miss.
-              </span>
-            </label>
+            <div class="bot-wallet" id="bot-wallet">
+              <h4>Sending wallet</h4>
+              <p class="hint">
+                The bot pays a small fee to send each notification, so it needs
+                its own funded wallet. The panel creates one for you when you
+                install the bot; fund the address below with a little KAS.
+              </p>
+
+              <div id="bot-wallet-none" hidden>
+                <p class="muted">No wallet yet.</p>
+                <button type="button" class="primary" id="bot-wallet-create">Create a wallet for me</button>
+                <p class="hint" id="bot-wallet-create-note"></p>
+              </div>
+
+              <div id="bot-wallet-have" class="bot-wallet-row" hidden>
+                <div class="bot-wallet-qr" id="bot-wallet-qr"></div>
+                <div class="bot-wallet-meta">
+                  <label class="stack">Address — fund this
+                    <span class="field-with-btn">
+                      <input id="bot-wallet-address" readonly spellcheck="false">
+                      <button type="button" class="ghost mini" id="bot-wallet-copy">Copy</button>
+                    </span>
+                  </label>
+                  <dl class="kv vertical"><div><dt>Balance</dt><dd id="bot-wallet-balance">–</dd></div></dl>
+                  <div class="row">
+                    <button type="button" class="ghost mini" id="bot-wallet-refresh">Refresh balance</button>
+                    <button type="button" class="ghost mini" id="bot-wallet-reveal">Reveal private key</button>
+                    <button type="button" class="ghost mini danger" id="bot-wallet-regen">Replace wallet</button>
+                  </div>
+                  <div id="bot-wallet-key" class="verdict" hidden></div>
+                </div>
+              </div>
+            </div>
+
+            <details class="bot-manual-key">
+              <summary>Or paste your own wallet key</summary>
+              <label class="stack">Sending wallet private key
+                <input id="bot-key" type="password" placeholder="64 hex characters" size="70" autocomplete="off" spellcheck="false">
+                <span class="hint" id="bot-key-hint">
+                  The wallet that pays the fee for each notification. Use a wallet
+                  kept for this, not one holding anything you would miss.
+                </span>
+              </label>
+            </details>
 
             <label class="stack">Message
               <textarea id="bot-message" rows="3" spellcheck="false"></textarea>
@@ -2775,6 +2812,7 @@
 
 <div id="toast" class="toast hidden"></div>
 
+<script src="/qrcode.js"></script>
 <script type="module" src="/app.js"></script>
 </body>
 </html>
