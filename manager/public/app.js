@@ -3032,6 +3032,12 @@ for (const name of ['kachat', 'desktop', 'nextcloud']) {
             const version = r.image ? 'image' : 'commit';
             if (r.neverBuilt) {
                 setUpdateStatus(notice, 'info', `${source} is at ${r.shortSha}. Nothing built here yet, so install it first.`);
+            } else if (r.builtUnknown) {
+                setUpdateStatus(
+                    notice,
+                    'available',
+                    `This is running an image from an earlier setup, so the panel cannot tell its version. Press Rebuild from this branch to move to the latest ${version} (${r.shortSha}) and start tracking updates.`,
+                );
             } else if (r.updateAvailable) {
                 setUpdateStatus(
                     notice,
@@ -5255,6 +5261,8 @@ $('bot-check').addEventListener('click', async () => {
         $('bot-update').disabled = !r.updateAvailable;
         if (r.neverBuilt) {
             setUpdateStatus(notice, 'info', `${r.repo}@${r.ref} is at ${r.shortSha}: "${r.message}". Nothing built yet, so install it first.`);
+        } else if (r.builtUnknown) {
+            setUpdateStatus(notice, 'available', `This is running an image from an earlier setup, so the panel cannot tell its version. Rebuild to move to the latest commit (${r.shortSha}) and start tracking updates.`);
         } else if (r.updateAvailable) {
             setUpdateStatus(notice, 'available', `Update available: ${r.shortSha}, "${r.message}". You are running ${String(r.builtSha).slice(0, 7)}.`);
         } else {

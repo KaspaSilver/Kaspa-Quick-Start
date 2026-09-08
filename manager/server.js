@@ -2153,14 +2153,22 @@ route('GET', /^\/api\/apps\/(kachat|desktop|nextcloud|bot)\/check$/, async (req,
     try {
         const upstream = await apps.checkUpstream(name, apps.loadAppsConfig());
         const built = apps.readBuildRecord(name);
+        // The panel records a commit only when it does the build itself, so an
+        // image brought in another way -- a migration, or an older panel -- has
+        // no record. With the container sitting right there that is not "never
+        // built": we simply cannot prove which commit it is, so the honest move
+        // is to offer a rebuild that both updates it and starts the tracking.
+        const installed = (await dockerctl.containerState(apps.APPS[name].container)).exists;
+        const builtUnknown = !built.sha && installed;
         sendJson(res, 200, {
             ...upstream,
             builtSha: built.sha,
             builtAt: built.builtAt,
+            builtUnknown,
             // No published releases upstream, so "up to date" means the running
             // image was built from the commit the branch currently points at.
-            updateAvailable: Boolean(built.sha) && built.sha !== upstream.latestSha,
-            neverBuilt: !built.sha,
+            updateAvailable: built.sha ? built.sha !== upstream.latestSha : installed,
+            neverBuilt: !built.sha && !installed,
         });
     } catch (err) {
         fail(res, 502, err.message);
