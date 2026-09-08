@@ -3963,23 +3963,15 @@ $('translate-save').addEventListener('click', async () => {
         error.textContent = 'Choose at least one language.';
         return;
     }
-    const button = $('translate-save');
-    button.disabled = true;
-    try {
-        const r = await api('/api/kachat/translate', { method: 'PUT', body: { languages: languages.join(',') } });
-        toast(
-            r.restarted
-                ? 'Saved. The engine is restarting to load them.'
-                : 'Saved. The engine loads them when you start it.',
-            'good',
-        );
-    } catch (e) {
-        error.hidden = false;
-        error.textContent = e.message;
-    } finally {
-        button.disabled = false;
-        setTimeout(() => loadTranslate().catch(() => {}), 1500);
-    }
+    // Saving restarts the engine to load the languages, downloading any it does
+    // not have, so it earns the streaming overlay rather than a toast.
+    await runAction({
+        key: null,
+        title: 'Updating translation languages',
+        note: 'The engine restarts to load them, downloading any it does not already have. That can take a few minutes.',
+        request: () => api('/api/kachat/translate', { method: 'PUT', body: { languages: languages.join(',') } }),
+    });
+    loadTranslate().catch(() => {});
 });
 
 let kachatTimer = null;

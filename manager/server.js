@@ -2106,7 +2106,13 @@ route('PUT', /^\/api\/kachat\/translate$/, async (req, res) => {
     // recreated. A stopped one picks it up when it is started, and is not
     // started here: saving a setting is not asking for anything to run.
     const engine = await lifecycle.status('translate');
-    if (!engine.running) return sendJson(res, 200, { ok: true, languages, restarted: false });
+    if (!engine.running)
+        return sendJson(res, 200, {
+            ok: true,
+            languages,
+            restarted: false,
+            message: 'Saved. The translation engine will load these the next time it starts.',
+        });
 
     const job = jobs.start('Reload the translation engine', async (onLine) => {
         onLine(`Loading: ${languages.split(',').join(', ')}.`);
