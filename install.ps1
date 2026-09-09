@@ -49,6 +49,25 @@ function Confirm-Step {
     return ($reply -eq '' -or $reply -match '^(y|yes)$')
 }
 
+# Runs a native command with the stop-on-error preference relaxed for the
+# duration of the call.
+#
+# Windows PowerShell turns anything a native program writes to *stderr* into a
+# terminating NativeCommandError while $ErrorActionPreference is 'Stop' -- and it
+# does this regardless of stream redirection, so `2>$null` and `*>$null` do NOT
+# suppress it. Docker on the WSL2 backend ("No blkio throttle.read_bps_device
+# support"), winget, tar and docker compose all write non-fatal progress and
+# warnings to stderr, none of which are failures. Relaxing the preference is the
+# only reliable way to let that through; the command's exit code ($LASTEXITCODE)
+# is what these callers actually test. The scriptblock still sees local
+# variables through PowerShell's normal call-stack scoping.
+function Invoke-Native {
+    param([Parameter(Mandatory)] [scriptblock] $Command)
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { & $Command } finally { $ErrorActionPreference = $prev }
+}
+
 # --------------------------------------------------------------- docker ----
 
 # winget installs Docker into a new PATH entry, but this PowerShell session was
@@ -76,13 +95,9 @@ function Update-SessionPath {
 
 function Test-Docker {
     if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { return $false }
-    # *> $null, not 2>&1 | Out-Null: Docker on the WSL2 backend prints harmless
-    # warnings to stderr ("No blkio throttle.read_bps_device support"), and
-    # merging stderr into the pipeline turns the first such line into a
-    # terminating NativeCommandError under $ErrorActionPreference = 'Stop',
-    # aborting the whole install over a warning. Redirecting every stream to
-    # $null discards it as a stream; the exit code is what we actually test.
-    docker info *> $null
+    # See Invoke-Native: docker info warns on stderr, which would otherwise abort
+    # the whole install under 'Stop'. The exit code is what we actually test.
+    Invoke-Native { docker info *> $null }
     return ($LASTEXITCODE -eq 0)
 }
 
@@ -106,8 +121,12 @@ function Install-Docker {
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
         Die 'winget is not available. Install Docker Desktop from https://www.docker.com/products/docker-desktop/ and re-run this script.'
     }
-    winget install --exact --id Docker.DockerDesktop --silent `
-        --accept-package-agreements --accept-source-agreements
+    # Via Invoke-Native: winget streams progress to stderr, which would abort
+    # under 'Stop' before it even finished. The exit code is read below.
+    Invoke-Native {
+        winget install --exact --id Docker.DockerDesktop --silent `
+            --accept-package-agreements --accept-source-agreements
+    }
     # winget returns a non-zero code when a reboot is pending; that is not fatal.
     if ($LASTEXITCODE -ne 0) { Warn "winget exited with $LASTEXITCODE - continuing." }
 
@@ -139,7 +158,7 @@ function Initialize-Docker {
         }
     }
 
-    docker compose version *> $null  # *> $null, not 2>&1: see Test-Docker
+    Invoke-Native { docker compose version *> $null }  # see Invoke-Native
     if ($LASTEXITCODE -ne 0) { Die "'docker compose' (v2) is missing. Update Docker Desktop." }
     Ok 'docker compose is available'
 }
@@ -156,7 +175,10 @@ function Invoke-Compose {
     $files = @('-f', (Join-Path $StackDir 'docker-compose.yml'))
     $ports = Join-Path $StackDir 'conf\ports.yml'
     if (Test-Path $ports) { $files += @('-f', $ports) }
-    & docker compose @files --project-directory $StackDir @ComposeArgs
+    # docker compose writes all its build and pull progress to stderr, which
+    # under 'Stop' would abort the install mid-build. Invoke-Native relaxes that
+    # for the call; the exit code below is the real success test.
+    Invoke-Native { & docker compose @files --project-directory $StackDir @ComposeArgs }
     if ($LASTEXITCODE -ne 0) { throw "docker compose $($ComposeArgs -join ' ') failed with exit code $LASTEXITCODE" }
 }
 
@@ -181,8 +203,9 @@ function Get-Stack {
         New-Item -ItemType Directory -Path $tmp -Force | Out-Null
         $archive = Join-Path $tmp 'stack.tar.gz'
         Invoke-WebRequest -Uri "https://codeload.github.com/$StackRepo/tar.gz/$StackRef" -OutFile $archive -UseBasicParsing
-        # bsdtar ships with Windows 10 1803 and later.
-        & tar -xzf $archive -C $tmp
+        # bsdtar ships with Windows 10 1803 and later. Via Invoke-Native because
+        # tar reports through stderr, which would abort under 'Stop'.
+        Invoke-Native { & tar -xzf $archive -C $tmp }
         if ($LASTEXITCODE -ne 0) { Die 'Could not unpack the downloaded archive.' }
         # GitHub wraps the archive in a <repo>-<ref>\ directory.
         $found = Get-ChildItem -Path $tmp -Directory |
@@ -353,7 +376,9 @@ function Write-PasswordHash {
 }
 
 if ($authState -eq 'set') {
-    $hash = $Password | & docker run --rm -i $ManagerImage node lib/hash-password.js
+    # Via Invoke-Native (and 2>$null): docker run emits the WSL2 stderr warning
+    # here too, which would abort under 'Stop'. stdout is the hash we capture.
+    $hash = Invoke-Native { $Password | & docker run --rm -i $ManagerImage node lib/hash-password.js 2>$null }
     if ($LASTEXITCODE -ne 0 -or -not $hash) { Die 'Could not hash the admin password.' }
     Write-PasswordHash $hash
 } elseif ($authState -eq 'cleared') {
@@ -423,7 +448,9 @@ Write-Host ''
 
 Say 'First lines from the control panel'
 Start-Sleep -Seconds 3
-& docker logs --tail 25 kaspa-node-manager
+# Via Invoke-Native: docker logs writes to stderr, and a throw here would end the
+# install on an error even though everything succeeded.
+Invoke-Native { & docker logs --tail 25 kaspa-node-manager }
 Write-Host ''
 Write-Host 'Follow along with: docker logs -f kaspa-node-manager' -ForegroundColor DarkGray
 Write-Host 'And the node, once you have started it: docker logs -f kaspa-node-kaspad' -ForegroundColor DarkGray
