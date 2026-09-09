@@ -80,8 +80,10 @@ body {
 
 .login {
     min-height: 100vh;
+    min-height: 100dvh; /* tracks the visible area as mobile browser chrome collapses */
     display: grid;
     place-items: center;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
     padding: 24px;
 }
 
@@ -100,6 +102,7 @@ body {
 #app {
     display: flex;
     min-height: 100vh;
+    min-height: 100dvh;
 }
 
 /* --- sidebar --- */
@@ -123,6 +126,7 @@ body {
     position: sticky;
     top: 0;
     height: 100vh;
+    height: 100dvh;
     z-index: 30;
 }
 /* Width is intentionally not transitioned: animating the width of a flex item
@@ -308,7 +312,12 @@ body {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 0 20px;
+    /* Honour the notch / Dynamic Island up top and the notch in landscape when
+       installed as a standalone app. max()/env() collapse to the plain 20px on
+       a desktop, where the insets are zero, so nothing changes there. The bar
+       is sticky at top:0, so its panel background fills the island area while
+       the title and menu button sit safely below it. */
+    padding: env(safe-area-inset-top) max(20px, env(safe-area-inset-right)) 0 max(20px, env(safe-area-inset-left));
     min-height: 56px;
     background: var(--panel);
     border-bottom: 1px solid var(--line);
@@ -343,6 +352,10 @@ body {
         transform: translateX(-100%);
         transition: transform 0.2s ease;
         box-shadow: 0 0 40px rgb(0 0 0 / 0.4);
+        /* As a full-height overlay the drawer owns the screen edges, so its head
+           must clear the Dynamic Island and its foot the home indicator. */
+        padding-top: env(safe-area-inset-top);
+        padding-bottom: env(safe-area-inset-bottom);
     }
     .sidebar.open { transform: translateX(0); }
     /* The drawer is always full width; collapsing is a wide-screen idea. */
@@ -373,7 +386,10 @@ body {
    wider than every other tab. With this, .scroll-x scrolls the table inside
    itself the way it was always meant to. */
 main {
-    padding: 20px;
+    /* Top 20px as before; the sides and bottom grow to clear the notch (in
+       landscape) and the home indicator when installed as a standalone app.
+       On a desktop every inset is zero, so this is a plain 20px all round. */
+    padding: 20px max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
     /* width:100% matters as much as the cap. .content is a column flex box, and
        `margin: 0 auto` cancels the default stretch, so without a definite width
        main sizes to its own content: one wide table pushed the whole page out
@@ -595,8 +611,12 @@ dialog {
     border: 1px solid var(--line);
     border-radius: var(--radius);
     padding: 22px;
+    /* Clear the home indicator when a wizard opens in the installed app. */
+    padding-bottom: max(22px, env(safe-area-inset-bottom));
     width: min(560px, calc(100vw - 32px));
-    max-height: 90vh;
+    /* Kept within the safe area on a phone; still 90vh on a desktop where the
+       insets are zero. */
+    max-height: min(90vh, calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px));
 }
 dialog.wide { width: min(680px, calc(100vw - 32px)); }
 dialog::backdrop { background: rgb(0 0 0 / 0.6); }
@@ -2219,3 +2239,19 @@ button.primary:active:not(:disabled) { transform: translateY(1px); }
 .bot-wallet-key { word-break: break-all; font-family: ui-monospace, monospace; font-size: 12px; }
 .bot-manual-key { margin: 8px 0; }
 .bot-manual-key summary { cursor: pointer; color: var(--muted); }
+
+/* ---------------------------------------------- installed / touch polish */
+
+/* No grey tap-flash on controls when the panel is driven by touch. */
+body { -webkit-tap-highlight-color: transparent; }
+
+@media (max-width: 860px) {
+    /* iOS zooms the whole page in when a focused field's text is smaller than
+       16px. Bumping form controls to 16px on small screens stops that jarring
+       jump; the compact desktop sizing set earlier is untouched. This block is
+       last in the file, so it wins on source order without needing !important. */
+    input, select, textarea { font-size: 16px; }
+
+    /* A full 44px touch target for the menu button (the platform minimum). */
+    #sidebar-open { min-width: 44px; min-height: 44px; justify-content: center; }
+}
