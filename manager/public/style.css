@@ -723,6 +723,12 @@ table.instances td:last-child { width: 40px; text-align: right; }
 /* Panels within one sidebar destination (Kaspad: Overview / Settings / Log). */
 .subnav {
     display: flex;
+    /* Wrap rather than run off the edge: a tab with several sub-tabs (Mining
+       especially) overflowed a phone screen, so the last one -- Uninstall --
+       sat past the right edge and needed a sideways scroll to reach. Wrapping
+       keeps every sub-tab on screen; on a wide screen they still fit one line,
+       so nothing changes there. */
+    flex-wrap: wrap;
     gap: 2px;
     border-bottom: 1px solid var(--line);
     margin-bottom: 16px;
