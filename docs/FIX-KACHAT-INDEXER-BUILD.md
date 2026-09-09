@@ -170,7 +170,7 @@ dependency tree, so allow a long first run.
 
 ## Where this is consumed
 
-The Quick-Start-Kaspa panel builds this image from
+The Kaspa-Quick-Start panel builds this image from
 `KaspaSilver/KaChat-Indexer@main` whenever KaChat is switched on. The panel's
 KaChat screens are already built and talk to the indexer's admin API on port
 3081 through a proxy; they are waiting on nothing but a working image. Once the

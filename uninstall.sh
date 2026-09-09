@@ -2,7 +2,7 @@
 #
 # Removes everything install.sh created.
 #
-#   curl -fsSL https://raw.githubusercontent.com/KaspaSilver/Quick-Start-Kaspa/main/uninstall.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/KaspaSilver/Kaspa-Quick-Start/main/uninstall.sh | bash
 #
 # This removes what the installer added: the containers, images, the chain-data
 # volume, the network and the install directory.

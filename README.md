@@ -26,13 +26,13 @@ tracks releases in that same repository.
 ### Linux / macOS
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/KaspaSilver/Quick-Start-Kaspa/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/KaspaSilver/Kaspa-Quick-Start/main/install.sh | bash
 ```
 
 ### Windows (PowerShell)
 
 ```powershell
-irm https://raw.githubusercontent.com/KaspaSilver/Quick-Start-Kaspa/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/KaspaSilver/Kaspa-Quick-Start/main/install.ps1 | iex
 ```
 
 When it finishes it prints the panel URL, `http://localhost:8420`. There is no
@@ -60,13 +60,13 @@ Windows runs PowerShell. There is no single line that both understand.
 **Linux / macOS**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/KaspaSilver/Quick-Start-Kaspa/main/uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/KaspaSilver/Kaspa-Quick-Start/main/uninstall.sh | bash
 ```
 
 **Windows (PowerShell)**
 
 ```powershell
-irm https://raw.githubusercontent.com/KaspaSilver/Quick-Start-Kaspa/main/uninstall.ps1 | iex
+irm https://raw.githubusercontent.com/KaspaSilver/Kaspa-Quick-Start/main/uninstall.ps1 | iex
 ```
 
 Both do exactly the same thing and take the same options. Containers, images,
