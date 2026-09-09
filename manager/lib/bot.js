@@ -36,11 +36,12 @@ const REQUIRED = ['MINING_ADDRESS', 'PRIVATE_KEY_HEX', 'RECEIVER_ALIAS', 'RECEIV
  * and the watcher unescapes it. That also means a message can be written on
  * several lines here without the file format having an opinion about it.
  */
-export const DEFAULT_MESSAGE = 'Reward: {reward} KAS\nBalance: {balance} KAS';
+export const DEFAULT_MESSAGE = 'Reward: {reward} KAS\nBalance: {balance} KAS\nHashrate: {hashrate}';
 
 export const PLACEHOLDERS = {
     reward: 'the block reward, in KAS',
     balance: "the mining address's balance afterwards, in KAS",
+    hashrate: 'the total hashrate of your connected miners',
     txid: 'the transaction that paid the reward',
     address: 'the mining address being watched',
     network: 'mainnet or testnet-10',
@@ -168,6 +169,7 @@ export function renderMessage(message, sample = {}) {
     const values = {
         reward: '112.50000000',
         balance: '1043.21000000',
+        hashrate: '4.22 TH/s',
         txid: '1943b508e4d1c0f9a7b6e5d4c3b2a1908f7e6d5c4b3a29180f1e2d3c4b5a6978',
         address: 'kaspa:qrxmpl…',
         network: 'mainnet',
