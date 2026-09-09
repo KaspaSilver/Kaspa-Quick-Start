@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { docker } from './dockerctl.js';
-import { STACK_HOST, STACK_LOCAL } from './paths.js';
+import { COMPOSE_FILE, CONF_DIR, PORTS_OVERRIDE, STACK_HOST, STACK_LOCAL } from './paths.js';
 
 /*
  * Two jobs that cannot run where every other job runs.
@@ -26,7 +26,6 @@ import { STACK_HOST, STACK_LOCAL } from './paths.js';
 // exactly the kind of thing that works until the day an error message contains
 // a quote. One key per line cannot be malformed.
 const STATUS_LOCAL = path.join(STACK_LOCAL, 'conf', 'last-update.txt');
-const STATUS_HOST = `${STACK_HOST}/conf/last-update.txt`;
 
 /** Reads back what the detached updater recorded, once the panel is up again. */
 export function lastUpdate() {
@@ -52,28 +51,31 @@ export function lastUpdate() {
 /**
  * Launches a detached container that survives this one being replaced.
  * `--rm` so a finished run leaves nothing behind to clean up.
+ *
+ * The stack is mounted at the fixed Linux path /stack -- the same place the
+ * running panel mounts it -- rather than at its host path. Two reasons, both
+ * about working on every OS: `--mount` (not `-v`) with an explicit source keeps
+ * a Windows host path (C:\Users\...) from being split on its drive colon, and a
+ * Linux target (/stack) is valid inside this Linux sidecar where a Windows path
+ * is not. Compose reads the files and streams the (relative) build context from
+ * /stack, while the manager's own volume stays the absolute ${STACK_DIR} from
+ * .env, which the daemon resolves -- so the result is identical on Linux, Mac
+ * and Windows.
  */
-async function detach({ name, image, script, mounts = [] }) {
+async function detach({ name, image, script, bind }) {
     // A run that died mid-way would still hold the name.
     await docker(['rm', '-f', name], { timeoutMs: 30_000 }).catch(() => {});
 
-    const { stdout } = await docker(
-        [
-            'run',
-            '--detach',
-            '--rm',
-            '--name',
-            name,
-            '-v',
-            '/var/run/docker.sock:/var/run/docker.sock',
-            ...mounts.flatMap((m) => ['-v', m]),
-            image,
-            'sh',
-            '-c',
-            script,
-        ],
-        { timeoutMs: 60_000 },
-    );
+    const args = ['run', '--detach', '--rm', '--name', name, '-v', '/var/run/docker.sock:/var/run/docker.sock'];
+    if (bind) {
+        // --mount, not -v: an explicit source= keeps a Windows host path
+        // (C:\Users\...) from being split on its drive colon the way -v does,
+        // and hands it to the daemon whole. The target is always a Linux path.
+        args.push('--mount', `type=bind,source=${bind.source},target=${bind.target}`);
+    }
+    args.push(image, 'sh', '-c', script);
+
+    const { stdout } = await docker(args, { timeoutMs: 60_000 });
     return stdout.trim().slice(0, 12);
 }
 
@@ -82,14 +84,15 @@ async function detach({ name, image, script, mounts = [] }) {
 /**
  * Recreates the panel's own container.
  *
- * The admin password reaches the panel as an environment variable, read once at
- * startup, so setting one from inside the panel means replacing the container
- * that is serving the request. It cannot do that itself -- the command would die
- * with the process running it -- so a detached sidecar does it a moment later,
- * from this same image, which already has compose in it.
+ * Used when a setting only takes effect at container creation -- the panel's
+ * own port (GUI_PORT), which is a compose port mapping fixed when the container
+ * is made. The panel cannot recreate the container serving the request itself
+ * -- the command would die with the process running it -- so a detached sidecar
+ * does it a moment later, from this same image, which already has compose in
+ * it. (The admin password no longer needs this: auth reads it live from .env.)
  */
 export async function restartManager() {
-    const compose = `docker compose ${await composeFileArgs()} --project-directory "${STACK_HOST}"`;
+    const compose = `docker compose ${composeFileArgs()} --project-directory "${STACK_LOCAL}"`;
     const script = `
 set -u
 # Long enough for the response to this request to have been written.
@@ -100,7 +103,7 @@ ${compose} up -d --force-recreate manager
         name: 'kaspa-node-panel-restart',
         image: 'kaspa-one-click/manager:1',
         script,
-        mounts: [`${STACK_HOST}:${STACK_HOST}`],
+        bind: { source: STACK_HOST, target: STACK_LOCAL },
     });
     return { started: true, container };
 }
@@ -196,35 +199,25 @@ export async function compareToInstalled({ repo, base, head }) {
 }
 
 /**
- * The exact `-f` list the running project was created with, read off the
- * container's own compose labels.
+ * The `-f` list for the detached container, as paths under /stack.
  *
- * Rebuilding with only docker-compose.yml looks fine and is not: the published
- * port overrides live in conf/*.yml, so a manager recreated without them comes
- * back with no host port mapping, which means the panel that started the update
- * never reappears. Any local override in play (a dev.yml with bind mounts, say)
- * would be silently dropped the same way. The labels are what compose itself
- * used, and they are host paths already, which is what the detached container
- * needs.
+ * It is the same set the panel uses for every other compose command, built the
+ * same way. Rebuilding with only docker-compose.yml looks fine and is not: the
+ * published port overrides live in conf/*.yml, so a manager recreated without
+ * them comes back with no host port mapping, and the panel that started the
+ * update never reappears. These are /stack paths (STACK_LOCAL), not host paths,
+ * because the sidecar mounts the stack there -- which is what makes this work
+ * on Docker Desktop, where a Windows host path is not a usable path inside a
+ * Linux container.
  */
-async function composeFileArgs() {
-    try {
-        const { stdout } = await docker([
-            'inspect',
-            '--format',
-            '{{index .Config.Labels "com.docker.compose.project.config_files"}}',
-            'kaspa-node-manager',
-        ]);
-        const files = stdout
-            .trim()
-            .split(',')
-            .map((f) => f.trim())
-            .filter(Boolean);
-        if (files.length) return files.map((f) => `-f "${f}"`).join(' ');
-    } catch {
-        /* fall through to the base file */
+function composeFileArgs() {
+    const files = [COMPOSE_FILE];
+    if (fs.existsSync(PORTS_OVERRIDE)) files.push(PORTS_OVERRIDE);
+    for (const name of ['bridge-ports.yml', 'apps-ports.yml']) {
+        const override = path.join(CONF_DIR, name);
+        if (fs.existsSync(override)) files.push(override);
     }
-    return `-f "${STACK_HOST}/docker-compose.yml"`;
+    return files.map((f) => `-f "${f}"`).join(' ');
 }
 
 export async function updatePanel({ repo = 'KaspaSilver/Kaspa-Quick-Start', ref = 'main' } = {}) {
@@ -236,11 +229,11 @@ export async function updatePanel({ repo = 'KaspaSilver/Kaspa-Quick-Start', ref 
     const head = await latestCommit({ repo, ref }).catch(() => null);
     const download = head?.sha || ref;
 
-    const compose = `docker compose ${await composeFileArgs()} --project-directory "${STACK_HOST}"`;
+    const compose = `docker compose ${composeFileArgs()} --project-directory "${STACK_LOCAL}"`;
 
     const script = `
 set -u
-S=${STATUS_HOST}
+S=${STATUS_LOCAL}
 : > "$S"
 echo "kind=panel-update" >> "$S"
 echo "repo=${repo}" >> "$S"
@@ -275,8 +268,8 @@ tar -xzf "$arc" -C "$tmp" --strip-components=1 || fail "The downloaded archive c
 step "Replacing the panel files"
 for item in ${CODE_ITEMS.join(' ')}; do
   [ -e "$tmp/$item" ] || continue
-  rm -rf "${STACK_HOST}/$item"
-  cp -a "$tmp/$item" "${STACK_HOST}/" || fail "Could not write $item."
+  rm -rf "${STACK_LOCAL}/$item"
+  cp -a "$tmp/$item" "${STACK_LOCAL}/" || fail "Could not write $item."
 done
 rm -rf "$tmp"
 
@@ -298,7 +291,7 @@ ${compose} up -d --force-recreate manager || {
         name: 'kaspa-node-panel-update',
         image: 'kaspa-one-click/manager:1',
         script,
-        mounts: [`${STACK_HOST}:${STACK_HOST}`],
+        bind: { source: STACK_HOST, target: STACK_LOCAL },
     });
     return { started: true, container, repo, ref };
 }
@@ -430,7 +423,7 @@ echo "Done. Docker itself was left installed."
         name: 'kaspa-node-teardown',
         image: 'docker:cli',
         script,
-        mounts: [`${parent}:/host`],
+        bind: { source: parent, target: '/host' },
     });
     return { started: true, container, removes: STACK_HOST };
 }
