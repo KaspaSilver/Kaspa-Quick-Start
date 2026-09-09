@@ -5212,7 +5212,53 @@ async function loadBot() {
         ? `Built from ${String(botState.build.sha).slice(0, 7)} on ${new Date(botState.build.builtAt).toLocaleString()}`
         : 'Not built yet.';
 
+    renderBotHistory(botState.history, app.network);
+
     loadBotWallet(Boolean(container?.installed)).catch(() => {});
+}
+
+/**
+ * The list of what the bot has actually sent, newest first, from the history
+ * file the watcher appends to. A block notification shows its reward and the
+ * hashrate at the time; a one-off message (a hashrate-drop alert, a test) shows
+ * its text on hover. Each transaction links to the explorer for the network the
+ * bot is on.
+ */
+function renderBotHistory(history, network) {
+    const items = Array.isArray(history) ? history : [];
+    const wrap = $('bot-history-wrap');
+    const empty = $('bot-history-empty');
+    if (!items.length) {
+        wrap.hidden = true;
+        empty.hidden = false;
+        $('bot-history-body').innerHTML = '';
+        return;
+    }
+    empty.hidden = true;
+    wrap.hidden = false;
+    const host = network === 'testnet-10' ? 'explorer-tn10.kaspa.org' : 'explorer.kaspa.org';
+    $('bot-history-body').innerHTML = items
+        .map((h) => {
+            const when = h.ts ? new Date(h.ts * 1000).toLocaleString() : '–';
+            const isBlock = h.kind !== 'message';
+            const reward = isBlock && h.kas != null ? `${trimKas(Number(h.kas))} KAS` : '–';
+            const hash = isBlock && h.hashrate ? escapeHtml(h.hashrate) : '–';
+            const what = isBlock
+                ? 'Block found'
+                : `<span title="${escapeHtml(h.text || '')}">Message</span>`;
+            const txid = String(h.txid || '');
+            const tx = txid
+                ? `<a class="trunc" href="https://${host}/txs/${encodeURIComponent(txid)}" target="_blank" rel="noopener" title="${escapeHtml(txid)}">${escapeHtml(txid)}</a>`
+                : '–';
+            return `<tr>
+      <td class="name">${escapeHtml(when)}</td>
+      <td class="name">${what}</td>
+      <td>${reward}</td>
+      <td>${hash}</td>
+      <td>${tx}</td>
+    </tr>`;
+        })
+        .join('');
 }
 
 // --- bot sending wallet ----------------------------------------------------

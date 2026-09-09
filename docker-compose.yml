@@ -376,6 +376,13 @@ services:
     env_file:
       - path: ./conf/bot/bot.env
         required: false
+    # A small writable state dir, apart from the credential files above. The bot
+    # appends every sent notification to state/notifications.jsonl here, which
+    # the panel reads for its "Notifications sent" list. It lives outside the
+    # container so it survives the recreate the panel does on every settings
+    # save. A daemon-resolved host path, so ${STACK_DIR}, not a relative path.
+    volumes:
+      - ${STACK_DIR}/conf/bot/state:/state
     networks:
       - kaspa
     logging:

@@ -2149,6 +2149,7 @@ route('GET', /^\/api\/bot$/, async (req, res) => {
         blockers: apps.appBlockers('bot', cfg, loadNodeConfig()),
         node: { network: loadNodeConfig().network },
         build: apps.readBuildRecord('bot'),
+        history: bot.readHistory(50),
     });
 });
 

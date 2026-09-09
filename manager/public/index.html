@@ -1749,8 +1749,8 @@
               <div><dt>Network</dt><dd id="bot-shows-network">–</dd></div>
             </dl>
             <p class="hint">
-              Its own log is the record of what it has sent. It is under All
-              logs, as <code>kaspa-node-kachat-bot</code>.
+              The full log is under All logs, as
+              <code>kaspa-node-kachat-bot</code>.
             </p>
           </article>
 
@@ -1763,6 +1763,22 @@
                 address below.</li>
               <li>The sending wallet needs a little KAS for fees.</li>
             </ul>
+          </article>
+
+          <article class="card span2">
+            <h3>Notifications sent</h3>
+            <p class="muted" id="bot-history-empty">
+              Nothing sent yet. Each block notification and each test message
+              will appear here, newest first.
+            </p>
+            <div class="scroll-x scroll-cap" id="bot-history-wrap" hidden>
+              <table class="blocks">
+                <thead>
+                  <tr><th>When</th><th>What</th><th>Reward</th><th>Hashrate</th><th>Transaction</th></tr>
+                </thead>
+                <tbody id="bot-history-body"></tbody>
+              </table>
+            </div>
           </article>
         </div>
       </div>

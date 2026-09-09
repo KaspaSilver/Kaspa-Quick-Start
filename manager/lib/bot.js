@@ -21,6 +21,35 @@ import { CONF_DIR } from './paths.js';
  */
 export const BOT_DIR = path.join(CONF_DIR, 'bot');
 export const ENV_FILE = path.join(BOT_DIR, 'bot.env');
+// Written by the watcher (mounted at /state), one JSON object per line. The
+// panel only ever reads it.
+export const HISTORY_FILE = path.join(BOT_DIR, 'state', 'notifications.jsonl');
+
+/**
+ * The most recent notifications the bot has sent, newest first. Each line is a
+ * self-contained JSON object; a malformed one (a half-written final line, say)
+ * is skipped rather than allowed to break the list. Absent file -> empty, which
+ * is the normal state before the first block is found.
+ */
+export function readHistory(limit = 50) {
+    let lines;
+    try {
+        lines = fs.readFileSync(HISTORY_FILE, 'utf8').split('\n');
+    } catch {
+        return [];
+    }
+    const out = [];
+    for (let i = lines.length - 1; i >= 0 && out.length < limit; i--) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        try {
+            out.push(JSON.parse(line));
+        } catch {
+            /* skip a torn or partial line */
+        }
+    }
+    return out;
+}
 
 /** Every key the watcher reads, and which ones it refuses to start without. */
 const REQUIRED = ['MINING_ADDRESS', 'PRIVATE_KEY_HEX', 'RECEIVER_ALIAS', 'RECEIVER_PUBKEY_X'];
