@@ -7229,3 +7229,14 @@ $('global-teardown-btn').addEventListener('click', async () => {
     // refused to launch the container that does the removing.
     if (!job?.ok) $('global-teardown-btn').disabled = false;
 });
+
+// --- installable web app ---------------------------------------------------
+// Register the network-first service worker (see public/sw.js) so the panel can
+// be installed to the taskbar / home screen. Only works on a secure origin
+// (https, or localhost), so a plain-http LAN visit simply skips it. Failure is
+// never fatal to the panel.
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+    });
+}
