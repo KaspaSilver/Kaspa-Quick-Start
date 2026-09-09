@@ -5595,16 +5595,26 @@ async function loadGift() {
     setNavHealth('gift', !running ? (config.enabled ? 'bad' : 'off') : status ? 'ok' : 'warn');
 
     $('gift-mode').textContent = status
-        ? status.mode === 'live'
-            ? 'sending for real'
-            : 'recording only, sending nothing'
-        : config.mode === 'live'
-          ? 'sending for real (not running)'
-          : 'recording only (not running)';
+        ? 'on — paying valid claims'
+        : config.enabled
+          ? 'starting…'
+          : 'off — paying nothing';
     $('gift-amount').textContent = `${config.amountKas ?? 3} KAS`;
     $('gift-today').textContent = status ? `${status.claims.paidTodayKas} of ${status.caps.dailyKas} KAS` : '–';
-    // The pool is the wallet's balance, which only exists once payouts do.
-    $('gift-pool').textContent = status?.pool ? `${status.pool.balanceKas} KAS` : 'no wallet yet';
+    // Pool = the sending wallet's balance, from the wallet endpoint (the service
+    // status does not carry it). Async so a slow node never holds up the page.
+    $('gift-pool').textContent = '…';
+    api('/api/gift/wallet')
+        .then((w) => {
+            $('gift-pool').textContent = !w.hasKey
+                ? 'no wallet yet'
+                : w.balanceKas != null
+                  ? `${fmtKas(w.balanceKas)} KAS`
+                  : 'unknown (is the node running?)';
+        })
+        .catch(() => {
+            $('gift-pool').textContent = '–';
+        });
     $('gift-apple-count').textContent = status ? status.claims.apple : '–';
     $('gift-android-count').textContent = status ? status.claims.android : '–';
     renderGiftClaims(status?.recent, status?.network);
@@ -5612,7 +5622,6 @@ async function loadGift() {
     $('gift-set-amount').value = config.amountKas ?? 3;
     $('gift-set-daily').value = config.dailyCapKas ?? 300;
     $('gift-set-floor').value = config.poolFloorKas ?? 50;
-    $('gift-set-live').checked = config.mode === 'live';
     $('gift-ref').value = config.ref ?? 'main';
     $('gift-repo').textContent = giftState.repo ?? 'KaspaSilver/KaChat-Gift-Service';
 
@@ -5624,12 +5633,10 @@ async function loadGift() {
     // The one-click import only makes sense when both are here to import from.
     $('gift-import-card').hidden = !giftState.indexerPresent;
     $('gift-overview-note').textContent = status
-        ? status.mode === 'live'
-            ? 'Claims are being paid.'
-            : 'Claims are being checked and recorded, and nothing is being sent. Tick the box below when you have watched enough of them.'
+        ? 'Switched on: a valid claim is paid for real. Switch it off to stop paying.'
         : config.enabled
           ? 'Switched on but not answering yet. Give it a moment, or look at the log.'
-          : 'Switched off. Set up at least one phone, then start it from the switch beside the sidebar entry.';
+          : 'Switched off, so nothing is paid. Set up at least one phone and fund the wallet, then start it from the switch beside the sidebar entry.';
 }
 
 /**
@@ -5841,16 +5848,6 @@ $('gift-import-indexer').addEventListener('click', async () => {
 });
 
 $('gift-save-settings').addEventListener('click', async () => {
-    const live = $('gift-set-live').checked;
-    if (live && giftState.config?.mode !== 'live') {
-        const ok = confirm(
-            'Send real Kaspa from now on?\n\n' +
-                'Until now claims have been checked and recorded without paying. From here, a claim that passes ' +
-                'Apple or Google is paid from the wallet, up to the daily ceiling.',
-        );
-        if (!ok) return;
-    }
-
     try {
         await api('/api/gift/settings', {
             method: 'POST',
@@ -5858,7 +5855,6 @@ $('gift-save-settings').addEventListener('click', async () => {
                 amountKas: Number($('gift-set-amount').value),
                 dailyCapKas: Number($('gift-set-daily').value),
                 poolFloorKas: Number($('gift-set-floor').value),
-                mode: live ? 'live' : 'record-only',
             },
         });
         kResult('gift-settings-result', 'Saved. The service picks these up when it next starts.', false);

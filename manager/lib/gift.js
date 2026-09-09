@@ -85,7 +85,6 @@ export function writeConfig(giftCfg, { network = 'mainnet', kaspadPort = 18110 }
     const config = {
         network,
         amountKas: Number(giftCfg.amountKas ?? 3),
-        mode: giftCfg.mode === 'live' ? 'live' : 'record-only',
         // The wallet lives in its own file; injected here because gift.json is
         // what the service reads. Empty when none has been created.
         wallet: { privateKeyHex: walletKey() },

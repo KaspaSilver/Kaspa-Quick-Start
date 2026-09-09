@@ -1996,7 +1996,7 @@
               </p>
             </div>
             <dl class="kv">
-              <div><dt>Mode</dt><dd id="gift-mode">–</dd></div>
+              <div><dt>Status</dt><dd id="gift-mode">–</dd></div>
               <div><dt>Gift</dt><dd id="gift-amount">–</dd></div>
               <div><dt>Given today</dt><dd id="gift-today">–</dd></div>
               <div><dt>Pool left</dt><dd id="gift-pool">–</dd></div>
@@ -2040,10 +2040,11 @@
               <label class="inline">Most per day <input type="number" id="gift-set-daily" min="0" size="6"> KAS</label>
               <label class="inline">Stop below <input type="number" id="gift-set-floor" min="0" size="6"> KAS</label>
             </div>
-            <label class="check" title="Until this is ticked, claims are checked and recorded but nothing is sent. It is the safe way to watch real traffic before any money moves.">
-              <input type="checkbox" id="gift-set-live"> Actually send the Kaspa
-              <span class="pill warn">spends money</span>
-            </label>
+            <p class="hint">
+              While the gift service is switched on it pays a valid claim for
+              real. To stop paying, switch it off from the toggle beside the
+              sidebar entry.
+            </p>
             <div class="row">
               <button id="gift-save-settings" class="primary">Save limits</button>
             </div>

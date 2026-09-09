@@ -3062,12 +3062,10 @@ route('POST', /^\/api\/gift\/settings$/, async (req, res) => {
     g.amountKas = number(body.amountKas, g.amountKas ?? 3, 0.00000001);
     g.dailyCapKas = number(body.dailyCapKas, g.dailyCapKas ?? 300, 0);
     g.poolFloorKas = number(body.poolFloorKas, g.poolFloorKas ?? 50, 0);
-    // Going live is a decision, so it is only ever taken from an explicit value.
-    g.mode = body.mode === 'live' ? 'live' : 'record-only';
 
     apps.saveAppsConfig(appsCfg);
     const written = writeGiftConfig();
-    sendJson(res, 200, { ok: true, config: g, service: { mode: written.mode, amountKas: written.amountKas } });
+    sendJson(res, 200, { ok: true, config: g, service: { amountKas: written.amountKas } });
 });
 
 // -------------------------------------------------------------------- push --
