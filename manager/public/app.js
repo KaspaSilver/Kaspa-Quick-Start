@@ -218,7 +218,6 @@ function selectTab(name) {
     // Read on arrival rather than polled: nothing on it changes by itself.
     if (name === 'global') loadGlobal().catch(() => {});
     if (name === 'gift') loadGift().catch(() => {});
-    if (name === 'gift-wallet') loadGiftWallet().catch(() => {});
     if (name === 'bot') loadBot().catch(() => {});
     if (name === 'push') loadPush().catch(() => {});
     // On the drawer layout, picking a destination should get out of the way.
@@ -292,6 +291,11 @@ function selectSubtab(section, name) {
     if (name === 'public-howto') loadGoPublic().catch(() => {});
     // The ROI calculator seeds itself from the connected miners on open.
     if (name === 'mining-roi') loadRoi().catch(() => {});
+    // The gift sending-wallet card reads its address and balance on open. This
+    // is a subtab, so the hook belongs here, not in selectTab -- which never
+    // sees the name "gift-wallet" and so never ran it, leaving the card blank
+    // until the Refresh button called it by hand.
+    if (name === 'gift-wallet') loadGiftWallet().catch(() => {});
     // A KaChat panel loads when it is opened rather than all of them upfront.
     if (name.startsWith('kachat-')) refreshKachatPanel();
     // Its own call: refreshKachatPanel gives up when the indexer is not
