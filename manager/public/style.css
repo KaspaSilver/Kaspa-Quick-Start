@@ -417,7 +417,13 @@ main {
 .span2 { grid-column: span 2; }
 
 @media (max-width: 820px) {
-    .grid { grid-template-columns: 1fr; }
+    /* minmax(0, 1fr), not a bare 1fr: a bare 1fr track is minmax(auto, 1fr),
+       whose minimum is the widest content's min-content, so a single card that
+       holds something wide (a table, a long unbreakable string) cannot shrink
+       and pushes the whole page past the screen -- which on a phone shows as
+       having to zoom out. minmax(0, ...) lets the column shrink to the screen
+       and the content wrap or scroll within, the same as the desktop grid. */
+    .grid { grid-template-columns: minmax(0, 1fr); }
     .span2 { grid-column: span 1; }
 }
 
@@ -2303,4 +2309,15 @@ body { -webkit-tap-highlight-color: transparent; }
     /* Long addresses and any inline URL break rather than push the row wide. */
     table.proxies a,
     .notice code { overflow-wrap: anywhere; }
+}
+
+/* ---- phone: never let a screen force a horizontal zoom-out -------------- */
+/* A belt to the minmax(0, 1fr) braces above. Genuinely wide content already
+   wraps (text, addresses) or scrolls in its own .scroll-x box, so this clips
+   nothing in normal use -- it is a guarantee that if any one screen ever has a
+   stray wide element, the page still cannot grow past the viewport and make iOS
+   shrink the whole thing to fit. `clip` (not hidden) does not create a scroll
+   container, so it leaves sticky headers and vertical scrolling alone. */
+@media (max-width: 860px) {
+    main { overflow-x: clip; }
 }
