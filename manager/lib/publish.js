@@ -59,6 +59,18 @@ export const SERVICES = [
         afterNote: 'Nextcloud is at https://{domain}. Add the name to its trusted domains under Apps if it complains.',
     },
     {
+        key: 'gift',
+        kind: 'gift',
+        // Its client calls absolute paths (/v1/claim, /v1/status), so under a
+        // shared name it goes on this prefix, which nginx strips before the
+        // request reaches the service -- exactly as it does for Desktop.
+        sharedPath: '/gift',
+        label: 'KaChat Gift Service',
+        detail: 'The claim endpoint your phone app calls to hand out a first gift. It holds a wallet, so it wants HTTPS.',
+        afterNote:
+            "Point the app's gift URL at https://{domain}. It answers /v1/claim and /v1/status there. If it shares a name with something else it sits under /gift, so the app URL is https://{domain}/gift -- use exactly the address shown above.",
+    },
+    {
         key: 'panel',
         kind: 'manager',
         // The panel is a single-page app whose HTML pulls /app.js, /style.css
@@ -125,7 +137,7 @@ export function readiness({ nodeCfg = loadNodeConfig(), appsCfg = loadAppsConfig
         ? { ready: true }
         : { ready: false, reason: 'The wRPC Borsh listener is off. Switch it on under Kaspad, Ports.' };
 
-    for (const key of ['kachat', 'desktop', 'nextcloud']) {
+    for (const key of ['kachat', 'desktop', 'nextcloud', 'gift']) {
         state[key] = appsCfg[key]?.enabled
             ? { ready: true }
             : { ready: false, reason: `${APPS[key].label} is switched off under Apps.` };
@@ -214,7 +226,7 @@ export function setupPlan(key, { nodeCfg = loadNodeConfig(), appsCfg = loadAppsC
         });
     }
 
-    if (['kachat', 'desktop', 'nextcloud'].includes(key)) {
+    if (['kachat', 'desktop', 'nextcloud', 'gift'].includes(key)) {
         steps.push({
             key: 'app',
             label: `Switch ${APPS[key].label} on`,
