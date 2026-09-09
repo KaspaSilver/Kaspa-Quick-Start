@@ -5607,6 +5607,7 @@ async function loadGift() {
     $('gift-pool').textContent = status?.pool ? `${status.pool.balanceKas} KAS` : 'no wallet yet';
     $('gift-apple-count').textContent = status ? status.claims.apple : '–';
     $('gift-android-count').textContent = status ? status.claims.android : '–';
+    renderGiftClaims(status?.recent, status?.network);
 
     $('gift-set-amount').value = config.amountKas ?? 3;
     $('gift-set-daily').value = config.dailyCapKas ?? 300;
@@ -5629,6 +5630,51 @@ async function loadGift() {
         : config.enabled
           ? 'Switched on but not answering yet. Give it a moment, or look at the log.'
           : 'Switched off. Set up at least one phone, then start it from the switch beside the sidebar entry.';
+}
+
+/**
+ * The list of gifts given out, newest first, from the service's ledger. Each
+ * row is one claim: when, which phone, how much, whether it paid, and -- for a
+ * paid one -- a link to the transaction. The receiving address is hashed by the
+ * service, so a claim is shown by its opaque reference, never an address.
+ */
+function renderGiftClaims(recent, network) {
+    const items = Array.isArray(recent) ? recent : [];
+    const wrap = $('gift-claims-wrap');
+    const empty = $('gift-claims-empty');
+    if (!items.length) {
+        wrap.hidden = true;
+        empty.hidden = false;
+        $('gift-claims-body').innerHTML = '';
+        return;
+    }
+    empty.hidden = true;
+    wrap.hidden = false;
+    const host = network === 'testnet-10' ? 'explorer-tn10.kaspa.org' : 'explorer.kaspa.org';
+    const phone = { apple: 'iPhone', android: 'Android' };
+    const label = { paid: 'paid', failed: 'failed', opened: 'in progress' };
+    $('gift-claims-body').innerHTML = items
+        .map((c) => {
+            const when = c.at ? new Date(c.at).toLocaleString() : '–';
+            const amount = c.amountKas != null ? `${trimKas(Number(c.amountKas))} KAS` : '–';
+            const statusText = label[c.status] ?? escapeHtml(c.status || '–');
+            const statusCell =
+                c.status === 'failed' && c.error
+                    ? `<span title="${escapeHtml(c.error)}">${statusText}</span>`
+                    : statusText;
+            const txid = String(c.txid || '');
+            const tx = txid
+                ? `<a class="trunc" href="https://${host}/txs/${encodeURIComponent(txid)}" target="_blank" rel="noopener" title="${escapeHtml(txid)}">${escapeHtml(txid)}</a>`
+                : `<span class="muted" title="opaque reference; the address is never stored in the clear">${escapeHtml(c.ref || '–')}</span>`;
+            return `<tr>
+      <td class="name">${escapeHtml(when)}</td>
+      <td class="name">${phone[c.platform] ?? escapeHtml(c.platform || '–')}</td>
+      <td>${amount}</td>
+      <td class="name">${statusCell}</td>
+      <td>${tx}</td>
+    </tr>`;
+        })
+        .join('');
 }
 
 /** What each console gives you, and where to find it. */

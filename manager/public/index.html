@@ -2007,6 +2007,27 @@
           </article>
 
           <article class="card span2">
+            <h3>Recent claims</h3>
+            <p class="muted" id="gift-claims-empty">
+              No claims yet. Every device that is given a gift appears here,
+              newest first, with the time, phone, amount and whether it paid.
+            </p>
+            <div class="scroll-x scroll-cap" id="gift-claims-wrap" hidden>
+              <table class="blocks">
+                <thead>
+                  <tr><th>When</th><th>Phone</th><th>Amount</th><th>Status</th><th>Transaction</th></tr>
+                </thead>
+                <tbody id="gift-claims-body"></tbody>
+              </table>
+            </div>
+            <p class="hint">
+              The receiving address is kept hashed, so a claim is shown by an
+              opaque reference; a paid claim links to its transaction on the
+              explorer.
+            </p>
+          </article>
+
+          <article class="card span2">
             <h3>Limits</h3>
             <p class="muted">
               Apple and Google stop other people's scripts. These stop your own
