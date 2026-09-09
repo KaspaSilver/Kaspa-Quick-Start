@@ -5,6 +5,18 @@
  * sitting around hue 172 (#7DD8CA). Keeping those relationships is what makes
  * the panel read as the same thing as the channel.
  */
+/*
+ * The hidden attribute must actually hide, even on elements that set their own
+ * display (a flex row, a grid). The browser's [hidden]{display:none} is a plain
+ * UA rule, so any author `display:` -- e.g. .bot-wallet-row's flex -- overrides
+ * it and the element stays on screen with .hidden = true doing nothing. This
+ * one rule makes the attribute win everywhere, so panels toggled from JS
+ * (the gift/bot wallet cards, etc.) hide as intended.
+ */
+[hidden] {
+    display: none !important;
+}
+
 :root {
     --bg: #050b0d;
     --panel: #0a1417;
