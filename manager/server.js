@@ -2048,6 +2048,89 @@ async function botGenerateWallet(network, fromKey = null) {
     return parsed;
 }
 
+/** Has the bot deliver one arbitrary KaChat message (used for alerts). */
+async function botSendMessage(text) {
+    return dockerctl.compose(
+        ['run', '--rm', '-T', '--no-deps', '--entrypoint', 'python', 'kachat-bot', 'watcher.py', '--send', text],
+        { profile: 'bot', timeoutMs: 3 * 60_000 },
+    );
+}
+
+/**
+ * Watches the stratum bridge's pool hashrate and, when the bot is asked to, has
+ * it send a KaChat message if the rate drops past the chosen percentage.
+ *
+ * The reference is the highest reading over the last half hour, so "dropped X%"
+ * means "X% below your recent level" -- a rig going offline, not ordinary
+ * variance. It waits until there is enough history to have a level at all, only
+ * fires once per drop (re-arming when the rate comes back), and holds a minimum
+ * gap between alerts so a flapping miner cannot spam the chain. A bridge that is
+ * not answering is mining being off, not a drop, so nothing is sent then.
+ */
+let hrReadings = [];
+let hrAlerted = false;
+let hrLastAlertAt = 0;
+const HR_WINDOW_MS = 30 * 60_000;
+const HR_MIN_SPAN_MS = 10 * 60_000;
+const HR_MIN_INTERVAL_MS = 60 * 60_000;
+
+const fmtGhs = (ghs) => {
+    const th = ghs / 1000;
+    if (th >= 1000) return `${(th / 1000).toFixed(2)} PH/s`;
+    if (th >= 1) return `${th.toFixed(2)} TH/s`;
+    return `${ghs.toFixed(1)} GH/s`;
+};
+
+async function hashrateWatchTick() {
+    const config = bot.readConfig();
+    if (!config.hashrateAlert) {
+        hrReadings = [];
+        hrAlerted = false;
+        return;
+    }
+
+    let stats;
+    try {
+        stats = await bridge.fetchStats();
+    } catch {
+        return;
+    }
+    if (!stats?.reachable || !stats.summary) return; // mining off / bridge down
+
+    const now = Date.now();
+    const current = Number(stats.summary.poolHashrate) || 0;
+    hrReadings.push({ t: now, hr: current });
+    hrReadings = hrReadings.filter((r) => now - r.t <= HR_WINDOW_MS);
+    if (now - hrReadings[0].t < HR_MIN_SPAN_MS) return; // still learning the level
+
+    const reference = Math.max(...hrReadings.map((r) => r.hr));
+    if (reference <= 0) return;
+    const pct = Math.max(1, Math.min(99, Number(config.hashrateDropPct) || 25));
+    const threshold = reference * (1 - pct / 100);
+
+    if (current >= threshold) {
+        hrAlerted = false; // recovered / armed
+        return;
+    }
+    if (hrAlerted || now - hrLastAlertAt < HR_MIN_INTERVAL_MS || !config.complete) return;
+
+    const dropPct = Math.round((1 - current / reference) * 100);
+    const message = `Hashrate alert: your pool hashrate dropped about ${dropPct}% (now ${fmtGhs(current)}, was ${fmtGhs(reference)}). Check your miners.`;
+    try {
+        await botSendMessage(message);
+        hrAlerted = true;
+        hrLastAlertAt = now;
+        log(`hashrate-alert: sent (${dropPct}% drop)`);
+    } catch (err) {
+        log(`hashrate-alert: could not send: ${err.message}`);
+    }
+}
+
+function startHashrateWatch() {
+    const timer = setInterval(() => hashrateWatchTick().catch(() => {}), 2 * 60_000);
+    timer.unref?.();
+}
+
 // ---------------------------------------------------------------- kachat bot --
 
 /**
@@ -3228,6 +3311,7 @@ async function bootstrap() {
     syncProgress.start(log);
     duckdns.scheduleFromConfig(log);
     scheduleExternalIpWatch(log);
+    startHashrateWatch();
 
     // Certificates are valid for 90 days; a daily attempt is what certbot's own
     // packaging recommends and is a no-op until one is close to expiry.

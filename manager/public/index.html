@@ -1890,6 +1890,21 @@
             </p>
 
             <div class="row">
+              <label class="switch-field" title="Notify when your pool hashrate falls below its recent level">
+                <span class="switch mini"><input type="checkbox" id="bot-hr-alert"><span class="track"></span></span>
+                <span>Alert me if my hashrate drops</span>
+              </label>
+              <label class="inline">by <input id="bot-hr-pct" type="number" min="1" max="99" value="25" size="4">%</label>
+              <button type="button" class="ghost mini" data-bot-field="hashrateDropPct" data-bot-input="bot-hr-pct">Save</button>
+            </div>
+            <p class="hint">
+              Watches the stratum bridge's pool hashrate and messages you when it
+              falls this far below its recent level, so you hear about a rig going
+              offline. Needs Mining running; it never fires just because mining is
+              switched off.
+            </p>
+
+            <div class="row">
               <button type="button" id="bot-save" class="primary">Save settings</button>
               <button type="button" id="bot-test" class="ghost">Test notification</button>
               <span class="muted" id="bot-save-note"></span>

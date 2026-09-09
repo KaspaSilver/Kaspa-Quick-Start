@@ -5196,6 +5196,8 @@ async function loadBot() {
     fill('bot-pubkey', config.receiverPubkeyX);
     fill('bot-min', String(config.minRewardKas ?? 0));
     fill('bot-message', config.message ?? '');
+    if (document.activeElement !== $('bot-hr-alert')) $('bot-hr-alert').checked = Boolean(config.hashrateAlert);
+    fill('bot-hr-pct', String(config.hashrateDropPct ?? 25));
     renderBotPreview();
     fill('bot-ref', app.ref);
     if (document.activeElement !== $('bot-network')) $('bot-network').value = app.network;
@@ -5370,6 +5372,18 @@ for (const button of document.querySelectorAll('[data-bot-field]')) {
         }
     });
 }
+
+// The hashrate-drop toggle saves itself on flip (a checkbox has no text value
+// for the per-field Save button to send).
+$('bot-hr-alert').addEventListener('change', async (e) => {
+    try {
+        await api('/api/bot/field', { method: 'POST', body: { field: 'hashrateAlert', value: e.target.checked } });
+        toast(e.target.checked ? 'Hashrate-drop alerts on.' : 'Hashrate-drop alerts off.');
+    } catch (err) {
+        toast(err.message, 'bad');
+        e.target.checked = !e.target.checked;
+    }
+});
 
 // A test notification proves the setup end to end: one real KaChat message now,
 // streamed in the overlay so the result (sent, or "fund the wallet first") is

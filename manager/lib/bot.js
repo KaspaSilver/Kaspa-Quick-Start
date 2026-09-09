@@ -90,6 +90,9 @@ export function readConfig() {
         minRewardKas: Number(env.MIN_REWARD_KAS ?? 0),
         // Shown with real newlines; stored with escaped ones.
         message: unescapeNewlines(env.MESSAGE_TEMPLATE || DEFAULT_MESSAGE),
+        // Notify when the pool hashrate falls this far below its recent level.
+        hashrateAlert: env.HASHRATE_ALERT === '1',
+        hashrateDropPct: Number(env.HASHRATE_DROP_PCT ?? 25) || 25,
         hasKey: Boolean(env.PRIVATE_KEY_HEX),
         // Every required value present, which is the difference between a bot
         // that will start and one that exits on its first line.
@@ -269,6 +272,12 @@ export function validateField(field, value) {
         }
         case 'message':
             return messageProblems(v);
+        case 'hashrateAlert':
+            return []; // any truthy/falsy is fine
+        case 'hashrateDropPct': {
+            const n = Number(v);
+            return Number.isFinite(n) && n >= 1 && n <= 99 ? [] : ['The drop percentage must be between 1 and 99.'];
+        }
         case 'network':
             return ['mainnet', 'testnet-10'].includes(v) ? [] : ['Choose mainnet or testnet-10.'];
         case 'ref':
@@ -292,6 +301,13 @@ export function savePartial(patch) {
         else if (field === 'minRewardKas') value = String(Number(patch[field] ?? 0));
         else if (field === 'message') value = escapeNewlines(String(patch[field] ?? ''));
         env[envKey] = value;
+    }
+    if (Object.hasOwn(patch, 'hashrateAlert')) {
+        env.HASHRATE_ALERT =
+            patch.hashrateAlert === true || patch.hashrateAlert === '1' || patch.hashrateAlert === 'true' ? '1' : '0';
+    }
+    if (Object.hasOwn(patch, 'hashrateDropPct')) {
+        env.HASHRATE_DROP_PCT = String(Math.max(1, Math.min(99, Math.round(Number(patch.hashrateDropPct) || 25))));
     }
     writeEnvFile(env);
     return readConfig();
