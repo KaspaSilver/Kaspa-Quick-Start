@@ -2115,13 +2115,18 @@
               stack's own configuration directory.
             </p>
             <label class="inline">Branch or tag <input id="gift-ref" value="main" size="16"></label>
+            <div id="gift-update-status" class="update-status" hidden></div>
             <div class="row">
-              <button id="gift-rebuild" class="primary">Rebuild from the repo</button>
+              <button type="button" id="gift-check" class="ghost">Check for updates</button>
+              <button type="button" id="gift-update" class="primary" disabled>Update</button>
+              <button type="button" id="gift-rebuild" class="ghost">Rebuild from this branch</button>
             </div>
             <p class="hint">
-              The first build compiles nothing heavy, so it is quick. The
-              service is restarted at the end, which interrupts any claim in
-              flight.
+              Check compares this stack against the repository; Update rebuilds
+              to the newest commit when there is one. Rebuild is for after you
+              change the branch. The first build compiles nothing heavy, so it is
+              quick, and the service is restarted at the end, which interrupts
+              any claim in flight.
             </p>
           </article>
         </div>

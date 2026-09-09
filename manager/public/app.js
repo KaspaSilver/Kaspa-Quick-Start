@@ -5826,6 +5826,36 @@ $('gift-rebuild').addEventListener('click', async () => {
     }
 });
 
+$('gift-check').addEventListener('click', async () => {
+    const notice = $('gift-update-status');
+    setUpdateStatus(notice, 'checking', 'Checking GitHub…');
+    try {
+        const r = await api('/api/apps/gift/check');
+        $('gift-update').disabled = !r.updateAvailable;
+        if (r.neverBuilt) {
+            setUpdateStatus(notice, 'info', `${r.repo}@${r.ref} is at ${r.shortSha}: "${r.message}". Nothing built yet, so install it first.`);
+        } else if (r.builtUnknown) {
+            setUpdateStatus(notice, 'available', `This is running an image from an earlier setup, so the panel cannot tell its version. Rebuild to move to the latest commit (${r.shortSha}) and start tracking updates.`);
+        } else if (r.updateAvailable) {
+            setUpdateStatus(notice, 'available', `Update available: ${r.shortSha}, "${r.message}". You are running ${String(r.builtSha).slice(0, 7)}.`);
+        } else {
+            setUpdateStatus(notice, 'current', `Up to date, running ${r.shortSha}, the newest commit on ${r.ref}.`);
+        }
+    } catch (e) {
+        setUpdateStatus(notice, 'error', e.message);
+    }
+});
+
+$('gift-update').addEventListener('click', async () => {
+    if (!confirm('Rebuild the gift service from the newest commit?\n\nIt stops answering claims while it rebuilds.')) return;
+    await runAction({
+        key: 'gift',
+        title: 'Rebuilding KaChat Gift Service',
+        note: 'Built from the newest commit on the branch above. It is not answering claims until it finishes.',
+        request: () => api('/api/apps/gift/update', { method: 'POST' }),
+    });
+});
+
 // -------------------------------------------------------------------- push ---
 // The Push Service panel: FCM (Android) + APNs (iPhone) credentials for the
 // KaChat indexer. Loaded on arrival, saved through /api/push.

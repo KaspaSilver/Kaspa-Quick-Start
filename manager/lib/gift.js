@@ -22,12 +22,30 @@ export const GOOGLE_KEY = path.join(GIFT_DIR, 'google', 'service-account.json');
 // is injected into gift.json, which the service reads.
 export const WALLET_FILE = path.join(GIFT_DIR, 'wallet.json');
 
+// The gift image drops root and runs as its own user, so a file the panel
+// writes root-owned 0600 -- which is every file here -- is unreadable to the
+// one process that has to read it, and the container crash-loops on EACCES
+// (Could not read /conf/gift.json: permission denied). Owning these to the gift
+// user instead keeps them unreadable to anyone else while letting the service
+// read them. The uid/gid match the image; override them if the image changes.
+const GIFT_UID = Number(process.env.GIFT_UID ?? 100);
+const GIFT_GID = Number(process.env.GIFT_GID ?? 101);
+function ownForGift(file) {
+    try {
+        fs.chownSync(file, GIFT_UID, GIFT_GID);
+    } catch {
+        // Not root, or a filesystem that will not chown: the file stays
+        // root-owned. Nothing here should crash over a permission tweak.
+    }
+}
+
 const secret = (file, contents) => {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, contents, { mode: 0o600 });
     // Written 0600 whether or not it existed already: a file created by an
     // earlier version, or restored from a backup, must not stay world readable.
     fs.chmodSync(file, 0o600);
+    ownForGift(file);
 };
 
 /** The stored wallet, or null. Its key is never returned to a screen unasked. */
@@ -92,6 +110,8 @@ export function writeConfig(giftCfg, { network = 'mainnet', kaspadPort = 18110 }
 
     fs.mkdirSync(GIFT_DIR, { recursive: true });
     fs.writeFileSync(CONFIG_FILE, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+    fs.chmodSync(CONFIG_FILE, 0o600);
+    ownForGift(CONFIG_FILE); // the gift user must be able to read its own config
     return config;
 }
 

@@ -2447,7 +2447,7 @@ route('POST', /^\/api\/apps\/nextcloud\/admin\/password$/, async (req, res) => {
     }
 });
 
-route('GET', /^\/api\/apps\/(kachat|desktop|nextcloud|bot)\/check$/, async (req, res, match) => {
+route('GET', /^\/api\/apps\/(kachat|desktop|nextcloud|bot|gift)\/check$/, async (req, res, match) => {
     const name = match[1];
     try {
         const upstream = await apps.checkUpstream(name, apps.loadAppsConfig());
@@ -2474,7 +2474,7 @@ route('GET', /^\/api\/apps\/(kachat|desktop|nextcloud|bot)\/check$/, async (req,
     }
 });
 
-route('POST', /^\/api\/apps\/(kachat|desktop|nextcloud|bot)\/update$/, async (req, res, match) => {
+route('POST', /^\/api\/apps\/(kachat|desktop|nextcloud|bot|gift)\/update$/, async (req, res, match) => {
     const name = match[1];
     const cfg = apps.loadAppsConfig();
     if (!cfg[name].enabled) return fail(res, 409, `${apps.APPS[name].label} is switched off.`);
