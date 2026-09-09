@@ -2017,6 +2017,21 @@
 
       <div id="sub-gift-setup" class="subtab">
         <div class="grid">
+          <article class="card span2" id="gift-import-card" hidden>
+            <h3>Already running KaChat push?</h3>
+            <p class="muted">
+              The gift service proves a claim with the very same credentials the
+              KaChat indexer already uses for notifications: the Apple key that
+              signs push also carries DeviceCheck, and the Firebase project
+              behind it also carries Play Integrity. Import them here and both
+              phones are set up in one step, with nothing to paste.
+            </p>
+            <div class="row">
+              <button class="primary" id="gift-import-indexer">Import from KaChat indexer</button>
+              <span class="muted" id="gift-import-state"></span>
+            </div>
+          </article>
+
           <article class="card span2">
             <h3>Which phone are you setting up?</h3>
             <p class="muted">

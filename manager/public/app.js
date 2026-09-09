@@ -5570,6 +5570,8 @@ async function loadGift() {
         credentials.google ? 'Android ready' : 'Android not set up',
     ].join(' · ');
     $('gift-credentials-state').textContent = ready;
+    // The one-click import only makes sense when both are here to import from.
+    $('gift-import-card').hidden = !giftState.indexerPresent;
     $('gift-overview-note').textContent = status
         ? status.mode === 'live'
             ? 'Claims are being paid.'
@@ -5723,6 +5725,24 @@ $('gift-wizard-test').addEventListener('click', async () => {
 
 $('gift-setup-apple').addEventListener('click', () => openGiftWizard('apple'));
 $('gift-setup-android').addEventListener('click', () => openGiftWizard('android'));
+
+$('gift-import-indexer').addEventListener('click', async () => {
+    const state = $('gift-import-state');
+    state.textContent = '';
+    // The overlay reports success or the real error; loadGift then reflects
+    // which credentials are now present, which is the honest summary here.
+    await runAction({
+        key: 'gift-import',
+        title: 'Import credentials from the KaChat indexer',
+        request: () => api('/api/gift/import-from-indexer', { method: 'POST' }),
+    });
+    await loadGift();
+    const c = giftState?.credentials ?? {};
+    const ready = [c.apple && 'iPhone', c.google && 'Android'].filter(Boolean);
+    state.textContent = ready.length
+        ? `${ready.join(' and ')} set up. Open each phone below and run its Test to confirm.`
+        : 'Nothing was imported. Is the KaChat indexer set up for push?';
+});
 
 $('gift-save-settings').addEventListener('click', async () => {
     const live = $('gift-set-live').checked;

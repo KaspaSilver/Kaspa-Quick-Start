@@ -2819,6 +2819,8 @@ route('GET', /^\/api\/gift$/, async (req, res) => {
         container: state,
         status,
         credentials: { apple: gift.hasApple(), google: gift.hasGoogle() },
+        // Whether there is a KaChat indexer here to import push credentials from.
+        indexerPresent: (await dockerctl.containerState('kaspa-node-kachat')).exists,
         repo: apps.APPS.gift.repo,
     });
 });
@@ -2866,6 +2868,89 @@ route('POST', /^\/api\/gift\/android$/, async (req, res) => {
     } catch (err) {
         fail(res, 400, err.message);
     }
+});
+
+/**
+ * Imports the credentials the KaChat indexer already runs with. The Apple key
+ * that signs APNs push also carries DeviceCheck, and the Firebase project
+ * behind FCM also carries Play Integrity, so the gift service can attest with
+ * exactly the credentials the app already ships -- no second key to make, no
+ * private key pasted through a browser. The files are read out of the indexer
+ * container and written straight into conf/gift; nothing is echoed to a screen.
+ */
+route('POST', /^\/api\/gift\/import-from-indexer$/, async (req, res) => {
+    const C = 'kaspa-node-kachat';
+    if (!(await dockerctl.containerState(C)).exists) {
+        return fail(res, 409, 'The KaChat indexer is not installed here, so there is nothing to import from.');
+    }
+    // A single sh -c inside the indexer, so its own env (APNS_*) expands and the
+    // .p8 glob resolves. Failures come back empty and are treated as "not there".
+    const readIn = async (cmd) => {
+        try {
+            const { stdout } = await dockerctl.docker(['exec', C, 'sh', '-c', cmd], { timeoutMs: 15_000 });
+            return stdout;
+        } catch {
+            return '';
+        }
+    };
+
+    const appsCfg = apps.loadAppsConfig();
+    if (!appsCfg.gift) appsCfg.gift = {};
+    const imported = { apple: null, android: null };
+
+    try {
+        // iPhone: the DeviceCheck key plus the identifiers push already uses.
+        const p8 = (await readIn('cat /app/data/apns/*.p8 2>/dev/null')).trim();
+        if (p8) {
+            gift.saveAppleKey(p8);
+            const teamId = (await readIn('printf %s "$APNS_TEAM_ID"')).trim();
+            const keyId = (await readIn('printf %s "$APNS_KEY_ID"')).trim();
+            const bundleId = (await readIn('printf %s "$APNS_TOPIC"')).trim();
+            appsCfg.gift.apple = {
+                enabled: true,
+                teamId: teamId || appsCfg.gift.apple?.teamId || '',
+                keyId: keyId || appsCfg.gift.apple?.keyId || '',
+                bundleId: bundleId || appsCfg.gift.apple?.bundleId || 'com.kachat.app',
+            };
+            imported.apple = { teamId: appsCfg.gift.apple.teamId, keyId: appsCfg.gift.apple.keyId, bundleId: appsCfg.gift.apple.bundleId };
+        }
+
+        // Android: the service account, whose project also backs Play Integrity.
+        const sa = (await readIn('cat /app/data/fcm/service-account.json 2>/dev/null')).trim();
+        if (sa) {
+            const account = gift.saveGoogleKey(sa);
+            const pkg = (await readIn('printf %s "$APNS_TOPIC"')).trim();
+            appsCfg.gift.android = {
+                enabled: true,
+                packageName: appsCfg.gift.android?.packageName || pkg || 'com.kachat.app',
+            };
+            imported.android = { packageName: appsCfg.gift.android.packageName, projectId: account.projectId };
+        }
+    } catch (err) {
+        return fail(res, 400, `A credential from the indexer would not save: ${err.message}`);
+    }
+
+    if (!imported.apple && !imported.android) {
+        return fail(res, 404, 'No push credentials were found in the KaChat indexer to import.');
+    }
+
+    apps.saveAppsConfig(appsCfg);
+    writeGiftConfig();
+
+    const state = await dockerctl.containerState('kaspa-node-gift');
+    if (state.running) {
+        const job = jobs.start('Load the imported credentials into the gift service', async (onLine) => {
+            if (imported.apple) onLine('Imported the Apple DeviceCheck key and identifiers from the KaChat indexer.');
+            if (imported.android) onLine('Imported the Google Play Integrity service account from the KaChat indexer.');
+            await dockerctl.compose(['up', '-d', '--no-deps', '--force-recreate', 'gift'], {
+                onLine,
+                profile: 'gift',
+                timeoutMs: 10 * 60_000,
+            });
+        });
+        return sendJson(res, 202, { ok: true, jobId: job.id, imported });
+    }
+    sendJson(res, 200, { ok: true, imported });
 });
 
 /** The wizard's last step: make the credential answer before anyone relies on it. */
