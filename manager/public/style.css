@@ -2255,3 +2255,46 @@ body { -webkit-tap-highlight-color: transparent; }
     /* A full 44px touch target for the menu button (the platform minimum). */
     #sidebar-open { min-width: 44px; min-height: 44px; justify-content: center; }
 }
+
+/* ---- proxy / domains tables on a phone -------------------------------- */
+/* The Public addresses and Proxy hosts tables are four columns with a row of
+   action buttons that must not wrap on a desktop -- which on a phone forced the
+   table (and the whole page) wider than the screen, so iOS zoomed the page out
+   to fit. Below 700px each row becomes a stacked mini-card instead: no table
+   width to overflow, buttons wrap, long addresses break. */
+@media (max-width: 700px) {
+    table.proxies,
+    table.proxies tbody,
+    table.proxies tr,
+    table.proxies td {
+        display: block;
+        width: 100%;
+    }
+    table.proxies thead { display: none; } /* column headers make no sense once stacked */
+    table.proxies tr {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px 12px;
+        margin-bottom: 10px;
+    }
+    table.proxies td {
+        border: 0;
+        padding: 3px 0;
+        text-align: left;
+        white-space: normal;
+    }
+    /* The action cell: buttons drop onto their own line, each tappable. */
+    table.proxies td:last-child,
+    .publish-table .row-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 8px;
+        white-space: normal;
+    }
+    table.proxies td:last-child button,
+    .publish-table .row-actions button { flex: 1 1 auto; }
+    /* Long addresses and any inline URL break rather than push the row wide. */
+    table.proxies a,
+    .notice code { overflow-wrap: anywhere; }
+}
