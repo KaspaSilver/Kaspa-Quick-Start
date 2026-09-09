@@ -230,6 +230,14 @@ export function writeConfig(input) {
     // key keeps its address.
     const keyChanged = key.toLowerCase() !== String(existing.PRIVATE_KEY_HEX ?? '').toLowerCase();
 
+    // The alert toggles and their thresholds have their own per-field saves, so
+    // this whole-config save must neither ignore them nor -- the bug this fixes
+    // -- wipe them. Take each from the request when it carries a value, and
+    // otherwise keep what is already stored.
+    const bool = (v, fallback) => (v === undefined || v === null ? fallback : v === true || v === '1' || v === 'true');
+    const pct = Math.max(1, Math.min(99, Math.round(Number(input.hashrateDropPct) || 25)));
+    const kas = Math.max(0, Number(input.lowBalanceKas) || 0.5);
+
     writeEnvFile({
         MINING_ADDRESS: String(input.miningAddress ?? '').trim(),
         PRIVATE_KEY_HEX: key,
@@ -242,6 +250,10 @@ export function writeConfig(input) {
                 ? unescapeNewlines(existing.MESSAGE_TEMPLATE || DEFAULT_MESSAGE)
                 : input.message,
         ),
+        HASHRATE_ALERT: bool(input.hashrateAlert, existing.HASHRATE_ALERT === '1') ? '1' : '0',
+        HASHRATE_DROP_PCT: input.hashrateDropPct !== undefined ? String(pct) : (existing.HASHRATE_DROP_PCT ?? '25'),
+        LOW_BALANCE_ALERT: bool(input.lowBalanceAlert, existing.LOW_BALANCE_ALERT === '1') ? '1' : '0',
+        LOW_BALANCE_KAS: input.lowBalanceKas !== undefined ? String(kas) : (existing.LOW_BALANCE_KAS ?? '0.5'),
     });
     return readConfig();
 }

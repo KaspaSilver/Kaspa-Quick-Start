@@ -5384,6 +5384,13 @@ $('bot-save').addEventListener('click', async () => {
         message: $('bot-message').value,
         network: $('bot-network').value,
         ref: $('bot-ref').value.trim() || 'main',
+        // The alert toggles and thresholds save on their own too, but include
+        // them here so one "Save settings" captures the current state and never
+        // wipes them.
+        hashrateAlert: $('bot-hr-alert').checked,
+        hashrateDropPct: Number($('bot-hr-pct').value || 25),
+        lowBalanceAlert: $('bot-lowbal-alert').checked,
+        lowBalanceKas: Number($('bot-lowbal-kas').value || 0.5),
     };
 
     const button = $('bot-save');
