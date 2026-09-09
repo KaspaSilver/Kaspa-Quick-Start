@@ -2901,9 +2901,10 @@ async function giftGenerateWallet(network, fromKey = null) {
 /** The gift wallet: its address (to fund) and balance from the node's UTXO index. */
 route('GET', /^\/api\/gift\/wallet$/, async (req, res) => {
     const nodeCfg = loadNodeConfig();
+    const installed = (await dockerctl.containerState('kaspa-node-gift')).exists;
     const hasKey = Boolean(gift.walletKey());
     let address = gift.walletAddress();
-    if (!address && hasKey && (await dockerctl.containerState('kaspa-node-gift')).exists) {
+    if (!address && hasKey && installed) {
         try {
             address = (await giftGenerateWallet(nodeCfg.network, gift.walletKey())).address;
             gift.saveWallet({ address });
@@ -2920,7 +2921,7 @@ route('GET', /^\/api\/gift\/wallet$/, async (req, res) => {
             /* node not reachable or still syncing */
         }
     }
-    sendJson(res, 200, { hasKey, address, balanceKas, network: nodeCfg.network });
+    sendJson(res, 200, { hasKey, address, balanceKas, network: nodeCfg.network, installed });
 });
 
 /** Creates a fresh gift wallet. Refuses to overwrite a funded one blindly. */

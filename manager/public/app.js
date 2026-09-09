@@ -5448,10 +5448,17 @@ async function loadGiftWallet() {
     try {
         w = await api('/api/gift/wallet');
     } catch {
+        // Even if the read fails, show the create state so the button is there
+        // rather than leaving both halves hidden.
+        $('gift-wallet-none').hidden = false;
+        $('gift-wallet-have').hidden = true;
         return;
     }
     const has = w.hasKey && w.address;
-    const installed = Boolean(giftState?.container?.exists);
+    // From the response, not giftState, which may not be loaded yet the first
+    // time this subtab is opened -- that left the create button wrongly
+    // disabled until a refresh.
+    const installed = Boolean(w.installed);
     $('gift-wallet-none').hidden = has;
     $('gift-wallet-have').hidden = !has;
     $('gift-wallet-create').disabled = !installed;
