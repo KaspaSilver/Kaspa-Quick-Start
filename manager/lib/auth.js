@@ -1,5 +1,7 @@
 import crypto from 'node:crypto';
 
+import { readEnvFile } from './store.js';
+
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const COOKIE_NAME = 'kaspa_node_session';
 const SCRYPT_KEYLEN = 32;
@@ -14,9 +16,22 @@ const SESSION_SECRET =
 // Set one (install.sh --password) when binding the panel to a real interface or
 // proxying it to a domain -- the manager holds the Docker socket, which is root
 // on the host, so an exposed panel without a password is a full compromise.
-const PASSWORD_HASH = (process.env.ADMIN_PASSWORD_HASH || '').trim();
+//
+// Read live from the .env file the panel mounts, not captured at startup. That
+// is what lets setting a password take effect at once, with no need to recreate
+// this container -- which used to fail on Docker Desktop, where a Windows host
+// path (C:\...) cannot be bind-mounted into the Linux sidecar a restart needs.
+// The .env file is also the source of truth: it is what the set-password
+// endpoint writes, and its value is un-mangled, where process.env has had its
+// `$` interpolated by docker compose. process.env is the fallback for the rare
+// case the file cannot be read at all.
+function currentHash() {
+    const env = readEnvFile();
+    if (env.ADMIN_PASSWORD_HASH !== undefined) return String(env.ADMIN_PASSWORD_HASH).trim();
+    return (process.env.ADMIN_PASSWORD_HASH || '').trim();
+}
 
-export const authConfigured = () => PASSWORD_HASH.length > 0;
+export const authConfigured = () => currentHash().length > 0;
 
 /**
  * True when a password is stored but cannot possibly be verified.
@@ -27,8 +42,9 @@ export const authConfigured = () => PASSWORD_HASH.length > 0;
  * to say why. Naming the state is what turns a lockout into an instruction.
  */
 export const passwordUnusable = () => {
-    if (!authConfigured()) return false;
-    const [scheme, saltHex, hashHex] = PASSWORD_HASH.split(/[:$]/);
+    const hash = currentHash();
+    if (!hash) return false;
+    const [scheme, saltHex, hashHex] = hash.split(/[:$]/);
     return scheme !== 'scrypt' || !saltHex || !hashHex;
 };
 
@@ -46,10 +62,11 @@ export function hashPassword(password, salt = crypto.randomBytes(16)) {
 }
 
 export function verifyPassword(password) {
-    if (!authConfigured()) return false;
+    const hash = currentHash();
+    if (!hash) return false;
     // `$` is the separator this used to use. Accepted so an install that set a
     // password before the change keeps working -- if compose left it intact.
-    const [scheme, saltHex, hashHex] = PASSWORD_HASH.split(/[:$]/);
+    const [scheme, saltHex, hashHex] = hash.split(/[:$]/);
     if (scheme !== 'scrypt' || !saltHex || !hashHex) return false;
     let derived;
     try {

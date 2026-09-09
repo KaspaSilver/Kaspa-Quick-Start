@@ -169,12 +169,15 @@ $('firstrun-form').addEventListener('submit', async (event) => {
     btn.disabled = true;
     try {
         // No `current`: this only runs when none is set, where the route is open.
+        // The response carries a session cookie and the password is in force at
+        // once (auth reads it live from .env), so there is no restart to wait on
+        // -- just reload into the panel, already signed in.
         await api('/api/auth/password', { method: 'POST', body: { password } });
         localStorage.setItem(SETUP_KEY, '1');
         const status = $('firstrun-status');
         status.hidden = false;
-        status.textContent = 'Password set. The panel is restarting and will ask you to sign in…';
-        await waitForPanelReload();
+        status.textContent = 'Password set. Opening the panel…';
+        location.reload();
     } catch (e) {
         err.textContent = e.message;
         err.hidden = false;
@@ -6969,7 +6972,10 @@ $('password-save').addEventListener('click', async () => {
         $('password-new').value = '';
         $('password-repeat').value = '';
         $('password-current').value = '';
-        await waitForPanelRestart('Password saved. The panel is restarting, and will ask you to sign in.');
+        // In force immediately (auth reads .env live) and the response refreshed
+        // the session, so no restart to wait on.
+        kResult('password-result', 'Password saved. It is in force now.', false);
+        $('password-save').disabled = false;
     } catch (e) {
         toast(e.message, 'bad');
         $('password-save').disabled = false;
@@ -7013,7 +7019,10 @@ $('password-clear').addEventListener('click', async () => {
     $('password-clear').disabled = true;
     try {
         await api('/api/auth/password', { method: 'POST', body: { clear: true, current: $('password-current').value } });
-        await waitForPanelRestart('Password removed. The panel is restarting.');
+        // Cleared at once (auth reads .env live); no restart. Reload so the page
+        // drops back to the open, no-password state.
+        kResult('password-result', 'Password removed.', false);
+        location.reload();
     } catch (e) {
         toast(e.message, 'bad');
         $('password-clear').disabled = false;

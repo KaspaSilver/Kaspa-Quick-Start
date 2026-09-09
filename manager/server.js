@@ -2670,8 +2670,10 @@ route('POST', /^\/api\/auth\/password$/, async (req, res) => {
             return fail(res, 409, `This panel is bound to ${managerBind()}, not to loopback, so it needs a password.`);
         }
         updateEnvFile({ ADMIN_PASSWORD_HASH: '' });
-        await selfservice.restartManager();
-        return sendJson(res, 202, { ok: true, cleared: true, restarting: true });
+        // Auth reads the hash live from .env, so clearing it is in force at once
+        // -- no container restart, and none of the cross-platform trouble that
+        // recreating this container involved.
+        return sendJson(res, 200, { ok: true, cleared: true }, { 'Set-Cookie': clearCookie() });
     }
 
     const password = String(body.password || '');
@@ -2679,8 +2681,12 @@ route('POST', /^\/api\/auth\/password$/, async (req, res) => {
     if (password.length > 200) return fail(res, 400, 'That is longer than 200 characters.');
 
     updateEnvFile({ ADMIN_PASSWORD_HASH: hashPassword(password) });
-    await selfservice.restartManager();
-    sendJson(res, 202, { ok: true, restarting: true });
+    // Auth reads the hash live from .env, so this is in force immediately with
+    // no restart. Issue a session in the same response so whoever just set the
+    // password is not locked straight back out and made to sign in again.
+    const { token } = issueSession();
+    const secure = (req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
+    sendJson(res, 200, { ok: true }, { 'Set-Cookie': sessionCookie(token, { secure }) });
 });
 
 // -------------------------------------------------------------- lifecycle --
