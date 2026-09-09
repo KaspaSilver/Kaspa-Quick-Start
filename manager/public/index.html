@@ -1932,6 +1932,20 @@
             </p>
 
             <div class="row">
+              <label class="switch-field" title="Notify when the bot's sending wallet runs low on KAS">
+                <span class="switch mini"><input type="checkbox" id="bot-lowbal-alert"><span class="track"></span></span>
+                <span>Alert me when my bot wallet is low</span>
+              </label>
+              <label class="inline">below <input id="bot-lowbal-kas" type="number" min="0" step="0.1" value="0.5" size="5"> KAS</label>
+              <button type="button" class="ghost mini" data-bot-field="lowBalanceKas" data-bot-input="bot-lowbal-kas">Save</button>
+            </div>
+            <p class="hint">
+              Messages you once when the sending wallet drops below this, while it
+              still has enough to send the warning. Set it high enough to leave
+              room for a few more notifications, then top the wallet up.
+            </p>
+
+            <div class="row">
               <button type="button" id="bot-save" class="primary">Save settings</button>
               <button type="button" id="bot-test" class="ghost">Test notification</button>
               <span class="muted" id="bot-save-note"></span>

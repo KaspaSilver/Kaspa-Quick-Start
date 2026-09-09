@@ -5206,6 +5206,8 @@ async function loadBot() {
     fill('bot-message', config.message ?? '');
     if (document.activeElement !== $('bot-hr-alert')) $('bot-hr-alert').checked = Boolean(config.hashrateAlert);
     fill('bot-hr-pct', String(config.hashrateDropPct ?? 25));
+    if (document.activeElement !== $('bot-lowbal-alert')) $('bot-lowbal-alert').checked = Boolean(config.lowBalanceAlert);
+    fill('bot-lowbal-kas', String(config.lowBalanceKas ?? 0.5));
     renderBotPreview();
     fill('bot-ref', app.ref);
     if (document.activeElement !== $('bot-network')) $('bot-network').value = app.network;
@@ -5433,6 +5435,16 @@ $('bot-hr-alert').addEventListener('change', async (e) => {
     try {
         await api('/api/bot/field', { method: 'POST', body: { field: 'hashrateAlert', value: e.target.checked } });
         toast(e.target.checked ? 'Hashrate-drop alerts on.' : 'Hashrate-drop alerts off.');
+    } catch (err) {
+        toast(err.message, 'bad');
+        e.target.checked = !e.target.checked;
+    }
+});
+
+$('bot-lowbal-alert').addEventListener('change', async (e) => {
+    try {
+        await api('/api/bot/field', { method: 'POST', body: { field: 'lowBalanceAlert', value: e.target.checked } });
+        toast(e.target.checked ? 'Low-wallet alerts on.' : 'Low-wallet alerts off.');
     } catch (err) {
         toast(err.message, 'bad');
         e.target.checked = !e.target.checked;

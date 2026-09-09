@@ -2133,6 +2133,63 @@ function startHashrateWatch() {
     timer.unref?.();
 }
 
+/**
+ * Watches the bot's sending wallet and, when asked to, messages you once it
+ * drops below the chosen amount -- while it still has enough to send that very
+ * message, which is the whole point of a threshold rather than "when empty".
+ *
+ * Fires once per low spell and re-arms when the wallet is topped back up, with a
+ * minimum gap so a balance hovering at the line cannot ping repeatedly. A node
+ * that cannot be reached is not "low", so nothing is sent then.
+ */
+let lowBalAlerted = false;
+let lowBalLastAlertAt = 0;
+const LOWBAL_MIN_INTERVAL_MS = 6 * 60 * 60_000;
+
+async function lowBalanceWatchTick() {
+    const config = bot.readConfig();
+    if (!config.lowBalanceAlert) {
+        lowBalAlerted = false;
+        return;
+    }
+    const address = bot.walletAddress();
+    if (!address || !config.complete) return;
+
+    let balanceKas;
+    try {
+        const r = await rpc.call('getBalanceByAddress', { address }, 6000);
+        balanceKas = Number(r?.balance ?? 0) / 1e8;
+    } catch {
+        return; // node not reachable or still syncing
+    }
+
+    const threshold = Math.max(0, Number(config.lowBalanceKas) || 0.5);
+    if (balanceKas > threshold) {
+        lowBalAlerted = false; // topped up / armed
+        return;
+    }
+
+    const now = Date.now();
+    if (lowBalAlerted || now - lowBalLastAlertAt < LOWBAL_MIN_INTERVAL_MS) return;
+
+    const message =
+        `Wallet alert: your KaChat bot wallet is low -- ${balanceKas.toFixed(4)} KAS left, below ${threshold} KAS. ` +
+        `Top it up so it can keep sending notifications.`;
+    try {
+        await botSendMessage(message);
+        lowBalAlerted = true;
+        lowBalLastAlertAt = now;
+        log(`low-balance-alert: sent (${balanceKas.toFixed(4)} KAS left)`);
+    } catch (err) {
+        log(`low-balance-alert: could not send: ${err.message}`);
+    }
+}
+
+function startLowBalanceWatch() {
+    const timer = setInterval(() => lowBalanceWatchTick().catch(() => {}), 5 * 60_000);
+    timer.unref?.();
+}
+
 // ---------------------------------------------------------------- kachat bot --
 
 /**
@@ -3489,6 +3546,7 @@ async function bootstrap() {
     duckdns.scheduleFromConfig(log);
     scheduleExternalIpWatch(log);
     startHashrateWatch();
+    startLowBalanceWatch();
 
     // Certificates are valid for 90 days; a daily attempt is what certbot's own
     // packaging recommends and is a no-op until one is close to expiry.

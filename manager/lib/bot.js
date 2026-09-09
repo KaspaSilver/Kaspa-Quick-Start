@@ -123,6 +123,11 @@ export function readConfig() {
         // Notify when the pool hashrate falls this far below its recent level.
         hashrateAlert: env.HASHRATE_ALERT === '1',
         hashrateDropPct: Number(env.HASHRATE_DROP_PCT ?? 25) || 25,
+        // Notify when the sending wallet runs low, while it still has enough to
+        // send the warning. The default leaves room for a few more fee-paying
+        // messages before it is empty.
+        lowBalanceAlert: env.LOW_BALANCE_ALERT === '1',
+        lowBalanceKas: Number(env.LOW_BALANCE_KAS ?? 0.5) || 0.5,
         hasKey: Boolean(env.PRIVATE_KEY_HEX),
         // Every required value present, which is the difference between a bot
         // that will start and one that exits on its first line.
@@ -309,6 +314,12 @@ export function validateField(field, value) {
             const n = Number(v);
             return Number.isFinite(n) && n >= 1 && n <= 99 ? [] : ['The drop percentage must be between 1 and 99.'];
         }
+        case 'lowBalanceAlert':
+            return []; // any truthy/falsy is fine
+        case 'lowBalanceKas': {
+            const n = Number(v);
+            return Number.isFinite(n) && n >= 0 ? [] : ['The low-balance threshold must be zero or more.'];
+        }
         case 'network':
             return ['mainnet', 'testnet-10'].includes(v) ? [] : ['Choose mainnet or testnet-10.'];
         case 'ref':
@@ -339,6 +350,13 @@ export function savePartial(patch) {
     }
     if (Object.hasOwn(patch, 'hashrateDropPct')) {
         env.HASHRATE_DROP_PCT = String(Math.max(1, Math.min(99, Math.round(Number(patch.hashrateDropPct) || 25))));
+    }
+    if (Object.hasOwn(patch, 'lowBalanceAlert')) {
+        env.LOW_BALANCE_ALERT =
+            patch.lowBalanceAlert === true || patch.lowBalanceAlert === '1' || patch.lowBalanceAlert === 'true' ? '1' : '0';
+    }
+    if (Object.hasOwn(patch, 'lowBalanceKas')) {
+        env.LOW_BALANCE_KAS = String(Math.max(0, Number(patch.lowBalanceKas) || 0.5));
     }
     writeEnvFile(env);
     return readConfig();
