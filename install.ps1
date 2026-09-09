@@ -76,7 +76,13 @@ function Update-SessionPath {
 
 function Test-Docker {
     if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { return $false }
-    docker info 2>&1 | Out-Null
+    # *> $null, not 2>&1 | Out-Null: Docker on the WSL2 backend prints harmless
+    # warnings to stderr ("No blkio throttle.read_bps_device support"), and
+    # merging stderr into the pipeline turns the first such line into a
+    # terminating NativeCommandError under $ErrorActionPreference = 'Stop',
+    # aborting the whole install over a warning. Redirecting every stream to
+    # $null discards it as a stream; the exit code is what we actually test.
+    docker info *> $null
     return ($LASTEXITCODE -eq 0)
 }
 
@@ -133,7 +139,7 @@ function Initialize-Docker {
         }
     }
 
-    docker compose version 2>&1 | Out-Null
+    docker compose version *> $null  # *> $null, not 2>&1: see Test-Docker
     if ($LASTEXITCODE -ne 0) { Die "'docker compose' (v2) is missing. Update Docker Desktop." }
     Ok 'docker compose is available'
 }
