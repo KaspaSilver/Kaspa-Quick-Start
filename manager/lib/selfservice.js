@@ -132,15 +132,37 @@ const ghHeaders = {
     'User-Agent': 'kaspa-quick-start-panel',
 };
 
+/**
+ * GitHub, with the first lookup allowed to miss.
+ *
+ * These calls run in a container whose DNS resolver can be a moment from warm,
+ * so the very first request sometimes fails with "could not resolve host" where
+ * a retry a second later succeeds -- which is why an update used to need two
+ * clicks. Only a rejected fetch (a network/DNS/timeout error) is retried; an
+ * HTTP response, even a 404 or a rate-limit, is a real answer and is returned
+ * as-is for the caller to read.
+ */
+async function ghFetch(url) {
+    let lastErr;
+    for (let attempt = 1; attempt <= 4; attempt++) {
+        try {
+            return await fetch(url, { headers: ghHeaders, signal: AbortSignal.timeout(15_000) });
+        } catch (err) {
+            lastErr = err;
+            if (attempt < 4) await new Promise((r) => setTimeout(r, 1500 * attempt));
+        }
+    }
+    throw new Error(
+        `Could not reach GitHub (${lastErr?.message || 'network error'}). This is usually a brief DNS or connection hiccup; try again in a moment.`,
+    );
+}
+
 /** The commit a branch or tag currently points at. */
-export async function latestCommit({ repo = 'KaspaSilver/Quick-Start-Kaspa', ref = 'main' } = {}) {
+export async function latestCommit({ repo = 'KaspaSilver/Kaspa-Quick-Start', ref = 'main' } = {}) {
     if (!REPO_RE.test(repo)) throw new Error(`"${repo}" is not a valid owner/repo.`);
     if (!REF_RE.test(ref)) throw new Error(`"${ref}" is not a valid branch, tag or commit.`);
 
-    const res = await fetch(`https://api.github.com/repos/${repo}/commits/${encodeURIComponent(ref)}`, {
-        headers: ghHeaders,
-        signal: AbortSignal.timeout(15_000),
-    });
+    const res = await ghFetch(`https://api.github.com/repos/${repo}/commits/${encodeURIComponent(ref)}`);
     if (res.status === 404) throw new Error(`${repo}@${ref} does not exist.`);
     // Unauthenticated GitHub allows 60 requests an hour per address, which a
     // manual check will never reach, but the message should say so if it does.
@@ -164,10 +186,7 @@ export async function latestCommit({ repo = 'KaspaSilver/Quick-Start-Kaspa', ref
 export async function compareToInstalled({ repo, base, head }) {
     if (!base || !head || base === head) return null;
     try {
-        const res = await fetch(`https://api.github.com/repos/${repo}/compare/${base}...${head}`, {
-            headers: ghHeaders,
-            signal: AbortSignal.timeout(15_000),
-        });
+        const res = await ghFetch(`https://api.github.com/repos/${repo}/compare/${base}...${head}`);
         if (!res.ok) return null;
         const c = await res.json();
         return { behind: Number(c.ahead_by) || 0, status: c.status ?? null };
@@ -233,8 +252,24 @@ fail() { echo "error=$1" >> "$S"; echo "result=fail" >> "$S"; exit 1; }
 
 step "Downloading ${repo}@${ref}"
 tmp=$(mktemp -d) || fail "Could not create a temporary directory."
-curl -fsSL "https://codeload.github.com/${repo}/tar.gz/${download}" | tar -xz -C "$tmp" --strip-components=1 \\
-  || fail "Could not download ${repo}@${ref}. Check the branch or tag name."
+arc="$tmp/stack.tar.gz"
+# Download to a file (not straight into a pipe) so curl's own exit status is
+# what we test, then retry it. This sidecar is freshly started, so its DNS
+# resolver can miss the first lookup -- "could not resolve host" -- and succeed
+# a second later. Retrying here is what removes the need for a second click.
+n=1
+while :; do
+  if curl -fsSL "https://codeload.github.com/${repo}/tar.gz/${download}" -o "$arc"; then
+    break
+  fi
+  if [ "$n" -ge 5 ]; then
+    fail "Could not download ${repo}@${ref} after 5 tries. This is usually a brief DNS or network hiccup; check your connection and the branch or tag name."
+  fi
+  echo "download attempt $n failed (often a transient DNS timeout); retrying in $((n*3))s..." >> "$S"
+  sleep $((n*3))
+  n=$((n+1))
+done
+tar -xzf "$arc" -C "$tmp" --strip-components=1 || fail "The downloaded archive could not be unpacked."
 [ -f "$tmp/docker-compose.yml" ] || fail "That archive does not look like the stack."
 
 step "Replacing the panel files"
