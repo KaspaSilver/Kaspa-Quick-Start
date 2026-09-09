@@ -2879,6 +2879,90 @@ route('POST', /^\/api\/gift\/test\/(apple|android)$/, async (req, res, match) =>
     }
 });
 
+// The gift wallet, created and derived by the gift's own image (same Kaspa SDK
+// it sends with), so the address is exactly the one gifts come from.
+const giftImageTag = () => `kaspa-one-click/gift:${(readEnvFile().GIFT_REF || 'main').trim()}`;
+
+async function giftGenerateWallet(network, fromKey = null) {
+    const args = ['run', '--rm', '--entrypoint', 'node', giftImageTag(), 'gen-wallet.js', '--network', network || 'mainnet'];
+    if (fromKey) args.push('--from-key', fromKey);
+    const { stdout } = await dockerctl.docker(args, { timeoutMs: 60_000 });
+    const line = stdout.trim().split('\n').filter(Boolean).pop() || '';
+    let parsed;
+    try {
+        parsed = JSON.parse(line);
+    } catch {
+        throw new Error('The wallet generator returned unexpected output.');
+    }
+    if (!parsed.address) throw new Error('The wallet generator did not return an address.');
+    return parsed;
+}
+
+/** The gift wallet: its address (to fund) and balance from the node's UTXO index. */
+route('GET', /^\/api\/gift\/wallet$/, async (req, res) => {
+    const nodeCfg = loadNodeConfig();
+    const hasKey = Boolean(gift.walletKey());
+    let address = gift.walletAddress();
+    if (!address && hasKey && (await dockerctl.containerState('kaspa-node-gift')).exists) {
+        try {
+            address = (await giftGenerateWallet(nodeCfg.network, gift.walletKey())).address;
+            gift.saveWallet({ address });
+        } catch {
+            /* leave it empty; the panel says the address is not known yet */
+        }
+    }
+    let balanceKas = null;
+    if (address) {
+        try {
+            const r = await rpc.call('getBalanceByAddress', { address }, 6000);
+            balanceKas = Number(r?.balance ?? 0) / 1e8;
+        } catch {
+            /* node not reachable or still syncing */
+        }
+    }
+    sendJson(res, 200, { hasKey, address, balanceKas, network: nodeCfg.network });
+});
+
+/** Creates a fresh gift wallet. Refuses to overwrite a funded one blindly. */
+route('POST', /^\/api\/gift\/wallet$/, async (req, res) => {
+    const body = await readBody(req);
+    if (gift.walletKey() && !body.force) {
+        return fail(res, 409, 'A wallet already exists. Creating another abandons any funds on the current one.', {
+            details: ['Reveal and back up the current key first, then confirm to replace it.'],
+        });
+    }
+    const state = await dockerctl.containerState('kaspa-node-gift');
+    if (!state.exists) return fail(res, 409, 'Install the Gift service first. The wallet is created with its own Kaspa library.');
+
+    const nodeCfg = loadNodeConfig();
+    try {
+        const wallet = await giftGenerateWallet(nodeCfg.network);
+        const saved = gift.saveWallet({ privateKeyHex: wallet.privateKeyHex, address: wallet.address });
+        writeGiftConfig(); // put the wallet into gift.json for the service to read
+        if (state.running) {
+            const job = jobs.start('Load the new wallet into the gift service', async (onLine) => {
+                onLine(`New sending wallet: ${saved.address}`);
+                await dockerctl.compose(['up', '-d', '--no-deps', '--force-recreate', 'gift'], {
+                    onLine,
+                    profile: 'gift',
+                    timeoutMs: 10 * 60_000,
+                });
+            });
+            return sendJson(res, 202, { ok: true, jobId: job.id, address: saved.address });
+        }
+        sendJson(res, 200, { ok: true, address: saved.address });
+    } catch (err) {
+        fail(res, 502, err.message);
+    }
+});
+
+/** Hands back the wallet key on the loopback panel, for backup. */
+route('POST', /^\/api\/gift\/wallet\/reveal$/, async (req, res) => {
+    const key = gift.walletKey();
+    if (!key) return fail(res, 404, 'No wallet key is stored.');
+    sendJson(res, 200, { privateKeyHex: key });
+});
+
 route('POST', /^\/api\/gift\/settings$/, async (req, res) => {
     const body = await readBody(req);
     const appsCfg = apps.loadAppsConfig();

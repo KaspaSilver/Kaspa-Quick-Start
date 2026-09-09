@@ -17,6 +17,10 @@ export const GIFT_DIR = path.join(CONF_DIR, 'gift');
 export const CONFIG_FILE = path.join(GIFT_DIR, 'gift.json');
 export const APPLE_KEY = path.join(GIFT_DIR, 'apple', 'AuthKey.p8');
 export const GOOGLE_KEY = path.join(GIFT_DIR, 'google', 'service-account.json');
+// The sending wallet, kept in its own 0600 file rather than in apps.json (not
+// 0600, rewritten on every unrelated change) or echoed back to any screen. It
+// is injected into gift.json, which the service reads.
+export const WALLET_FILE = path.join(GIFT_DIR, 'wallet.json');
 
 const secret = (file, contents) => {
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -25,6 +29,28 @@ const secret = (file, contents) => {
     // earlier version, or restored from a backup, must not stay world readable.
     fs.chmodSync(file, 0o600);
 };
+
+/** The stored wallet, or null. Its key is never returned to a screen unasked. */
+export function readWallet() {
+    try {
+        return JSON.parse(fs.readFileSync(WALLET_FILE, 'utf8'));
+    } catch {
+        return null;
+    }
+}
+export const walletKey = () => readWallet()?.privateKeyHex || '';
+export const walletAddress = () => readWallet()?.address || '';
+
+/** Stores the generated wallet. Key and address travel together. */
+export function saveWallet({ privateKeyHex, address }) {
+    const current = readWallet() || {};
+    const next = {
+        privateKeyHex: privateKeyHex ?? current.privateKeyHex ?? '',
+        address: address ?? current.address ?? '',
+    };
+    secret(WALLET_FILE, `${JSON.stringify(next, null, 2)}\n`);
+    return next;
+}
 
 export const hasApple = () => fs.existsSync(APPLE_KEY);
 export const hasGoogle = () => fs.existsSync(GOOGLE_KEY);
@@ -42,6 +68,9 @@ export function writeConfig(giftCfg, { network = 'mainnet', kaspadPort = 18110 }
         network,
         amountKas: Number(giftCfg.amountKas ?? 3),
         mode: giftCfg.mode === 'live' ? 'live' : 'record-only',
+        // The wallet lives in its own file; injected here because gift.json is
+        // what the service reads. Empty when none has been created.
+        wallet: { privateKeyHex: walletKey() },
         caps: {
             dailyKas: Number(giftCfg.dailyCapKas ?? 300),
             poolFloorKas: Number(giftCfg.poolFloorKas ?? 50),

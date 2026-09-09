@@ -218,6 +218,7 @@ function selectTab(name) {
     // Read on arrival rather than polled: nothing on it changes by itself.
     if (name === 'global') loadGlobal().catch(() => {});
     if (name === 'gift') loadGift().catch(() => {});
+    if (name === 'gift-wallet') loadGiftWallet().catch(() => {});
     if (name === 'bot') loadBot().catch(() => {});
     if (name === 'push') loadPush().catch(() => {});
     // On the drawer layout, picking a destination should get out of the way.
@@ -5439,6 +5440,88 @@ $('bot-update').addEventListener('click', async () => {
  * the same silence months later, when a user taps a button.
  */
 let giftState = { config: {}, status: null, credentials: {} };
+
+// --- gift sending wallet (mirrors the bot's wallet card) -------------------
+
+async function loadGiftWallet() {
+    let w;
+    try {
+        w = await api('/api/gift/wallet');
+    } catch {
+        return;
+    }
+    const has = w.hasKey && w.address;
+    const installed = Boolean(giftState?.container?.exists);
+    $('gift-wallet-none').hidden = has;
+    $('gift-wallet-have').hidden = !has;
+    $('gift-wallet-create').disabled = !installed;
+    $('gift-wallet-create-note').textContent = installed
+        ? "The panel creates it with the gift service's own Kaspa library."
+        : 'Install the Gift service first; the wallet is created from its own Kaspa library.';
+    if (has) {
+        $('gift-wallet-address').value = w.address;
+        renderQr($('gift-wallet-qr'), w.address);
+        $('gift-wallet-balance').textContent =
+            w.balanceKas === null || w.balanceKas === undefined ? 'unknown (is the node running?)' : `${fmtKas(w.balanceKas)} KAS`;
+        $('gift-wallet-key').hidden = true;
+    }
+}
+
+$('gift-wallet-create').addEventListener('click', async () => {
+    $('gift-wallet-create').disabled = true;
+    try {
+        await api('/api/gift/wallet', { method: 'POST' });
+        toast('Wallet created. Fund the address shown.');
+        await loadGiftWallet();
+    } catch (e) {
+        toast(e.message, 'bad');
+        $('gift-wallet-create').disabled = false;
+    }
+});
+
+$('gift-wallet-regen').addEventListener('click', async () => {
+    if (
+        !confirm(
+            'Replace the gift wallet?\n\nThis creates a NEW key and address. Any KAS on the current wallet stays with the OLD key, which you lose access to here unless you have revealed and saved it. Reveal and back it up first if it holds anything.',
+        )
+    ) {
+        return;
+    }
+    try {
+        await api('/api/gift/wallet', { method: 'POST', body: { force: true } });
+        toast('New wallet created.');
+        await loadGiftWallet();
+    } catch (e) {
+        toast(e.message, 'bad');
+    }
+});
+
+$('gift-wallet-refresh').addEventListener('click', () => loadGiftWallet().catch(() => {}));
+
+$('gift-wallet-copy').addEventListener('click', async () => {
+    try {
+        await navigator.clipboard.writeText($('gift-wallet-address').value);
+        toast('Address copied.');
+    } catch {
+        toast('Could not copy. Select the address and copy it by hand.', 'bad');
+    }
+});
+
+$('gift-wallet-reveal').addEventListener('click', async () => {
+    const box = $('gift-wallet-key');
+    if (!box.hidden) {
+        box.hidden = true;
+        return;
+    }
+    try {
+        const r = await api('/api/gift/wallet/reveal', { method: 'POST' });
+        box.hidden = false;
+        box.className = 'verdict';
+        box.textContent = `Private key (keep it secret): ${r.privateKeyHex}`;
+    } catch (e) {
+        toast(e.message, 'bad');
+    }
+});
 
 async function loadGift() {
     try {

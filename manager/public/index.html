@@ -1953,6 +1953,7 @@
       <nav class="subnav" aria-label="Gift service">
         <button class="subtab-btn active" data-subtab="gift-overview">Overview</button>
         <button class="subtab-btn" data-subtab="gift-setup">Setup</button>
+        <button class="subtab-btn" data-subtab="gift-wallet">Wallet</button>
         <button class="subtab-btn" data-subtab="gift-updates">Updates</button>
         <button class="subtab-btn" data-subtab="gift-uninstall">Uninstall</button>
       </nav>
@@ -2030,6 +2031,46 @@
             </div>
           </article>
         </div>
+      </div>
+
+      <div id="sub-gift-wallet" class="subtab">
+        <article class="card span2">
+          <h3>Sending wallet</h3>
+          <p class="hint">
+            Gifts are paid from this wallet. Create one, fund the address below
+            with the KAS you want to give away, and keep it topped up. The pool
+            floor in Setup stops it from ever emptying completely.
+          </p>
+
+          <div id="gift-wallet-none" hidden>
+            <p class="muted">No wallet yet.</p>
+            <button type="button" class="primary" id="gift-wallet-create">Create a wallet for me</button>
+            <p class="hint" id="gift-wallet-create-note"></p>
+          </div>
+
+          <div id="gift-wallet-have" class="bot-wallet-row" hidden>
+            <div class="bot-wallet-qr" id="gift-wallet-qr"></div>
+            <div class="bot-wallet-meta">
+              <label class="stack">Address — fund this
+                <span class="field-with-btn">
+                  <input id="gift-wallet-address" readonly spellcheck="false">
+                  <button type="button" class="ghost mini" id="gift-wallet-copy">Copy</button>
+                </span>
+              </label>
+              <dl class="kv vertical"><div><dt>Balance</dt><dd id="gift-wallet-balance">–</dd></div></dl>
+              <div class="row">
+                <button type="button" class="ghost mini" id="gift-wallet-refresh">Refresh balance</button>
+                <button type="button" class="ghost mini" id="gift-wallet-reveal">Reveal private key</button>
+                <button type="button" class="ghost mini danger" id="gift-wallet-regen">Replace wallet</button>
+              </div>
+              <div id="gift-wallet-key" class="verdict" hidden></div>
+            </div>
+          </div>
+          <p class="hint">
+            Live mode will not send until a wallet exists and is funded. This is
+            a hot wallet for gifting: keep only what you are giving away in it.
+          </p>
+        </article>
       </div>
 
       <div id="sub-gift-updates" class="subtab">
