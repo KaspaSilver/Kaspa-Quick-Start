@@ -4,26 +4,33 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/KaspaSilver/Kaspa-Quick-Start/main/uninstall.sh | bash
 #
-# This removes what the installer added: the containers, images, the chain-data
-# volume, the network and the install directory.
+# By default this removes the containers, the built images and the network, but
+# KEEPS your synced blockchain (and every app's data volume) and the install
+# directory. That way `curl ... | bash install.sh` afterwards re-adopts the data
+# and your node is already synced -- no hours of re-downloading the chain.
 #
 # Docker itself is deliberately never touched. It is shared machine-wide, and
 # uninstalling it would take every unrelated container, image and volume with
 # it. Remove Docker yourself if you want it gone.
 #
-# Pass --keep-data to preserve the synced blockchain.
+# Pass --delete-data (alias --purge) for a full wipe: also removes the data
+# volumes and the install directory. --keep-data is still accepted and is now
+# the default.
 
 set -euo pipefail
 
 STACK_DIR="${KASPA_STACK_DIR:-$HOME/.kaspa-node}"
 ASSUME_YES="${KASPA_YES:-0}"
-KEEP_DATA=0
+# Keep the synced chain and the install directory by default, so a reinstall is
+# instant. Re-syncing a node from scratch takes hours, so deleting it is opt-in.
+KEEP_DATA=1
 KEEP_BASE_IMAGES=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --dir) STACK_DIR="$2"; shift 2 ;;
         --keep-data) KEEP_DATA=1; shift ;;
+        --delete-data|--purge|--remove-data) KEEP_DATA=0; shift ;;
         --keep-base-images) KEEP_BASE_IMAGES=1; shift ;;
         --yes|-y) ASSUME_YES=1; shift ;;
         --help|-h)
@@ -31,7 +38,10 @@ while [ $# -gt 0 ]; do
 Usage: uninstall.sh [options]
 
   --dir <path>          Install directory (default: ~/.kaspa-node)
-  --keep-data           Keep the synced blockchain volume
+  --delete-data         Full wipe: also remove the synced blockchain, every
+                        app's data volume, and the install directory
+  --keep-data           Keep the data volumes and install directory (default,
+                        so a reinstall is already synced)
   --keep-base-images    Keep nginx / node / alpine / certbot images
   --yes, -y             Do not ask for confirmation
 USAGE
@@ -69,9 +79,10 @@ d() { $DOCKER_SUDO docker "$@"; }
 printf '\n%sRemove the Kaspa one-click node%s\n' "$B" "$R"
 printf '%s  directory %s%s\n' "$DIM" "$STACK_DIR" "$R"
 if [ "$KEEP_DATA" = "1" ]; then
-    printf '%s  chain data will be KEPT%s\n\n' "$DIM" "$R"
+    printf '%s  chain + app data and %s will be KEPT (a reinstall is instant)%s\n' "$DIM" "$STACK_DIR" "$R"
+    printf '%s  run with --delete-data to wipe everything instead%s\n\n' "$DIM" "$R"
 else
-    printf '%s  chain data will be DELETED (re-syncing takes hours)%s\n\n' "$YLW" "$R"
+    printf '%s  chain + app data and %s will be DELETED (re-syncing takes hours)%s\n\n' "$YLW" "$STACK_DIR" "$R"
 fi
 
 confirm "Proceed?" || { echo "Nothing was removed."; exit 0; }
@@ -140,18 +151,27 @@ fi
 
 if [ -d "$STACK_DIR" ]; then
     if [ "$KEEP_DATA" = "1" ]; then
-        say "Removing the install directory (chain data lives in a docker volume, not here)"
+        # The directory holds .env, and install.sh re-reads its password hash and
+        # session secret. Keeping it (and the data volumes) is what lets a
+        # reinstall re-adopt the synced chain and the apps' databases as-is.
+        say "Keeping $STACK_DIR (its .env holds what a reinstall needs to re-adopt your data)"
     else
         say "Removing $STACK_DIR"
-    fi
-    # Refuse to delete anything that is not recognisably our install directory.
-    if [ -f "$STACK_DIR/docker-compose.yml" ] || [ -f "$STACK_DIR/.env" ]; then
-        rm -rf "${STACK_DIR:?}"
-        ok "removed $STACK_DIR"
-    else
-        warn "$STACK_DIR does not look like a Kaspa node install, so leaving it alone."
+        # Refuse to delete anything that is not recognisably our install directory.
+        if [ -f "$STACK_DIR/docker-compose.yml" ] || [ -f "$STACK_DIR/.env" ]; then
+            rm -rf "${STACK_DIR:?}"
+            ok "removed $STACK_DIR"
+        else
+            warn "$STACK_DIR does not look like a Kaspa node install, so leaving it alone."
+        fi
     fi
 fi
 
-printf '\n%sDone.%s Every container, image, volume and file this stack created is gone.\n' "$GRN$B" "$R"
-printf '%sDocker itself was left installed.%s\n\n' "$DIM" "$R"
+if [ "$KEEP_DATA" = "1" ]; then
+    printf '\n%sDone.%s The containers, images and network are gone; your synced chain,\n' "$GRN$B" "$R"
+    printf 'app data and %s were kept. Reinstall any time and it picks up where it left off.\n' "$STACK_DIR"
+    printf '%sTo wipe everything including the chain: bash uninstall.sh --delete-data%s\n\n' "$DIM" "$R"
+else
+    printf '\n%sDone.%s Every container, image, volume and file this stack created is gone.\n' "$GRN$B" "$R"
+    printf '%sDocker itself was left installed.%s\n\n' "$DIM" "$R"
+fi

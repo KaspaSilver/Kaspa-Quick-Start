@@ -312,6 +312,50 @@ install_docker_macos() {
     open -a Docker || warn "Could not start Docker Desktop automatically. Open it from Applications."
 }
 
+# Make sure the Docker daemon comes back by itself after a reboot. This runs on
+# every install, not only when we install Docker: a machine can have Docker
+# already present but its service disabled, and then a power-off leaves the whole
+# stack -- the control panel included -- down until someone starts Docker by
+# hand. That is exactly the "the panel won't load after I restarted my PC" case:
+# every container is restart:unless-stopped, so they all come back on their own,
+# but only once Docker itself is running again.
+enable_docker_autostart_linux() {
+    command -v systemctl >/dev/null 2>&1 || return 0
+    # No system docker.service (Docker Desktop for Linux manages its own startup)
+    # means there is nothing for us to enable, and no misleading warning.
+    systemctl cat docker.service >/dev/null 2>&1 || return 0
+    if systemctl is-enabled docker.service >/dev/null 2>&1; then
+        ok "Docker already starts on boot"
+        return 0
+    fi
+    if $SUDO systemctl enable docker.service >/dev/null 2>&1; then
+        ok "Set Docker to start on boot"
+    else
+        warn "Could not set Docker to start on boot. Run: sudo systemctl enable docker"
+    fi
+}
+
+# The macOS equivalent: flip Docker Desktop's "start when you sign in" setting so
+# the daemon is back after a reboot without opening the app by hand. plutil ships
+# with the base system and edits JSON safely; a failure here is never fatal.
+enable_docker_autostart_macos() {
+    local changed=0 f
+    for f in \
+        "$HOME/Library/Group Containers/group.com.docker/settings-store.json" \
+        "$HOME/Library/Group Containers/group.com.docker/settings.json"; do
+        [ -f "$f" ] || continue
+        if plutil -replace autoStart -bool true "$f" >/dev/null 2>&1 \
+           || plutil -insert autoStart -bool true "$f" >/dev/null 2>&1; then
+            changed=1
+        fi
+    done
+    if [ "$changed" = "1" ]; then
+        ok "Set Docker Desktop to start when you sign in"
+    else
+        warn "Turn on Docker Desktop > Settings > General > 'Start Docker Desktop when you sign in' so the node survives a reboot."
+    fi
+}
+
 # Takes a budget in seconds, not a number of attempts: a probe can now cost
 # anything from an instant to DOCKER_PROBE_TIMEOUT, so counting attempts says
 # nothing about how long the caller is actually going to sit here.
@@ -359,6 +403,14 @@ ensure_docker() {
     $DOCKER_SUDO docker compose version >/dev/null 2>&1 \
         || die "'docker compose' (v2) is missing. Update Docker, or install the docker-compose-plugin package."
     ok "docker compose $($DOCKER_SUDO docker compose version --short 2>/dev/null || echo v2)"
+
+    # Runs whether Docker was already here or we just installed it, so the daemon
+    # (and therefore the whole stack) is back on its own after any reboot.
+    if [ "$PLATFORM" = linux ]; then
+        enable_docker_autostart_linux
+    elif [ "$PLATFORM" = macos ]; then
+        enable_docker_autostart_macos
+    fi
 }
 
 dc() { $DOCKER_SUDO docker compose -f "$STACK_DIR/docker-compose.yml" -f "$STACK_DIR/conf/ports.yml" --project-directory "$STACK_DIR" "$@"; }

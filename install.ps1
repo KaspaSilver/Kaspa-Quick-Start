@@ -139,6 +139,32 @@ function Install-Docker {
     }
 }
 
+function Enable-DockerAutostart {
+    # Make Docker Desktop launch at sign-in so the node is back after a reboot
+    # without opening Docker by hand. This is the fix for "the panel won't load
+    # after I restarted my PC": every container is restart:unless-stopped, so
+    # they all come back on their own -- but only once Docker itself is running.
+    # A per-user Run entry is version-independent and needs no admin rights.
+    # -Autostart is Docker's own flag for starting minimised, so no window pops
+    # up at every login.
+    $exe = Join-Path $env:ProgramFiles 'Docker\Docker\Docker Desktop.exe'
+    if (-not (Test-Path $exe) -and ${env:ProgramFiles(x86)}) {
+        $exe = Join-Path ${env:ProgramFiles(x86)} 'Docker\Docker\Docker Desktop.exe'
+    }
+    if (-not (Test-Path $exe)) {
+        Warn "Could not find Docker Desktop to set it to start at login. Turn on Settings > General > 'Start Docker Desktop when you sign in' yourself."
+        return
+    }
+    try {
+        $run = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+        New-ItemProperty -Path $run -Name 'Docker Desktop' -Value "`"$exe`" -Autostart" `
+            -PropertyType String -Force -ErrorAction Stop | Out-Null
+        Ok 'Docker Desktop is set to start when you sign in'
+    } catch {
+        Warn "Could not set Docker to start at login. Turn on Settings > General > 'Start Docker Desktop when you sign in' yourself."
+    }
+}
+
 function Initialize-Docker {
     Update-SessionPath
     if (Test-Docker) { Ok 'Docker is already installed and running'; }
@@ -161,6 +187,10 @@ function Initialize-Docker {
     Invoke-Native { docker compose version *> $null }  # see Invoke-Native
     if ($LASTEXITCODE -ne 0) { Die "'docker compose' (v2) is missing. Update Docker Desktop." }
     Ok 'docker compose is available'
+
+    # Runs whether Docker was already here or we just installed it, so the daemon
+    # (and therefore the whole stack) is back on its own after any reboot.
+    Enable-DockerAutostart
 }
 
 # ---------------------------------------------------------------- stack ----

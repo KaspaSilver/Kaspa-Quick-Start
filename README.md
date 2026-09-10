@@ -52,7 +52,7 @@ It is what wallets and explorers ask a node for, and building it later costs
 more than having it from the beginning, so it is a checkbox you can clear rather
 than a default you have to find.
 
-### Uninstall, which removes everything
+### Uninstall
 
 Same two dialects as the install above: Linux and macOS run shell scripts,
 Windows runs PowerShell. There is no single line that both understand.
@@ -69,9 +69,18 @@ curl -fsSL https://raw.githubusercontent.com/KaspaSilver/Kaspa-Quick-Start/main/
 irm https://raw.githubusercontent.com/KaspaSilver/Kaspa-Quick-Start/main/uninstall.ps1 | iex
 ```
 
-Both do exactly the same thing and take the same options. Containers, images,
-the chain-data volume, the network and the install directory all go. Add
-`--keep-data` / `-KeepData` to preserve the synced blockchain.
+Both do exactly the same thing and take the same options. By default they remove
+the containers, the built images and the network, but **keep your synced
+blockchain (and every app's data) and the install directory** — so if you run
+the install line again later, it re-adopts that data and your node is already
+synced, with no hours of re-downloading the chain.
+
+For a full wipe that also deletes the data volumes and the install directory,
+add `--delete-data` (Linux/macOS) or `-DeleteData` (Windows):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/KaspaSilver/Kaspa-Quick-Start/main/uninstall.sh | bash -s -- --delete-data
+```
 
 The installer also leaves a copy of both scripts in the install directory, so
 you never need the URL twice:
@@ -321,8 +330,13 @@ its own switch and by nothing else.
 After a reboot or a power cut, docker brings back exactly what was running when
 the machine went down: every container is `restart: unless-stopped`, so
 anything you had stopped stays stopped. That relies on docker itself starting,
-which is a setting outside this stack — on macOS and Windows, Docker Desktop's
-**Start Docker Desktop when you sign in**; on Linux, `systemctl enable docker`.
+which is a setting outside this stack — so **the installer turns it on for you**:
+on macOS and Windows it enables Docker Desktop's *Start Docker Desktop when you
+sign in*, and on Linux it runs `systemctl enable docker`. It does this on every
+install, including when Docker was already present, so a machine that comes back
+from a power cut brings the panel and the node back on its own. (If the panel
+page ever shows *Failed to fetch* right after a reboot, Docker Desktop simply
+hasn't finished starting yet — give it a minute.)
 
 On `linux/amd64` the kaspad image is built by downloading the official release
 archive. Those binaries are static musl builds, so the image is a bare Alpine
