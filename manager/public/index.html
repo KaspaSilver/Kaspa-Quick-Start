@@ -2251,6 +2251,7 @@
       <nav class="subnav" aria-label="Proxy and domains">
         <button class="subtab-btn active" data-subtab="proxy-overview">Overview</button>
         <button class="subtab-btn" data-subtab="proxy-advanced">Advanced</button>
+        <button class="subtab-btn" data-subtab="proxy-restart">Restart</button>
         <button class="subtab-btn" data-subtab="proxy-uninstall">Uninstall</button>
       </nav>
 
@@ -2393,6 +2394,28 @@
                 on your network, this machine terminates HTTPS in front of it, and
                 each name goes where it belongs.
               </p>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <div id="sub-proxy-restart" class="subtab">
+        <div class="grid">
+          <article class="card span2">
+            <h3>Restart all domains</h3>
+            <p class="muted">
+              Rewrites the nginx configuration for every domain from your saved
+              settings and reloads it. Use this after a panel update so the new
+              settings actually take effect on your live domains — otherwise a
+              domain keeps serving the configuration it was last saved with.
+            </p>
+            <p class="muted">
+              It is safe to run any time: your domains, certificates and settings
+              are untouched, and there is no downtime — nginx reloads in place.
+            </p>
+            <p class="error" id="proxy-restart-error" hidden></p>
+            <div class="row">
+              <button id="proxy-restart-btn" class="primary">Restart all domains</button>
             </div>
           </article>
         </div>

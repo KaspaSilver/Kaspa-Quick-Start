@@ -6343,6 +6343,29 @@ $('proxy-reload').addEventListener('click', async () => {
     }
 });
 
+// Same action as "Re-apply nginx config" above, given its own tab so it is easy
+// to find after an update: rewrite every domain's vhost from the current code
+// and reload nginx, which is what makes a generator change (new headers, new
+// routing) reach the live domains.
+$('proxy-restart-btn').addEventListener('click', async () => {
+    const btn = $('proxy-restart-btn');
+    const err = $('proxy-restart-error');
+    err.hidden = true;
+    btn.disabled = true;
+    const was = btn.textContent;
+    btn.textContent = 'Restarting…';
+    try {
+        await api('/api/proxy/reload', { method: 'POST' });
+        toast('All domains restarted: nginx configuration rewritten and reloaded.', 'good');
+    } catch (e) {
+        err.textContent = e.message;
+        err.hidden = false;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = was;
+    }
+});
+
 $('proxy-renew').addEventListener('click', async () => {
     try {
         await api('/api/proxy/renew', { method: 'POST' });
