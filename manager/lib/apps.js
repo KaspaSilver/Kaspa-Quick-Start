@@ -54,6 +54,22 @@ export const APPS = {
             // about never exposing, and it is one prefix away from a route that
             // is exposed on purpose.
             deny: ['/self-stash-gc-orphans', '/internal/push'],
+            // The indexer is read cross-origin by browser clients: the web app
+            // at kachat.app (and anyone self-hosting it on their own domain) is
+            // a different origin from this API, so without these headers the
+            // browser throws every response away with "No 'Access-Control-Allow
+            // -Origin' header is present" -- even the ones that answered 200.
+            // Native iOS/Android are not browsers, so they never hit this.
+            //
+            // Reflecting the request Origin is deliberate and safe here: these
+            // are public reads, carrying no cookies or credentials, so it grants
+            // a browser nothing it could not already get with curl. nginx.js
+            // turns this into per-location headers + a preflight short-circuit.
+            cors: {
+                methods: 'GET, POST, OPTIONS',
+                headers: 'Content-Type, Accept',
+                maxAge: 86400,
+            },
         },
         // Ports the container listens on, and whether publishing them is useful.
         ports: {

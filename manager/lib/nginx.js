@@ -250,7 +250,51 @@ function passTo(up, proxy, i, strip) {
     return lines;
 }
 
-function locationBlock(up, proxy, indent = '        ', { strip = null } = {}) {
+/**
+ * CORS headers for a browser app on another origin, plus the preflight answer.
+ *
+ * Three things this gets right that a hand-written block usually does not:
+ *
+ *  - `always`, so the header rides on 4xx/5xx too. The indexer answers 400 to a
+ *    malformed query and 429 when rate-limited; without `always` those come back
+ *    headerless and the browser reports them as CORS failures, not as the errors
+ *    they are.
+ *  - The OPTIONS branch returns 204 *before* passTo()'s `set`/`rewrite ... break`
+ *    and `proxy_pass`, so a preflight never reaches the app (which would 404 or
+ *    405 it) and never gets rewritten. It is emitted at the top of the location
+ *    for exactly this reason -- `rewrite ... break` stops the rewrite module, and
+ *    an `if` placed after it would not run.
+ *  - HSTS is re-sent here when the vhost is TLS. A location that sets any
+ *    add_header stops inheriting the server-level ones, so the Strict-Transport
+ *    -Security added on the 443 server block would silently vanish on just these
+ *    paths otherwise.
+ */
+function corsBlock(cors, i, { hsts = false } = {}) {
+    if (!cors) return [];
+    const methods = cors.methods || 'GET, POST, OPTIONS';
+    const headers = cors.headers || 'Content-Type, Accept';
+    const maxAge = cors.maxAge ?? 86400;
+    const common = [
+        `${i}    add_header Access-Control-Allow-Origin $http_origin always;`,
+        `${i}    add_header Access-Control-Allow-Methods "${methods}" always;`,
+        `${i}    add_header Access-Control-Allow-Headers "${headers}" always;`,
+        `${i}    add_header Vary Origin always;`,
+    ];
+    const lines = [];
+    lines.push(`${i}if ($request_method = OPTIONS) {`);
+    lines.push(...common);
+    lines.push(`${i}    add_header Access-Control-Max-Age ${maxAge} always;`);
+    lines.push(`${i}    add_header Content-Type text/plain always;`);
+    lines.push(`${i}    add_header Content-Length 0 always;`);
+    lines.push(`${i}    return 204;`);
+    lines.push(`${i}}`);
+    // Same four headers, one indent level out, for the real request.
+    for (const line of common) lines.push(line.replace(`${i}    `, `${i}`));
+    if (hsts) lines.push(`${i}add_header Strict-Transport-Security "max-age=31536000" always;`);
+    return lines;
+}
+
+function locationBlock(up, proxy, indent = '        ', { strip = null, cors = null, hsts = false } = {}) {
     const i = indent;
     const lines = [];
     if (up.grpc) {
@@ -259,6 +303,8 @@ function locationBlock(up, proxy, indent = '        ', { strip = null } = {}) {
         lines.push(`${i}grpc_send_timeout 3600s;`);
         return lines.join('\n');
     }
+    // CORS first: the preflight short-circuit has to precede passTo()'s rewrite.
+    lines.push(...corsBlock(cors, i, { hsts }));
     lines.push(...passTo(up, proxy, i, strip));
     lines.push(`${i}proxy_http_version 1.1;`);
     // $http_host, not $host. They differ in exactly one way that matters here:
@@ -316,10 +362,11 @@ function locationBlock(up, proxy, indent = '        ', { strip = null } = {}) {
  * answer. Everything here comes from the app's own declaration in apps.js, so
  * the knowledge of which port serves what stays with the app.
  */
-function extraLocations(proxy) {
+function extraLocations(proxy, { hsts = false } = {}) {
     const publish = APPS[proxy.target?.kind]?.publish;
     if (!publish) return [];
 
+    const cors = publish.cors ?? null;
     const lines = [];
     for (const location of publish.deny ?? []) {
         lines.push(`    location ^~ ${location} {`);
@@ -337,7 +384,7 @@ function extraLocations(proxy) {
             maxBodySize: route.maxBodySize ?? publish.maxBodySize ?? null,
         };
         lines.push(`    location ^~ ${route.location} {`);
-        lines.push(locationBlock(up, proxy));
+        lines.push(locationBlock(up, proxy, '        ', { cors, hsts }));
         lines.push('    }');
         lines.push('');
     }
@@ -380,17 +427,18 @@ export function renderDomain(domain, hosts, nodeConfig, { publicHttpsPort = 443 
         for (const proxy of ordered) {
             const up = upstreamFor(proxy, nodeConfig);
             const path = normalizePath(proxy.path);
+            const cors = APPS[proxy.target?.kind]?.publish?.cors ?? null;
             if (path === '/') {
-                lines.push(...extraLocations(proxy));
+                lines.push(...extraLocations(proxy, { hsts: useTls }));
                 lines.push('    location / {');
-                lines.push(locationBlock(up, proxy));
+                lines.push(locationBlock(up, proxy, '        ', { cors, hsts: useTls }));
                 lines.push('    }');
             } else {
                 // The rewrite is what makes the prefix invisible to the service:
                 // /borsh and /borsh/anything both arrive as / and /anything. A
                 // proxy_pass with a URI cannot do both without doubling slashes.
                 lines.push(`    location ^~ ${path} {`);
-                lines.push(locationBlock(up, proxy, '        ', { strip: path }));
+                lines.push(locationBlock(up, proxy, '        ', { strip: path, cors, hsts: useTls }));
                 lines.push('    }');
             }
             lines.push('');
