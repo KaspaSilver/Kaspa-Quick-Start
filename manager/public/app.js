@@ -36,6 +36,12 @@ async function api(path, { method = 'GET', body } = {}) {
     return data;
 }
 
+// How this browser reached the panel, from the server's point of view: whether
+// the request came through the reverse proxy, and the panel's own direct address
+// to fall back on. Set once from /api/session. Used to warn before stopping the
+// proxy would disconnect the very page asking for it.
+let panelAccess = { viaProxy: false, directUrl: '' };
+
 let toastTimer;
 function toast(message, kind = '') {
     const node = $('toast');
@@ -846,6 +852,27 @@ for (const input of document.querySelectorAll('[data-service]')) {
         // switch back and forth underneath what is happening.
         input.dataset.busy = '1';
         input.disabled = true;
+
+        // Stopping the reverse proxy while you are viewing this panel THROUGH it
+        // pulls the route out from under the reply: the stop succeeds, but this
+        // page hangs on "Stopping…" forever because nothing can answer it any
+        // more. Warn first, and point at the panel's direct address so they can
+        // get back in and turn it on again.
+        if (service === 'proxy' && !wanted && panelAccess.viaProxy) {
+            const where = panelAccess.directUrl || 'the panel on its own port';
+            const proceed = confirm(
+                'You are viewing this panel through the reverse proxy, so stopping it will ' +
+                    'disconnect you and this page will freeze on "Stopping…".\n\n' +
+                    `Open the panel directly at ${where} on the machine running the node first, ` +
+                    'then stop the proxy from there.\n\nStop it anyway?',
+            );
+            if (!proceed) {
+                input.checked = !wanted; // setting .checked fires no change event
+                input.dataset.busy = '0';
+                input.disabled = false;
+                return;
+            }
+        }
 
         const job = await runAction({
             key: service,
@@ -6911,6 +6938,7 @@ setInterval(() => loadServices().catch(() => {}), 10_000);
 api('/api/session')
     .then((s) => {
         if (s.panelVersion) $('version-badge').textContent = `v${s.panelVersion}`;
+        panelAccess = { viaProxy: Boolean(s.viaProxy), directUrl: s.directUrl || '' };
         renderPasswordCard(Boolean(s.required));
         // No password set: skip the sign-in screen entirely and say why, so the
         // absence of a login prompt reads as a decision rather than a bug.

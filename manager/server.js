@@ -382,6 +382,20 @@ const route = (method, pattern, handler, { auth = true } = {}) =>
 
 route('GET', /^\/healthz$/, async (req, res) => sendJson(res, 200, { ok: true }), { auth: false });
 
+// True when this request reached the panel through a reverse proxy rather than
+// on the panel's own port. Our nginx vhost sets X-Forwarded-* headers on the way
+// through; a browser hitting http://localhost:GUI_PORT directly sets none. It
+// matters for one thing: stopping the proxy from a request that arrived through
+// it tears down the route carrying the reply, so the page hangs on "Stopping..."
+// forever. The panel warns first, and needs to know when to.
+const reachedViaProxy = (req) =>
+    Boolean(req.headers['x-forwarded-for'] || req.headers['x-forwarded-proto'] || req.headers['x-forwarded-host']);
+
+// The panel's own address, bypassing any proxy -- where to send someone so they
+// can turn the proxy back on after stopping it. GUI_PORT is the port compose
+// published this container on.
+const panelDirectUrl = () => `http://localhost:${process.env.GUI_PORT || '8080'}`;
+
 route(
     'GET',
     /^\/api\/session$/,
@@ -397,6 +411,9 @@ route(
             // "your password is wrong", forever.
             passwordUnusable: passwordUnusable(),
             panelVersion: PANEL_VERSION,
+            // So the UI can warn before stopping the proxy would disconnect it.
+            viaProxy: reachedViaProxy(req),
+            directUrl: panelDirectUrl(),
         }),
     { auth: false },
 );
