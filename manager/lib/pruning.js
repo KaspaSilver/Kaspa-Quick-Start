@@ -54,12 +54,21 @@ let samples = [];
 function observeRate(blueScore, now) {
     if (!Number.isFinite(blueScore) || blueScore <= 0) return null;
 
-    const last = samples[samples.length - 1];
-    // A blue score that went backwards means a different chain or a fresh sync,
-    // so the old samples say nothing useful about the new one.
-    if (last && blueScore < last.blueScore) samples = [];
+    let last = samples[samples.length - 1];
+    // A blue score that went backwards means a different chain or a fresh sync --
+    // and Kaspa's virtual blue score also dips briefly across a reorg -- so the
+    // old samples say nothing useful about the new one. Clear `last` too, or the
+    // push below keeps the stale timing and leaves `samples` empty when the dip
+    // lands within 15s of the previous sample, crashing the read of latest.at.
+    if (last && blueScore < last.blueScore) {
+        samples = [];
+        last = undefined;
+    }
     if (!last || now - last.at >= 15_000) samples.push({ at: now, blueScore });
     samples = samples.filter((s) => now - s.at <= RATE_WINDOW_MS);
+
+    // Need at least two samples spanning real time before a rate means anything.
+    if (samples.length < 2) return null;
 
     const first = samples[0];
     const latest = samples[samples.length - 1];
