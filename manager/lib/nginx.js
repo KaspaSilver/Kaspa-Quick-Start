@@ -288,6 +288,21 @@ function corsBlock(cors, i, { hsts = false } = {}) {
     lines.push(`${i}    add_header Content-Length 0 always;`);
     lines.push(`${i}    return 204;`);
     lines.push(`${i}}`);
+    // Strip anything the upstream sent for itself first. The KaPosts API answers
+    // with its own `Access-Control-Allow-Origin: *`, and a response carrying two
+    // Allow-Origin headers (its `*` and ours) is rejected by every browser as
+    // surely as one carrying none -- so hide the upstream's and let the ones
+    // below be the only set. Harmless where the upstream sends nothing.
+    for (const header of [
+        'Access-Control-Allow-Origin',
+        'Access-Control-Allow-Methods',
+        'Access-Control-Allow-Headers',
+        'Access-Control-Allow-Credentials',
+        'Access-Control-Expose-Headers',
+        'Access-Control-Max-Age',
+    ]) {
+        lines.push(`${i}proxy_hide_header ${header};`);
+    }
     // Same four headers, one indent level out, for the real request.
     for (const line of common) lines.push(line.replace(`${i}    `, `${i}`));
     if (hsts) lines.push(`${i}add_header Strict-Transport-Security "max-age=31536000" always;`);
