@@ -25,19 +25,19 @@
     ],
     "win": {
       "target": "nsis",
-      "artifactName": "Kaspa Quick Start Windows.${ext}"
+      "artifactName": "Kaspa-Quick-Start-Windows.${ext}"
     },
     "nsis": { "oneClick": true, "perMachine": false, "allowToChangeInstallationDirectory": false },
     "mac": {
       "target": "dmg",
       "category": "public.app-category.utilities",
-      "artifactName": "Kaspa Quick Start MacOS.${ext}"
+      "artifactName": "Kaspa-Quick-Start-MacOS.${ext}"
     },
     "linux": {
       "target": ["AppImage", "deb"],
       "category": "Utility",
       "maintainer": "KaspaSilver <noreply@kachat.app>",
-      "artifactName": "Kaspa Quick Start Linux.${ext}"
+      "artifactName": "Kaspa-Quick-Start-Linux.${ext}"
     }
   }
 }

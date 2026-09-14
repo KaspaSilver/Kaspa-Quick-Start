@@ -30,10 +30,10 @@ Prefer not to touch a terminal? Download the desktop app, open it, and click
 control panel. It runs the same steps as the commands below.
 
 - **[Latest release &rarr; downloads](https://github.com/KaspaSilver/Kaspa-Quick-Start/releases/latest)**
-  - **Windows:** `Kaspa Quick Start Windows.exe`
-  - **macOS:** `Kaspa Quick Start MacOS.dmg`
-  - **Linux:** `Kaspa Quick Start Linux.AppImage` (runs on most distros, including
-    Linux Mint) or `Kaspa Quick Start Linux.deb`
+  - **Windows:** `Kaspa-Quick-Start-Windows.exe`
+  - **macOS:** `Kaspa-Quick-Start-MacOS.dmg`
+  - **Linux:** `Kaspa-Quick-Start-Linux.AppImage` (runs on most distros, including
+    Linux Mint) or `Kaspa-Quick-Start-Linux.deb`
 
 The app is not code-signed yet, so the first launch shows a one-time prompt:
 Windows SmartScreen (More info, then Run anyway), or on macOS right-click the app
