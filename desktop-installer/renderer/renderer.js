@@ -2,7 +2,10 @@
 const $ = (id) => document.getElementById(id);
 const VIEWS = ['idle', 'confirm', 'running', 'ok', 'removed', 'fail'];
 let panelUrl = null;
+let logPath = null;
 let mode = 'install';
+
+window.kqs.onLogPath((p) => { logPath = p; });
 
 function show(view) {
   for (const v of VIEWS) $(v).style.display = v === view ? 'block' : 'none';
@@ -56,5 +59,7 @@ window.kqs.onDone((result) => {
   $('failmsg').textContent =
     (result && (result.error || (result.cancelled ? 'Cancelled.' : `Exit code ${result.code}`))) ||
     'Something went wrong. Check the log and try again.';
+  $('faillog').textContent = ($('log').textContent || '').split('\n').slice(-40).join('\n').trim() || '(no output was captured)';
+  $('logpath').textContent = logPath ? `Full log: ${logPath}` : '';
   show('fail');
 });

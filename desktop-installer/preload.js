@@ -8,4 +8,5 @@ contextBridge.exposeInMainWorld('kqs', {
   openPanel: (url) => ipcRenderer.invoke('panel:open', url),
   onLine: (cb) => ipcRenderer.on('install:line', (_e, line) => cb(line)),
   onDone: (cb) => ipcRenderer.on('install:done', (_e, result) => cb(result)),
+  onLogPath: (cb) => ipcRenderer.on('install:logpath', (_e, p) => cb(p)),
 });

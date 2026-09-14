@@ -29,9 +29,14 @@ app.whenReady().then(() => {
     onDone: (result) => win.webContents.send('install:done', result),
   };
 
-  ipcMain.handle('install:start', () => { runInstall(stream); return true; });
+  ipcMain.handle('install:start', () => {
+    const r = runInstall(stream);
+    win.webContents.send('install:logpath', r && r.logFile);
+    return true;
+  });
   ipcMain.handle('uninstall:start', (_e, deleteData) => {
-    runUninstall({ deleteData: Boolean(deleteData), ...stream });
+    const r = runUninstall({ deleteData: Boolean(deleteData), ...stream });
+    win.webContents.send('install:logpath', r && r.logFile);
     return true;
   });
 
