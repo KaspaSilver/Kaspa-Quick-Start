@@ -43,3 +43,28 @@ jobs:
           #   macOS:   CSC_LINK, CSC_KEY_PASSWORD, APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID
           #   Windows: WIN_CSC_LINK, WIN_CSC_KEY_PASSWORD
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+  # The app does not self-update, so electron-builder's auto-update metadata is
+  # just clutter on the release. Runs once after all three builds have uploaded
+  # and deletes the *.blockmap and latest*.yml assets, leaving only the three
+  # installers. Add electron-updater later? Delete this job.
+  tidy:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Remove auto-update metadata assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          id=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" -q .id)
+          gh api "repos/${GITHUB_REPOSITORY}/releases/${id}/assets" --paginate \
+            -q '.[] | select(.name | test("\\.blockmap$|^latest.*\\.yml$")) | "\(.id)\t\(.name)"' \
+          | while IFS=$'\t' read -r asset_id name; do
+              echo "removing $name"
+              gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}"
+            done
