@@ -17,7 +17,7 @@
   "build": {
     "appId": "app.kachat.kaspaquickstart.installer",
     "productName": "Kaspa Quick Start",
-    "directories": { "output": "release" },
+    "directories": { "output": "release", "buildResources": "build" },
     "files": ["main.js", "preload.js", "installer.js", "renderer/**/*"],
     "publish": [
       { "provider": "github", "owner": "KaspaSilver", "repo": "Kaspa-Quick-Start" }

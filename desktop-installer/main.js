@@ -1,7 +1,7 @@
 'use strict';
 const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('node:path');
-const { runInstall } = require('./installer');
+const { runInstall, runUninstall } = require('./installer');
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -24,11 +24,14 @@ function createWindow() {
 app.whenReady().then(() => {
   const win = createWindow();
 
-  ipcMain.handle('install:start', () => {
-    runInstall({
-      onLine: (line) => win.webContents.send('install:line', line),
-      onDone: (result) => win.webContents.send('install:done', result),
-    });
+  const stream = {
+    onLine: (line) => win.webContents.send('install:line', line),
+    onDone: (result) => win.webContents.send('install:done', result),
+  };
+
+  ipcMain.handle('install:start', () => { runInstall(stream); return true; });
+  ipcMain.handle('uninstall:start', (_e, deleteData) => {
+    runUninstall({ deleteData: Boolean(deleteData), ...stream });
     return true;
   });
 

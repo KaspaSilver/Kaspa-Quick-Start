@@ -40,7 +40,14 @@ Artifacts: `KaspaQuickStart-Setup-<v>.exe` (Windows), `KaspaQuickStart-<v>-<arch
 (macOS), `KaspaQuickStart-<v>.AppImage` + `.deb` (Linux — AppImage runs on Mint,
 Ubuntu, Fedora, … with nothing to install).
 
-## Signing (currently OFF — builds are unsigned)
+## Icon
+
+The app icon is `build/icon.png` (1024x1024). electron-builder auto-generates the
+Windows `.ico` and macOS `.icns` from it, so this one file is all that is needed.
+The current file is a themed placeholder; drop the official Kaspa/KaChat logo at
+`build/icon.png` (same size) to replace it.
+
+## Signing (currently OFF -- builds are unsigned)
 
 Unsigned apps **work**, but first launch shows a one-time OS warning:
 - **Windows:** SmartScreen → *More info* → *Run anyway*.

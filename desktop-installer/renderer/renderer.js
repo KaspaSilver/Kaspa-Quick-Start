@@ -1,27 +1,38 @@
 'use strict';
 const $ = (id) => document.getElementById(id);
+const VIEWS = ['idle', 'confirm', 'running', 'ok', 'removed', 'fail'];
 let panelUrl = null;
+let mode = 'install';
 
 function show(view) {
-  $('idle').style.display = view === 'idle' ? '' : 'none';
-  $('running').style.display = view === 'running' ? '' : 'none';
-  $('ok').style.display = view === 'ok' ? 'block' : 'none';
-  $('fail').style.display = view === 'fail' ? 'block' : 'none';
+  for (const v of VIEWS) $(v).style.display = v === view ? 'block' : 'none';
 }
 
-function begin() {
-  show('running');
-  $('step').textContent = 'Starting…';
+function beginInstall() {
+  mode = 'install';
+  $('step').textContent = 'Starting up';
   $('log').textContent = '';
+  show('running');
   window.kqs.startInstall();
 }
 
-$('install').addEventListener('click', begin);
-$('retry').addEventListener('click', begin);
+function beginUninstall(wipe) {
+  mode = 'uninstall';
+  $('step').textContent = 'Starting up';
+  $('log').textContent = '';
+  show('running');
+  window.kqs.startUninstall(wipe);
+}
+
+$('install').addEventListener('click', beginInstall);
+$('reinstall').addEventListener('click', beginInstall);
 $('open').addEventListener('click', () => window.kqs.openPanel(panelUrl));
+$('uninstall').addEventListener('click', () => show('confirm'));
+$('cancel').addEventListener('click', () => show('idle'));
+$('do-uninstall').addEventListener('click', () => beginUninstall($('wipe').checked));
+$('retry').addEventListener('click', () => (mode === 'uninstall' ? show('confirm') : beginInstall()));
 
 window.kqs.onLine((line) => {
-  // The scripts prefix each stage with "==>" -- surface that as the current step.
   const step = line.match(/^==>\s*(.+)$/);
   if (step) $('step').textContent = step[1];
   const log = $('log');
@@ -31,13 +42,19 @@ window.kqs.onLine((line) => {
 
 window.kqs.onDone((result) => {
   if (result && result.ok) {
-    panelUrl = result.url;
-    $('url').textContent = result.url || 'http://localhost:8420';
-    show('ok');
-  } else {
-    $('failmsg').textContent =
-      (result && (result.error || (result.cancelled ? 'Cancelled.' : `Exit code ${result.code}`))) ||
-      'Something went wrong. Check the log and try again.';
-    show('fail');
+    if (mode === 'uninstall') {
+      $('removedmsg').textContent = 'Docker was left installed. You can install again any time.';
+      show('removed');
+    } else {
+      panelUrl = result.url;
+      $('url').textContent = result.url || 'http://localhost:8420';
+      show('ok');
+    }
+    return;
   }
+  $('failtitle').textContent = mode === 'uninstall' ? 'Uninstall did not finish' : 'Install did not finish';
+  $('failmsg').textContent =
+    (result && (result.error || (result.cancelled ? 'Cancelled.' : `Exit code ${result.code}`))) ||
+    'Something went wrong. Check the log and try again.';
+  show('fail');
 });
