@@ -1,0 +1,42 @@
+{
+  "name": "kaspa-quick-start-installer",
+  "productName": "Kaspa Quick Start",
+  "version": "1.0.0",
+  "description": "One-click desktop installer for the Kaspa Quick Start node stack. Runs the same install as the terminal one-liner, with a progress screen and a link to the panel.",
+  "license": "MIT",
+  "author": "KaspaSilver",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "app.kachat.kaspaquickstart.installer",
+    "productName": "Kaspa Quick Start",
+    "directories": { "output": "release" },
+    "files": ["main.js", "preload.js", "installer.js", "renderer/**/*"],
+    "publish": [
+      { "provider": "github", "owner": "KaspaSilver", "repo": "Kaspa-Quick-Start" }
+    ],
+    "win": {
+      "target": "nsis",
+      "artifactName": "KaspaQuickStart-Setup-${version}.${ext}"
+    },
+    "nsis": { "oneClick": true, "perMachine": false, "allowToChangeInstallationDirectory": false },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.utilities",
+      "artifactName": "KaspaQuickStart-${version}-${arch}.${ext}"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "category": "Utility",
+      "maintainer": "KaspaSilver <noreply@kachat.app>",
+      "artifactName": "KaspaQuickStart-${version}.${ext}"
+    }
+  }
+}

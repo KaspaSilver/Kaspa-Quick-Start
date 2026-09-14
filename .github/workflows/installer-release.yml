@@ -1,0 +1,51 @@
+name: Desktop installer release
+
+# Builds the Kaspa Quick Start desktop installer for Windows, macOS and Linux and
+# attaches the artifacts to a GitHub Release. Triggered by an installer tag so it
+# never fires on ordinary stack changes:
+#   git tag installer-v1.0.0 && git push origin installer-v1.0.0
+on:
+  push:
+    tags: ["installer-v*"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: desktop-installer
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build and publish
+        # electron-builder publishes to the GitHub Release for the tag. Code
+        # signing stays OFF until the secrets below exist, so builds are unsigned
+        # (they still run; users get a one-time OS warning). To sign later, add the
+        # secrets and electron-builder picks them up with no code change:
+        #   macOS:   CSC_LINK, CSC_KEY_PASSWORD, APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID
+        #   Windows: WIN_CSC_LINK, WIN_CSC_KEY_PASSWORD
+        run: npx electron-builder --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
