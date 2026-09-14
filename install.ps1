@@ -42,6 +42,47 @@ function Ok   { param($m) Write-Host "  ok $m" -ForegroundColor Green }
 function Warn { param($m) Write-Host "warn $m" -ForegroundColor Yellow }
 function Die  { param($m) Write-Host "fail $m" -ForegroundColor Red; exit 1 }
 
+# True when TCP $Port is free to bind on this machine. The bind probe is exactly
+# what Docker will attempt for the panel's published port; the docker-ps check
+# also rejects a port a running container already publishes (Docker's proxy-off
+# mode leaves nothing bound on the host, so the bind probe alone would miss it).
+function Test-PortFree {
+    param([int] $Port)
+    try {
+        $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Any, $Port)
+        $listener.Start()
+        $listener.Stop()
+    } catch {
+        return $false
+    }
+    $published = ''
+    try { $published = (& docker ps --format '{{.Ports}}' 2>$null | Out-String) } catch { }
+    if ($published -match ":$Port->") { return $false }
+    return $true
+}
+
+# The panel is the only host port a base install binds. If it is taken, move it to
+# the next free port (skipping the proxy's http/https) instead of letting Docker
+# dead-end the install with a bare "port is already allocated".
+function Resolve-GuiPort {
+    # Our own panel already on this port is not a conflict -- compose recreates it
+    # in place on a reinstall. Skipping this would drift the port up every reinstall.
+    $mgr = ''
+    try { $mgr = (& docker ps --filter 'name=kaspa-node-manager' --format '{{.Names}} {{.Ports}}' 2>$null | Out-String) } catch { }
+    if ($mgr -match "kaspa-node-manager.*:$($script:GuiPort)->") { return }
+    if (Test-PortFree -Port $script:GuiPort) { return }
+    $original = $script:GuiPort
+    $max = $script:GuiPort + 100
+    for ($p = $script:GuiPort; $p -le $max; $p++) {
+        if ($p -ne $script:HttpPort -and $p -ne $script:HttpsPort -and (Test-PortFree -Port $p)) {
+            $script:GuiPort = $p
+            Warn "Port $original is already in use, so the panel will use $($script:GuiPort) instead."
+            return
+        }
+    }
+    Die "Port $original is in use and nothing free was found in $original-$max. Re-run with -GuiPort <free port>."
+}
+
 function Confirm-Step {
     param([string] $Question)
     if ($Yes) { return $true }
@@ -347,6 +388,7 @@ Write-Host ''
 
 Initialize-Docker
 Get-Stack
+Resolve-GuiPort
 
 if (-not $Version) {
     Say "Looking up the newest kaspad release from $UpstreamRepo"

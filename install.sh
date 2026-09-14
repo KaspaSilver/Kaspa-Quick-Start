@@ -506,6 +506,57 @@ latest_release() {
 
 random_hex() { head -c "${1:-32}" /dev/urandom | od -An -tx1 | tr -d ' \n'; }
 
+# True when something already listens on TCP port $1 (any interface). Uses
+# whatever the platform ships -- ss on Linux, lsof on macOS -- and falls back to
+# a bash connect probe so it still works when neither is present.
+port_in_use() {
+    local p="$1"
+    # A container already publishing this host port -- catches Docker setups with
+    # the userland proxy off, where no host-level listener is visible to ss/lsof.
+    if ${DOCKER_SUDO:-} docker ps --format '{{.Ports}}' 2>/dev/null | grep -qE ":${p}->"; then
+        return 0
+    fi
+    if command -v ss >/dev/null 2>&1; then
+        ss -Hltn 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${p}\$"
+    elif command -v lsof >/dev/null 2>&1; then
+        lsof -nP -iTCP:"$p" -sTCP:LISTEN >/dev/null 2>&1
+    else
+        # No ss/lsof: probe by connecting. The subshell opens fd 3 and closes it on
+        # exit, so a successful connect means something is listening.
+        if (exec 3<>"/dev/tcp/127.0.0.1/$p") >/dev/null 2>&1; then return 0; fi
+        return 1
+    fi
+}
+
+# The panel is the only thing a base install binds to a host port. If its port is
+# already taken -- a leftover container, another app, a second install -- Docker
+# refuses to start with a bare "port is already allocated" and the whole install
+# dead-ends there. So move the panel to the next free port instead of stopping,
+# skipping the proxy's http/https ports. Runs after Docker is up, so a port held
+# by a running container is seen too.
+# True when our own panel container already publishes host port $1. compose
+# recreates it in place on a reinstall, so that is not a conflict -- and treating
+# it as one would drift the port up by one on every reinstall.
+port_held_by_our_manager() {
+    ${DOCKER_SUDO:-} docker ps --filter "name=kaspa-node-manager" --format '{{.Names}} {{.Ports}}' 2>/dev/null \
+        | grep -E "^kaspa-node-manager " | grep -qE ":${1}->"
+}
+
+resolve_gui_port() {
+    if port_held_by_our_manager "$GUI_PORT"; then return 0; fi
+    port_in_use "$GUI_PORT" || return 0
+    local original="$GUI_PORT" p="$GUI_PORT" max=$((GUI_PORT + 100))
+    while [ "$p" -le "$max" ]; do
+        if [ "$p" != "$HTTP_PORT" ] && [ "$p" != "$HTTPS_PORT" ] && ! port_in_use "$p"; then
+            GUI_PORT="$p"
+            warn "Port $original is already in use, so the panel will use $GUI_PORT instead."
+            return 0
+        fi
+        p=$((p + 1))
+    done
+    die "Port $original is in use and nothing free was found in $original-$max. Re-run with --gui-port <free port>."
+}
+
 write_env() {
     local env_file="$STACK_DIR/.env"
     local existing_hash="" existing_secret=""
@@ -569,6 +620,7 @@ printf '%spanel%s       http://localhost:%s\n\n' "$DIM" "$R" "$GUI_PORT"
 
 ensure_docker
 fetch_stack
+resolve_gui_port
 
 if [ -z "$KASPAD_VERSION" ]; then
     say "Looking up the newest kaspad release from $UPSTREAM_REPO"
