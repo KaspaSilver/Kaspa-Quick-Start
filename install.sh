@@ -356,6 +356,55 @@ enable_docker_autostart_macos() {
     fi
 }
 
+# Let the node accept inbound P2P peers. Docker's default "userland proxy" makes
+# every inbound connection look like it came from the bridge gateway (a private
+# IP), and kaspad drops peers that appear to come from a non-routable address --
+# so a fully reachable node still shows 0 inbound peers. Turning the proxy off
+# makes containers see real peer IPs. Also raise shutdown-timeout so a daemon
+# restart flushes the node/indexer stores cleanly instead of hard-killing them.
+# Linux + a system docker.service only (Docker Desktop manages this itself).
+ensure_inbound_p2p() {
+    [ "$PLATFORM" = linux ] || return 0
+    command -v systemctl >/dev/null 2>&1 || return 0
+    systemctl cat docker.service >/dev/null 2>&1 || return 0
+
+    local f=/etc/docker/daemon.json changed=0
+    if [ ! -f "$f" ]; then
+        $SUDO mkdir -p /etc/docker
+        printf '{\n  "userland-proxy": false,\n  "shutdown-timeout": 180\n}\n' | $SUDO tee "$f" >/dev/null && changed=1
+    elif command -v python3 >/dev/null 2>&1; then
+        # Merge in place without clobbering other settings.
+        local merged
+        merged=$($SUDO cat "$f" | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print("__SKIP__"); sys.exit(0)
+if not isinstance(d, dict):
+    print("__SKIP__"); sys.exit(0)
+before = dict(d)
+d["userland-proxy"] = False
+d.setdefault("shutdown-timeout", 180)
+print("__NOCHANGE__" if d == before else json.dumps(d, indent=2))
+' 2>/dev/null || echo "__SKIP__")
+        case "$merged" in
+            __NOCHANGE__) : ;;
+            __SKIP__|"") warn "Left $f as-is (could not merge it). For inbound P2P peers, set \"userland-proxy\": false there and restart Docker." ;;
+            *) printf '%s\n' "$merged" | $SUDO tee "$f" >/dev/null && changed=1 ;;
+        esac
+    else
+        warn "python3 not found, so $f was left alone. For inbound P2P peers, set \"userland-proxy\": false there and restart Docker."
+    fi
+
+    if [ "$changed" = "1" ]; then
+        say "Enabling inbound P2P (real peer IPs); restarting Docker to apply it"
+        $SUDO systemctl restart docker >/dev/null 2>&1 \
+            || warn "Set userland-proxy=false but could not restart Docker; it applies on the next Docker restart."
+        wait_for_docker 120 || true
+    fi
+}
+
 # Takes a budget in seconds, not a number of attempts: a probe can now cost
 # anything from an instant to DOCKER_PROBE_TIMEOUT, so counting attempts says
 # nothing about how long the caller is actually going to sit here.
@@ -408,6 +457,9 @@ ensure_docker() {
     # (and therefore the whole stack) is back on its own after any reboot.
     if [ "$PLATFORM" = linux ]; then
         enable_docker_autostart_linux
+        # Before the stack starts, so on a fresh install nothing is disrupted and
+        # the node can accept inbound peers from its first run.
+        ensure_inbound_p2p
     elif [ "$PLATFORM" = macos ]; then
         enable_docker_autostart_macos
     fi
