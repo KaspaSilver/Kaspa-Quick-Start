@@ -4,7 +4,8 @@
   "version": "1.0.0",
   "description": "One-click desktop installer for the Kaspa Quick Start node stack. Runs the same install as the terminal one-liner, with a progress screen and a link to the panel.",
   "license": "MIT",
-  "author": "KaspaSilver",
+  "author": { "name": "KaspaSilver", "email": "noreply@kachat.app" },
+  "homepage": "https://github.com/KaspaSilver/Kaspa-Quick-Start",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -20,7 +21,7 @@
     "directories": { "output": "release", "buildResources": "build" },
     "files": ["main.js", "preload.js", "installer.js", "renderer/**/*"],
     "publish": [
-      { "provider": "github", "owner": "KaspaSilver", "repo": "Kaspa-Quick-Start" }
+      { "provider": "github", "owner": "KaspaSilver", "repo": "Kaspa-Quick-Start", "releaseType": "release" }
     ],
     "win": {
       "target": "nsis",

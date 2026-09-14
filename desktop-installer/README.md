@@ -28,17 +28,19 @@ npm start
 
 ## Release (all three OSes)
 
-Tag and push — GitHub Actions (`.github/workflows/installer-release.yml`) builds
-on Windows/macOS/Linux runners and attaches the artifacts to the Release:
+Tag and push. GitHub Actions (`.github/workflows/installer-release.yml`) builds
+on Windows/macOS/Linux runners and publishes the artifacts to the Release for the
+tag (electron-builder uses the same `v*` tag as the release tag):
 
 ```bash
-git tag installer-v1.0.0
-git push origin installer-v1.0.0
+git tag v1.0.0
+git push origin v1.0.0
 ```
 
-Artifacts: `KaspaQuickStart-Setup-<v>.exe` (Windows), `KaspaQuickStart-<v>-<arch>.dmg`
-(macOS), `KaspaQuickStart-<v>.AppImage` + `.deb` (Linux — AppImage runs on Mint,
-Ubuntu, Fedora, … with nothing to install).
+Artifacts: `Kaspa Quick Start Windows.exe`, `Kaspa Quick Start MacOS.dmg`,
+`Kaspa Quick Start Linux.AppImage` + `Kaspa Quick Start Linux.deb` (the AppImage
+runs on Mint, Ubuntu, Fedora, and most others with nothing to install). The names
+carry no version, so download links stay stable across releases.
 
 ## Icon
 
