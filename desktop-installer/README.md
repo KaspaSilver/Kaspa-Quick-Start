@@ -37,10 +37,11 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-Artifacts: `Kaspa-Quick-Start-Windows.exe`, `Kaspa-Quick-Start-MacOS.dmg`,
-`Kaspa-Quick-Start-Linux.AppImage` + `Kaspa-Quick-Start-Linux.deb` (the AppImage
-runs on Mint, Ubuntu, Fedora, and most others with nothing to install). The names
-carry no version, so download links stay stable across releases.
+Artifacts: `Kaspa-Quick-Start-Windows.exe`, `Kaspa-Quick-Start-MacOS.dmg`, and
+`Kaspa-Quick-Start-Linux.deb` (Debian/Ubuntu/Mint family). The names carry no
+version, so download links stay stable across releases. AppImage was dropped: it
+inherited the app's LD_LIBRARY_PATH into the elevated helper and failed where the
+.deb did not. To also cover Fedora/openSUSE, add `"rpm"` to the linux target.
 
 ## Icon
 

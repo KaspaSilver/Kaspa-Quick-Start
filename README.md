@@ -32,8 +32,8 @@ control panel. It runs the same steps as the commands below.
 - **[Latest release &rarr; downloads](https://github.com/KaspaSilver/Kaspa-Quick-Start/releases/latest)**
   - **Windows:** `Kaspa-Quick-Start-Windows.exe`
   - **macOS:** `Kaspa-Quick-Start-MacOS.dmg`
-  - **Linux:** `Kaspa-Quick-Start-Linux.AppImage` (runs on most distros, including
-    Linux Mint) or `Kaspa-Quick-Start-Linux.deb`
+  - **Linux:** `Kaspa-Quick-Start-Linux.deb` (Debian, Ubuntu, Linux Mint, Pop!_OS
+    and other Debian-based distros)
 
 The app is not code-signed yet, so the first launch shows a one-time prompt:
 Windows SmartScreen (More info, then Run anyway), or on macOS right-click the app
