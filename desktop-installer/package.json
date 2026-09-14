@@ -1,7 +1,7 @@
 {
   "name": "kaspa-quick-start-installer",
   "productName": "Kaspa Quick Start",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "One-click desktop installer for the Kaspa Quick Start node stack. Runs the same install as the terminal one-liner, with a progress screen and a link to the panel.",
   "license": "MIT",
   "author": { "name": "KaspaSilver", "email": "noreply@kachat.app" },

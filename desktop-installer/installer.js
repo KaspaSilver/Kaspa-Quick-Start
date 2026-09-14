@@ -29,13 +29,19 @@ function posixBootstrap(scriptFile, args, logFile, doneFile) {
   const runline = args.length
     ? `curl -fsSL ${RAW}/${scriptFile} | bash -s -- ${args.map(sh).join(' ')}`
     : `curl -fsSL ${RAW}/${scriptFile} | bash`;
-  // KASPA_YES so nothing waits on a prompt; KASPA_STACK_DIR so a root-run script
-  // still targets the real user's home; chown so anything left behind stays theirs.
+  // Output goes to stdout/stderr (NOT a log file) so it streams straight back
+  // through the pkexec/osascript pipe the app captures -- a root-written temp file
+  // was the fragile link that once produced an empty, unexplained log. The leading
+  // echo proves capture is live. KASPA_YES so nothing waits on a prompt;
+  // KASPA_STACK_DIR so a root-run script still targets the real user's home; chown
+  // so anything left behind stays theirs; the exit code goes to the done file.
   return (
     `export KASPA_YES=1 KASPA_STACK_DIR=${sh(dir)}; ` +
-    `{ ${runline}; } > ${sh(logFile)} 2>&1; code=$?; ` +
+    `echo "[installer] starting, running as $(id -un)"; ` +
+    `${runline}; code=$?; ` +
     `chown -R ${uid}:${gid} ${sh(dir)} 2>/dev/null || true; ` +
-    `printf '%s' "$code" > ${sh(doneFile)}`
+    `printf '%s' "$code" > ${sh(doneFile)}; ` +
+    `echo "[installer] finished with code $code"`
   );
 }
 
@@ -96,6 +102,14 @@ function run(base, posixArgs, winArgs, { onLine = () => {}, onDone = () => {} } 
   let childExited = false;
   let graceAfterExit = 0;
 
+  // One place that both the pipe (Linux/macOS) and the log-file tail (Windows)
+  // feed, so the panel URL is caught whichever path the output arrives on.
+  const handleLine = (line) => {
+    const m = line.match(/https?:\/\/localhost:\d+/);
+    if (m) panelUrl = m[0];
+    onLine(line);
+  };
+
   const pump = () => {
     let buf;
     try { buf = fs.readFileSync(logFile); } catch { return; }
@@ -103,10 +117,7 @@ function run(base, posixArgs, winArgs, { onLine = () => {}, onDone = () => {} } 
     const chunk = buf.toString('utf8', offset);
     offset = buf.length;
     for (const line of chunk.split(/\r?\n/)) {
-      if (!line) continue;
-      const m = line.match(/https?:\/\/localhost:\d+/);
-      if (m) panelUrl = m[0];
-      onLine(line);
+      if (line) handleLine(line);
     }
   };
 
@@ -121,7 +132,7 @@ function run(base, posixArgs, winArgs, { onLine = () => {}, onDone = () => {} } 
   // Surface the elevation wrapper's own stdout/stderr (auth/exec errors) that the
   // log-file redirect never sees, so a failure before the script runs is explained.
   const forward = (b) => {
-    for (const line of b.toString('utf8').split(/\r?\n/)) if (line.trim()) onLine(line);
+    for (const line of b.toString('utf8').split(/\r?\n/)) if (line.trim()) handleLine(line);
   };
   if (child.stdout) child.stdout.on('data', forward);
   if (child.stderr) child.stderr.on('data', forward);
