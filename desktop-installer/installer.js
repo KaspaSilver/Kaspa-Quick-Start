@@ -39,7 +39,7 @@ function posixBootstrap(scriptFile, args, logFile, doneFile) {
   );
 }
 
-function launchWindows(scriptFile, args, logFile, doneFile) {
+function launchWindows(scriptFile, args, logFile, doneFile, cap) {
   const win = (p) => p.replace(/\\/g, '\\\\');
   const argline = args.join(' ');
   const inner =
@@ -50,21 +50,28 @@ function launchWindows(scriptFile, args, logFile, doneFile) {
   const b64 = Buffer.from(inner, 'utf16le').toString('base64');
   const outer = `Start-Process powershell -Verb RunAs -WindowStyle Hidden -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-EncodedCommand','${b64}'`;
   return cp.spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', outer], {
-    stdio: 'ignore',
+    ...(cap || {}),
     windowsHide: true,
   });
 }
 
+// stdio: capture stdout/stderr of the ELEVATION wrapper (pkexec/osascript/the
+// powershell launcher). The script's own output already goes to the log file via
+// the bootstrap's redirect; this pipe catches what the redirect can't -- the
+// wrapper's own errors ("pkexec: not authorized", "Authentication failed",
+// "cannot run bash"), which used to vanish and leave an empty, unexplained log.
+const CAP = { stdio: ['ignore', 'pipe', 'pipe'] };
+
 function launch(base, posixArgs, winArgs, logFile, doneFile) {
   if (process.platform === 'linux') {
-    return cp.spawn('pkexec', ['bash', '-c', posixBootstrap(`${base}.sh`, posixArgs, logFile, doneFile)], { stdio: 'ignore' });
+    return cp.spawn('pkexec', ['bash', '-c', posixBootstrap(`${base}.sh`, posixArgs, logFile, doneFile)], CAP);
   }
   if (process.platform === 'darwin') {
     const script = `do shell script ${osa(posixBootstrap(`${base}.sh`, posixArgs, logFile, doneFile))} with administrator privileges`;
-    return cp.spawn('osascript', ['-e', script], { stdio: 'ignore' });
+    return cp.spawn('osascript', ['-e', script], CAP);
   }
   if (process.platform === 'win32') {
-    return launchWindows(`${base}.ps1`, winArgs, logFile, doneFile);
+    return launchWindows(`${base}.ps1`, winArgs, logFile, doneFile, CAP);
   }
   return null;
 }
@@ -110,6 +117,14 @@ function run(base, posixArgs, winArgs, { onLine = () => {}, onDone = () => {} } 
     pump();
     onDone({ url: panelUrl, ...result });
   };
+
+  // Surface the elevation wrapper's own stdout/stderr (auth/exec errors) that the
+  // log-file redirect never sees, so a failure before the script runs is explained.
+  const forward = (b) => {
+    for (const line of b.toString('utf8').split(/\r?\n/)) if (line.trim()) onLine(line);
+  };
+  if (child.stdout) child.stdout.on('data', forward);
+  if (child.stderr) child.stderr.on('data', forward);
 
   child.on('error', (e) => finish({ ok: false, error: e.message }));
   child.on('exit', () => { childExited = true; });
