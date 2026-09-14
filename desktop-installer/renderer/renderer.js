@@ -3,6 +3,7 @@ const $ = (id) => document.getElementById(id);
 const VIEWS = ['idle', 'confirm', 'running', 'ok', 'removed', 'fail'];
 let panelUrl = null;
 let logPath = null;
+let requestedPort = 8420;
 let mode = 'install';
 
 window.kqs.onLogPath((p) => { logPath = p; });
@@ -13,10 +14,11 @@ function show(view) {
 
 function beginInstall() {
   mode = 'install';
+  requestedPort = Number($('port').value) > 0 ? Number($('port').value) : 8420;
   $('step').textContent = 'Starting up';
   $('log').textContent = '';
   show('running');
-  window.kqs.startInstall();
+  window.kqs.startInstall(requestedPort);
 }
 
 function beginUninstall(wipe) {
@@ -49,9 +51,11 @@ window.kqs.onDone((result) => {
       $('removedmsg').textContent = 'Docker was left installed. You can install again any time.';
       show('removed');
     } else {
-      // Fall back to the default port if the URL was not seen in the output, so
-      // the Open button always has a valid target instead of doing nothing.
-      panelUrl = result.url || 'http://localhost:8420';
+      // Prefer the real URL parsed from the install output (it reflects the port
+      // the panel actually bound, even if it was auto-moved). Fall back to the
+      // port the user chose -- never a hard-coded 8420, which would point at
+      // whatever else is on 8420.
+      panelUrl = result.url || `http://localhost:${requestedPort}`;
       $('url').textContent = panelUrl;
       show('ok');
     }

@@ -38,7 +38,10 @@
     .brand { display:flex; align-items:center; justify-content:center; gap:10px; font-weight:650; font-size:19px; }
     .brand .dot { width:11px; height:11px; border-radius:50%; background:var(--accent); box-shadow:0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent); }
     .sub { color:var(--muted); font-size:13px; margin-top:8px; }
-    .intro { color:var(--muted); font-size:14px; margin:22px 0 24px; text-align:left; }
+    .intro { color:var(--muted); font-size:14px; margin:22px 0 16px; text-align:left; }
+    .portrow { display:flex; align-items:center; justify-content:space-between; gap:12px; text-align:left; font-size:14px; color:var(--text); margin-top:4px; }
+    .portrow input { width:110px; background:var(--panel-2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px 10px; font:inherit; }
+    .porthint { text-align:left; color:var(--muted); font-size:12px; margin:6px 0 18px; }
     button { font:inherit; font-weight:600; border:1px solid transparent; border-radius:var(--radius); padding:13px 18px; cursor:pointer; width:100%; }
     .primary { background:var(--accent); border-color:var(--accent); color:var(--on-accent); box-shadow:var(--glow-hard); }
     .primary:hover:not(:disabled) { filter:brightness(1.06); }
@@ -68,6 +71,8 @@
 
     <div id="idle">
       <p class="intro">This installs Docker if it is not already present, downloads the Kaspa Quick Start stack, and starts the control panel. You will be asked for your password once so it can install what it needs.</p>
+      <label class="portrow">Control panel port <input id="port" type="number" min="1" max="65535" value="8420"></label>
+      <div class="porthint">Change this if port 8420 is already used by another app on this machine.</div>
       <button id="install" class="primary">Install</button>
       <button id="uninstall" class="danger">Uninstall</button>
     </div>

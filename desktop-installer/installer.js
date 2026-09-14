@@ -166,7 +166,10 @@ function run(base, posixArgs, winArgs, { onLine = () => {}, onDone = () => {} } 
   return { logFile };
 }
 
-const runInstall = (handlers) => run('install', [], ['-Yes'], handlers);
+const runInstall = ({ port, ...handlers } = {}) => {
+  const p = Number(port) > 0 ? String(Number(port)) : null;
+  return run('install', p ? ['--gui-port', p] : [], p ? ['-Yes', '-GuiPort', p] : ['-Yes'], handlers);
+};
 const runUninstall = ({ deleteData = false, ...handlers } = {}) =>
   run('uninstall', deleteData ? ['--delete-data'] : [], deleteData ? ['-Yes', '-DeleteData'] : ['-Yes'], handlers);
 

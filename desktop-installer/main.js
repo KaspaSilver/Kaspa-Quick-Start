@@ -29,8 +29,8 @@ app.whenReady().then(() => {
     onDone: (result) => win.webContents.send('install:done', result),
   };
 
-  ipcMain.handle('install:start', () => {
-    const r = runInstall(stream);
+  ipcMain.handle('install:start', (_e, port) => {
+    const r = runInstall({ port, ...stream });
     win.webContents.send('install:logpath', r && r.logFile);
     return true;
   });

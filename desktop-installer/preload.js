@@ -3,7 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 // The only surface the page gets. No Node, no arbitrary IPC.
 contextBridge.exposeInMainWorld('kqs', {
-  startInstall: () => ipcRenderer.invoke('install:start'),
+  startInstall: (port) => ipcRenderer.invoke('install:start', port),
   startUninstall: (deleteData) => ipcRenderer.invoke('uninstall:start', deleteData),
   openPanel: (url) => ipcRenderer.invoke('panel:open', url),
   onLine: (cb) => ipcRenderer.on('install:line', (_e, line) => cb(line)),
