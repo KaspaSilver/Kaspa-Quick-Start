@@ -250,12 +250,22 @@ install_docker_apt() {
 
     printf '%s\n' "$line" | $SUDO tee "$list" >/dev/null || die "Could not write $list."
 
-    $SUDO apt-get -qq update >/dev/null || die "apt-get update failed after adding the Docker repository."
+    # Refresh ONLY the Docker source, not every apt repo on the machine. A plain
+    # `apt-get update` fails when the user has an unrelated broken repo -- an
+    # appimagelauncher PPA with no Release file for this Ubuntu version, a Brave
+    # repo missing its GPG key -- and that has nothing to do with installing
+    # Docker. Scoping the update to docker.list keeps their mess from aborting us;
+    # dependency resolution below still uses the already-cached base indexes.
+    $SUDO apt-get -qq update \
+        -o Dir::Etc::sourcelist="sources.list.d/docker.list" \
+        -o Dir::Etc::sourceparts="-" \
+        -o APT::Get::List-Cleanup="0" >/dev/null \
+        || warn "Could not refresh the Docker apt index; attempting the install anyway."
     # `env` rather than a VAR=value prefix: sudo rejects inline assignments
     # unless sudoers grants setenv.
     $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y \
         docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin \
-        || die "Installing the Docker packages failed. Run 'sudo apt-get install docker-ce' to see the full error."
+        || die "Installing the Docker packages failed. This is often an unrelated broken apt repository on this machine (a PPA with no Release file, or a repo missing its GPG key). Fix or remove that repo, or run 'sudo apt-get install docker-ce' to see the full error, then re-run this."
 }
 
 install_docker_generic() {
