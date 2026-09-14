@@ -61,12 +61,25 @@ function launchWindows(scriptFile, args, logFile, doneFile, cap) {
   });
 }
 
+// A child environment safe for spawning SYSTEM binaries (pkexec/curl/bash). An
+// AppImage prepends its own bundled libraries to LD_LIBRARY_PATH; a system binary
+// launched with that inherited path tries to load the app's libs and dies before
+// printing anything -- which is exactly why the AppImage failed with a silent
+// "exit 1" while the .deb (no such pollution) worked. Stripping these lets the
+// helpers load the system libraries they expect.
+function cleanEnv() {
+  const env = { ...process.env };
+  delete env.LD_LIBRARY_PATH;
+  delete env.LD_PRELOAD;
+  // If AppRun stashed the pre-AppImage value, put it back.
+  if (env.APPIMAGE_ORIGINAL_LD_LIBRARY_PATH) env.LD_LIBRARY_PATH = env.APPIMAGE_ORIGINAL_LD_LIBRARY_PATH;
+  return env;
+}
+
 // stdio: capture stdout/stderr of the ELEVATION wrapper (pkexec/osascript/the
-// powershell launcher). The script's own output already goes to the log file via
-// the bootstrap's redirect; this pipe catches what the redirect can't -- the
-// wrapper's own errors ("pkexec: not authorized", "Authentication failed",
-// "cannot run bash"), which used to vanish and leave an empty, unexplained log.
-const CAP = { stdio: ['ignore', 'pipe', 'pipe'] };
+// powershell launcher), so its own errors ("pkexec: not authorized", an auth
+// failure, "cannot run bash") surface instead of vanishing.
+const CAP = { stdio: ['ignore', 'pipe', 'pipe'], env: cleanEnv() };
 
 function launch(base, posixArgs, winArgs, logFile, doneFile) {
   if (process.platform === 'linux') {

@@ -49,8 +49,10 @@ window.kqs.onDone((result) => {
       $('removedmsg').textContent = 'Docker was left installed. You can install again any time.';
       show('removed');
     } else {
-      panelUrl = result.url;
-      $('url').textContent = result.url || 'http://localhost:8420';
+      // Fall back to the default port if the URL was not seen in the output, so
+      // the Open button always has a valid target instead of doing nothing.
+      panelUrl = result.url || 'http://localhost:8420';
+      $('url').textContent = panelUrl;
       show('ok');
     }
     return;
