@@ -36,13 +36,15 @@ jobs:
         run: npx electron-builder --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Builds are unsigned for now. Force-skip the macOS identity lookup so an
-          # empty CSC_LINK is not mistaken for a certificate path (that produced the
-          # "not a file" failure). To sign later, delete this line and add the
-          # signing secrets as env here (see desktop-installer/README.md):
-          #   macOS:   CSC_LINK, CSC_KEY_PASSWORD, APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID
-          #   Windows: WIN_CSC_LINK, WIN_CSC_KEY_PASSWORD
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          # macOS signing + notarization. Scoped to the macOS runner only: on
+          # Windows/Linux these must be EMPTY, or electron-builder would try to use
+          # the Apple cert to sign the Windows build and fail. Empty here just means
+          # "unsigned" on those platforms (Windows SmartScreen is a separate cert).
+          CSC_LINK: ${{ matrix.os == 'macos-latest' && secrets.CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ matrix.os == 'macos-latest' && secrets.CSC_KEY_PASSWORD || '' }}
+          APPLE_ID: ${{ matrix.os == 'macos-latest' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ matrix.os == 'macos-latest' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ matrix.os == 'macos-latest' && secrets.APPLE_TEAM_ID || '' }}
 
   # The app does not self-update, so electron-builder's auto-update metadata is
   # just clutter on the release. Runs once after all three builds have uploaded
