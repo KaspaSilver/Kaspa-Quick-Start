@@ -23,23 +23,8 @@ tracks releases in that same repository.
 
 ## Install
 
-### Download the app (no terminal)
-
-Prefer not to touch a terminal? Download the desktop app, open it, and click
-**Install**. It shows the progress and, when it is done, a button to open your
-control panel. It runs the same steps as the commands below.
-
-- **[Latest release &rarr; downloads](https://github.com/KaspaSilver/Kaspa-Quick-Start/releases/latest)**
-  - **Windows:** `Kaspa-Quick-Start-Windows.exe`
-  - **macOS:** `Kaspa-Quick-Start-MacOS.dmg`
-  - **Linux:** `Kaspa-Quick-Start-Linux.deb` (Debian, Ubuntu, Linux Mint, Pop!_OS
-    and other Debian-based distros)
-
-The app is not code-signed yet, so the first launch shows a one-time prompt:
-Windows SmartScreen (More info, then Run anyway), or on macOS right-click the app
-and choose Open. Linux runs it directly.
-
-### Or paste one line into a terminal
+One line in a terminal. It installs Docker if needed, fetches the stack, builds
+the kaspad image and brings up the control panel.
 
 ### Linux / macOS
 
