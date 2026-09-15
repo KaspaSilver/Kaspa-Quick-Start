@@ -300,26 +300,52 @@ install_docker_linux() {
     fi
 }
 
-install_docker_macos() {
-    say "Installing Docker Desktop for macOS"
-    if command -v brew >/dev/null 2>&1; then
-        brew install --cask docker || die "brew install --cask docker failed."
-    else
-        local dmg url
-        url="https://desktop.docker.com/mac/main/${DOCKER_ARCH}/Docker.dmg"
-        dmg="$(mktemp -d)/Docker.dmg"
-        say "Downloading $url"
-        curl -fsSL "$url" -o "$dmg" || die "Could not download Docker Desktop."
-        say "Mounting the disk image (this needs your password)"
-        hdiutil attach "$dmg" -nobrowse -quiet || die "Could not mount Docker.dmg"
-        $SUDO /Volumes/Docker/Docker.app/Contents/MacOS/install --accept-license \
-            || { hdiutil detach /Volumes/Docker -quiet || true; die "Docker Desktop installation failed."; }
-        hdiutil detach /Volumes/Docker -quiet || true
-        rm -f "$dmg"
-    fi
+# macOS gets Colima, not Docker Desktop: a Docker-compatible engine in a small
+# Linux VM, with no GUI, no licence prompt and no privileged helper. It runs
+# entirely as the user (no sudo for the daemon), which is why the terminal install
+# stays smooth. Sizes are overridable for a bigger node.
+COLIMA_CPU="${KASPA_COLIMA_CPU:-4}"
+COLIMA_MEMORY="${KASPA_COLIMA_MEMORY:-4}"
+COLIMA_DISK="${KASPA_COLIMA_DISK:-100}"
 
-    say "Starting Docker Desktop"
-    open -a Docker || warn "Could not start Docker Desktop automatically. Open it from Applications."
+# Homebrew is the supported way to get colima + the docker CLI + the compose
+# plugin. It refuses to run as root, so this only works in the normal-user
+# terminal install -- which is the supported path on macOS.
+ensure_homebrew() {
+    command -v brew >/dev/null 2>&1 && return 0
+    [ "$(id -u)" -eq 0 ] && die "Homebrew cannot be installed as root. Run this installer as your normal user (without sudo)."
+    say "Installing Homebrew (needed for Colima)"
+    NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" \
+        || die "Homebrew installation failed. Install it from https://brew.sh and re-run."
+    if   [ -x /opt/homebrew/bin/brew ]; then eval "$(/opt/homebrew/bin/brew shellenv)"
+    elif [ -x /usr/local/bin/brew ];   then eval "$(/usr/local/bin/brew shellenv)"; fi
+    command -v brew >/dev/null 2>&1 || die "Homebrew installed but 'brew' is not on PATH. Open a new terminal and re-run."
+}
+
+# colima start boots the Linux VM and returns once docker is ready, so there is no
+# separate "wait for a window" step. Idempotent: a no-op if the VM already runs.
+start_colima() {
+    command -v colima >/dev/null 2>&1 || return 1
+    colima status >/dev/null 2>&1 && return 0
+    say "Starting Colima ($COLIMA_CPU CPU, ${COLIMA_MEMORY}GB RAM, ${COLIMA_DISK}GB disk). First boot fetches a small Linux image."
+    # Size flags apply when the VM is first created; on an existing VM fall back to
+    # a plain resume (disk can't be resized after creation).
+    colima start --cpu "$COLIMA_CPU" --memory "$COLIMA_MEMORY" --disk "$COLIMA_DISK" 2>/dev/null \
+        || colima start \
+        || die "colima start failed. Try 'colima start' by hand, then re-run this installer."
+}
+
+install_docker_macos() {
+    say "Installing Colima and the Docker CLI (no Docker Desktop needed)"
+    ensure_homebrew
+    brew install colima docker docker-compose || die "brew install colima docker docker-compose failed."
+
+    # Make 'docker compose' (the v2 plugin) resolve for the docker CLI.
+    mkdir -p "$HOME/.docker/cli-plugins"
+    local cw; cw="$(brew --prefix)/opt/docker-compose/bin/docker-compose"
+    [ -x "$cw" ] && ln -sfn "$cw" "$HOME/.docker/cli-plugins/docker-compose"
+
+    start_colima
 }
 
 # Make sure the Docker daemon comes back by itself after a reboot. This runs on
@@ -345,24 +371,36 @@ enable_docker_autostart_linux() {
     fi
 }
 
-# The macOS equivalent: flip Docker Desktop's "start when you sign in" setting so
-# the daemon is back after a reboot without opening the app by hand. plutil ships
-# with the base system and edits JSON safely; a failure here is never fatal.
+# The macOS equivalent: a per-user LaunchAgent that runs `colima start` at login,
+# so the Docker engine (and therefore the whole stack) is back after a reboot
+# without opening anything by hand. PATH is pinned to the Homebrew prefixes so the
+# agent can find colima's own helpers (limactl, qemu) under a minimal login env.
 enable_docker_autostart_macos() {
-    local changed=0 f
-    for f in \
-        "$HOME/Library/Group Containers/group.com.docker/settings-store.json" \
-        "$HOME/Library/Group Containers/group.com.docker/settings.json"; do
-        [ -f "$f" ] || continue
-        if plutil -replace autoStart -bool true "$f" >/dev/null 2>&1 \
-           || plutil -insert autoStart -bool true "$f" >/dev/null 2>&1; then
-            changed=1
-        fi
-    done
-    if [ "$changed" = "1" ]; then
-        ok "Set Docker Desktop to start when you sign in"
+    command -v colima >/dev/null 2>&1 || return 0
+    local plist="$HOME/Library/LaunchAgents/com.kaspa.colima.plist"
+    local colima_bin; colima_bin="$(command -v colima)"
+    mkdir -p "$HOME/Library/LaunchAgents"
+    cat > "$plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.kaspa.colima</string>
+  <key>ProgramArguments</key>
+  <array><string>$colima_bin</string><string>start</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string></dict>
+  <key>StandardOutPath</key><string>/tmp/kaspa-colima.log</string>
+  <key>StandardErrorPath</key><string>/tmp/kaspa-colima.log</string>
+</dict>
+</plist>
+EOF
+    launchctl unload "$plist" >/dev/null 2>&1 || true
+    if launchctl load "$plist" >/dev/null 2>&1; then
+        ok "Set Colima to start when you sign in"
     else
-        warn "Turn on Docker Desktop > Settings > General > 'Start Docker Desktop when you sign in' so the node survives a reboot."
+        warn "Could not set Colima to start at login. After a reboot, run: colima start"
     fi
 }
 
@@ -415,21 +453,16 @@ print("__NOCHANGE__" if d == before else json.dumps(d, indent=2))
     fi
 }
 
-# What to tell someone when the Docker daemon never came up. On macOS that is
-# nearly always Docker Desktop's first run waiting on the person: it will not
-# start its engine until you have accepted the licence and granted it privileged
-# access (it asks for your password once). Windows has its own equivalent in
-# install.ps1. Kept as one message so both the install path and the restart path
-# say the same, actionable thing.
+# What to tell someone when the Docker daemon never came up. On macOS the engine
+# is Colima; on Linux it is the system docker service. Windows has its own
+# equivalent in install.ps1.
 docker_start_help() {
     if [ "$PLATFORM" = macos ]; then
         printf '%s' \
-"Docker is installed, but its engine did not start in time.
-Open Docker Desktop and finish its first-run setup:
-  1. Accept the licence/service agreement if it asks.
-  2. Enter your password when it asks to grant privileged access.
-  3. Wait until the whale icon in the menu bar stops animating (engine running).
-Then run this again -- your synced data is kept, so it picks up where it left off."
+"Colima (the Docker engine) did not come up in time. Try starting it by hand:
+  colima start
+If that errors, reset it with 'colima delete' then 'colima start', and re-run
+this installer. Your synced data is kept, so it picks up where it left off."
     else
         printf '%s' "Docker did not start. Start Docker manually and re-run this script."
     fi
@@ -441,11 +474,6 @@ Then run this again -- your synced data is kept, so it picks up where it left of
 wait_for_docker() {
     local limit="${1:-240}"
     say "Waiting for the Docker daemon (up to $(( (limit + 59) / 60 )) min)"
-    if [ "$PLATFORM" = macos ]; then
-        say "Keep an eye on the Docker Desktop window while this runs. A fresh"
-        say "install, and every upgrade, asks you to accept the licence and to"
-        say "grant privileged access. The daemon stays down until you do."
-    fi
     local deadline=$((SECONDS + limit)) i=0
     while [ "$SECONDS" -lt "$deadline" ]; do
         if resolve_docker_access; then ok "Docker is running${DOCKER_SUDO:+ (via sudo)}"; return 0; fi
@@ -464,7 +492,7 @@ ensure_docker() {
         if command -v docker >/dev/null 2>&1; then
             say "Docker is installed but not responding, so trying to start it"
             if [ "$PLATFORM" = macos ]; then
-                open -a Docker >/dev/null 2>&1 || true
+                start_colima || true
             elif command -v systemctl >/dev/null 2>&1; then
                 $SUDO systemctl start docker >/dev/null 2>&1 || true
             fi

@@ -184,9 +184,10 @@ function Test-VirtualizationFirmware {
     } catch { return $true }
 }
 
-# Turn on the Windows features Docker's WSL2 backend depends on. Idempotent: each
-# feature is only touched when it is not already enabled, and a fresh enable flags
-# that a reboot is needed before Docker can start.
+# Turn on the Windows features Docker's WSL2 backend depends on, AND install WSL2
+# itself (the app + Linux kernel) so Docker Desktop doesn't stop at "WSL not
+# installed". Idempotent: features are only touched when not already enabled, and
+# any fresh enable/install flags that a reboot is needed before Docker can start.
 function Enable-WindowsVirtualization {
     Say 'Making sure Windows virtualization features are on (WSL2, Virtual Machine Platform)'
     foreach ($feat in @('VirtualMachinePlatform', 'Microsoft-Windows-Subsystem-Linux')) {
@@ -201,7 +202,23 @@ function Enable-WindowsVirtualization {
             Warn "Could not turn on $feat automatically (need an administrator PowerShell): $($_.Exception.Message)"
         }
     }
-    Invoke-Native { wsl --set-default-version 2 *> $null }  # harmless if WSL is not ready yet
+    # Enabling the Windows features is NOT enough for Docker Desktop: it also needs
+    # the WSL app and the Linux kernel installed (the "WSL not installed / run
+    # wsl --install" error). If `wsl --status` is not healthy, install WSL2 with no
+    # distribution (Docker Desktop ships its own docker-desktop distro). A fresh WSL
+    # install needs a reboot before Docker Desktop can use it.
+    $wslReady = $false
+    try { wsl.exe --status *> $null; $wslReady = ($LASTEXITCODE -eq 0) } catch { $wslReady = $false }
+    if (-not $wslReady) {
+        Say 'Installing Windows Subsystem for Linux (WSL2)'
+        Invoke-Native { wsl.exe --install --no-distribution *> $null }
+        # Older Windows builds reject --no-distribution; fall back to a core install.
+        if ($LASTEXITCODE -ne 0) { Invoke-Native { wsl.exe --install *> $null } }
+        Ok 'Installed WSL2 (needs a reboot)'
+        $script:VirtFeaturesJustEnabled = $true
+    }
+    Invoke-Native { wsl.exe --update *> $null }              # ensure the latest WSL2 kernel
+    Invoke-Native { wsl.exe --set-default-version 2 *> $null }
     if (-not (Test-VirtualizationFirmware)) {
         Warn 'Hardware virtualization looks turned OFF in your BIOS/UEFI. Docker cannot start until it is on (Intel VT-x / AMD SVM).'
     }
