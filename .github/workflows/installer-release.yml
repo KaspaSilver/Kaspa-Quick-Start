@@ -32,40 +32,39 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      # Temporary: confirm the signing cert imports before electron-builder tries.
-      # Prints only public info (sizes, cert name, identity count) -- never keys.
-      - name: Diagnose macOS signing cert
+      # Import the Developer ID cert into a keychain WE control, rather than let
+      # electron-builder create its own (its set-key-partition-list step fails on
+      # the GitHub mac runner even with a valid cert). Then point electron-builder
+      # at this keychain via CSC_KEYCHAIN and DON'T pass CSC_LINK, so it signs with
+      # the identity already loaded here. The cert itself is verified-good.
+      - name: Import Apple signing certificate (macOS)
         if: matrix.os == 'macos-latest'
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
         run: |
-          set +e
-          echo "$CSC_LINK" | base64 -D > "$RUNNER_TEMP/c.p12" 2>"$RUNNER_TEMP/b64err"
-          if [ ! -s "$RUNNER_TEMP/c.p12" ]; then
-            echo "RESULT: CSC_LINK did not decode to any bytes (base64 truncated/wrapped/not base64)."
-            cat "$RUNNER_TEMP/b64err"; exit 0
-          fi
-          echo "decoded .p12 size: $(wc -c < "$RUNNER_TEMP/c.p12") bytes"
-          KC="$RUNNER_TEMP/diag.keychain-db"
-          security create-keychain -p diagpass "$KC" && security unlock-keychain -p diagpass "$KC"
-          security import "$RUNNER_TEMP/c.p12" -k "$KC" -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign 2>"$RUNNER_TEMP/imp"
-          echo "security import exit code: $?"
-          echo "import stderr:"; cat "$RUNNER_TEMP/imp"
-          echo "--- valid codesigning identities in the keychain ---"
-          security find-identity -v -p codesigning "$KC"
-          security delete-keychain "$KC" 2>/dev/null; rm -f "$RUNNER_TEMP/c.p12"
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KPW="$(openssl rand -base64 24)"
+          echo "$CSC_LINK" | base64 -D > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KPW" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KPW" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -P "$CSC_KEY_PASSWORD" -k "$KEYCHAIN" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KPW" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
+          echo "CSC_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+          echo "imported identity:"; security find-identity -v -p codesigning "$KEYCHAIN"
 
       - name: Build and publish
         run: npx electron-builder --publish ${{ github.ref_type == 'tag' && 'always' || 'never' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # macOS signing + notarization. Scoped to the macOS runner only: on
-          # Windows/Linux these must be EMPTY, or electron-builder would try to use
-          # the Apple cert to sign the Windows build and fail. Empty here just means
-          # "unsigned" on those platforms (Windows SmartScreen is a separate cert).
-          CSC_LINK: ${{ matrix.os == 'macos-latest' && secrets.CSC_LINK || '' }}
-          CSC_KEY_PASSWORD: ${{ matrix.os == 'macos-latest' && secrets.CSC_KEY_PASSWORD || '' }}
+          # No CSC_LINK here: on macOS the cert is already in CSC_KEYCHAIN (set by
+          # the step above), and electron-builder auto-discovers the identity there.
+          # Windows/Linux get nothing -> unsigned, as before. APPLE_* is for the
+          # notary service and only applies on macOS.
           APPLE_ID: ${{ matrix.os == 'macos-latest' && secrets.APPLE_ID || '' }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ matrix.os == 'macos-latest' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ matrix.os == 'macos-latest' && secrets.APPLE_TEAM_ID || '' }}
