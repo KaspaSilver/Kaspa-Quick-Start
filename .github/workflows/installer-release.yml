@@ -32,8 +32,32 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      # Temporary: confirm the signing cert imports before electron-builder tries.
+      # Prints only public info (sizes, cert name, identity count) -- never keys.
+      - name: Diagnose macOS signing cert
+        if: matrix.os == 'macos-latest'
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: |
+          set +e
+          echo "$CSC_LINK" | base64 -D > "$RUNNER_TEMP/c.p12" 2>"$RUNNER_TEMP/b64err"
+          if [ ! -s "$RUNNER_TEMP/c.p12" ]; then
+            echo "RESULT: CSC_LINK did not decode to any bytes (base64 truncated/wrapped/not base64)."
+            cat "$RUNNER_TEMP/b64err"; exit 0
+          fi
+          echo "decoded .p12 size: $(wc -c < "$RUNNER_TEMP/c.p12") bytes"
+          KC="$RUNNER_TEMP/diag.keychain-db"
+          security create-keychain -p diagpass "$KC" && security unlock-keychain -p diagpass "$KC"
+          security import "$RUNNER_TEMP/c.p12" -k "$KC" -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign 2>"$RUNNER_TEMP/imp"
+          echo "security import exit code: $?"
+          echo "import stderr:"; cat "$RUNNER_TEMP/imp"
+          echo "--- valid codesigning identities in the keychain ---"
+          security find-identity -v -p codesigning "$KC"
+          security delete-keychain "$KC" 2>/dev/null; rm -f "$RUNNER_TEMP/c.p12"
+
       - name: Build and publish
-        run: npx electron-builder --publish always
+        run: npx electron-builder --publish ${{ github.ref_type == 'tag' && 'always' || 'never' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # macOS signing + notarization. Scoped to the macOS runner only: on
