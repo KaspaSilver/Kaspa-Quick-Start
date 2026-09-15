@@ -17,6 +17,7 @@ function beginInstall() {
   requestedPort = Number($('port').value) > 0 ? Number($('port').value) : 8420;
   $('step').textContent = 'Starting up';
   $('log').textContent = '';
+  $('dockernote').style.display = 'none';
   show('running');
   window.kqs.startInstall(requestedPort);
 }
@@ -25,6 +26,7 @@ function beginUninstall(wipe) {
   mode = 'uninstall';
   $('step').textContent = 'Starting up';
   $('log').textContent = '';
+  $('dockernote').style.display = 'none';
   show('running');
   window.kqs.startUninstall(wipe);
 }
@@ -40,6 +42,10 @@ $('retry').addEventListener('click', () => (mode === 'uninstall' ? show('confirm
 window.kqs.onLine((line) => {
   const step = line.match(/^==>\s*(.+)$/);
   if (step) $('step').textContent = step[1];
+  // Surface the Docker Desktop guidance while that phase runs (macOS/Windows),
+  // then retire it once the daemon is up and the stack is being built.
+  if (/Docker Desktop|Docker daemon/i.test(line)) $('dockernote').style.display = 'block';
+  else if (/docker compose|Building|Pulling|Fetching|Downloading the stack|control panel/i.test(line)) $('dockernote').style.display = 'none';
   const log = $('log');
   log.textContent += line + '\n';
   log.scrollTop = log.scrollHeight;

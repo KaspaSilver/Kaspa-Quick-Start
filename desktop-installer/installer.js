@@ -22,27 +22,35 @@ const osa = (s) => `"${String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 
 function stackDir() { return path.join(os.homedir(), '.kaspa-node'); }
 
-function posixBootstrap(scriptFile, args, logFile, doneFile) {
+function posixBootstrap(scriptFile, args, logFile, doneFile, { toLog = false } = {}) {
   const dir = stackDir();
   const uid = process.getuid ? process.getuid() : 0;
   const gid = process.getgid ? process.getgid() : 0;
   const runline = args.length
     ? `curl -fsSL ${RAW}/${scriptFile} | bash -s -- ${args.map(sh).join(' ')}`
     : `curl -fsSL ${RAW}/${scriptFile} | bash`;
-  // Output goes to stdout/stderr (NOT a log file) so it streams straight back
-  // through the pkexec/osascript pipe the app captures -- a root-written temp file
-  // was the fragile link that once produced an empty, unexplained log. The leading
-  // echo proves capture is live. KASPA_YES so nothing waits on a prompt;
-  // KASPA_STACK_DIR so a root-run script still targets the real user's home; chown
-  // so anything left behind stays theirs; the exit code goes to the done file.
-  return (
+  // KASPA_YES so nothing waits on a prompt; KASPA_STACK_DIR so a root-run script
+  // still targets the real user's home; chown so anything left behind stays theirs;
+  // the exit code goes to the done file. The leading echo proves capture is live.
+  const body =
     `export KASPA_YES=1 KASPA_STACK_DIR=${sh(dir)}; ` +
     `echo "[installer] starting, running as $(id -un)"; ` +
     `${runline}; code=$?; ` +
     `chown -R ${uid}:${gid} ${sh(dir)} 2>/dev/null || true; ` +
     `printf '%s' "$code" > ${sh(doneFile)}; ` +
-    `echo "[installer] finished with code $code"`
-  );
+    `echo "[installer] finished with code $code"`;
+  // Two ways the app gets progress, one per elevation channel:
+  //   - Linux (pkexec) streams the child's stdout/stderr live, so leave output on
+  //     the pipe the app captures.
+  //   - macOS (osascript "do shell script") BUFFERS all output and only returns it
+  //     when the command finishes -- so a live pipe shows nothing until the very
+  //     end (the "stuck on Starting up" bug). Redirect to the log file instead;
+  //     the app tails it every 500ms. bash flushes each `==>` step line to the file
+  //     as it runs, and install.sh drops its ANSI colors when stdout isn't a tty,
+  //     so the panel gets clean, live step text. osascript's OWN stderr (a
+  //     dismissed password prompt) still reaches the app, since only the inner
+  //     command's output is redirected here.
+  return toLog ? `{ ${body} ; } > ${sh(logFile)} 2>&1` : body;
 }
 
 function launchWindows(scriptFile, args, logFile, doneFile, cap) {
@@ -81,12 +89,38 @@ function cleanEnv() {
 // failure, "cannot run bash") surface instead of vanishing.
 const CAP = { stdio: ['ignore', 'pipe', 'pipe'], env: cleanEnv() };
 
+// Bring Docker Desktop to the foreground FROM THE USER'S SESSION. On macOS and
+// Windows the daemon lives inside Docker Desktop (a per-user GUI app) and stays
+// down -- so the whole install stalls -- until the app is running and the user has
+// accepted its licence / granted access on first launch. The elevated install
+// script does try to open it, but it runs as root, and a root `open -a Docker`
+// often can't reach the logged-in user's GUI session. This runs in the installer
+// app, which IS the user, so the window actually appears. Best-effort and safe to
+// call when Docker Desktop is already open (it just focuses it).
+function openDockerDesktop() {
+  try {
+    if (process.platform === 'darwin') {
+      cp.spawn('open', ['-a', 'Docker'], { detached: true, stdio: 'ignore' }).unref();
+    } else if (process.platform === 'win32') {
+      const candidates = [
+        path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Docker', 'Docker', 'Docker Desktop.exe'),
+        path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Docker', 'Docker', 'Docker Desktop.exe'),
+      ];
+      const exe = candidates.find((p) => { try { return fs.existsSync(p); } catch { return false; } });
+      if (exe) cp.spawn('cmd', ['/c', 'start', '', exe], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+    }
+  } catch { /* best effort -- the script's own attempt and the on-screen note remain */ }
+}
+
 function launch(base, posixArgs, winArgs, logFile, doneFile) {
   if (process.platform === 'linux') {
     return cp.spawn('pkexec', ['bash', '-c', posixBootstrap(`${base}.sh`, posixArgs, logFile, doneFile)], CAP);
   }
   if (process.platform === 'darwin') {
-    const script = `do shell script ${osa(posixBootstrap(`${base}.sh`, posixArgs, logFile, doneFile))} with administrator privileges`;
+    // toLog: osascript buffers the command's output to the very end, so stream via
+    // the log file the app tails instead (see posixBootstrap).
+    const inner = posixBootstrap(`${base}.sh`, posixArgs, logFile, doneFile, { toLog: true });
+    const script = `do shell script ${osa(inner)} with administrator privileges`;
     return cp.spawn('osascript', ['-e', script], CAP);
   }
   if (process.platform === 'win32') {
@@ -114,12 +148,21 @@ function run(base, posixArgs, winArgs, { onLine = () => {}, onDone = () => {} } 
   let settled = false;
   let childExited = false;
   let graceAfterExit = 0;
+  let dockerOpened = false;
+  const needsDockerDesktop = process.platform === 'darwin' || process.platform === 'win32';
 
-  // One place that both the pipe (Linux/macOS) and the log-file tail (Windows)
-  // feed, so the panel URL is caught whichever path the output arrives on.
+  // One place that every output path feeds (the pkexec pipe on Linux, the tailed
+  // log file on macOS/Windows), so the panel URL and the Docker cue are caught
+  // whichever way a line arrives.
   const handleLine = (line) => {
     const m = line.match(/https?:\/\/localhost:\d+/);
     if (m) panelUrl = m[0];
+    // The moment the script reaches Docker Desktop, open it ourselves from the
+    // user's session so it actually appears and the daemon can come up.
+    if (needsDockerDesktop && !dockerOpened && /Starting Docker Desktop|Waiting for the Docker daemon/i.test(line)) {
+      dockerOpened = true;
+      openDockerDesktop();
+    }
     onLine(line);
   };
 
