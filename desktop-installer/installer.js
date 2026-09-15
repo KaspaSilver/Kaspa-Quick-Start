@@ -217,7 +217,11 @@ function run(base, posixArgs, winArgs, { onLine = () => {}, onDone = () => {} } 
     try { code = fs.readFileSync(doneFile, 'utf8').trim(); } catch { /* not done yet */ }
     if (code !== null && code !== '') { finish({ ok: code === '0', code: Number(code) }); return; }
     if (childExited && ++graceAfterExit >= 6) {
-      finish({ ok: false, cancelled: true, error: 'It was cancelled, or the password prompt was dismissed.' });
+      // The elevated process ended without leaving a result. Either the
+      // administrator prompt was dismissed (nothing ran -> empty log), or the
+      // install stopped early (e.g. Docker/virtualization -> the log below says
+      // why). Don't assert a cause the log may contradict.
+      finish({ ok: false, cancelled: true, error: 'The install stopped before it finished. If you dismissed the administrator prompt, click Try again; otherwise the details below explain why.' });
     }
   }, 500);
 

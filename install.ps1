@@ -157,6 +157,56 @@ function Wait-Docker {
     return $false
 }
 
+# Docker Desktop's engine runs inside a lightweight VM. That needs two separate
+# things, and "Virtualization support not detected" means one is missing:
+#   1. The Windows features WSL2 + Virtual Machine Platform -- software, and this
+#      installer turns them on (a reboot is required after a fresh enable).
+#   2. Hardware virtualization switched on in the PC's firmware (BIOS/UEFI) --
+#      only the owner can toggle that; no software can.
+$script:VirtFeaturesJustEnabled = $false
+
+$script:VIRT_HELP = @'
+Docker Desktop needs virtualization, which is not ready yet. To fix it:
+  1. If this installer just turned on Windows features, REBOOT and run it again.
+  2. If Docker still shows "Virtualization support not detected", turn on
+     virtualization in your PC's BIOS/UEFI: look for "Intel Virtualization
+     Technology" / VT-x, or "SVM Mode" / AMD-V, set it to Enabled, save, reboot.
+  3. Make sure Windows is fully up to date (WSL2 needs a recent build).
+'@
+
+# True when the CPU reports firmware virtualization is enabled. Note: once Hyper-V
+# has claimed the CPU this can read False even though VT-x/AMD-V is on, so a False
+# is a hint worth surfacing, not a hard verdict -- hence a warning, never a stop.
+function Test-VirtualizationFirmware {
+    try {
+        $p = Get-CimInstance -ClassName Win32_Processor -ErrorAction Stop | Select-Object -First 1
+        return [bool] $p.VirtualizationFirmwareEnabled
+    } catch { return $true }
+}
+
+# Turn on the Windows features Docker's WSL2 backend depends on. Idempotent: each
+# feature is only touched when it is not already enabled, and a fresh enable flags
+# that a reboot is needed before Docker can start.
+function Enable-WindowsVirtualization {
+    Say 'Making sure Windows virtualization features are on (WSL2, Virtual Machine Platform)'
+    foreach ($feat in @('VirtualMachinePlatform', 'Microsoft-Windows-Subsystem-Linux')) {
+        try {
+            $state = (Get-WindowsOptionalFeature -Online -FeatureName $feat -ErrorAction Stop).State
+            if ($state -ne 'Enabled') {
+                Invoke-Native { Enable-WindowsOptionalFeature -Online -FeatureName $feat -All -NoRestart *> $null }
+                Ok "Turned on $feat (needs a reboot)"
+                $script:VirtFeaturesJustEnabled = $true
+            }
+        } catch {
+            Warn "Could not turn on $feat automatically (need an administrator PowerShell): $($_.Exception.Message)"
+        }
+    }
+    Invoke-Native { wsl --set-default-version 2 *> $null }  # harmless if WSL is not ready yet
+    if (-not (Test-VirtualizationFirmware)) {
+        Warn 'Hardware virtualization looks turned OFF in your BIOS/UEFI. Docker cannot start until it is on (Intel VT-x / AMD SVM).'
+    }
+}
+
 function Install-Docker {
     Say 'Installing Docker Desktop'
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
@@ -210,17 +260,29 @@ function Initialize-Docker {
     Update-SessionPath
     if (Test-Docker) { Ok 'Docker is already installed and running'; }
     else {
+        # Docker is not running. Whatever the reason (missing, or installed but its
+        # VM won't start), make sure the Windows virtualization features are on
+        # first -- that is the most common cause of "Virtualization support not
+        # detected", and enabling it needs a reboot before Docker can come up.
+        Enable-WindowsVirtualization
+
         if (Get-Command docker -ErrorAction SilentlyContinue) {
+            if ($script:VirtFeaturesJustEnabled) {
+                Die "Windows just turned on the features Docker needs. Please REBOOT and run this again to finish.`n$script:VIRT_HELP"
+            }
             Say 'Docker is installed but not responding - trying to start Docker Desktop'
             $exe = Join-Path $env:ProgramFiles 'Docker\Docker\Docker Desktop.exe'
             if (Test-Path $exe) { Start-Process -FilePath $exe | Out-Null }
-            if (-not (Wait-Docker 180)) { Die 'Docker did not start. Start Docker Desktop manually and re-run this script.' }
+            if (-not (Wait-Docker 180)) { Die "Docker is installed but its engine did not start.`n$script:VIRT_HELP" }
         } else {
             if ($SkipDockerInstall) { Die 'Docker is not available and -SkipDockerInstall was given.' }
             if (-not (Confirm-Step 'Docker is not installed. Install Docker Desktop now?')) { Die 'Docker is required.' }
             Install-Docker
+            if ($script:VirtFeaturesJustEnabled) {
+                Die "Docker Desktop is installed, and Windows just turned on the features it needs. Please REBOOT and run this again to finish.`n$script:VIRT_HELP"
+            }
             if (-not (Wait-Docker 600)) {
-                Die 'Docker did not start. This usually means Windows needs a reboot to finish enabling WSL2 - reboot and re-run this script.'
+                Die "Docker Desktop was installed but its engine did not start.`n$script:VIRT_HELP"
             }
         }
     }

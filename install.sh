@@ -415,6 +415,26 @@ print("__NOCHANGE__" if d == before else json.dumps(d, indent=2))
     fi
 }
 
+# What to tell someone when the Docker daemon never came up. On macOS that is
+# nearly always Docker Desktop's first run waiting on the person: it will not
+# start its engine until you have accepted the licence and granted it privileged
+# access (it asks for your password once). Windows has its own equivalent in
+# install.ps1. Kept as one message so both the install path and the restart path
+# say the same, actionable thing.
+docker_start_help() {
+    if [ "$PLATFORM" = macos ]; then
+        printf '%s' \
+"Docker is installed, but its engine did not start in time.
+Open Docker Desktop and finish its first-run setup:
+  1. Accept the licence/service agreement if it asks.
+  2. Enter your password when it asks to grant privileged access.
+  3. Wait until the whale icon in the menu bar stops animating (engine running).
+Then run this again -- your synced data is kept, so it picks up where it left off."
+    else
+        printf '%s' "Docker did not start. Start Docker manually and re-run this script."
+    fi
+}
+
 # Takes a budget in seconds, not a number of attempts: a probe can now cost
 # anything from an instant to DOCKER_PROBE_TIMEOUT, so counting attempts says
 # nothing about how long the caller is actually going to sit here.
@@ -455,7 +475,7 @@ ensure_docker() {
             [ "$SKIP_DOCKER_INSTALL" = "1" ] && die "Docker is not available and --skip-docker-install was given."
             confirm "Docker is not installed. Install it now?" || die "Docker is required."
             if [ "$PLATFORM" = linux ]; then install_docker_linux; else install_docker_macos; fi
-            wait_for_docker 360 || die "Docker did not start. Start Docker manually and re-run this script."
+            wait_for_docker 480 || die "$(docker_start_help)"
         fi
     fi
 
