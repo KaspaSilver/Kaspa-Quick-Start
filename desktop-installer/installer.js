@@ -56,13 +56,25 @@ function posixBootstrap(scriptFile, args, logFile, doneFile, { toLog = false } =
 function launchWindows(scriptFile, args, logFile, doneFile, cap) {
   const win = (p) => p.replace(/\\/g, '\\\\');
   const argline = args.join(' ');
+  // `*> file` streams every stream to the log live (the redirect flushes as the
+  // script runs, so the app tails it in real time). Under Windows PowerShell it
+  // writes UTF-16 -- the app decodes the log as UTF-16 on Windows to match (a
+  // plain UTF-8 read showed spaced-out gibberish with a leading "??" BOM). $c=0
+  // on a clean run: the install signals success by REACHING THE END, not via
+  // $LASTEXITCODE, which stray native subcommands inside the script can leave
+  // non-zero even on success.
   const inner =
     `$ErrorActionPreference='Continue'; ` +
-    `try { & ([scriptblock]::Create((irm ${RAW}/${scriptFile}))) ${argline} *> '${win(logFile)}'; $c=$LASTEXITCODE } ` +
+    `try { & ([scriptblock]::Create((irm ${RAW}/${scriptFile}))) ${argline} *> '${win(logFile)}'; $c=0 } ` +
     `catch { $_ | Out-File -Append -Encoding utf8 '${win(logFile)}'; $c=1 }; ` +
     `if ($null -eq $c) { $c = 0 }; Set-Content -Encoding ascii -Path '${win(doneFile)}' -Value $c`;
   const b64 = Buffer.from(inner, 'utf16le').toString('base64');
-  const outer = `Start-Process powershell -Verb RunAs -WindowStyle Hidden -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-EncodedCommand','${b64}'`;
+  // -Wait is the fix for the false "cancelled": without it, Start-Process returns
+  // the instant the elevated process is launched (not when it finishes), so the
+  // app saw its child exit within a second and, finding no done-file yet, declared
+  // the install cancelled while it was in fact still running. -Wait blocks until
+  // the elevated install actually finishes and has written the done-file.
+  const outer = `Start-Process powershell -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-EncodedCommand','${b64}'`;
   return cp.spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', outer], {
     ...(cap || {}),
     windowsHide: true,
@@ -170,7 +182,10 @@ function run(base, posixArgs, winArgs, { onLine = () => {}, onDone = () => {} } 
     let buf;
     try { buf = fs.readFileSync(logFile); } catch { return; }
     if (buf.length <= offset) return;
-    const chunk = buf.toString('utf8', offset);
+    // Windows PowerShell's `*>` redirect writes UTF-16LE; every other path writes
+    // UTF-8. Decode to match, then drop the byte-order mark either can carry.
+    const enc = process.platform === 'win32' ? 'utf16le' : 'utf8';
+    const chunk = buf.toString(enc, offset).replace(/﻿/g, '');
     offset = buf.length;
     for (const line of chunk.split(/\r?\n/)) {
       if (line) handleLine(line);
