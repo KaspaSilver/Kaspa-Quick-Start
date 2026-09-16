@@ -335,15 +335,32 @@ start_colima() {
         || die "colima start failed. Try 'colima start' by hand, then re-run this installer."
 }
 
+# A machine that once had Docker Desktop keeps a `"credsStore": "desktop"` in
+# ~/.docker/config.json pointing at docker-credential-desktop. Once Docker Desktop
+# is gone (we use Colima), that helper is missing, and EVERY build or pull dies with
+# `docker-credential-desktop: executable file not found`. Drop a credsStore whose
+# helper isn't on PATH; Colima needs none. plutil ships with macOS (no Python/jq).
+fix_docker_credstore() {
+    local cfg="$HOME/.docker/config.json"
+    [ -f "$cfg" ] || return 0
+    grep -q '"credsStore"' "$cfg" || return 0
+    local store; store="$(sed -n 's/.*"credsStore"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$cfg" | head -1)"
+    [ -n "$store" ] && command -v "docker-credential-$store" >/dev/null 2>&1 && return 0
+    say "Removing a stale Docker credential helper (docker-credential-${store:-desktop}) from ~/.docker/config.json"
+    plutil -remove credsStore "$cfg" >/dev/null 2>&1 || warn "Could not edit $cfg; if a build fails on credentials, delete the \"credsStore\" line by hand."
+}
+
 install_docker_macos() {
     say "Installing Colima and the Docker CLI (no Docker Desktop needed)"
     ensure_homebrew
-    brew install colima docker docker-compose || die "brew install colima docker docker-compose failed."
+    brew install colima docker docker-compose docker-buildx \
+        || die "brew install colima docker docker-compose docker-buildx failed."
 
-    # Make 'docker compose' (the v2 plugin) resolve for the docker CLI.
+    # Make the v2 'docker compose' and 'docker buildx' plugins resolve for the CLI.
     mkdir -p "$HOME/.docker/cli-plugins"
-    local cw; cw="$(brew --prefix)/opt/docker-compose/bin/docker-compose"
-    [ -x "$cw" ] && ln -sfn "$cw" "$HOME/.docker/cli-plugins/docker-compose"
+    local bp; bp="$(brew --prefix)"
+    [ -x "$bp/opt/docker-compose/bin/docker-compose" ] && ln -sfn "$bp/opt/docker-compose/bin/docker-compose" "$HOME/.docker/cli-plugins/docker-compose"
+    [ -x "$bp/opt/docker-buildx/bin/docker-buildx" ]   && ln -sfn "$bp/opt/docker-buildx/bin/docker-buildx"   "$HOME/.docker/cli-plugins/docker-buildx"
 
     start_colima
 }
@@ -519,6 +536,7 @@ ensure_docker() {
         # the node can accept inbound peers from its first run.
         ensure_inbound_p2p
     elif [ "$PLATFORM" = macos ]; then
+        fix_docker_credstore   # before any build/pull, else creds errors kill it
         enable_docker_autostart_macos
     fi
 }

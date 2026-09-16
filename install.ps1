@@ -613,18 +613,27 @@ Write-Host ''
 # open. Offered rather than done, because an installer that seizes the browser
 # on a machine somebody is working on is a rude thing to be.
 #
-# Skipped when nobody is there to answer: -Yes, or a host with no interactive
-# console, where Read-Host either throws or blocks a scripted install forever.
-if (-not $Yes -and [Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
+# Skipped with -Yes (a scripted install) and on a host with no desktop. NOT gated
+# on redirected input: the one-liner runs as `irm ... | iex`, which feeds the
+# script in on stdin -- so Read-Host would see the empty pipe, not the keyboard,
+# and the prompt would never wait. Reading a keystroke straight from the console
+# host (RawUI.ReadKey) is the Windows equivalent of Linux's /dev/tty: it reaches
+# the real keyboard regardless of what stdin is, and throws (caught below) when
+# there is genuinely no interactive console.
+if (-not $Yes -and [Environment]::UserInteractive) {
     $url = "http://localhost:$GuiPort"
     Write-Host ''
-    Write-Host "  Press Enter to open the panel at $url, or Ctrl-C to leave it. " -NoNewline
+    Write-Host "  Press Enter to open Kaspa Quick Start at $url " -ForegroundColor Cyan -NoNewline
     try {
-        [void](Read-Host)
+        while ($true) {
+            $key = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+            if ($key.VirtualKeyCode -eq 13) { break }   # Enter
+        }
+        Write-Host ''
         Start-Process $url
         Ok "Opened $url"
     } catch {
         Write-Host ''
-        Warn "Could not open a browser. The panel is at $url"
+        Ok "Your panel is ready at $url (open it in your browser)."
     }
 }
