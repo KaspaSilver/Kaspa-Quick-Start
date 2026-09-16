@@ -86,12 +86,14 @@ function fmtDuration(iso) {
 
 function showLogin() {
     $('login').classList.remove('hidden');
+    $('firstrun').classList.add('hidden');
     $('app').classList.add('hidden');
     stopPolling();
 }
 
 function showApp() {
     $('login').classList.add('hidden');
+    $('firstrun').classList.add('hidden');
     $('app').classList.remove('hidden');
     // The heading is static markup until something navigates; seed it from
     // whichever entry starts active so it is not stale on first paint.
