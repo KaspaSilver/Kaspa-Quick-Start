@@ -72,17 +72,18 @@ curl -fsSL https://raw.githubusercontent.com/KaspaSilver/Kaspa-Quick-Start/main/
 irm https://raw.githubusercontent.com/KaspaSilver/Kaspa-Quick-Start/main/uninstall.ps1 | iex
 ```
 
-Both do exactly the same thing and take the same options. By default they remove
-the containers, the built images and the network, but **keep your synced
-blockchain (and every app's data) and the install directory** — so if you run
-the install line again later, it re-adopts that data and your node is already
-synced, with no hours of re-downloading the chain.
+Both do exactly the same thing and take the same options. By default this is a
+**true uninstall — nothing from the install is left behind**: the containers, the
+built images, the network, every data volume (including the synced blockchain),
+and the install directory are all removed. A later reinstall starts clean and
+re-syncs the chain from scratch (that takes hours).
 
-For a full wipe that also deletes the data volumes and the install directory,
-add `--delete-data` (Linux/macOS) or `-DeleteData` (Windows):
+If you'd rather a reinstall be **instant**, add `--keep-data` (Linux/macOS) or
+`-KeepData` (Windows) — it keeps the synced chain, the app data and the install
+directory, so a reinstall re-adopts them and your node is already synced:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/KaspaSilver/Kaspa-Quick-Start/main/uninstall.sh | bash -s -- --delete-data
+curl -fsSL https://raw.githubusercontent.com/KaspaSilver/Kaspa-Quick-Start/main/uninstall.sh | bash -s -- --keep-data
 ```
 
 The installer also leaves a copy of both scripts in the install directory, so
