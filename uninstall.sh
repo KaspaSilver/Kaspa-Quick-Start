@@ -195,8 +195,14 @@ if [ -d "$STACK_DIR" ]; then
         say "Removing $STACK_DIR"
         # Refuse to delete anything that is not recognisably our install directory.
         if [ -f "$STACK_DIR/docker-compose.yml" ] || [ -f "$STACK_DIR/.env" ]; then
-            rm -rf "${STACK_DIR:?}"
-            ok "removed $STACK_DIR"
+            # Containers run as root and can leave root-owned files in the bind-
+            # mounted config, which a normal-user rm can't delete -- fall back to sudo.
+            rm -rf "${STACK_DIR:?}" 2>/dev/null || $SUDO rm -rf "${STACK_DIR:?}" 2>/dev/null || true
+            if [ -d "$STACK_DIR" ]; then
+                warn "Could not fully remove $STACK_DIR (root-owned files?). Run: sudo rm -rf \"$STACK_DIR\""
+            else
+                ok "removed $STACK_DIR"
+            fi
         else
             warn "$STACK_DIR does not look like a Kaspa node install, so leaving it alone."
         fi

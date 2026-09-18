@@ -521,6 +521,20 @@ fetch_stack() {
     fi
 
     mkdir -p "$STACK_DIR"
+
+    # Reclaim ownership before refreshing. A stack dir left root-owned -- by an
+    # earlier install accidentally run under sudo, or by containers (which run as
+    # root) writing generated config into the bind-mounted conf/ -- makes the
+    # rm/cp below fail with "Permission denied" for a normal-user install. Only the
+    # small config/build tree lives here (the chain and every app's DATA are in
+    # Docker volumes, which this never touches), so a chown is quick and safe.
+    if [ "$(id -u)" -ne 0 ] && [ -n "$SUDO" ] \
+       && [ -n "$(find "$STACK_DIR" ! -uid "$(id -u)" 2>/dev/null | head -n1)" ]; then
+        say "Reclaiming ownership of $STACK_DIR (some files are root-owned from a previous run)"
+        $SUDO chown -R "$(id -u):$(id -g)" "$STACK_DIR" 2>/dev/null \
+            || warn "Could not chown $STACK_DIR; if the update fails, run: sudo chown -R $(id -un) \"$STACK_DIR\""
+    fi
+
     # Only these are replaced wholesale on a re-install. conf/ holds generated
     # state (node.json, proxies.json) and proxy/ holds issued certificates and
     # generated vhosts -- wiping either would cost the user real work.
