@@ -1137,6 +1137,14 @@ table.ports td.note { color: var(--muted); font-size: 12.5px; font-family: inher
     font-size: 12px;
 }
 .log-tile-head button:hover { background: var(--bg); color: var(--text); }
+/* The clear control now reads "Reset" so it can't be mistaken for a close button. */
+.log-tile-head .tile-reset { font-weight: 600; }
+/* A dedicated close (X) that exists only once a tile is expanded -- in the grid the
+   expand toggle and the scrim already dismiss it. In the expanded view the X closes
+   the overlay and takes the expand toggle's place. */
+.log-tile-head .tile-close { display: none; font-size: 14px; }
+.log-tile.expanded .log-tile-head .tile-close { display: inline-block; }
+.log-tile.expanded .log-tile-head [data-expand] { display: none; }
 
 .log-tile pre {
     flex: 1;

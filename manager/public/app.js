@@ -6590,8 +6590,9 @@ function logTile(key, label) {
         <span class="name">${escapeHtml(label)}</span>
         <span class="count" data-tilecount="${key}">0</span>
         <span class="zoom" role="group" aria-label="Text size"><button type="button" class="zoom-btn" data-zoom="-1" data-zoom-view="tile:${key}" title="Smaller text">−</button><button type="button" class="zoom-btn" data-zoom="1" data-zoom-view="tile:${key}" title="Larger text">+</button></span>
-        <button type="button" data-expand="${key}" title="Expand this one to full width">⤢</button>
-        <button type="button" data-clear="${key}" title="Clear">✕</button>
+        <button type="button" data-expand="${key}" title="Expand this one to full width" aria-label="Expand">⤢</button>
+        <button type="button" class="tile-reset" data-clear="${key}" title="Clear this log">Reset</button>
+        <button type="button" class="tile-close" data-close="${key}" title="Close the expanded view" aria-label="Close">✕</button>
       </div>
       <pre data-tilelog="${key}" data-logview="tile:${key}"></pre>
     </article>`;
@@ -6751,7 +6752,11 @@ $('log-filter').addEventListener('input', () => {
 $('log-grid').addEventListener('click', (event) => {
     const expand = event.target.dataset?.expand;
     const clear = event.target.dataset?.clear;
-    if (expand) {
+    const close = event.target.dataset?.close;
+    if (close) {
+        // The X closes the expanded overlay; clearing a log is the "Reset" button.
+        closeLogOverlay();
+    } else if (expand) {
         toggleLogOverlay(expand);
     } else if (clear) {
         logBuffers.set(clear, []);
