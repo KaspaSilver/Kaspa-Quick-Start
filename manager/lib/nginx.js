@@ -42,7 +42,6 @@ export const TARGET_KINDS = {
     kachat: { label: 'KaChat indexer API', websocket: true, grpc: false },
     desktop: { label: 'KaChat Desktop', websocket: true, grpc: false },
     nextcloud: { label: 'Nextcloud', websocket: false, grpc: false },
-    gift: { label: 'KaChat Gift Service', websocket: false, grpc: false },
     custom: { label: 'Custom host:port', websocket: false, grpc: false },
 };
 
@@ -144,8 +143,7 @@ export function upstreamFor(proxy, nodeConfig) {
             return { scheme: 'http', host: 'bridge', port: DASHBOARD_PORT, websocket: false, grpc: false };
         case 'kachat':
         case 'desktop':
-        case 'nextcloud':
-        case 'gift': {
+        case 'nextcloud': {
             const app = APPS[proxy.target.kind];
             return {
                 scheme: 'http',

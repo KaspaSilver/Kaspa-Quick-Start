@@ -76,7 +76,7 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     Warn 'Start Docker Desktop, or open an elevated PowerShell, then re-run the uninstall.'
     exit 1
 } else {
-    # Graceful path: compose down with EVERY profile (kachat-desktop / gift / bot /
+    # Graceful path: compose down with EVERY profile (kachat-desktop / bot /
     # translate were missing before, so those services were left running).
     $composeFile = Join-Path $StackDir 'docker-compose.yml'
     if (Test-Path $composeFile) {
@@ -85,7 +85,7 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
         $ports = Join-Path $StackDir 'conf\ports.yml'
         if (Test-Path $ports) { $files += @('-f', $ports) }
         $down = @('--profile','mining','--profile','kachat','--profile','kachat-desktop',
-                  '--profile','nextcloud','--profile','proxy','--profile','gift',
+                  '--profile','nextcloud','--profile','proxy',
                   '--profile','bot','--profile','translate',
                   'down','--remove-orphans','--rmi','local')
         if (-not $Keep) { $down += '--volumes' }

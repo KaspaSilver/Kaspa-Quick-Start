@@ -40,7 +40,6 @@ import * as kassigner from './lib/kassigner.js';
 import * as selfservice from './lib/selfservice.js';
 import * as publish from './lib/publish.js';
 import * as portcheck from './lib/portcheck.js';
-import * as gift from './lib/gift.js';
 import * as push from './lib/push.js';
 import * as lifecycle from './lib/lifecycle.js';
 import * as bot from './lib/bot.js';
@@ -2523,7 +2522,7 @@ route('POST', /^\/api\/apps\/nextcloud\/admin\/password$/, async (req, res) => {
     }
 });
 
-route('GET', /^\/api\/apps\/(kachat|desktop|nextcloud|bot|gift)\/check$/, async (req, res, match) => {
+route('GET', /^\/api\/apps\/(kachat|desktop|nextcloud|bot)\/check$/, async (req, res, match) => {
     const name = match[1];
     try {
         const upstream = await apps.checkUpstream(name, apps.loadAppsConfig());
@@ -2550,7 +2549,7 @@ route('GET', /^\/api\/apps\/(kachat|desktop|nextcloud|bot|gift)\/check$/, async 
     }
 });
 
-route('POST', /^\/api\/apps\/(kachat|desktop|nextcloud|bot|gift)\/update$/, async (req, res, match) => {
+route('POST', /^\/api\/apps\/(kachat|desktop|nextcloud|bot)\/update$/, async (req, res, match) => {
     const name = match[1];
     const cfg = apps.loadAppsConfig();
     if (!cfg[name].enabled) return fail(res, 409, `${apps.APPS[name].label} is switched off.`);
@@ -2797,7 +2796,6 @@ route('POST', /^\/api\/services\/([a-z-]+)\/install$/, async (req, res, match) =
             apps.writeAppsEnv(appsCfg);
             apps.renderAppsPortsOverride(appsCfg);
         }
-        if (match[1] === 'gift') writeGiftConfig();
 
         // Two services keep their own idea of being on, in their own files, and
         // the rest of the panel reads those rather than asking docker. Starting
@@ -2874,285 +2872,9 @@ route('POST', /^\/api\/services\/([a-z-]+)\/uninstall$/, async (req, res, match)
     sendJson(res, 202, { ok: true, jobId: job.id });
 });
 
-// ------------------------------------------------------------------- gift --
-
-/** Rewrites what the service reads, from the panel's settings plus the keys on disk. */
-function writeGiftConfig() {
-    const appsCfg = apps.loadAppsConfig();
-    const nodeCfg = loadNodeConfig();
-    return gift.writeConfig(appsCfg.gift ?? {}, { network: nodeCfg.network, kaspadPort: ports(nodeCfg).json });
-}
-
-route('GET', /^\/api\/gift$/, async (req, res) => {
-    const cfg = apps.loadAppsConfig().gift ?? {};
-    const state = await dockerctl.containerState('kaspa-node-gift');
-
-    // The service's own view, which is the only place the claim counts and the
-    // day's spend exist. Absent while it is switched off, which is not an error.
-    let status = null;
-    try {
-        const r = await fetch('http://gift:8770/v1/status', { signal: AbortSignal.timeout(4000) });
-        if (r.ok) status = await r.json();
-    } catch {
-        /* not running */
-    }
-
-    sendJson(res, 200, {
-        config: cfg,
-        container: state,
-        status,
-        credentials: { apple: gift.hasApple(), google: gift.hasGoogle() },
-        // Whether there is a KaChat indexer here to import push credentials from.
-        indexerPresent: (await dockerctl.containerState('kaspa-node-kachat')).exists,
-        repo: apps.APPS.gift.repo,
-    });
-});
-
-route('POST', /^\/api\/gift\/apple$/, async (req, res) => {
-    const body = await readBody(req);
-    try {
-        // The key first: a saved team id with no key is a half-configured
-        // platform, and the service refuses to start on one of those.
-        if (body.key) gift.saveAppleKey(body.key);
-
-        const appsCfg = apps.loadAppsConfig();
-        const g = appsCfg.gift;
-        g.apple = {
-            enabled: body.enabled !== false,
-            teamId: String(body.teamId ?? g.apple.teamId ?? '').trim(),
-            keyId: String(body.keyId ?? g.apple.keyId ?? '').trim(),
-            bundleId: String(body.bundleId ?? g.apple.bundleId ?? 'com.kachat.app').trim(),
-        };
-        apps.saveAppsConfig(appsCfg);
-        writeGiftConfig();
-
-        sendJson(res, 200, { ok: true, apple: g.apple, hasKey: gift.hasApple() });
-    } catch (err) {
-        fail(res, 400, err.message);
-    }
-});
-
-route('POST', /^\/api\/gift\/android$/, async (req, res) => {
-    const body = await readBody(req);
-    try {
-        let account = null;
-        if (body.serviceAccount) account = gift.saveGoogleKey(body.serviceAccount);
-
-        const appsCfg = apps.loadAppsConfig();
-        const g = appsCfg.gift;
-        g.android = {
-            enabled: body.enabled !== false,
-            packageName: String(body.packageName ?? g.android.packageName ?? 'com.kachat.app').trim(),
-        };
-        apps.saveAppsConfig(appsCfg);
-        writeGiftConfig();
-
-        sendJson(res, 200, { ok: true, android: g.android, hasKey: gift.hasGoogle(), account });
-    } catch (err) {
-        fail(res, 400, err.message);
-    }
-});
-
-/**
- * Imports the credentials the KaChat indexer already runs with. The Apple key
- * that signs APNs push also carries DeviceCheck, and the Firebase project
- * behind FCM also carries Play Integrity, so the gift service can attest with
- * exactly the credentials the app already ships -- no second key to make, no
- * private key pasted through a browser. The files are read out of the indexer
- * container and written straight into conf/gift; nothing is echoed to a screen.
- */
-route('POST', /^\/api\/gift\/import-from-indexer$/, async (req, res) => {
-    const C = 'kaspa-node-kachat';
-    if (!(await dockerctl.containerState(C)).exists) {
-        return fail(res, 409, 'The KaChat indexer is not installed here, so there is nothing to import from.');
-    }
-    // A single sh -c inside the indexer, so its own env (APNS_*) expands and the
-    // .p8 glob resolves. Failures come back empty and are treated as "not there".
-    const readIn = async (cmd) => {
-        try {
-            const { stdout } = await dockerctl.docker(['exec', C, 'sh', '-c', cmd], { timeoutMs: 15_000 });
-            return stdout;
-        } catch {
-            return '';
-        }
-    };
-
-    const appsCfg = apps.loadAppsConfig();
-    if (!appsCfg.gift) appsCfg.gift = {};
-    const imported = { apple: null, android: null };
-
-    try {
-        // iPhone: the DeviceCheck key plus the identifiers push already uses.
-        const p8 = (await readIn('cat /app/data/apns/*.p8 2>/dev/null')).trim();
-        if (p8) {
-            gift.saveAppleKey(p8);
-            const teamId = (await readIn('printf %s "$APNS_TEAM_ID"')).trim();
-            const keyId = (await readIn('printf %s "$APNS_KEY_ID"')).trim();
-            const bundleId = (await readIn('printf %s "$APNS_TOPIC"')).trim();
-            appsCfg.gift.apple = {
-                enabled: true,
-                teamId: teamId || appsCfg.gift.apple?.teamId || '',
-                keyId: keyId || appsCfg.gift.apple?.keyId || '',
-                bundleId: bundleId || appsCfg.gift.apple?.bundleId || 'com.kachat.app',
-            };
-            imported.apple = { teamId: appsCfg.gift.apple.teamId, keyId: appsCfg.gift.apple.keyId, bundleId: appsCfg.gift.apple.bundleId };
-        }
-
-        // Android: the service account, whose project also backs Play Integrity.
-        const sa = (await readIn('cat /app/data/fcm/service-account.json 2>/dev/null')).trim();
-        if (sa) {
-            const account = gift.saveGoogleKey(sa);
-            const pkg = (await readIn('printf %s "$APNS_TOPIC"')).trim();
-            appsCfg.gift.android = {
-                enabled: true,
-                packageName: appsCfg.gift.android?.packageName || pkg || 'com.kachat.app',
-            };
-            imported.android = { packageName: appsCfg.gift.android.packageName, projectId: account.projectId };
-        }
-    } catch (err) {
-        return fail(res, 400, `A credential from the indexer would not save: ${err.message}`);
-    }
-
-    if (!imported.apple && !imported.android) {
-        return fail(res, 404, 'No push credentials were found in the KaChat indexer to import.');
-    }
-
-    apps.saveAppsConfig(appsCfg);
-    writeGiftConfig();
-
-    const state = await dockerctl.containerState('kaspa-node-gift');
-    if (state.running) {
-        const job = jobs.start('Load the imported credentials into the gift service', async (onLine) => {
-            if (imported.apple) onLine('Imported the Apple DeviceCheck key and identifiers from the KaChat indexer.');
-            if (imported.android) onLine('Imported the Google Play Integrity service account from the KaChat indexer.');
-            await dockerctl.compose(['up', '-d', '--no-deps', '--force-recreate', 'gift'], {
-                onLine,
-                profile: 'gift',
-                timeoutMs: 10 * 60_000,
-            });
-        });
-        return sendJson(res, 202, { ok: true, jobId: job.id, imported });
-    }
-    sendJson(res, 200, { ok: true, imported });
-});
-
-/** The wizard's last step: make the credential answer before anyone relies on it. */
-route('POST', /^\/api\/gift\/test\/(apple|android)$/, async (req, res, match) => {
-    try {
-        const cfg = apps.loadAppsConfig().gift ?? {};
-        const result = match[1] === 'apple' ? await gift.testApple(cfg.apple ?? {}) : await gift.testGoogle();
-        sendJson(res, 200, result);
-    } catch (err) {
-        sendJson(res, 200, { ok: false, detail: err.message });
-    }
-});
-
-// The gift wallet, created and derived by the gift's own image (same Kaspa SDK
-// it sends with), so the address is exactly the one gifts come from.
-const giftImageTag = () => `kaspa-one-click/gift:${(readEnvFile().GIFT_REF || 'main').trim()}`;
-
-async function giftGenerateWallet(network, fromKey = null) {
-    const args = ['run', '--rm', '--entrypoint', 'node', giftImageTag(), 'gen-wallet.js', '--network', network || 'mainnet'];
-    if (fromKey) args.push('--from-key', fromKey);
-    const { stdout } = await dockerctl.docker(args, { timeoutMs: 60_000 });
-    const line = stdout.trim().split('\n').filter(Boolean).pop() || '';
-    let parsed;
-    try {
-        parsed = JSON.parse(line);
-    } catch {
-        throw new Error('The wallet generator returned unexpected output.');
-    }
-    if (!parsed.address) throw new Error('The wallet generator did not return an address.');
-    return parsed;
-}
-
-/** The gift wallet: its address (to fund) and balance from the node's UTXO index. */
-route('GET', /^\/api\/gift\/wallet$/, async (req, res) => {
-    const nodeCfg = loadNodeConfig();
-    const installed = (await dockerctl.containerState('kaspa-node-gift')).exists;
-    const hasKey = Boolean(gift.walletKey());
-    let address = gift.walletAddress();
-    if (!address && hasKey && installed) {
-        try {
-            address = (await giftGenerateWallet(nodeCfg.network, gift.walletKey())).address;
-            gift.saveWallet({ address });
-        } catch {
-            /* leave it empty; the panel says the address is not known yet */
-        }
-    }
-    let balanceKas = null;
-    if (address) {
-        try {
-            const r = await rpc.call('getBalanceByAddress', { address }, 6000);
-            balanceKas = Number(r?.balance ?? 0) / 1e8;
-        } catch {
-            /* node not reachable or still syncing */
-        }
-    }
-    sendJson(res, 200, { hasKey, address, balanceKas, network: nodeCfg.network, installed });
-});
-
-/** Creates a fresh gift wallet. Refuses to overwrite a funded one blindly. */
-route('POST', /^\/api\/gift\/wallet$/, async (req, res) => {
-    const body = await readBody(req);
-    if (gift.walletKey() && !body.force) {
-        return fail(res, 409, 'A wallet already exists. Creating another abandons any funds on the current one.', {
-            details: ['Reveal and back up the current key first, then confirm to replace it.'],
-        });
-    }
-    const state = await dockerctl.containerState('kaspa-node-gift');
-    if (!state.exists) return fail(res, 409, 'Install the Gift service first. The wallet is created with its own Kaspa library.');
-
-    const nodeCfg = loadNodeConfig();
-    try {
-        const wallet = await giftGenerateWallet(nodeCfg.network);
-        const saved = gift.saveWallet({ privateKeyHex: wallet.privateKeyHex, address: wallet.address });
-        writeGiftConfig(); // put the wallet into gift.json for the service to read
-        if (state.running) {
-            const job = jobs.start('Load the new wallet into the gift service', async (onLine) => {
-                onLine(`New sending wallet: ${saved.address}`);
-                await dockerctl.compose(['up', '-d', '--no-deps', '--force-recreate', 'gift'], {
-                    onLine,
-                    profile: 'gift',
-                    timeoutMs: 10 * 60_000,
-                });
-            });
-            return sendJson(res, 202, { ok: true, jobId: job.id, address: saved.address });
-        }
-        sendJson(res, 200, { ok: true, address: saved.address });
-    } catch (err) {
-        fail(res, 502, err.message);
-    }
-});
-
-/** Hands back the wallet key on the loopback panel, for backup. */
-route('POST', /^\/api\/gift\/wallet\/reveal$/, async (req, res) => {
-    const key = gift.walletKey();
-    if (!key) return fail(res, 404, 'No wallet key is stored.');
-    sendJson(res, 200, { privateKeyHex: key });
-});
-
-route('POST', /^\/api\/gift\/settings$/, async (req, res) => {
-    const body = await readBody(req);
-    const appsCfg = apps.loadAppsConfig();
-    const g = appsCfg.gift;
-
-    const number = (value, fallback, min) => {
-        const n = Number(value);
-        return Number.isFinite(n) && n >= min ? n : fallback;
-    };
-    g.amountKas = number(body.amountKas, g.amountKas ?? 3, 0.00000001);
-    g.dailyCapKas = number(body.dailyCapKas, g.dailyCapKas ?? 300, 0);
-    g.poolFloorKas = number(body.poolFloorKas, g.poolFloorKas ?? 50, 0);
-
-    apps.saveAppsConfig(appsCfg);
-    const written = writeGiftConfig();
-    sendJson(res, 200, { ok: true, config: g, service: { amountKas: written.amountKas } });
-});
-
 // -------------------------------------------------------------------- push --
 // Mobile push for the KaChat indexer: Android via Firebase (FCM) and iPhone via
-// Apple (APNs). Modelled on the gift service -- the non-secret identifiers live
+// Apple (APNs). The non-secret identifiers live
 // in apps.json/.env, the key files are written 0600 under conf/push/ and
 // bind-mounted into the indexer. Only relevant to whoever operates the KaChat
 // mobile apps and owns their Firebase project / Apple developer account.
@@ -3180,7 +2902,7 @@ route('POST', /^\/api\/push\/config$/, async (req, res) => {
         if (body.fcmServiceAccount) push.saveFcmKey(body.fcmServiceAccount);
 
         // Merge the push fields into the whole document and validate it, but
-        // persist only the validated kachat block so gift/bot/etc. keep their
+        // persist only the validated kachat block so bot/etc. keep their
         // stored settings untouched.
         const current = apps.loadAppsConfig();
         const merged = {

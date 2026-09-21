@@ -307,7 +307,6 @@ const CONTAINERS = [
     'kaspa-node-kachat-desktop',
     'kaspa-node-kachat-bot',
     'kaspa-node-libretranslate',
-    'kaspa-node-gift',
     'kaspa-node-nextcloud',
     'kaspa-node-nextcloud-db',
     'kaspa-node-nextcloud-redis',
@@ -331,7 +330,6 @@ const VOLUMES = [
     'kaspa-node-kachat-app-data',
     'kaspa-node-nextcloud-db-data',
     'kaspa-node-nextcloud-data',
-    'kaspa-node-gift-data',
     'kaspa-node-libretranslate-models',
 ];
 

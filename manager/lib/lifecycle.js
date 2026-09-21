@@ -120,17 +120,6 @@ export const UNITS = {
         buildable: ['kachat-bot'],
         data: 'nothing it collected. Its settings, including the wallet key, stay in the stack directory',
     },
-    gift: {
-        label: 'KaChat Gift Service',
-        profile: 'gift',
-        services: ['gift'],
-        containers: ['kaspa-node-gift'],
-        primary: 'kaspa-node-gift',
-        volumes: ['kaspa-node-gift-data'],
-        images: ['kaspa-one-click/gift'],
-        buildable: ['gift'],
-        data: 'the record of who has already claimed a gift',
-    },
     mining: {
         label: 'Stratum bridge',
         profile: 'mining',

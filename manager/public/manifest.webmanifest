@@ -1,7 +1,7 @@
 {
   "name": "Kaspa Quick Start",
   "short_name": "Kaspa QS",
-  "description": "Control panel for your Kaspa node, KaChat indexer, bot and gift service.",
+  "description": "Control panel for your Kaspa node, KaChat indexer and bot.",
   "id": "/",
   "start_url": "/",
   "scope": "/",

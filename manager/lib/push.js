@@ -7,9 +7,9 @@ import { CONF_DIR } from './paths.js';
  * The KaChat indexer's push credentials: an Apple .p8 (iOS / APNs) and a Firebase
  * service-account.json (Android / FCM).
  *
- * Like the gift service's keys, these authenticate as someone's own app, Apple
- * and Google hand them over once, and neither can be un-leaked by editing a file
- * afterwards. So they live in their own directory under conf/, written 0600, and
+ * These authenticate as someone's own app: Apple and Google hand them over once,
+ * and neither can be un-leaked by editing a file afterwards. So they live in
+ * their own directory under conf/, written 0600, and
  * nothing here ever puts them into apps.json -- which is rewritten on every
  * unrelated toggle. The indexer container reads them through a read-only bind
  * mount of this directory at /push (see docker-compose.yml, APNS_KEY_PATH and
@@ -34,9 +34,8 @@ export const hasFcm = () => fs.existsSync(FCM_KEY);
 /** Store the pasted APNs .p8, after checking it parses as a private key. */
 export function saveApnsKey(pem) {
     const text = String(pem || '').trim();
-    // Deliberately not spelling out the full PEM header -- the same reason as the
-    // gift key writer: a commit-guard looks for that exact string. Anything this
-    // lets through, createPrivateKey rejects.
+    // Deliberately not spelling out the full PEM header -- a commit-guard looks
+    // for that exact string. Anything this lets through, createPrivateKey rejects.
     if (!/^-----BEGIN [A-Z ]*KEY-----/m.test(text)) {
         throw new Error('That does not look like a .p8 key. Paste the whole file, including the BEGIN and END lines.');
     }

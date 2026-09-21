@@ -11,7 +11,7 @@
  * UA rule, so any author `display:` -- e.g. .bot-wallet-row's flex -- overrides
  * it and the element stays on screen with .hidden = true doing nothing. This
  * one rule makes the attribute win everywhere, so panels toggled from JS
- * (the gift/bot wallet cards, etc.) hide as intended.
+ * (the bot wallet card, etc.) hide as intended.
  */
 [hidden] {
     display: none !important;

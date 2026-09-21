@@ -102,14 +102,14 @@ elif ! d info >/dev/null 2>&1; then
     warn "    sudo bash \"$STACK_DIR/uninstall.sh\"${*:+ $*}"
     exit 1
 else
-    # Graceful path: compose down with EVERY profile (gift/bot/translate were
+    # Graceful path: compose down with EVERY profile (bot/translate were
     # missing before, so those services were left running) and --remove-orphans.
     if [ -f "$STACK_DIR/docker-compose.yml" ]; then
         say "Stopping the stack (docker compose down)"
         compose_files=(-f "$STACK_DIR/docker-compose.yml")
         [ -f "$STACK_DIR/conf/ports.yml" ] && compose_files+=(-f "$STACK_DIR/conf/ports.yml")
         down=(--profile mining --profile kachat --profile kachat-desktop --profile nextcloud \
-              --profile proxy --profile gift --profile bot --profile translate \
+              --profile proxy --profile bot --profile translate \
               down --remove-orphans --rmi local)
         [ "$KEEP_DATA" = "1" ] || down+=(--volumes)
         d compose "${compose_files[@]}" --project-directory "$STACK_DIR" "${down[@]}" 2>/dev/null \
