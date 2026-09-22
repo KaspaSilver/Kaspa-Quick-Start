@@ -1697,6 +1697,9 @@ async function bridgeStatsWithIps() {
         stats.workers = stats.workers.map((w) => ({ ...w, ip: bridge.workerIp(w.worker) }));
         if (stats.summary) stats.summary.rejectedBlocks = bridge.rejectedBlockCount();
     }
+    // Persist the cumulative counters + found-block history so they survive a
+    // bridge/computer restart; mutates the summary + blocks to the running totals.
+    bridge.accumulateStats(stats);
     return stats;
 }
 
@@ -2146,6 +2149,19 @@ async function hashrateWatchTick() {
 
 function startHashrateWatch() {
     const timer = setInterval(() => hashrateWatchTick().catch(() => {}), 2 * 60_000);
+    timer.unref?.();
+}
+
+// Fold the bridge's live counters into the persistent tally on a steady cadence,
+// so blocks-found / shares / uptime and the found-block history keep accumulating
+// (and a bridge restart gets banked) even when nobody has the mining tab open.
+async function miningStatsPersistTick() {
+    if (!bridge.loadBridgeConfig().enabled) return;
+    const stats = await bridge.fetchStats();
+    bridge.accumulateStats(stats);
+}
+function startMiningStatsPersist() {
+    const timer = setInterval(() => miningStatsPersistTick().catch(() => {}), 60_000);
     timer.unref?.();
 }
 
@@ -3316,6 +3332,7 @@ async function bootstrap() {
     scheduleExternalIpWatch(log);
     startHashrateWatch();
     startLowBalanceWatch();
+    startMiningStatsPersist();
 
     // Certificates are valid for 90 days; a daily attempt is what certbot's own
     // packaging recommends and is a no-op until one is close to expiry.

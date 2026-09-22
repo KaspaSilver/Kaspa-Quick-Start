@@ -6138,7 +6138,6 @@ $('proxy-form').addEventListener('submit', async (event) => {
  */
 async function loadDuckDns() {
     const r = await api('/api/duckdns');
-    $('public-ip').textContent = r.publicIp || 'unknown';
 
     const names = r.duckdns.domains
         ? r.duckdns.domains

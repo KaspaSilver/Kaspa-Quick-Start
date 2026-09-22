@@ -274,3 +274,62 @@ export async function fetchStats() {
         blocks,
     };
 }
+
+// Where the persistent mining tally lives. conf/ is bind-mounted from the install
+// dir, so it survives container recreates and computer restarts alike.
+export const MINING_STATS_FILE = path.join(CONF_DIR, 'mining-stats.json');
+const MAX_BLOCK_HISTORY = 500;
+const EMPTY_MINING_ACC = {
+    baselineBlocks: 0, lastBlocks: 0,
+    baselineShares: 0, lastShares: 0,
+    baselineUptime: 0, lastUptime: 0,
+    blocks: [],
+};
+
+/**
+ * Fold a fresh fetchStats() result into a persistent tally so the headline mining
+ * numbers -- blocks found, accepted shares, mining uptime -- and the found-block
+ * history survive a bridge (or computer) restart. The bridge keeps these in memory
+ * and zeroes them when it restarts, so we bank each session before it is lost:
+ * when a counter drops below what we last saw, the bridge restarted, and its
+ * previous total is added to the running baseline.
+ *
+ * Fully synchronous (read-modify-write), so overlapping callers can't interleave.
+ * Mutates `stats` in place: the summary carries the accumulated totals and the
+ * block list the full deduped history. Instantaneous figures (pool hashrate,
+ * active workers) are left untouched -- they are meant to be live.
+ */
+export function accumulateStats(stats) {
+    if (!stats?.reachable || !stats.summary) return stats;
+    const acc = { ...EMPTY_MINING_ACC, ...readJson(MINING_STATS_FILE, EMPTY_MINING_ACC) };
+
+    const curBlocks = Number(stats.summary.totalBlocks) || 0;
+    const curShares = Number(stats.summary.totalShares) || 0;
+    const curUptime = Number(stats.summary.bridgeUptime) || 0;
+
+    if (curBlocks < acc.lastBlocks) acc.baselineBlocks += acc.lastBlocks;
+    if (curShares < acc.lastShares) acc.baselineShares += acc.lastShares;
+    if (curUptime < acc.lastUptime) acc.baselineUptime += acc.lastUptime;
+    acc.lastBlocks = curBlocks;
+    acc.lastShares = curShares;
+    acc.lastUptime = curUptime;
+
+    // Merge freshly-reported found blocks into the history, deduped by hash and
+    // kept newest-first (highest blue score), bounded so the file can't grow
+    // without limit.
+    const byHash = new Map((acc.blocks || []).filter((b) => b?.hash).map((b) => [b.hash, b]));
+    for (const b of Array.isArray(stats.blocks) ? stats.blocks : []) {
+        if (b?.hash && !byHash.has(b.hash)) byHash.set(b.hash, b);
+    }
+    acc.blocks = [...byHash.values()]
+        .sort((a, b) => (Number(b.bluescore) || 0) - (Number(a.bluescore) || 0))
+        .slice(0, MAX_BLOCK_HISTORY);
+
+    writeJson(MINING_STATS_FILE, acc);
+
+    stats.summary.totalBlocks = acc.baselineBlocks + curBlocks;
+    stats.summary.totalShares = acc.baselineShares + curShares;
+    stats.summary.bridgeUptime = acc.baselineUptime + curUptime;
+    stats.blocks = acc.blocks;
+    return stats;
+}
