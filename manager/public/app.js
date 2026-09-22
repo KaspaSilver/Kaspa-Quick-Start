@@ -230,7 +230,6 @@ function selectTab(name) {
     if (name === 'global') loadGlobal().catch(() => {});
     if (name === 'bot') loadBot().catch(() => {});
     if (name === 'push') loadPush().catch(() => {});
-    if (name === 'chess') loadChess().catch(() => {});
     // On the drawer layout, picking a destination should get out of the way.
     if (MOBILE()) closeDrawer();
 }
@@ -303,7 +302,10 @@ function selectSubtab(section, name) {
     // The ROI calculator seeds itself from the connected miners on open.
     if (name === 'mining-roi') loadRoi().catch(() => {});
     // A KaChat panel loads when it is opened rather than all of them upfront.
-    if (name.startsWith('kachat-')) refreshKachatPanel();
+    // Chess is its own read-only view (the leaderboard the indexer replays), so it
+    // loads its own data rather than the general indexer-panel refresh.
+    if (name === 'kachat-chess') loadChess().catch(() => {});
+    else if (name.startsWith('kachat-')) refreshKachatPanel();
     // Its own call: refreshKachatPanel gives up when the indexer is not
     // running, and this screen works without it -- the engine it configures is
     // a different container.
