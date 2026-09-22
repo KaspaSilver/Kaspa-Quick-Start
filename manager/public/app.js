@@ -230,6 +230,7 @@ function selectTab(name) {
     if (name === 'global') loadGlobal().catch(() => {});
     if (name === 'bot') loadBot().catch(() => {});
     if (name === 'push') loadPush().catch(() => {});
+    if (name === 'chess') loadChess().catch(() => {});
     // On the drawer layout, picking a destination should get out of the way.
     if (MOBILE()) closeDrawer();
 }
@@ -5519,6 +5520,93 @@ $('bot-update').addEventListener('click', async () => {
         request: () => api('/api/apps/bot/update', { method: 'POST' }),
     });
 });
+
+// ------------------------------------------------------------ chess service ---
+
+// Read-only view of the chess leaderboard the KaChat indexer replays from #chess-arena.
+const chessShort = (addr) => {
+    const s = String(addr ?? '');
+    return s.length > 24 ? `${s.slice(0, 12)}…${s.slice(-6)}` : s;
+};
+const chessWhen = (ms) => {
+    if (!ms) return '–';
+    try {
+        return new Date(Number(ms)).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    } catch {
+        return '–';
+    }
+};
+
+async function loadChess() {
+    const err = $('chess-error');
+    err.hidden = true;
+    try {
+        renderChess(await api('/api/chess'));
+    } catch (e) {
+        err.textContent = e.message;
+        err.hidden = false;
+    }
+}
+
+function renderChess(data) {
+    const state = $('chess-state');
+    if (!data.installed) {
+        state.textContent = 'not installed';
+        state.className = 'tag off';
+    } else if (!data.running) {
+        state.textContent = 'stopped';
+        state.className = 'tag off';
+    } else {
+        state.textContent = 'live';
+        state.className = 'tag ok';
+    }
+
+    const err = $('chess-error');
+    if (data.error) {
+        err.textContent = data.error;
+        err.hidden = false;
+    } else {
+        err.hidden = true;
+    }
+
+    const players = data.leaderboard || [];
+    const lb = $('chess-leaderboard');
+    if (!players.length) {
+        lb.innerHTML = '<p class="muted">No tournaments in the last 30 days yet.</p>';
+    } else {
+        lb.innerHTML =
+            '<table class="blocks"><thead><tr><th>#</th><th>Player</th><th>Won</th><th>Wins</th><th>Losses</th><th>Played</th><th>Last</th></tr></thead><tbody>' +
+            players
+                .map(
+                    (p, i) =>
+                        `<tr><td>${i + 1}</td><td class="mono" title="${escapeHtml(p.address)}">${escapeHtml(chessShort(p.address))}</td><td>${escapeHtml(fmtNum(p.tournamentsWon))}</td><td>${escapeHtml(fmtNum(p.wins))}</td><td>${escapeHtml(fmtNum(p.losses))}</td><td>${escapeHtml(fmtNum(p.tournamentsPlayed))}</td><td>${escapeHtml(chessWhen(p.lastPlayedAt))}</td></tr>`,
+                )
+                .join('') +
+            '</tbody></table>';
+    }
+
+    const tournaments = data.tournaments || [];
+    $('chess-tournaments-count').textContent = tournaments.length ? `(${tournaments.length})` : '';
+    const ts = $('chess-tournaments');
+    if (!tournaments.length) {
+        ts.innerHTML = '<p class="muted">None yet.</p>';
+    } else {
+        ts.innerHTML =
+            '<table class="blocks"><thead><tr><th>Status</th><th>Players</th><th>Champion</th></tr></thead><tbody>' +
+            tournaments
+                .map((t) => {
+                    const cls = t.status === 'live' ? 'tag ok' : t.status === 'done' ? 'tag' : 'tag off';
+                    const champ = t.champion
+                        ? `<span class="mono" title="${escapeHtml(t.champion)}">${escapeHtml(chessShort(t.champion))}</span>`
+                        : '–';
+                    return `<tr><td><span class="${cls}">${escapeHtml(t.status)}</span></td><td>${(t.players || []).length}/8</td><td>${champ}</td></tr>`;
+                })
+                .join('') +
+            '</tbody></table>';
+    }
+}
+
+$('chess-refresh').addEventListener('click', () => loadChess().catch(() => {}));
 
 // -------------------------------------------------------------------- push ---
 // The Push Service panel: FCM (Android) + APNs (iPhone) credentials for the

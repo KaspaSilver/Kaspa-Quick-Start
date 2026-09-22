@@ -121,6 +121,13 @@
         </label>
       </div>
       <div class="nav-row">
+        <button class="nav-item" data-tab="chess" title="Chess tournament stats">
+          <span class="nav-dot"></span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 3h4l-1 3a3.5 3.5 0 011.3 2.7c0 1.2-.6 2.2-1.5 2.8l.9 5.5H10.3l.9-5.5A3.4 3.4 0 019.7 8.7 3.5 3.5 0 0111 6z"/><path d="M7.5 19h9l.7 2h-10.4z"/></svg>
+          <span class="label">Chess</span>
+        </button>
+      </div>
+      <div class="nav-row">
         <button class="nav-item" data-tab="desktop" title="KaChat-Desktop">
           <span class="nav-dot" data-health="desktop"></span>
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
@@ -1975,6 +1982,27 @@
         <div class="grid">
           <article class="card span2 uninstall-card" data-uninstall="bot"></article>
         </div>
+      </div>
+    </section>
+
+    <!-- ------------------------------------------------------------ chess -->
+    <section id="tab-chess" class="tab">
+      <div class="node-head">
+        <h3>Chess Tournaments</h3>
+        <span id="chess-state" class="tag">–</span>
+        <button class="ghost" id="chess-refresh" style="margin-left:auto">Refresh</button>
+      </div>
+      <p class="muted">The KaChat indexer replays the <code>#chess-arena</code> broadcast channel (last 30 days) and serves the leaderboard. This view is read-only.</p>
+      <p class="error" id="chess-error" hidden></p>
+      <div class="grid">
+        <article class="card span2">
+          <h3>Leaderboard</h3>
+          <div id="chess-leaderboard"><p class="muted">Loading…</p></div>
+        </article>
+        <article class="card span2">
+          <h3>Tournaments <span class="muted" id="chess-tournaments-count"></span></h3>
+          <div id="chess-tournaments"><p class="muted">Loading…</p></div>
+        </article>
       </div>
     </section>
 

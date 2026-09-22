@@ -2413,6 +2413,36 @@ route('GET', /^\/api\/kachat\/translate$/, async (req, res) => {
     });
 });
 
+// Chess Tournaments (5.1) stats. The indexer replays the #chess-arena broadcast channel and
+// serves the leaderboard on its content API (kachat-app:3080); the panel just fetches and
+// displays it. Read-only: nothing here changes the stack.
+const CHESS_ORIGIN = process.env.KACHAT_CONTENT_ORIGIN || 'http://kachat-app:3080';
+route('GET', /^\/api\/chess$/, async (req, res) => {
+    const state = await dockerctl.containerState('kaspa-node-kachat');
+    if (!state.exists) {
+        return sendJson(res, 200, { installed: false, running: false, leaderboard: [], tournaments: [] });
+    }
+    let leaderboard = [];
+    let tournaments = [];
+    let error = null;
+    try {
+        const [lb, ts] = await Promise.all([
+            fetch(`${CHESS_ORIGIN}/chess/leaderboard?limit=100`, { signal: AbortSignal.timeout(6000) }),
+            fetch(`${CHESS_ORIGIN}/chess/tournaments?limit=200`, { signal: AbortSignal.timeout(6000) }),
+        ]);
+        if (lb.ok) leaderboard = (await lb.json()).players ?? [];
+        if (ts.ok) tournaments = (await ts.json()).tournaments ?? [];
+        if (!lb.ok && !ts.ok) {
+            error = 'The indexer answered but not on /chess. Update KaChat-Indexer to a build with chess support.';
+        }
+    } catch {
+        error = state.running
+            ? 'Could not reach the KaChat indexer. It may still be starting.'
+            : 'The KaChat indexer is not running.';
+    }
+    sendJson(res, 200, { installed: true, running: state.running, leaderboard, tournaments, error });
+});
+
 // Downloads any argos model a requested language needs but the volume does not
 // have yet. Models pivot through English, so each language needs en->X and
 // X->en; already-installed pairs are skipped, and a language with no upstream
