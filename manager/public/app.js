@@ -5571,17 +5571,47 @@ function renderChess(data) {
         err.hidden = true;
     }
 
+    // Two boards, sorted panel-side the way the app sorts each (§6). The server returns the raw
+    // per-player breakdown; the phone (and here) re-sorts by the board it is showing.
     const players = data.leaderboard || [];
-    const lb = $('chess-leaderboard');
-    if (!players.length) {
-        lb.innerHTML = '<p class="muted">No tournaments in the last 30 days yet.</p>';
+    const nameCell = (a) => `<td class="mono" title="${escapeHtml(a)}">${escapeHtml(chessShort(a))}</td>`;
+
+    const duel = players
+        .filter((p) => (p.duelWins || 0) + (p.duelLosses || 0) > 0)
+        .sort((a, b) => (b.duelWins || 0) - (a.duelWins || 0) || (a.duelLosses || 0) - (b.duelLosses || 0));
+    const db = $('chess-duel-board');
+    if (!duel.length) {
+        db.innerHTML = '<p class="muted">No 1v1 games in the last 30 days yet.</p>';
     } else {
-        lb.innerHTML =
-            '<table class="blocks"><thead><tr><th>#</th><th>Player</th><th>Won</th><th>Wins</th><th>Losses</th><th>Played</th><th>Last</th></tr></thead><tbody>' +
-            players
+        db.innerHTML =
+            '<table class="blocks"><thead><tr><th>#</th><th>Player</th><th>Wins</th><th>Losses</th><th>Last</th></tr></thead><tbody>' +
+            duel
                 .map(
                     (p, i) =>
-                        `<tr><td>${i + 1}</td><td class="mono" title="${escapeHtml(p.address)}">${escapeHtml(chessShort(p.address))}</td><td>${escapeHtml(fmtNum(p.tournamentsWon))}</td><td>${escapeHtml(fmtNum(p.wins))}</td><td>${escapeHtml(fmtNum(p.losses))}</td><td>${escapeHtml(fmtNum(p.tournamentsPlayed))}</td><td>${escapeHtml(chessWhen(p.lastPlayedAt))}</td></tr>`,
+                        `<tr><td>${i + 1}</td>${nameCell(p.address)}<td>${escapeHtml(fmtNum(p.duelWins))}</td><td>${escapeHtml(fmtNum(p.duelLosses))}</td><td>${escapeHtml(chessWhen(p.lastPlayedAt))}</td></tr>`,
+                )
+                .join('') +
+            '</tbody></table>';
+    }
+
+    const tourney = players
+        .filter((p) => (p.tournamentsPlayed || 0) > 0)
+        .sort(
+            (a, b) =>
+                (b.tournamentsWon || 0) - (a.tournamentsWon || 0) ||
+                (b.tournamentGameWins || 0) - (a.tournamentGameWins || 0) ||
+                (a.tournamentGameLosses || 0) - (b.tournamentGameLosses || 0),
+        );
+    const tb = $('chess-tournament-board');
+    if (!tourney.length) {
+        tb.innerHTML = '<p class="muted">No tournaments in the last 30 days yet.</p>';
+    } else {
+        tb.innerHTML =
+            '<table class="blocks"><thead><tr><th>#</th><th>Player</th><th>Won</th><th>Wins</th><th>Losses</th><th>Played</th><th>Last</th></tr></thead><tbody>' +
+            tourney
+                .map(
+                    (p, i) =>
+                        `<tr><td>${i + 1}</td>${nameCell(p.address)}<td>${escapeHtml(fmtNum(p.tournamentsWon))}</td><td>${escapeHtml(fmtNum(p.tournamentGameWins))}</td><td>${escapeHtml(fmtNum(p.tournamentGameLosses))}</td><td>${escapeHtml(fmtNum(p.tournamentsPlayed))}</td><td>${escapeHtml(chessWhen(p.lastPlayedAt))}</td></tr>`,
                 )
                 .join('') +
             '</tbody></table>';
@@ -5594,14 +5624,16 @@ function renderChess(data) {
         ts.innerHTML = '<p class="muted">None yet.</p>';
     } else {
         ts.innerHTML =
-            '<table class="blocks"><thead><tr><th>Status</th><th>Players</th><th>Champion</th></tr></thead><tbody>' +
+            '<table class="blocks"><thead><tr><th>Type</th><th>Status</th><th>Players</th><th>Champion</th></tr></thead><tbody>' +
             tournaments
                 .map((t) => {
                     const cls = t.status === 'live' ? 'tag ok' : t.status === 'done' ? 'tag' : 'tag off';
+                    const cap = t.capacity === 2 ? 2 : 8;
+                    const type = cap === 2 ? '1v1' : 'Tournament';
                     const champ = t.champion
                         ? `<span class="mono" title="${escapeHtml(t.champion)}">${escapeHtml(chessShort(t.champion))}</span>`
                         : '–';
-                    return `<tr><td><span class="${cls}">${escapeHtml(t.status)}</span></td><td>${(t.players || []).length}/8</td><td>${champ}</td></tr>`;
+                    return `<tr><td>${type}</td><td><span class="${cls}">${escapeHtml(t.status)}</span></td><td>${(t.players || []).length}/${cap}</td><td>${champ}</td></tr>`;
                 })
                 .join('') +
             '</tbody></table>';
