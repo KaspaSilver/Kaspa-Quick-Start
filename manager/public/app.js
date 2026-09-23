@@ -5578,7 +5578,12 @@ function renderChess(data) {
 
     const duel = players
         .filter((p) => (p.duelWins || 0) + (p.duelLosses || 0) > 0)
-        .sort((a, b) => (b.duelWins || 0) - (a.duelWins || 0) || (a.duelLosses || 0) - (b.duelLosses || 0));
+        .sort(
+            (a, b) =>
+                (b.duelWins || 0) - (a.duelWins || 0) ||
+                (a.duelLosses || 0) - (b.duelLosses || 0) ||
+                (b.lastPlayedAt || 0) - (a.lastPlayedAt || 0),
+        );
     const db = $('chess-duel-board');
     if (!duel.length) {
         db.innerHTML = '<p class="muted">No 1v1 games in the last 30 days yet.</p>';
@@ -5600,7 +5605,8 @@ function renderChess(data) {
             (a, b) =>
                 (b.tournamentsWon || 0) - (a.tournamentsWon || 0) ||
                 (b.tournamentGameWins || 0) - (a.tournamentGameWins || 0) ||
-                (a.tournamentGameLosses || 0) - (b.tournamentGameLosses || 0),
+                (a.tournamentGameLosses || 0) - (b.tournamentGameLosses || 0) ||
+                (b.lastPlayedAt || 0) - (a.lastPlayedAt || 0),
         );
     const tb = $('chess-tournament-board');
     if (!tourney.length) {
