@@ -97,7 +97,9 @@ export function writeArgsFile(cfg) {
  */
 export function renderPortsOverride(cfg) {
     const p = ports(cfg);
-    const bind = cfg.expose.bindAddress || '0.0.0.0';
+    // Loopback when no address was chosen: a port must never reach the network by
+    // default. Going public (0.0.0.0) is always a deliberate choice in the panel.
+    const bind = cfg.expose.bindAddress || '127.0.0.1';
     const mappings = [];
     if (cfg.expose.p2p) mappings.push(p.p2p);
     if (cfg.expose.grpc && cfg.services.grpc) mappings.push(p.grpc);

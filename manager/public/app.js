@@ -1075,7 +1075,7 @@ async function refreshStatus() {
     renderPorts(s);
     const bind = $('bind-address');
     if (document.activeElement !== bind && !bind.disabled) {
-        const address = s.bindAddress || '0.0.0.0';
+        const address = s.bindAddress || '127.0.0.1';
         // An address set by hand earlier is kept as an option rather than
         // silently switched to one of the two on the list.
         if (![...bind.options].some((o) => o.value === address)) {

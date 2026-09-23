@@ -295,7 +295,9 @@ function sanitizeNodeConfig(input) {
     for (const key of Object.keys(cfg.expose)) cfg.expose[key] = Boolean(input.expose?.[key]);
     for (const key of Object.keys(cfg.flags)) cfg.flags[key] = Boolean(input.flags?.[key]);
 
-    const bind = String(input.expose?.bindAddress || '0.0.0.0').trim();
+    // No address supplied falls back to loopback, never 0.0.0.0: a save must not
+    // be able to expose a port to the network unless that address is chosen.
+    const bind = String(input.expose?.bindAddress || '127.0.0.1').trim();
     if (!/^[0-9a-fA-F.:]+$/.test(bind)) errors.push('Publish address must be an IP such as 0.0.0.0 or 127.0.0.1.');
     cfg.expose.bindAddress = bind;
 
@@ -480,7 +482,7 @@ route('GET', /^\/api\/status$/, async (req, res) => {
         ports: ports(cfg),
         publicPorts: publicPorts(cfg),
         portMatrix: portMatrix(cfg),
-        bindAddress: cfg.expose.bindAddress || '0.0.0.0',
+        bindAddress: cfg.expose.bindAddress || '127.0.0.1',
         published,
         disk,
         // The volume split by what is in it. The UTXO index is worth showing on
@@ -552,7 +554,7 @@ route('GET', /^\/api\/node\/go-public$/, async (req, res) => {
     sendJson(res, 200, {
         port: ports(cfg).p2p,
         p2pPublished: Boolean(cfg.expose.p2p),
-        bindAddress: cfg.expose.bindAddress || '0.0.0.0',
+        bindAddress: cfg.expose.bindAddress || '127.0.0.1',
         externalip: cfg.peering.externalip || '',
         externalipAuto: Boolean(cfg.peering.externalipAuto),
         lan: lan?.ip ?? null,
