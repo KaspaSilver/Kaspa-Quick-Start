@@ -1318,8 +1318,6 @@ table.ports td.note { color: var(--muted); font-size: 12.5px; font-family: inher
 .node-ports .ports { font-size: 13px; }
 .node-ports .ports th, .node-ports .ports td { padding: 7px 6px; }
 .node-ports .ports td:first-child { width: 58px; }
-.node-ports .bindrow { margin-top: 12px; }
-.node-ports .bindrow input { min-width: 90px; }
 
 @media (max-width: 1100px) {
     .node-body { grid-template-columns: minmax(0, 1fr); }

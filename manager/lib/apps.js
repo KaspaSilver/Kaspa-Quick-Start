@@ -369,16 +369,17 @@ export function validateAppsConfig(input) {
     return { cfg, errors };
 }
 
-/** Reasons an app cannot be switched on right now. */
+/**
+ * Reasons an app cannot be switched on right now. The node listeners each app
+ * speaks to (wRPC Borsh for the indexer; gRPC and wRPC Borsh for the bot) used
+ * to be listed here -- the user had to switch them on first -- but they now come
+ * on automatically when the app is enabled, since the listener follows what
+ * needs it. What remains is the network mismatch, which no amount of listening
+ * fixes.
+ */
 export function appBlockers(name, cfg, nodeCfg) {
     const blockers = [];
     if (name === 'kachat' && cfg.kachat.enabled) {
-        if (!nodeCfg.services.borsh) {
-            blockers.push(
-                'The KaChat indexer reads the chain over wRPC Borsh, and that is currently switched off. ' +
-                    'Turn the wRPC Borsh listener on under Kaspad, Ports. It does not have to be public.',
-            );
-        }
         if (nodeCfg.network !== cfg.kachat.network) {
             blockers.push(
                 `The indexer is set to ${cfg.kachat.network} but your node is running ${nodeCfg.network}. ` +
@@ -388,21 +389,6 @@ export function appBlockers(name, cfg, nodeCfg) {
     }
 
     if (name === 'bot' && cfg.bot?.enabled) {
-        // It watches for rewards over gRPC and sends the notification over
-        // wRPC Borsh, so it needs both. Neither has to be published: it is a
-        // container on the same network as the node.
-        if (!nodeCfg.services.grpc) {
-            blockers.push(
-                'The bot watches for block rewards over gRPC, and that listener is switched off. ' +
-                    'Turn gRPC on under Kaspad, Ports. It does not have to be public.',
-            );
-        }
-        if (!nodeCfg.services.borsh) {
-            blockers.push(
-                'The bot sends its notification over wRPC Borsh, and that listener is switched off. ' +
-                    'Turn wRPC Borsh on under Kaspad, Ports. It does not have to be public.',
-            );
-        }
         if (nodeCfg.network !== cfg.bot.network) {
             blockers.push(
                 `The bot is set to ${cfg.bot.network} but your node is running ${nodeCfg.network}. ` +

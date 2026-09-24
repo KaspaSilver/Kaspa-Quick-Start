@@ -174,8 +174,38 @@ function sse(req, res) {
  * node so both take effect. Everything the UI changes about the node funnels
  * through here so the on-disk state and the running container cannot drift.
  */
+/**
+ * What in the stack is currently asking the node for a listener. The gRPC and
+ * wRPC-Borsh listeners follow these, so every path that writes the node's args
+ * reads them from here rather than from a stored switch.
+ */
+function nodeSiblings() {
+    const appsCfg = apps.loadAppsConfig();
+    return {
+        mining: bridge.loadBridgeConfig().enabled === true,
+        indexer: Boolean(appsCfg.kachat?.enabled),
+        bot: Boolean(appsCfg.bot?.enabled),
+    };
+}
+
+/**
+ * Bring the node's in-container listeners in line with what the enabled
+ * services need, restarting it only if that actually changed the args. This is
+ * how switching on the miner, indexer or bot turns its gRPC / wRPC-Borsh
+ * listener on -- and how doing so touches the node only when the listener was
+ * not already there.
+ */
+async function ensureNodeListeners(onLine = () => {}) {
+    const cfg = loadNodeConfig();
+    writeArgsFile(cfg, nodeSiblings());
+    if (argsDrifted()) {
+        onLine("Bringing the node's listeners in line with the services that need them.");
+        await applyNodeConfig(cfg, onLine);
+    }
+}
+
 async function applyNodeConfig(cfg, onLine = () => {}) {
-    const args = writeArgsFile(cfg);
+    const args = writeArgsFile(cfg, nodeSiblings());
     const mappings = renderPortsOverride(cfg);
     rpc.setUrl(`ws://${KASPAD_SERVICE}:${ports(cfg).json}`);
 
@@ -291,15 +321,21 @@ function sanitizeNodeConfig(input) {
     if (!NETWORKS[input.network]) errors.push(`Unknown network "${input.network}".`);
     else cfg.network = input.network;
 
-    for (const key of Object.keys(cfg.services)) cfg.services[key] = Boolean(input.services?.[key]);
-    for (const key of Object.keys(cfg.expose)) cfg.expose[key] = Boolean(input.expose?.[key]);
     for (const key of Object.keys(cfg.flags)) cfg.flags[key] = Boolean(input.flags?.[key]);
 
-    // No address supplied falls back to loopback, never 0.0.0.0: a save must not
-    // be able to expose a port to the network unless that address is chosen.
-    const bind = String(input.expose?.bindAddress || '127.0.0.1').trim();
-    if (!/^[0-9a-fA-F.:]+$/.test(bind)) errors.push('Publish address must be an IP such as 0.0.0.0 or 127.0.0.1.');
-    cfg.expose.bindAddress = bind;
+    // Each port is one level: off / local / public. P2P and wRPC-JSON cannot be
+    // off (the node and this panel need them), so they settle at local instead.
+    const LEVELS = new Set(['off', 'local', 'public']);
+    const PINNED = new Set(['p2p', 'json']);
+    for (const key of Object.keys(cfg.expose)) {
+        let want = String(input.expose?.[key] ?? cfg.expose[key]).trim();
+        if (!LEVELS.has(want)) {
+            errors.push(`Port ${key} must be off, local or public.`);
+            want = cfg.expose[key];
+        }
+        if (PINNED.has(key) && want === 'off') want = 'local';
+        cfg.expose[key] = want;
+    }
 
     const t = input.tuning ?? {};
     const intField = (name, value, min, max, fallback) => {
@@ -481,8 +517,7 @@ route('GET', /^\/api\/status$/, async (req, res) => {
         network: cfg.network,
         ports: ports(cfg),
         publicPorts: publicPorts(cfg),
-        portMatrix: portMatrix(cfg),
-        bindAddress: cfg.expose.bindAddress || '127.0.0.1',
+        portMatrix: portMatrix(cfg, nodeSiblings()),
         published,
         disk,
         // The volume split by what is in it. The UTXO index is worth showing on
@@ -553,8 +588,7 @@ route('GET', /^\/api\/node\/go-public$/, async (req, res) => {
     const lan = await network.primaryLanAddress().catch(() => null);
     sendJson(res, 200, {
         port: ports(cfg).p2p,
-        p2pPublished: Boolean(cfg.expose.p2p),
-        bindAddress: cfg.expose.bindAddress || '127.0.0.1',
+        p2pPublic: cfg.expose.p2p === 'public',
         externalip: cfg.peering.externalip || '',
         externalipAuto: Boolean(cfg.peering.externalipAuto),
         lan: lan?.ip ?? null,
@@ -604,32 +638,19 @@ route('POST', /^\/api\/ports\/(p2p|grpc|borsh|json)$/, async (req, res, match) =
     const key = match[1];
     const body = await readBody(req);
     const wanted = {
-        listening: typeof body.listening === 'boolean' ? body.listening : undefined,
-        published: typeof body.published === 'boolean' ? body.published : undefined,
+        local: typeof body.local === 'boolean' ? body.local : undefined,
+        public: typeof body.public === 'boolean' ? body.public : undefined,
     };
-    if (wanted.listening === undefined && wanted.published === undefined) {
-        return fail(res, 400, 'Send listening and/or published as booleans.');
+    if (wanted.local === undefined && wanted.public === undefined) {
+        return fail(res, 400, 'Send local and/or public as booleans.');
     }
 
     const cfg = loadNodeConfig();
     const before = portMatrix(cfg).find((e) => e.key === key);
 
-    // Two services in this stack reach the node over the internal network, and
-    // turning their listener off would strand them without touching anything
-    // they can see. Refuse rather than break them silently.
-    if (wanted.listening === false) {
-        if (key === 'borsh' && apps.loadAppsConfig().kachat.enabled) {
-            return fail(res, 409, 'The KaChat indexer reads the chain over wRPC Borsh.', {
-                details: ['Switch KaChat off first, or leave this listener on.'],
-            });
-        }
-        if (key === 'grpc' && bridge.loadBridgeConfig().enabled) {
-            return fail(res, 409, 'The stratum bridge talks to the node over gRPC.', {
-                details: ['Switch mining off first, or leave this listener on.'],
-            });
-        }
-    }
-
+    // No refusal needed for a port a sibling depends on: turning it off here
+    // only unpublishes the host mapping. The in-container listener the bridge
+    // or indexer speaks to follows what needs it, so it stays bound regardless.
     const changes = setPortState(cfg, key, wanted);
     if (!changes.length) return sendJson(res, 200, { ok: true, unchanged: true });
 
@@ -639,24 +660,6 @@ route('POST', /^\/api\/ports\/(p2p|grpc|borsh|json)$/, async (req, res, match) =
         return applyNodeConfig(cfg, onLine);
     });
     sendJson(res, 202, { ok: true, jobId: job.id, changes });
-});
-
-route('POST', /^\/api\/ports\/bind$/, async (req, res) => {
-    const body = await readBody(req);
-    const address = String(body.address || '').trim();
-    if (!/^[0-9a-fA-F.:]+$/.test(address)) {
-        return fail(res, 400, 'Publish address must be an IP such as 0.0.0.0 or 127.0.0.1.');
-    }
-    const cfg = loadNodeConfig();
-    if (cfg.expose.bindAddress === address) return sendJson(res, 200, { ok: true, unchanged: true });
-
-    cfg.expose.bindAddress = address;
-    saveNodeConfig(cfg);
-    const job = jobs.start(`Publish ports on ${address}`, (onLine) => {
-        onLine(`Published ports will bind ${address}.`);
-        return applyNodeConfig(cfg, onLine);
-    });
-    sendJson(res, 202, { ok: true, jobId: job.id });
 });
 
 route('POST', /^\/api\/node\/(start|stop|restart)$/, async (req, res, match) => {
@@ -1442,13 +1445,10 @@ route('POST', /^\/api\/setup\/([a-z]+)$/, async (req, res, match) => {
         }
 
         if (key === 'kaspad') {
-            const cfg = loadNodeConfig();
-            if (!cfg.services.borsh) {
-                onLine("Switching on the node's wRPC Borsh listener.");
-                cfg.services.borsh = true;
-                saveNodeConfig(cfg);
-                await applyNodeConfig(cfg, onLine);
-            }
+            // The node's listeners follow whatever needs them; make the on-disk
+            // args match before it comes up so a dependent service never starts
+            // against a node that is not listening for it.
+            await ensureNodeListeners(onLine);
         }
 
         if (key === 'mining') {
@@ -1575,6 +1575,10 @@ async function applyMiningConfig(cfg, onLine = () => {}) {
         await dockerctl.compose(['rm', '-sf', 'bridge'], { onLine, profile: 'mining' });
         return { enabled: false };
     }
+
+    // The bridge dials the node over gRPC, so make sure that listener is on
+    // before it starts. It comes on automatically now that mining is enabled.
+    await ensureNodeListeners(onLine);
 
     onLine(`Stratum ports: ${cfg.instances.map((i) => `${i.stratumPort} (diff ${i.minShareDiff})`).join(', ')}`);
     onLine(`Published to the host: ${published.length ? published.join(', ') : 'none - local miners only'}`);
@@ -1847,6 +1851,11 @@ async function applyAppConfig(name, cfg, onLine = () => {}) {
         onLine(`Reading the chain from the node in this stack (wRPC borsh, ${settings.network}).`);
         onLine('First build compiles the indexer from Rust source - expect this to take a while.');
     }
+
+    // The indexer and bot dial the node over wRPC-Borsh (and the bot over gRPC
+    // too), so make sure those listeners are on before their container starts.
+    // They come on automatically now that the app is enabled.
+    if (name === 'kachat' || name === 'bot') await ensureNodeListeners(onLine);
 
     onLine('Building images if needed...');
     await dockerctl.compose(['build', ...app.services.filter((sv) => BUILDABLE_SERVICES.has(sv))], {
@@ -3227,22 +3236,41 @@ const server = http.createServer(async (req, res) => {
 // -------------------------------------------------------------------- boot ---
 
 /**
- * Published ports used to bind 0.0.0.0 whenever nobody had chosen an address.
- * The default is loopback now, which is right for a new install and wrong for
- * an old one: a config written before the change carries no key to read, and
- * its node was reachable from the network. Letting the new default apply would
- * quietly unpublish a public node on its next restart, so pin those installs to
- * what they were already doing and leave the choice where it was made.
+ * The ports model used to be two booleans per port -- a listener switch and a
+ * publish switch -- plus one shared publish address. It is now a single level
+ * per port: off / local / public, with the address folded in and the listener
+ * derived from what needs it. Convert an old config the first time it is seen so
+ * nothing about how the node was reachable changes underneath it:
+ *   - a published port keeps its address: the old shared 0.0.0.0 becomes public,
+ *     anything else (loopback) becomes local;
+ *   - an unpublished port becomes off (its listener, if a sibling needs it, is
+ *     handled by the derivation, not by a stored flag);
+ *   - P2P and wRPC-JSON cannot be off, so an unpublished one settles at local.
+ * The old `services` and `bindAddress` keys are dropped once converted.
  */
-function migrateBindAddress(cfg) {
+function migrateExposeModel(cfg) {
     try {
         const raw = JSON.parse(fs.readFileSync(NODE_CONFIG_FILE, 'utf8'));
-        if (!raw?.expose || raw.expose.bindAddress !== undefined) return;
-        cfg.expose.bindAddress = '0.0.0.0';
+        const ex = raw?.expose;
+        if (!ex) return;
+        const KEYS = ['p2p', 'grpc', 'borsh', 'json'];
+        const isOld = 'bindAddress' in ex || KEYS.some((k) => typeof ex[k] === 'boolean');
+        if (!isOld) return;
+
+        const oldBind = typeof ex.bindAddress === 'string' ? ex.bindAddress : '127.0.0.1';
+        const pinned = new Set(['p2p', 'json']);
+        for (const key of KEYS) {
+            const published = ex[key] === true;
+            let out = published ? (oldBind === '127.0.0.1' ? 'local' : 'public') : 'off';
+            if (pinned.has(key) && out === 'off') out = 'local';
+            cfg.expose[key] = out;
+        }
+        delete cfg.expose.bindAddress;
+        delete cfg.services;
         saveNodeConfig(cfg);
-        log('published ports pinned to 0.0.0.0, which is where this install already had them');
+        log('ports: migrated to the off / local / public model');
     } catch (err) {
-        log(`could not read the published-port address: ${err.message}`);
+        log(`could not migrate the ports model: ${err.message}`);
     }
 }
 
@@ -3270,8 +3298,8 @@ async function bootstrap() {
     }
 
     const cfg = loadNodeConfig();
-    migrateBindAddress(cfg);
-    writeArgsFile(cfg);
+    migrateExposeModel(cfg);
+    writeArgsFile(cfg, nodeSiblings());
     renderPortsOverride(cfg);
     nginx.writeAll(loadProxies(), cfg, renderOptions());
     bridge.writeBridgeFiles(bridge.loadBridgeConfig(), cfg);

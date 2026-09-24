@@ -24,24 +24,23 @@ export const NETWORKS = {
 
 export const DEFAULT_NODE_CONFIG = {
     network: 'mainnet',
-    // Which listeners kaspad binds inside the container. wRPC-JSON is not
-    // listed: the manager itself speaks to it for status, so it is always on.
+    // One level per port, and it is the whole story for how that port is reached:
+    //   'off'    not published to the host at all (internal-only if anything in
+    //            the stack still needs it -- see the derived listeners below);
+    //   'local'  published on 127.0.0.1, reachable from this machine only;
+    //   'public' published on 0.0.0.0, reachable from the network.
     //
-    // Both start off. A new node should do nothing but what a node has to do,
-    // and each of these has an owner that asks for it: the stratum bridge needs
-    // gRPC, the KaChat indexer needs wRPC Borsh, and both say so plainly when
-    // they are switched on (miningBlockers, appBlockers) rather than being
-    // bound in advance for a feature nobody may use.
-    services: { grpc: false, borsh: false },
-    // Which of those get a published host port, i.e. what "going public" means.
-    // Nothing is published on a fresh install, P2P included: going public is a
-    // decision, and it is one that needs a router configured to match, so it
-    // belongs to the person installing this and not to a default.
+    // Everything starts local, nothing starts public: going public needs a
+    // router configured to match, so it is a deliberate choice and never a
+    // default. P2P and wRPC-JSON cannot be 'off' -- the node always speaks P2P
+    // and this panel always speaks wRPC-JSON -- so they sit at 'local' until
+    // someone makes them public.
     //
-    // bindAddress is the same decision one step further in. Loopback means that
-    // even a port switched on by mistake is reachable from this machine only;
-    // reaching the network is a second, deliberate choice.
-    expose: { p2p: false, grpc: false, borsh: false, json: false, bindAddress: '127.0.0.1' },
+    // gRPC and wRPC-Borsh start off. Their in-container listener is not set here
+    // at all: it follows whatever needs it (the stratum bridge needs gRPC, the
+    // KaChat indexer needs wRPC-Borsh), worked out when the args are written so
+    // a feature nobody uses never leaves a listener bound.
+    expose: { p2p: 'local', grpc: 'off', borsh: 'off', json: 'local' },
     flags: {
         // On for every new install: it is what wallets, explorers and anything
         // asking "what does this address hold" need from a node, and building

@@ -92,16 +92,15 @@ export function validateBridgeConfig(input) {
     return { cfg, errors };
 }
 
-/** Mining needs kaspad's gRPC, which is what the bridge connects to. */
-export function miningBlockers(bridgeCfg, nodeCfg) {
-    const blockers = [];
-    if (bridgeCfg.enabled && !nodeCfg.services.grpc) {
-        blockers.push(
-            'The stratum bridge needs to talk to the node over gRPC, and that is currently switched off. ' +
-                'Turn the gRPC listener on under Kaspad, Ports. It does not have to be public.',
-        );
-    }
-    return blockers;
+/**
+ * Reasons mining cannot start right now. The node's gRPC listener used to be one
+ * -- the user had to switch it on first -- but it now comes on automatically
+ * whenever mining is enabled (the listener follows what needs it), so there is
+ * nothing here to block on. Kept as a function so callers stay unchanged and a
+ * future prerequisite has a home.
+ */
+export function miningBlockers(_bridgeCfg, _nodeCfg) {
+    return [];
 }
 
 // --------------------------------------------------------------- rendering --

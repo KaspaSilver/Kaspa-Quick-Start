@@ -1073,16 +1073,6 @@ async function refreshStatus() {
     }
 
     renderPorts(s);
-    const bind = $('bind-address');
-    if (document.activeElement !== bind && !bind.disabled) {
-        const address = s.bindAddress || '127.0.0.1';
-        // An address set by hand earlier is kept as an option rather than
-        // silently switched to one of the two on the list.
-        if (![...bind.options].some((o) => o.value === address)) {
-            bind.add(new Option(`${address} (set manually)`, address));
-        }
-        bind.value = address;
-    }
     applyNodeGating(s);
 }
 
@@ -1341,30 +1331,37 @@ function renderPorts(s) {
     const html = (s.portMatrix || [])
         .map((p) => {
             const live = publishedSet.has(String(p.port));
-            const listeningOn = effective(p.key, 'listening', p.listening);
-            const publishedOn = effective(p.key, 'published', p.published);
+            const localOn = effective(p.key, 'local', p.local);
+            const publicOn = effective(p.key, 'public', p.public);
             // The dot keeps telling the truth about what the node is doing, so a
             // held switch reads as "applying…" until the change actually lands.
-            const applying = listeningOn !== p.listening || publishedOn !== p.published;
+            const applying = localOn !== p.local || publicOn !== p.public;
+            const now = publicOn ? 'public' : localOn ? 'local' : 'off';
             const state = applying
                 ? { cls: '', text: 'applying…' }
-                : !p.listening
-                  ? { cls: 'off', text: 'not listening' }
-                  : !p.published
-                    ? { cls: 'warn', text: 'listening, but only reachable from inside this machine' }
+                : now === 'off'
+                  ? p.forcedListen
+                      ? { cls: 'warn', text: 'internal only, in use by another service in this stack' }
+                      : { cls: 'off', text: 'not published' }
+                  : now === 'local'
+                    ? { cls: 'warn', text: 'reachable from this machine only (127.0.0.1)' }
                     : live
-                      ? { cls: 'ok', text: 'listening and reachable from outside' }
+                      ? { cls: 'ok', text: 'public — reachable from the network (0.0.0.0)' }
                       : { cls: '', text: 'applying…' };
-            const listening = p.canToggleListening
-                ? sw(p, 'listening', listeningOn, true, p.listeningNote)
-                : `<span class="locked" title="${escapeHtml(p.listeningNote)}">always</span>`;
+            // Local is the base switch; Public sits on top of it, so it only
+            // opens once the port is at least local. Pinned ports are always
+            // local, so their Public switch is free to move.
+            const localCell = p.pinned
+                ? `<span class="locked" title="${escapeHtml(p.localNote)}">always</span>`
+                : sw(p, 'local', localOn, true, p.localNote);
+            const publicCell = sw(p, 'public', publicOn, p.pinned || localOn, p.publicNote);
             const title = `${p.name}: ${state.text}${p.required ? '. This is the one to forward on your router to be a public node.' : ''}`;
             return `<tr title="${escapeHtml(title)}">
       <td class="port"><span class="dot ${state.cls}"></span>${p.port}</td>
       <td>${escapeHtml(p.name)}${p.required ? ' <span class="tag">required</span>' : ''}</td>
-      <td class="toggle">${listening}</td>
-      <td class="toggle">${sw(p, 'published', publishedOn, true, p.note)}</td>
-      <td><button class="ghost" data-portcheck="${p.port}" ${p.published ? '' : 'disabled'}>Test</button></td>
+      <td class="toggle">${localCell}</td>
+      <td class="toggle">${publicCell}</td>
+      <td><button class="ghost" data-portcheck="${p.port}" ${p.public ? '' : 'disabled'}>Test</button></td>
     </tr>`;
         })
         .join('');
@@ -1395,23 +1392,6 @@ $('ports-body').addEventListener('change', async (event) => {
         toast(e.message, 'bad');
     } finally {
         event.target.disabled = false;
-    }
-});
-
-// Applies on selection, like the port switches beside it, rather than pairing
-// a two-option list with an Apply button.
-$('bind-address').addEventListener('change', async (event) => {
-    const address = event.target.value;
-    event.target.disabled = true;
-    try {
-        const r = await api('/api/ports/bind', { method: 'POST', body: { address } });
-    } catch (e) {
-        toast(e.message, 'bad');
-        refreshStatus();
-    } finally {
-        setTimeout(() => {
-            event.target.disabled = false;
-        }, 2500);
     }
 });
 
@@ -1641,8 +1621,7 @@ function collectConfig() {
     return {
         network: $('cfg-network').value,
         // Owned by the Ports card, which applies immediately; pass the current
-        // values straight through so saving settings cannot revert them.
-        services: { ...currentConfig.services },
+        // per-port levels straight through so saving settings cannot revert them.
         expose: { ...currentConfig.expose },
         flags,
         tuning: {
@@ -2493,12 +2472,8 @@ async function loadGoPublic() {
     $('howto-router-port').textContent = s.port;
     $('howto-router-lan').textContent = s.lan || "this computer's local IP address";
 
-    $('howto-p2p').checked = s.p2pPublished;
-    setHowtoStep('p2p', s.p2pPublished, s.p2pPublished ? 'on' : 'off');
-
-    const open = s.bindAddress === '0.0.0.0' || s.bindAddress === '::';
-    $('howto-bind').checked = open;
-    setHowtoStep('bind', open, open ? 'on' : 'this machine only');
+    $('howto-p2p').checked = s.p2pPublic;
+    setHowtoStep('p2p', s.p2pPublic, s.p2pPublic ? 'public' : 'off');
 
     if (document.activeElement !== $('howto-externalip')) $('howto-externalip').value = s.externalip;
     $('howto-externalip-auto').checked = s.externalipAuto;
@@ -2510,20 +2485,9 @@ async function loadGoPublic() {
 $('howto-p2p').addEventListener('change', async (e) => {
     await runAction({
         key: null,
-        title: e.target.checked ? 'Opening the P2P port' : 'Closing the P2P port',
+        title: e.target.checked ? 'Publishing P2P to the network (0.0.0.0)' : 'Restricting P2P to this machine',
         note: 'The node restarts to apply this.',
-        request: () => api('/api/ports/p2p', { method: 'POST', body: { published: e.target.checked } }),
-    });
-    loadGoPublic();
-    refreshStatus().catch(() => {});
-});
-
-$('howto-bind').addEventListener('change', async (e) => {
-    await runAction({
-        key: null,
-        title: e.target.checked ? 'Publishing ports on 0.0.0.0' : 'Restricting ports to this machine',
-        note: 'The node restarts to apply this.',
-        request: () => api('/api/ports/bind', { method: 'POST', body: { address: e.target.checked ? '0.0.0.0' : '127.0.0.1' } }),
+        request: () => api('/api/ports/p2p', { method: 'POST', body: { public: e.target.checked } }),
     });
     loadGoPublic();
     refreshStatus().catch(() => {});

@@ -118,12 +118,21 @@ export function pathFor(service, domain, proxies) {
  * ready, but nothing is listening yet", which is worth saying out loud rather
  * than leaving someone to discover through a 502.
  */
+// The node's wRPC-Borsh listener is not a stored switch any more: it is on when
+// the port is published (local or public) or when a sibling that speaks it -- the
+// KaChat indexer or bot -- is enabled. Same rule the args writer uses.
+const borshReachable = (nodeCfg, appsCfg) =>
+    nodeCfg?.expose?.borsh !== 'off' || Boolean(appsCfg?.kachat?.enabled) || Boolean(appsCfg?.bot?.enabled);
+
 export function readiness({ nodeCfg = loadNodeConfig(), appsCfg = loadAppsConfig(), panelHasPassword = true } = {}) {
     const state = {};
 
-    state.kaspad = nodeCfg.services.borsh
+    state.kaspad = borshReachable(nodeCfg, appsCfg)
         ? { ready: true }
-        : { ready: false, reason: 'The wRPC Borsh listener is off. Switch it on under Kaspad, Ports.' };
+        : {
+              ready: false,
+              reason: 'The wRPC Borsh listener is off. Set wRPC Borsh to Local under Kaspad, Ports, or enable the KaChat indexer.',
+          };
 
     for (const key of ['kachat', 'desktop', 'nextcloud']) {
         state[key] = appsCfg[key]?.enabled
@@ -208,9 +217,9 @@ export function setupPlan(key, { nodeCfg = loadNodeConfig(), appsCfg = loadAppsC
     if (key === 'kaspad') {
         steps.push({
             key: 'borsh',
-            label: "Switch on the node's wRPC Borsh listener",
-            detail: 'That is the endpoint being published. The node restarts to pick it up.',
-            done: Boolean(nodeCfg.services.borsh),
+            label: "Make the node's wRPC Borsh reachable",
+            detail: 'That is the endpoint being published. Set wRPC Borsh to Local under Kaspad, Ports, or enable the KaChat indexer — either turns the listener on. The node restarts to pick it up.',
+            done: borshReachable(nodeCfg, appsCfg),
         });
     }
 
