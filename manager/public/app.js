@@ -5677,13 +5677,13 @@ function renderChess(data) {
             '</tbody></table>';
     }
 
+    // Tournament board = whole tournaments only: won (champion) vs lost (knocked out).
     const tourney = players
-        .filter((p) => (p.tournamentsPlayed || 0) > 0)
+        .filter((p) => (p.tournamentsWon || 0) + (p.tournamentsLost || 0) > 0)
         .sort(
             (a, b) =>
                 (b.tournamentsWon || 0) - (a.tournamentsWon || 0) ||
-                (b.tournamentGameWins || 0) - (a.tournamentGameWins || 0) ||
-                (a.tournamentGameLosses || 0) - (b.tournamentGameLosses || 0) ||
+                (a.tournamentsLost || 0) - (b.tournamentsLost || 0) ||
                 (b.lastPlayedAt || 0) - (a.lastPlayedAt || 0),
         );
     const tb = $('chess-tournament-board');
@@ -5691,11 +5691,11 @@ function renderChess(data) {
         tb.innerHTML = '<p class="muted">No tournaments in the last 30 days yet.</p>';
     } else {
         tb.innerHTML =
-            '<table class="blocks"><thead><tr><th>#</th><th>Player</th><th>Won</th><th>Wins</th><th>Losses</th><th>Played</th><th>Last</th></tr></thead><tbody>' +
+            '<table class="blocks"><thead><tr><th>#</th><th>Player</th><th>Won</th><th>Lost</th><th>Last</th></tr></thead><tbody>' +
             tourney
                 .map(
                     (p, i) =>
-                        `<tr><td>${i + 1}</td>${nameCell(p.address)}<td>${escapeHtml(fmtNum(p.tournamentsWon))}</td><td>${escapeHtml(fmtNum(p.tournamentGameWins))}</td><td>${escapeHtml(fmtNum(p.tournamentGameLosses))}</td><td>${escapeHtml(fmtNum(p.tournamentsPlayed))}</td><td>${escapeHtml(chessWhen(p.lastPlayedAt))}</td></tr>`,
+                        `<tr><td>${i + 1}</td>${nameCell(p.address)}<td>${escapeHtml(fmtNum(p.tournamentsWon))}</td><td>${escapeHtml(fmtNum(p.tournamentsLost))}</td><td>${escapeHtml(chessWhen(p.lastPlayedAt))}</td></tr>`,
                 )
                 .join('') +
             '</tbody></table>';
