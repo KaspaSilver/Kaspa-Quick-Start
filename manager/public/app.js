@@ -71,6 +71,33 @@ function fmtBytes(text) {
     return text; // docker already reports a human-readable size
 }
 
+// Binary units, because that is what a filesystem and a kernel both report:
+// a "16 GB" stick of RAM is 16 GiB, and rendering it as 17.2 GB to be decimally
+// correct only makes people think something is missing.
+function fmtSize(bytes) {
+    if (bytes === null || bytes === undefined || !Number.isFinite(Number(bytes))) return '–';
+    let value = Number(bytes);
+    const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+    let unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+        value /= 1024;
+        unit += 1;
+    }
+    // Sub-10 values keep a decimal so a bar that is creeping still visibly moves.
+    return `${value < 10 && unit > 0 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
+}
+
+function fmtUptime(seconds) {
+    if (!Number.isFinite(Number(seconds))) return '–';
+    const secs = Math.max(0, Math.floor(Number(seconds)));
+    const d = Math.floor(secs / 86400);
+    const h = Math.floor((secs % 86400) / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    if (d) return `${d}d ${h}h`;
+    if (h) return `${h}h ${m}m`;
+    return `${m}m`;
+}
+
 function fmtDuration(iso) {
     if (!iso || iso.startsWith('0001')) return '–';
     const secs = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
@@ -98,6 +125,11 @@ function showApp() {
     // The heading is static markup until something navigates; seed it from
     // whichever entry starts active so it is not stale on first paint.
     $('page-title').textContent = document.querySelector('.nav-item.active .label').textContent;
+    // Tab-scoped pollers are started by selectTab, which nothing has called
+    // yet on first paint. Read the landing tab out of the markup rather than
+    // naming it here, so moving which one starts active cannot leave its page
+    // sitting empty until someone navigates away and back.
+    setHostPolling(document.querySelector('.nav-item.active')?.dataset.tab === 'overview');
     startPolling();
     loadSettings();
     loadProxies();
@@ -221,6 +253,8 @@ function selectTab(name) {
     $('page-title').textContent = title;
     // Mining stats are only polled while that tab is on screen.
     setMiningPolling(name === 'mining');
+    // Same for the machine's own disk/memory figures.
+    setHostPolling(name === 'overview');
     // The KaChat panels do the same, and each one loads only itself.
     setKachatPolling(name === 'kachat');
     // Same for the kaspad log: no point streaming it from another section.
@@ -944,6 +978,7 @@ const stopPolling = () => {
     clearInterval(pollTimer);
     pollTimer = null;
     setMiningPolling(false);
+    setHostPolling(false);
 };
 
 let lastStatus = null;
@@ -2333,6 +2368,85 @@ function setMiningPolling(active) {
     if (active) {
         refreshMiningStats();
         miningTimer = setInterval(refreshMiningStats, 5000);
+    }
+}
+
+// --- overview: the machine ------------------------------------------------
+
+let hostTimer = null;
+
+/**
+ * Colour the bars by how close to full they are, not by taste.
+ *
+ * The accent is the resting state; a disk at 80% is worth noticing and one at
+ * 90% is worth acting on. Memory gets the same treatment even though a full
+ * one is less alarming, because the alternative -- two bars that mean different
+ * things at the same colour -- is worse than being slightly over-cautious.
+ */
+function barTone(percent) {
+    if (percent === null || percent === undefined) return '';
+    if (percent >= 90) return 'bad';
+    if (percent >= 80) return 'warn';
+    return '';
+}
+
+function renderHost(data) {
+    const disk = data.storage;
+    $('host-disk-pct').textContent = disk?.percent === null || disk?.percent === undefined ? '–' : `${disk.percent}%`;
+    $('host-disk-pct').title = disk?.path ? `Measured at ${disk.path}` : '';
+    $('host-disk-bar').style.width = `${disk?.percent ?? 0}%`;
+    $('host-disk-bar').className = barTone(disk?.percent);
+    $('host-disk-detail').textContent = disk
+        ? `${fmtSize(disk.availableBytes)} free of ${fmtSize(disk.totalBytes)}`
+        : 'Could not read the disk.';
+
+    const mem = data.memory;
+    $('host-mem-pct').textContent = mem?.percent === null || mem?.percent === undefined ? '–' : `${mem.percent}%`;
+    $('host-mem-bar').style.width = `${mem?.percent ?? 0}%`;
+    $('host-mem-bar').className = barTone(mem?.percent);
+    $('host-mem-detail').textContent = mem
+        ? `${fmtSize(mem.availableBytes)} free of ${fmtSize(mem.totalBytes)}`
+        : 'Could not read memory.';
+
+    const machine = data.machine ?? {};
+    $('host-name').textContent = machine.hostname || '–';
+    $('host-system').textContent = [machine.system, machine.kernel && `(${machine.kernel})`, machine.arch]
+        .filter(Boolean)
+        .join(' ') || '–';
+    $('host-cpu').textContent = machine.cores ? `${machine.cores} core${machine.cores === 1 ? '' : 's'}` : '–';
+    $('host-uptime').textContent = fmtUptime(machine.uptimeSeconds);
+    $('host-load').textContent = Array.isArray(machine.loadAverage) ? machine.loadAverage.join('  ') : '–';
+
+    const rows = (data.services ?? []).map((svc) => {
+        const [tone, word] = !svc.installed
+            ? ['off', 'not installed']
+            : svc.running
+              ? ['ok', 'running']
+              : ['warn', svc.status || 'stopped'];
+        const uptime = svc.startedAt ? `up ${fmtDuration(svc.startedAt)}` : '';
+        return `<tr><td>${escapeHtml(svc.label)}</td><td><span class="tag ${tone}">${escapeHtml(word)}</span></td><td class="muted">${escapeHtml(uptime)}</td></tr>`;
+    });
+    $('host-services').innerHTML = rows.length
+        ? rows.join('')
+        : '<tr><td colspan="3" class="empty">Nothing on this machine yet.</td></tr>';
+}
+
+async function refreshHost() {
+    try {
+        renderHost(await api('/api/host'));
+    } catch {
+        /* transient; the next tick retries */
+    }
+}
+
+// Reads the filesystem and asks the daemon, so it is slower than the status
+// poll and does not need to be as quick: none of it moves in five seconds.
+function setHostPolling(active) {
+    clearInterval(hostTimer);
+    hostTimer = null;
+    if (active) {
+        refreshHost();
+        hostTimer = setInterval(refreshHost, 10_000);
     }
 }
 

@@ -42,6 +42,7 @@ import * as publish from './lib/publish.js';
 import * as portcheck from './lib/portcheck.js';
 import * as push from './lib/push.js';
 import * as lifecycle from './lib/lifecycle.js';
+import * as host from './lib/host.js';
 import * as bot from './lib/bot.js';
 import { nodeSnapshot, rpc } from './lib/rpc.js';
 import { jobs } from './lib/jobs.js';
@@ -475,6 +476,14 @@ route(
 
 route('POST', /^\/api\/logout$/, async (req, res) => sendJson(res, 200, { ok: true }, { 'Set-Cookie': clearCookie() }), {
     auth: false,
+});
+
+// The machine, not the node: disk, memory, and which containers are up. Kept
+// off /api/status because that one is polled constantly by every screen, and
+// this walks the filesystem and shells out to the daemon. The Overview page
+// polls it on its own, only while it is on screen.
+route('GET', /^\/api\/host$/, async (req, res) => {
+    sendJson(res, 200, await host.snapshot());
 });
 
 route('GET', /^\/api\/status$/, async (req, res) => {

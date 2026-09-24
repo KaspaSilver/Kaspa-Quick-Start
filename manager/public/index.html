@@ -82,9 +82,23 @@
     </div>
 
     <nav class="nav" aria-label="Sections">
+      <!--
+        The machine itself, above everything that runs on it. No group title:
+        it is not one of a set, it is the thing the rest of the list is on.
+        The dot is `none` because this is not a service and has no health to
+        report -- hidden, not removed, so its icon still lines up with theirs.
+      -->
+      <div class="nav-row">
+        <button class="nav-item active" data-tab="overview" title="Overview">
+          <span class="nav-dot none"></span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 001 1h12a1 1 0 001-1V9.5"/><path d="M9.5 21v-6h5v6"/></svg>
+          <span class="label">Overview</span>
+        </button>
+      </div>
+
       <p class="nav-group-title">Node</p>
       <div class="nav-row">
-        <button class="nav-item active" data-tab="kaspad" title="Kaspad">
+        <button class="nav-item" data-tab="kaspad" title="Kaspad">
           <span class="nav-dot" data-health="kaspad"></span>
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
           <span class="label">Kaspad</span>
@@ -230,13 +244,83 @@
 
     <main>
 
+    <!-- -------------------------------------------------------- overview -->
+    <!--
+      The machine, not the node. Disk and memory first because they are the two
+      that run out; the container list below answers "what is even on here", and
+      the machine card is context for both. Everything on this page comes from
+      one /api/host poll that only runs while the page is open.
+    -->
+    <section id="tab-overview" class="tab active">
+      <div class="grid">
+
+        <article class="card figure">
+          <h3>Storage</h3>
+          <p class="muted">The disk your apps write to. The chain, the databases and Nextcloud all land here.</p>
+          <!--
+            The path this is measured at is a tooltip, not a line of its own: it
+            is reassurance for the one person who wonders which disk, and on a
+            deep install directory it is long enough to push the bar out of line
+            with the memory card beside it.
+          -->
+          <div class="bigstat"><span id="host-disk-pct" title="">–</span></div>
+          <div class="bar"><div id="host-disk-bar"></div></div>
+          <p class="muted" id="host-disk-detail">–</p>
+        </article>
+
+        <article class="card figure">
+          <h3>Memory</h3>
+          <p class="muted">What the machine is using right now, across everything on it.</p>
+          <div class="bigstat"><span id="host-mem-pct">–</span><small></small></div>
+          <div class="bar"><div id="host-mem-bar"></div></div>
+          <p class="muted" id="host-mem-detail">–</p>
+        </article>
+
+        <article class="card span2">
+          <h3>Services</h3>
+          <p class="muted">
+            Every container this stack can run. Anything not installed is simply
+            not installed: it is not a fault, and switching it on is done from
+            its own tab.
+          </p>
+          <div class="scroll-x">
+            <table>
+              <thead>
+                <tr><th>Service</th><th>Status</th><th>Uptime</th></tr>
+              </thead>
+              <tbody id="host-services">
+                <tr><td colspan="3" class="empty">Reading the stack…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card span2">
+          <h3>This machine</h3>
+          <dl class="kv">
+            <div><dt>Hostname</dt><dd id="host-name">–</dd></div>
+            <div><dt>System</dt><dd id="host-system">–</dd></div>
+            <div><dt>Processor</dt><dd id="host-cpu">–</dd></div>
+            <div><dt>Uptime</dt><dd id="host-uptime">–</dd></div>
+            <div><dt>Load average</dt><dd id="host-load">–</dd></div>
+          </dl>
+          <p class="hint">
+            Load average is the one, five and fifteen minute figures the kernel
+            reports. Roughly, anything below the number of cores means nothing
+            is waiting its turn.
+          </p>
+        </article>
+
+      </div>
+    </section>
+
     <!-- ---------------------------------------------------------- kaspad -->
     <!--
       Everything about the node lives here: its state, the settings that build
       its command line, and its log. The sub-tabs are panels within this single
       section, not sidebar destinations.
     -->
-    <section id="tab-kaspad" class="tab active">
+    <section id="tab-kaspad" class="tab">
       <nav class="subnav" aria-label="Kaspad">
         <button class="subtab-btn active" data-subtab="overview">Overview</button>
         <button class="subtab-btn" data-subtab="public-howto">How to go public</button>

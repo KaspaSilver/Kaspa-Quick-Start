@@ -456,7 +456,29 @@ main {
 .bigstat small { color: var(--muted); }
 
 .bar { height: 6px; background: var(--panel-2); border-radius: 999px; overflow: hidden; margin-bottom: 14px; }
-.bar div { height: 100%; width: 0; background: var(--accent); transition: width 0.6s ease; }
+.bar div { height: 100%; width: 0; background: var(--accent); transition: width 0.6s ease, background 0.4s ease; }
+/* A filling disk or a full memory. The accent means "normal", so a bar that is
+   about to become a problem has to stop wearing it. */
+.bar div.warn { background: var(--warn); }
+.bar div.bad { background: var(--danger); }
+
+/* Two figures side by side, read as a pair: the bars have to sit on the same
+   line even when one card's description wraps to a second line and the other's
+   does not. Stretching both to the row's height and letting the description
+   take up the slack does it without hard-coding any heights. */
+.card.figure { align-self: stretch; display: flex; flex-direction: column; }
+.card.figure > .muted:first-of-type { flex: 1 0 auto; }
+
+/* Three columns of key/value is right on a desktop and unreadable on a phone:
+   a kernel string in a 90px column wraps to six lines and drags its neighbours
+   down with it. Scoped to this page rather than changing .kv everywhere, which
+   every other tab is laid out around. */
+@media (max-width: 700px) {
+    #tab-overview .kv { grid-template-columns: minmax(0, 1fr); gap: 7px; }
+    #tab-overview .kv > div { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+    #tab-overview .kv dt { text-transform: none; letter-spacing: 0; font-size: 13px; }
+    #tab-overview .kv dd { text-align: right; }
+}
 
 .kv { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0; }
 .kv.vertical { grid-template-columns: 1fr; gap: 7px; }
