@@ -5700,28 +5700,6 @@ function renderChess(data) {
                 .join('') +
             '</tbody></table>';
     }
-
-    const tournaments = data.tournaments || [];
-    $('chess-tournaments-count').textContent = tournaments.length ? `(${tournaments.length})` : '';
-    const ts = $('chess-tournaments');
-    if (!tournaments.length) {
-        ts.innerHTML = '<p class="muted">None yet.</p>';
-    } else {
-        ts.innerHTML =
-            '<table class="blocks"><thead><tr><th>Type</th><th>Status</th><th>Players</th><th>Champion</th></tr></thead><tbody>' +
-            tournaments
-                .map((t) => {
-                    const cls = t.status === 'live' ? 'tag ok' : t.status === 'done' ? 'tag' : 'tag off';
-                    const cap = t.capacity === 2 ? 2 : 8;
-                    const type = cap === 2 ? '1v1' : 'Tournament';
-                    const champ = t.champion
-                        ? `<span class="mono" title="${escapeHtml(t.champion)}">${escapeHtml(chessShort(t.champion))}</span>`
-                        : '–';
-                    return `<tr><td>${type}</td><td><span class="${cls}">${escapeHtml(t.status)}</span></td><td>${(t.players || []).length}/${cap}</td><td>${champ}</td></tr>`;
-                })
-                .join('') +
-            '</tbody></table>';
-    }
 }
 
 $('chess-refresh').addEventListener('click', () => loadChess().catch(() => {}));
