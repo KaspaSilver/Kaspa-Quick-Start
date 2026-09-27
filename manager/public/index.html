@@ -1417,13 +1417,13 @@
             <input type="checkbox" id="backup-enabled"> Enable nightly backup
           </label>
           <div class="row">
-            <input id="backup-dest" placeholder="/media/vahome/1TB Storage/kachat-backups" size="46">
+            <input id="backup-dest" placeholder="/mnt/backups/kachat-backups" size="46">
             <input id="backup-keep" type="number" min="1" max="365" value="14" title="how many nightly backups to keep" style="width:5em">
             <button type="button" id="backup-save" class="primary">Save</button>
             <button type="button" id="backup-run" class="ghost">Back up now</button>
           </div>
           <div class="row">
-            <input id="backup-restore-path" placeholder="/media/vahome/1TB Storage/kachat-backups/kachat-backup-….tar.gz" size="54">
+            <input id="backup-restore-path" placeholder="/mnt/backups/kachat-backups/kachat-backup-….tar.gz" size="54">
             <button type="button" id="backup-restore" class="ghost">Restore from file</button>
           </div>
           <div id="backup-status" class="verdict" hidden></div>
