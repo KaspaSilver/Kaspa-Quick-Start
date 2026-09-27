@@ -5737,6 +5737,28 @@ async function loadBackup() {
     if ($('backup-keep')) $('backup-keep').value = s.keep || 14;
     renderBackupStatus(s);
 }
+$('backup-detect')?.addEventListener('click', async () => {
+    const sel = $('backup-drive');
+    sel.innerHTML = '<option value="">detecting…</option>';
+    try {
+        const { drives } = await api('/api/kachat/backup/drives');
+        if (!drives.length) {
+            sel.innerHTML = '<option value="">no external drives found — type a path below</option>';
+            return;
+        }
+        sel.innerHTML =
+            '<option value="">— pick a detected drive —</option>' +
+            drives
+                .map((d) => `<option value="${escapeHtml(d.path)}">${escapeHtml(d.label)} — ${escapeHtml(d.path)}</option>`)
+                .join('');
+    } catch (e) {
+        sel.innerHTML = '<option value="">detection failed — type a path below</option>';
+    }
+});
+$('backup-drive')?.addEventListener('change', () => {
+    const p = $('backup-drive').value;
+    if (p) $('backup-dest').value = p.replace(/\/+$/, '') + '/kachat-backups';
+});
 $('backup-save')?.addEventListener('click', async () => {
     try {
         const s = await api('/api/kachat/backup', {

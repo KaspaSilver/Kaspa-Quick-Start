@@ -39,6 +39,37 @@ export function saveConfig(patch) {
     return cfg;
 }
 
+/**
+ * Enumerate mounted drives/folders on the HOST so the UI can offer a pick-list instead of
+ * manual typing. The manager container can't see the host filesystem directly, so a helper
+ * bind-mounts the usual mount roots at the SAME path (read-only) — every path it prints back is
+ * therefore a real host path. Returns [{ path, label }].
+ */
+export function listDrives() {
+    return new Promise((resolve) => {
+        const child = spawn('docker', [
+            'run', '--rm',
+            '-v', '/media:/media:ro',
+            '-v', '/mnt:/mnt:ro',
+            IMG, 'sh', '-c',
+            // /media/<user>/<label> (udisks removable drives) and /mnt/<name> (manual mounts).
+            'for d in /media/*/* /mnt/*; do [ -d "$d" ] && echo "$d"; done 2>/dev/null',
+        ]);
+        let out = '';
+        child.stdout.on('data', (d) => (out += d));
+        child.on('error', () => resolve([]));
+        child.on('close', () => {
+            const seen = new Set();
+            const drives = out
+                .split('\n')
+                .map((s) => s.trim())
+                .filter((p) => p && !seen.has(p) && seen.add(p))
+                .map((p) => ({ path: p, label: p.split('/').filter(Boolean).pop() || p }));
+            resolve(drives);
+        });
+    });
+}
+
 /** Spawn a command, capturing stderr; resolve on exit 0, reject otherwise. */
 function spawnP(cmd, args) {
     return new Promise((resolve, reject) => {

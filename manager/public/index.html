@@ -1417,6 +1417,10 @@
             <input type="checkbox" id="backup-enabled"> Enable nightly backup
           </label>
           <div class="row">
+            <button type="button" id="backup-detect" class="ghost">Detect drives</button>
+            <select id="backup-drive"><option value="">— pick a detected drive —</option></select>
+          </div>
+          <div class="row">
             <input id="backup-dest" placeholder="/mnt/backups/kachat-backups" size="46">
             <input id="backup-keep" type="number" min="1" max="365" value="14" title="how many nightly backups to keep" style="width:5em">
             <button type="button" id="backup-save" class="primary">Save</button>

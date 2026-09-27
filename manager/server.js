@@ -592,6 +592,11 @@ route('GET', /^\/api\/kachat\/backup$/, async (req, res) => {
     sendJson(res, 200, backup.status());
 });
 
+// Mounted drives/folders on the host, so the UI can offer a pick-list (no manual path typing).
+route('GET', /^\/api\/kachat\/backup\/drives$/, async (req, res) => {
+    sendJson(res, 200, { drives: await backup.listDrives() });
+});
+
 route('PUT', /^\/api\/kachat\/backup$/, async (req, res) => {
     const body = await readBody(req);
     const enabled = !!body.enabled;
