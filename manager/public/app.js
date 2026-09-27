@@ -4209,21 +4209,57 @@ $('kachat-group-save').addEventListener('click', () => {
 // --- export and import ---
 
 $('kachat-export').addEventListener('click', async () => {
-    kResult('kachat-file-result', 'Building the export, which can take a moment on a large store.');
+    const bar = $('kachat-export-progress');
+    // Phase 1: the server assembles the whole store in memory before it sends a byte, so show an
+    // indeterminate bar (no value) until the response starts arriving.
+    if (bar) { bar.hidden = false; bar.removeAttribute('value'); }
+    kResult('kachat-file-result', 'Preparing the export on the server (large stores take a moment)…');
     try {
         const res = await kachat('chat-export', { raw: true });
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'kachat-chat-store.bin';
-        a.click();
-        URL.revokeObjectURL(url);
-        kResult('kachat-file-result', `Exported ${kBytes(blob.size)}.`);
+        // Phase 2: stream the download so we can report real progress.
+        const total = Number(res.headers.get('content-length')) || 0;
+        if (res.body && res.body.getReader) {
+            const reader = res.body.getReader();
+            const chunks = [];
+            let received = 0;
+            for (;;) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                chunks.push(value);
+                received += value.length;
+                if (total) {
+                    const pct = Math.floor((received / total) * 100);
+                    if (bar) bar.value = pct;
+                    kResult('kachat-file-result', `Downloading… ${kBytes(received)} / ${kBytes(total)} (${pct}%)`);
+                } else {
+                    if (bar) bar.removeAttribute('value');
+                    kResult('kachat-file-result', `Downloading… ${kBytes(received)}`);
+                }
+            }
+            downloadBlob(new Blob(chunks), 'kachat-chat-store.bin');
+            if (bar) bar.value = 100;
+            kResult('kachat-file-result', `Exported ${kBytes(received)}.`);
+        } else {
+            // Streaming unsupported: fall back to a single blob read.
+            const blob = await res.blob();
+            downloadBlob(blob, 'kachat-chat-store.bin');
+            kResult('kachat-file-result', `Exported ${kBytes(blob.size)}.`);
+        }
     } catch (e) {
         kResult('kachat-file-result', e instanceof IndexerDown ? 'The indexer is not running.' : e.message, true);
+    } finally {
+        if (bar) setTimeout(() => { bar.hidden = true; bar.removeAttribute('value'); }, 2000);
     }
 });
+
+function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+}
 
 $('kachat-import-file-btn').addEventListener('click', () => $('kachat-import-file').click());
 
