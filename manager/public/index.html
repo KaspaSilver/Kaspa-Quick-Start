@@ -1404,6 +1404,30 @@
           </div>
           <div id="kachat-import-result" class="verdict" hidden></div>
         </article>
+
+        <article class="card span2">
+          <h3>Automatic backup</h3>
+          <p class="muted">
+            Every night at 12&nbsp;AM (server time) this writes <strong>one</strong> combined,
+            restorable <code>.tar.gz</code> — the KaPosts database <em>and</em> the full chat store
+            (1:1 chats, groups, handshakes, push registrations) — to a folder on this machine, e.g.
+            an external drive. Restore brings back everything from a single file.
+          </p>
+          <label class="row" style="gap:8px; align-items:center">
+            <input type="checkbox" id="backup-enabled"> Enable nightly backup
+          </label>
+          <div class="row">
+            <input id="backup-dest" placeholder="/media/vahome/1TB Storage/kachat-backups" size="46">
+            <input id="backup-keep" type="number" min="1" max="365" value="14" title="how many nightly backups to keep" style="width:5em">
+            <button type="button" id="backup-save" class="primary">Save</button>
+            <button type="button" id="backup-run" class="ghost">Back up now</button>
+          </div>
+          <div class="row">
+            <input id="backup-restore-path" placeholder="/media/vahome/1TB Storage/kachat-backups/kachat-backup-….tar.gz" size="54">
+            <button type="button" id="backup-restore" class="ghost">Restore from file</button>
+          </div>
+          <div id="backup-status" class="verdict" hidden></div>
+        </article>
       </div>
 
       <div id="sub-kachat-updates" class="subtab">

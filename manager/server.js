@@ -44,6 +44,7 @@ import * as push from './lib/push.js';
 import * as lifecycle from './lib/lifecycle.js';
 import * as host from './lib/host.js';
 import * as bot from './lib/bot.js';
+import * as backup from './lib/backup.js';
 import { nodeSnapshot, rpc } from './lib/rpc.js';
 import { jobs } from './lib/jobs.js';
 import {
@@ -582,6 +583,49 @@ route('PUT', /^\/api\/config$/, async (req, res) => {
     // The auto-follow flag may have just changed; (re)arm the watcher to match.
     scheduleExternalIpWatch(log);
     sendJson(res, 202, { ok: true, jobId: job.id, config: cfg });
+});
+
+// ---- KaChat automatic backup (Export/Import tab) --------------------------------
+// One combined, importable file per run (KaPosts DB + full chat store), written nightly at
+// 00:00 server time to an operator-chosen host path via a docker helper (see lib/backup.js).
+route('GET', /^\/api\/kachat\/backup$/, async (req, res) => {
+    sendJson(res, 200, backup.status());
+});
+
+route('PUT', /^\/api\/kachat\/backup$/, async (req, res) => {
+    const body = await readBody(req);
+    const enabled = !!body.enabled;
+    const dest = typeof body.dest === 'string' ? body.dest.trim() : '';
+    const keep = Math.max(1, Math.min(365, Number(body.keep) || 14));
+    if (enabled && !dest) return fail(res, 400, 'Choose a destination folder for the backups.');
+    if (dest && !dest.startsWith('/')) {
+        return fail(res, 400, 'Destination must be an absolute host path, e.g. /media/you/drive/kachat-backups.');
+    }
+    backup.saveConfig({ enabled, dest, keep });
+    backup.scheduleBackup(log);
+    sendJson(res, 200, backup.status());
+});
+
+route('POST', /^\/api\/kachat\/backup\/run$/, async (req, res) => {
+    const cfg = backup.loadConfig();
+    if (!cfg.dest) return fail(res, 400, 'Set and save a destination folder first.');
+    // Fire-and-forget: a full backup can take a while; the UI polls GET /api/kachat/backup.
+    backup.runBackup(log).catch((e) => log(`[backup] ${e.message}`));
+    sendJson(res, 202, { started: true });
+});
+
+route('POST', /^\/api\/kachat\/backup\/restore$/, async (req, res) => {
+    const body = await readBody(req);
+    const filePath = typeof body.path === 'string' ? body.path.trim() : '';
+    if (!filePath.startsWith('/')) {
+        return fail(res, 400, 'Give the absolute host path to a kachat-backup-*.tar.gz file.');
+    }
+    try {
+        const result = await backup.restoreBackup(filePath, log);
+        sendJson(res, 200, result);
+    } catch (e) {
+        fail(res, 500, `Restore failed: ${e.message}`);
+    }
 });
 
 /** This connection's public address, for the "Use current IP" button. */
@@ -3369,6 +3413,7 @@ async function bootstrap() {
     syncProgress.start(log);
     duckdns.scheduleFromConfig(log);
     scheduleExternalIpWatch(log);
+    backup.scheduleBackup(log);
     startHashrateWatch();
     startLowBalanceWatch();
     startMiningStatsPersist();

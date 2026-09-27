@@ -339,6 +339,7 @@ function selectSubtab(section, name) {
     // Chess is its own read-only view (the leaderboard the indexer replays), so it
     // loads its own data rather than the general indexer-panel refresh.
     if (name === 'kachat-chess') loadChess().catch(() => {});
+    else if (name === 'kachat-transfer') { loadBackup().catch(() => {}); refreshKachatPanel(); }
     else if (name.startsWith('kachat-')) refreshKachatPanel();
     // Its own call: refreshKachatPanel gives up when the indexer is not
     // running, and this screen works without it -- the engine it configures is
@@ -5703,6 +5704,76 @@ function renderChess(data) {
 }
 
 $('chess-refresh').addEventListener('click', () => loadChess().catch(() => {}));
+
+// ---------------------------------------------------------- automatic backup ---
+let backupPoll = null;
+function renderBackupStatus(s) {
+    const el = $('backup-status');
+    if (!el) return;
+    let msg;
+    if (s && s.running) msg = 'Backup running…';
+    else if (s && s.last && s.last.ok)
+        msg = `Last backup ✓ ${new Date(s.last.at).toLocaleString()} — ${s.last.file}`;
+    else if (s && s.last)
+        msg = `Last backup ✗ ${new Date(s.last.at).toLocaleString()} — ${s.last.error || 'failed'}`;
+    else msg = 'No backup has run yet.';
+    el.textContent = msg;
+    el.hidden = false;
+    // Poll while a run is in progress so the status settles on its own.
+    if (s && s.running && !backupPoll) {
+        backupPoll = setInterval(async () => {
+            try {
+                const cur = await api('/api/kachat/backup');
+                if (!cur.running) { clearInterval(backupPoll); backupPoll = null; }
+                renderBackupStatus(cur);
+            } catch { clearInterval(backupPoll); backupPoll = null; }
+        }, 5000);
+    }
+}
+async function loadBackup() {
+    const s = await api('/api/kachat/backup');
+    if ($('backup-enabled')) $('backup-enabled').checked = !!s.enabled;
+    if ($('backup-dest')) $('backup-dest').value = s.dest || '';
+    if ($('backup-keep')) $('backup-keep').value = s.keep || 14;
+    renderBackupStatus(s);
+}
+$('backup-save')?.addEventListener('click', async () => {
+    try {
+        const s = await api('/api/kachat/backup', {
+            method: 'PUT',
+            body: {
+                enabled: $('backup-enabled').checked,
+                dest: $('backup-dest').value.trim(),
+                keep: Number($('backup-keep').value) || 14,
+            },
+        });
+        renderBackupStatus(s);
+    } catch (e) {
+        const el = $('backup-status'); el.hidden = false; el.textContent = `Save failed: ${e.message}`;
+    }
+});
+$('backup-run')?.addEventListener('click', async () => {
+    const el = $('backup-status'); el.hidden = false;
+    try {
+        await api('/api/kachat/backup/run', { method: 'POST' });
+        el.textContent = 'Backup started… (a full run can take a while)';
+        renderBackupStatus({ running: true });
+    } catch (e) {
+        el.textContent = `Could not start backup: ${e.message}`;
+    }
+});
+$('backup-restore')?.addEventListener('click', async () => {
+    const p = $('backup-restore-path').value.trim();
+    if (!p) return;
+    if (!confirm(`Restore OVERWRITES the current KaPosts database and re-imports the chat store from:\n${p}\n\nContinue?`)) return;
+    const el = $('backup-status'); el.hidden = false; el.textContent = 'Restoring… do not close this page.';
+    try {
+        await api('/api/kachat/backup/restore', { method: 'POST', body: { path: p } });
+        el.textContent = 'Restore complete.';
+    } catch (e) {
+        el.textContent = `Restore failed: ${e.message}`;
+    }
+});
 
 // -------------------------------------------------------------------- push ---
 // The Push Service panel: FCM (Android) + APNs (iPhone) credentials for the
