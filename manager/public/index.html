@@ -1375,7 +1375,8 @@
       </div>
 
       <div id="sub-kachat-transfer" class="subtab">
-        <article class="card span2">
+       <div class="grid">
+        <article class="card">
           <h3>Move the whole store</h3>
           <p class="muted">
             Write this indexer's entire chat store to one file, or load one that
@@ -1391,7 +1392,7 @@
           <div id="kachat-file-result" class="verdict" hidden></div>
         </article>
 
-        <article class="card span2">
+        <article class="card">
           <h3>Backfill one address</h3>
           <p class="muted">
             Pull a wallet's direct message history out of the block explorer,
@@ -1423,16 +1424,22 @@
           </div>
           <div class="row">
             <input id="backup-dest" placeholder="/mnt/backups/kachat-backups" size="46">
-            <input id="backup-keep" type="number" min="1" max="365" value="14" title="how many nightly backups to keep" style="width:5em">
+            <label style="display:inline-flex; align-items:center; gap:6px" title="how many nightly backup files to keep before the oldest are deleted">
+              Keep
+              <input id="backup-keep" type="number" min="1" max="365" value="14" style="width:4.5em">
+              backups
+            </label>
             <button type="button" id="backup-save" class="primary">Save</button>
             <button type="button" id="backup-run" class="ghost">Back up now</button>
           </div>
+          <progress id="backup-progress" max="100" style="width:100%; margin-top:6px" hidden></progress>
           <div class="row">
             <input id="backup-restore-path" placeholder="/mnt/backups/kachat-backups/kachat-backup-….tar.gz" size="54">
             <button type="button" id="backup-restore" class="ghost">Restore from file</button>
           </div>
           <div id="backup-status" class="verdict" hidden></div>
         </article>
+       </div>
       </div>
 
       <div id="sub-kachat-updates" class="subtab">

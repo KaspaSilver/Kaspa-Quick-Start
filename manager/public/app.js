@@ -5745,9 +5745,22 @@ $('chess-refresh').addEventListener('click', () => loadChess().catch(() => {}));
 let backupPoll = null;
 function renderBackupStatus(s) {
     const el = $('backup-status');
+    const bar = $('backup-progress');
     if (!el) return;
+    // Progress bar: advance through the backup's stages (step/of); indeterminate if unknown.
+    if (bar) {
+        if (s && s.running) {
+            bar.hidden = false;
+            if (s.progress && s.progress.of) bar.value = Math.floor((s.progress.step / s.progress.of) * 100);
+            else bar.removeAttribute('value');
+        } else {
+            bar.hidden = true;
+            bar.removeAttribute('value');
+        }
+    }
     let msg;
-    if (s && s.running) msg = 'Backup running…';
+    if (s && s.running)
+        msg = s.progress ? `${s.progress.label} (step ${s.progress.step} of ${s.progress.of})` : 'Backup running…';
     else if (s && s.last && s.last.ok)
         msg = `Last backup ✓ ${new Date(s.last.at).toLocaleString()} — ${s.last.file}`;
     else if (s && s.last)
@@ -5755,7 +5768,7 @@ function renderBackupStatus(s) {
     else msg = 'No backup has run yet.';
     el.textContent = msg;
     el.hidden = false;
-    // Poll while a run is in progress so the status settles on its own.
+    // Poll while a run is in progress so the bar advances and the status settles on its own.
     if (s && s.running && !backupPoll) {
         backupPoll = setInterval(async () => {
             try {
@@ -5763,7 +5776,7 @@ function renderBackupStatus(s) {
                 if (!cur.running) { clearInterval(backupPoll); backupPoll = null; }
                 renderBackupStatus(cur);
             } catch { clearInterval(backupPoll); backupPoll = null; }
-        }, 5000);
+        }, 2500);
     }
 }
 async function loadBackup() {

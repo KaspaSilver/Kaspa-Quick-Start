@@ -23,6 +23,7 @@ const DEFAULTS = { enabled: false, dest: '', keep: 14, last: null };
 
 let running = false;
 let timer = null;
+let progress = null; // { step, of, label } while a backup is in flight; null when idle
 
 export function loadConfig() {
     return { ...DEFAULTS, ...(readJson(BACKUP_CONFIG, {}) || {}) };
@@ -30,7 +31,7 @@ export function loadConfig() {
 
 export function status() {
     const c = loadConfig();
-    return { enabled: c.enabled, dest: c.dest, keep: c.keep, last: c.last, running };
+    return { enabled: c.enabled, dest: c.dest, keep: c.keep, last: c.last, running, progress };
 }
 
 export function saveConfig(patch) {
@@ -117,13 +118,16 @@ export async function runBackup(log = () => {}) {
     try {
         log(`[backup] starting → ${cfg.dest}/${name}`);
         // 1) chat store export → stage (streamed straight onto the destination, not the SSD)
+        progress = { step: 1, of: 3, label: 'Exporting chat store…' };
         await spawnP('docker', [
             'run', '--rm', '--network', NET, '-v', mount, IMG, 'sh', '-c',
             `rm -rf "${stage}" && mkdir -p "${stage}" && wget -q -O "${stage}/chat-store.export" "${CHAT_EXPORT_URL}"`,
         ]);
         // 2) KaPosts DB dump → stage
+        progress = { step: 2, of: 3, label: 'Dumping KaPosts database…' };
         await dumpDbToStage(mount, stage);
         // 3) tar both into one file, then prune to the newest `keep`
+        progress = { step: 3, of: 3, label: 'Compressing into one file…' };
         await spawnP('docker', [
             'run', '--rm', '-v', mount, IMG, 'sh', '-c',
             `tar -czf "/w/${name}" -C "${stage}" kaposts.dump chat-store.export && rm -rf "${stage}" && ` +
@@ -141,6 +145,7 @@ export async function runBackup(log = () => {}) {
         throw e;
     } finally {
         running = false;
+        progress = null;
     }
 }
 
