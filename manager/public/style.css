@@ -778,6 +778,16 @@ table.instances td:last-child { width: 40px; text-align: right; }
 .subtab { display: none; }
 .subtab.active { display: block; }
 
+/* KaChat (Indexer) subtabs lay their cards out directly rather than always in a
+   .grid, so give every active subtab a consistent vertical rhythm: top-level cards
+   and sections are spaced evenly instead of touching. A .grid child keeps its own
+   internal 2-column layout and just stretches full width. */
+#tab-kachat .subtab.active {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
 /* The service rows are read down the Service column, so that one gets the
    weight and the rest stay out of its way. */
 .publish-table td { vertical-align: middle; }

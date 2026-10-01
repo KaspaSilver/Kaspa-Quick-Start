@@ -3417,65 +3417,73 @@ async function loadKachatOverview() {
     }
 }
 
-// "Recently indexed" pages back through every KaPosts row in k_contents (newest
-// first) via a keyset cursor the admin API returns, so the whole index is
-// browsable, not just the latest page.
-const KAPOSTS_PAGE = 50;
-let kapostsRecent = { cursorTime: null, cursorId: null, done: false, count: 0 };
+// Inline trash-can icon for per-row delete buttons.
+const TRASH_SVG =
+    '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2m2 0v14a1 1 0 01-1 1H6a1 1 0 01-1-1V6"/><path d="M10 11v6M14 11v6"/></svg>';
 
-function renderRecentRows(rows, append) {
+// "Recently indexed" is a classic pager: 25 rows a page, Previous/Next through the
+// whole k_contents index. We keep a keyset-cursor stack (cursors[i] is the "before"
+// cursor that fetches page i; cursors[0] = null = newest) so Previous works on top
+// of the admin API's forward-only cursor.
+const KAPOSTS_PAGE = 25;
+let kapostsPager = { cursors: [null], index: 0, atEnd: false };
+
+function renderRecentRows(rows) {
     const tbody = $('kachat-recent');
-    const html = rows
-        .map(
-            (r) => `<tr>
-                <td><button type="button" class="ghost mini" data-kachat-del-content="${escapeHtml(
-                    r.transaction_id,
-                )}" title="Delete this item">✕</button></td>
-                <td class="muted" title="${escapeHtml(kTime(r.timestamp))}">${escapeHtml(
-                    kAge(Date.now() - r.timestamp),
-                )}</td>
-                <td>${escapeHtml(r.content_type)}</td>
-                <td class="mono" title="${escapeHtml(r.sender_pubkey)}">${escapeHtml(
-                    r.sender_pubkey.slice(0, 12),
-                )}…</td>
-                <td>${escapeHtml(r.preview) || '<span class="muted">–</span>'}</td>
-              </tr>`,
-        )
-        .join('');
-    if (append) tbody.insertAdjacentHTML('beforeend', html);
-    else tbody.innerHTML = html || '<tr><td colspan="5" class="muted">Nothing indexed yet.</td></tr>';
+    tbody.innerHTML = rows.length
+        ? rows
+              .map(
+                  (r) => `<tr>
+                    <td><button type="button" class="ghost mini danger" data-kachat-del-content="${escapeHtml(
+                        r.transaction_id,
+                    )}" title="Delete this item" aria-label="Delete this item">${TRASH_SVG}</button></td>
+                    <td class="muted" title="${escapeHtml(kTime(r.timestamp))}">${escapeHtml(
+                        kAge(Date.now() - r.timestamp),
+                    )}</td>
+                    <td>${escapeHtml(r.content_type)}</td>
+                    <td class="mono" title="${escapeHtml(r.sender_pubkey)}">${escapeHtml(
+                        r.sender_pubkey.slice(0, 12),
+                    )}…</td>
+                    <td>${escapeHtml(r.preview) || '<span class="muted">–</span>'}</td>
+                  </tr>`,
+              )
+              .join('')
+        : '<tr><td colspan="5" class="muted">Nothing indexed yet.</td></tr>';
 }
 
-async function loadRecentPage(append) {
+async function loadRecentPage(index) {
+    const cursor = kapostsPager.cursors[index] ?? null;
     let path = `moderation/recent?limit=${KAPOSTS_PAGE}`;
-    if (append && kapostsRecent.cursorTime != null) {
-        path += `&before_time=${kapostsRecent.cursorTime}&before_id=${kapostsRecent.cursorId}`;
-    }
+    if (cursor) path += `&before_time=${cursor.time}&before_id=${cursor.id}`;
     const rows = await kachat(path);
-    renderRecentRows(rows, append);
+    renderRecentRows(rows);
+    kapostsPager.index = index;
+    kapostsPager.atEnd = rows.length < KAPOSTS_PAGE;
+    // Record the cursor that fetches the NEXT page (this page's last row).
     if (rows.length) {
         const last = rows[rows.length - 1];
-        kapostsRecent.cursorTime = last.timestamp;
-        kapostsRecent.cursorId = last.id;
-        kapostsRecent.count += rows.length;
+        kapostsPager.cursors[index + 1] = { time: last.timestamp, id: last.id };
     }
-    kapostsRecent.done = rows.length < KAPOSTS_PAGE;
-    $('kachat-recent-more').hidden = kapostsRecent.done;
-    $('kachat-recent-count').textContent = kapostsRecent.count
-        ? `${fmtNum(kapostsRecent.count)} loaded${kapostsRecent.done ? ' (all of it)' : ''}`
-        : '';
+    $('kachat-recent-prev').disabled = index === 0;
+    $('kachat-recent-next').disabled = kapostsPager.atEnd || rows.length === 0;
+    $('kachat-recent-count').textContent = rows.length
+        ? `Page ${index + 1}`
+        : index === 0
+          ? ''
+          : `Page ${index + 1} — nothing here`;
 }
 
 async function loadKachatKaposts() {
     loadKachatFeatures();
-    kapostsRecent = { cursorTime: null, cursorId: null, done: false, count: 0 };
+    kapostsPager = { cursors: [null], index: 0, atEnd: false };
     try {
-        await loadRecentPage(false);
+        await loadRecentPage(0);
     } catch (e) {
         $('kachat-recent').innerHTML = `<tr><td colspan="5" class="muted">${
             e instanceof IndexerDown ? 'The indexer is not running.' : 'Could not load.'
         }</td></tr>`;
-        $('kachat-recent-more').hidden = true;
+        $('kachat-recent-prev').disabled = true;
+        $('kachat-recent-next').disabled = true;
         $('kachat-recent-count').textContent = '';
     }
 }
@@ -3722,9 +3730,9 @@ async function loadBroadcastRows() {
             ? rows
                   .map(
                       (r) => `<tr>
-                        <td><button type="button" class="ghost mini" data-kachat-del-bcast="${escapeHtml(
+                        <td><button type="button" class="ghost mini danger" data-kachat-del-bcast="${escapeHtml(
                             r.tx_id,
-                        )}" title="Delete this message">✕</button></td>
+                        )}" title="Delete this message" aria-label="Delete this message">${TRASH_SVG}</button></td>
                         <td class="muted" title="${escapeHtml(kTime(r.timestamp))}">${escapeHtml(
                             kAge(Date.now() - r.timestamp),
                         )}</td>
@@ -4098,9 +4106,16 @@ $('kachat-bcast-channel').addEventListener('change', loadBroadcastRows);
 $('kachat-bcast-refresh').addEventListener('click', loadKachatBroadcasts);
 
 $('kachat-recent-refresh').addEventListener('click', loadKachatKaposts);
-$('kachat-recent-more').addEventListener('click', () =>
-    loadRecentPage(true).catch((e) => toast(e.message, 'bad')),
-);
+$('kachat-recent-prev').addEventListener('click', () => {
+    if (kapostsPager.index > 0) {
+        loadRecentPage(kapostsPager.index - 1).catch((e) => toast(e.message, 'bad'));
+    }
+});
+$('kachat-recent-next').addEventListener('click', () => {
+    if (!kapostsPager.atEnd) {
+        loadRecentPage(kapostsPager.index + 1).catch((e) => toast(e.message, 'bad'));
+    }
+});
 
 for (const [id, key, label] of [
     ['kachat-tg-kaposts', 'feature_kaposts', 'KaPosts'],
@@ -4303,12 +4318,12 @@ $('tab-kachat').addEventListener('click', async (event) => {
 
     try {
         if (d.kachatDelContent) {
-            if (!confirm('Delete this item from the index?')) return;
+            if (!confirm('Delete this KaPosts item from the index?\n\nThis removes the indexer\'s stored copy only — it is still on chain, and a re-index would bring it back. This cannot be undone here.')) return;
             await kachat('kaposts/delete', { method: 'POST', body: { tx_id: d.kachatDelContent } });
             toast('Deleted.');
             loadKachatKaposts();
         } else if (d.kachatDelBcast) {
-            if (!confirm('Delete this public chat from the index?')) return;
+            if (!confirm('Delete this public chat from the index?\n\nThis removes the indexer\'s stored copy only — it is still on chain, and a re-index would bring it back. This cannot be undone here.')) return;
             await kachat('broadcasts/delete', { method: 'POST', body: { tx_id: d.kachatDelBcast } });
             toast('Deleted.');
             loadKachatBroadcasts();
