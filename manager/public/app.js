@@ -264,7 +264,6 @@ function selectTab(name) {
     if (name === 'global') loadGlobal().catch(() => {});
     if (name === 'bot') loadBot().catch(() => {});
     if (name === 'push') loadPush().catch(() => {});
-    if (name === 'personal') loadPersonal().catch(() => {});
     // On the drawer layout, picking a destination should get out of the way.
     if (MOBILE()) closeDrawer();
 }
@@ -393,15 +392,14 @@ const HEALTH_KEYS = { kaspad: 'node' };
  * forget, including the ones written later.
  */
 function setNavHealth(tab, state) {
-    // A service can own more than one dot: the KaChat indexer, for example, lights
-    // both Indexer-Global and Indexer-Personal, which are two views of it.
-    const dots = document.querySelectorAll(`.nav-dot[data-health="${tab}"]`);
-    if (!dots.length) return;
+    const dot = document.querySelector(`.nav-dot[data-health="${tab}"]`);
+    if (!dot) return;
 
     const known = serviceState[HEALTH_KEYS[tab] ?? tab];
     if (known && known.installed === false && state !== 'none') state = 'absent';
 
-    const title = {
+    dot.className = `nav-dot ${state === 'absent' ? '' : (state ?? '')}`.trim();
+    dot.title = {
         ok: 'Running normally',
         warn: 'Running, but not fully ready',
         bad: 'Installed, but not running',
@@ -409,10 +407,6 @@ function setNavHealth(tab, state) {
         absent: 'Not installed',
         none: '',
     }[state] ?? '';
-    for (const dot of dots) {
-        dot.className = `nav-dot ${state === 'absent' ? '' : (state ?? '')}`.trim();
-        dot.title = title;
-    }
 }
 
 /**
@@ -1182,7 +1176,7 @@ function applyNodeGating(status) {
         item.title = item.querySelector('.label').textContent;
     }
 
-    for (const tab of ['mining', 'kachat', 'personal']) renderNodeBanner(tab, ready);
+    for (const tab of ['mining', 'kachat']) renderNodeBanner(tab, ready);
 }
 
 /**
@@ -3865,88 +3859,6 @@ async function loadKachatSettings() {
     }
 }
 
-function setPersonalTag(id, on, text) {
-    const t = $(id);
-    if (!t) return;
-    t.textContent = text;
-    t.className = `tag ${on ? 'ok' : ''}`;
-}
-
-/**
- * Indexer-Personal reads the one settings document and drives every module on
- * its tab from it. It writes the same keys the Indexer-Global sub-tabs do, so
- * the two views never disagree — this is a different presentation of the same
- * indexer, not a second backend.
- */
-async function loadPersonal() {
-    // The share field is the browser's own address, so fill it even if the
-    // indexer is not answering.
-    const share = $('personal-share-url');
-    if (share && !share.value) share.value = window.location.origin;
-
-    try {
-        const s = await kachat('settings');
-
-        // Chats — the chat_indexer switch covers both direct and group chats.
-        const chatOn = Boolean(s.chat_indexer);
-        $('personal-chat-enable').checked = chatOn;
-        $('personal-chat-body').hidden = !chatOn;
-        const chatBox = $('personal-chat-addrs');
-        if (document.activeElement !== chatBox) chatBox.value = s.personal_addresses || '';
-        setPersonalTag('personal-chat-tag', s.personal_mode, s.personal_mode ? 'only your chats' : 'everyone');
-
-        // Group chats ride the same switch; the card shows config when it is on.
-        $('personal-group-body').hidden = !chatOn;
-        const gState = $('personal-group-state');
-        gState.textContent = chatOn ? 'on with Chats' : 'off';
-        gState.className = `tag ${chatOn ? 'ok' : 'off'}`;
-        const gBox = $('personal-group-ids');
-        if (document.activeElement !== gBox) gBox.value = s.personal_group_ids || '';
-        const gCount = (s.personal_group_ids || '').split(/\s+/).filter(Boolean).length;
-        setPersonalTag(
-            'personal-group-tag',
-            s.group_personal_mode,
-            s.group_personal_mode ? `${gCount} group${gCount === 1 ? '' : 's'}` : 'all groups',
-        );
-
-        // Public chats — open rooms, no per-address filter.
-        const bcastOn = Boolean(s.feature_broadcasts);
-        $('personal-bcast-enable').checked = bcastOn;
-        $('personal-bcast-body').hidden = !bcastOn;
-
-        // KaPosts — personal mode is "an operator address is set".
-        const kapOn = Boolean(s.feature_kaposts);
-        $('personal-kaposts-enable').checked = kapOn;
-        $('personal-kaposts-body').hidden = !kapOn;
-        const kapBox = $('personal-kaposts-addr');
-        if (document.activeElement !== kapBox) kapBox.value = s.kaposts_operator_address || '';
-        setPersonalTag('personal-kaposts-tag', s.kaposts_personal_mode, s.kaposts_personal_mode ? 'only your posts' : 'everyone');
-
-        // Headline state: nothing on / scoped to you / indexing the whole network.
-        const anyOn = chatOn || bcastOn || kapOn;
-        const scoped =
-            (chatOn && (s.personal_mode || s.group_personal_mode)) ||
-            (kapOn && s.kaposts_personal_mode);
-        const st = $('personal-state');
-        if (!anyOn) {
-            st.textContent = 'nothing indexing';
-            st.className = 'tag off';
-        } else if (scoped) {
-            st.textContent = 'personal';
-            st.className = 'tag ok';
-        } else {
-            st.textContent = 'indexing everything';
-            st.className = 'tag';
-        }
-    } catch {
-        const st = $('personal-state');
-        if (st) {
-            st.textContent = 'indexer not running';
-            st.className = 'tag off';
-        }
-    }
-}
-
 /** Settings take a partial document, so only the changed field is sent. */
 async function saveKachatSettings(patch, message) {
     try {
@@ -3955,20 +3867,9 @@ async function saveKachatSettings(patch, message) {
         // Reload whichever panel is open: these settings are spread across
         // Chats and Settings, so refreshing one by name would miss the other.
         refreshKachatPanel();
-        refreshPersonalIfActive();
     } catch (e) {
         toast(e instanceof IndexerDown ? 'The indexer is not running.' : e.message, 'bad');
         refreshKachatPanel();
-        refreshPersonalIfActive();
-    }
-}
-
-// Indexer-Personal is a separate tab from the KaChat sub-tabs refreshKachatPanel
-// knows about, so a save made from it has to re-read its own modules (a toggle
-// reveals or hides that category's config).
-function refreshPersonalIfActive() {
-    if (document.querySelector('.nav-item.active')?.dataset.tab === 'personal') {
-        loadPersonal().catch(() => {});
     }
 }
 
@@ -4303,74 +4204,6 @@ $('kachat-group-save').addEventListener('click', () => {
             ? `Keeping ${entries.length} group${entries.length === 1 ? '' : 's'}. The chat indexer is restarting.`
             : 'Keeping every group. The chat indexer is restarting.',
     );
-});
-
-// --- Indexer-Personal ---
-// Every control here writes the same settings keys the Indexer-Global sub-tabs
-// use, so personal mode is a presentation over the one indexer, not a second one.
-// The `?.` guards let app.js keep loading on an older index.html without the tab.
-
-$('personal-chat-enable')?.addEventListener('change', (e) =>
-    saveKachatSettings({ chat_indexer: e.target.checked }, `Chats ${e.target.checked ? 'on' : 'off'}.`),
-);
-$('personal-bcast-enable')?.addEventListener('change', (e) =>
-    saveKachatSettings({ feature_broadcasts: e.target.checked }, `Public chats ${e.target.checked ? 'on' : 'off'}.`),
-);
-$('personal-kaposts-enable')?.addEventListener('change', (e) =>
-    saveKachatSettings({ feature_kaposts: e.target.checked }, `KaPosts ${e.target.checked ? 'on' : 'off'}.`),
-);
-
-$('personal-chat-save')?.addEventListener('click', () =>
-    saveKachatSettings(
-        { personal_addresses: $('personal-chat-addrs').value.trim() },
-        'Saved. The chat indexer is restarting.',
-    ),
-);
-
-$('personal-group-save')?.addEventListener('click', () => {
-    const entries = $('personal-group-ids').value.split(/[\s,]+/).filter(Boolean);
-    const bad = entries.filter((id) => !GROUP_ID_RE.test(id));
-    if (bad.length) {
-        toast(
-            `${bad.length} of ${entries.length} is not a group id. They are 64 hex characters; ` +
-                `"${bad[0].slice(0, 12)}${bad[0].length > 12 ? '…' : ''}" is ${bad[0].length}.`,
-            'bad',
-        );
-        return;
-    }
-    saveKachatSettings(
-        { personal_group_ids: entries.join('\n') },
-        entries.length
-            ? `Keeping ${entries.length} group${entries.length === 1 ? '' : 's'}. The chat indexer is restarting.`
-            : 'Keeping every group. The chat indexer is restarting.',
-    );
-});
-
-$('personal-kaposts-save')?.addEventListener('click', () =>
-    saveKachatSettings({ kaposts_operator_address: $('personal-kaposts-addr').value.trim() }, 'Address saved.'),
-);
-$('personal-kaposts-clear')?.addEventListener('click', () => {
-    if (!confirm("Index everyone's KaPosts?\n\nThis turns off KaPosts personal mode. Anyone you blocked by hand stays blocked.")) return;
-    $('personal-kaposts-addr').value = '';
-    saveKachatSettings({ kaposts_operator_address: '' }, 'Now indexing every author.');
-});
-
-$('personal-clean-slate')?.addEventListener('click', () => {
-    if (!confirm('Switch every category off?\n\nNothing new gets indexed until you switch one back on. Data already stored is kept — purge it under Indexer-Global.')) return;
-    saveKachatSettings(
-        { chat_indexer: false, feature_broadcasts: false, feature_kaposts: false },
-        'Everything off. Switch on just what you want below.',
-    );
-});
-
-$('personal-share-copy')?.addEventListener('click', async () => {
-    const url = $('personal-share-url').value;
-    try {
-        await navigator.clipboard.writeText(url);
-        toast('Copied.');
-    } catch {
-        toast('Copy failed — select the address and copy it by hand.', 'bad');
-    }
 });
 
 // --- export and import ---

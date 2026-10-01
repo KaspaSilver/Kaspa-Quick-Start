@@ -124,22 +124,15 @@
 
       <p class="nav-group-title">KaChat</p>
       <div class="nav-row">
-        <button class="nav-item" data-tab="kachat" data-requires-node title="Indexer-Global">
+        <button class="nav-item" data-tab="kachat" data-requires-node title="Indexer">
           <span class="nav-dot" data-health="kachat"></span>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 01-9 8.4 9 9 0 01-4.2-1L3 20l1.3-4a8.2 8.2 0 01-1-4 8.4 8.4 0 018.7-8.4 8.4 8.4 0 019 8.4z"/></svg>
-          <span class="label">Indexer-Global</span>
+          <span class="label">Indexer</span>
         </button>
         <label class="switch mini" title="Start or stop KaChat-Indexer">
           <input type="checkbox" data-service="kachat" aria-label="Start or stop KaChat-Indexer">
           <span class="track"></span>
         </label>
-      </div>
-      <div class="nav-row">
-        <button class="nav-item" data-tab="personal" data-requires-node title="Indexer-Personal — run the indexer just for yourself">
-          <span class="nav-dot" data-health="kachat"></span>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20a8 8 0 0116 0"/></svg>
-          <span class="label">Indexer-Personal</span>
-        </button>
       </div>
       <div class="nav-row">
         <button class="nav-item" data-tab="desktop" title="Desktop">
@@ -987,168 +980,6 @@
       panel below talks to its admin API through the manager's /kachat proxy,
       because that API binds to loopback inside its own container.
     -->
-    <!--
-      Indexer-Personal: the same KaChat indexer, but set up to run just for you
-      (and a few friends you host) instead of indexing the whole network. Nothing
-      is downloaded all at once — each category is a module you switch on by
-      itself, and each carries the personal filter that category supports (your
-      address for chats, your group ids for groups, your author address for
-      KaPosts). Every control here writes the same settings the Indexer-Global
-      sub-tabs do, so the two views stay in sync.
-    -->
-    <section id="tab-personal" class="tab">
-      <article class="card span2">
-        <div class="node-head">
-          <h3>Run the indexer just for yourself</h3>
-          <span id="personal-state" class="tag">–</span>
-        </div>
-        <p class="muted">
-          Personal mode is the same indexer, pointed at <strong>your</strong> data instead of the
-          whole network. It stores far less, so it is light enough to run on a home machine, and
-          friends can point their KaChat app at it too. Switch on only the categories you want —
-          each one is separate, and each keeps only what is yours.
-        </p>
-        <div class="row">
-          <button type="button" id="personal-clean-slate" class="ghost">Start clean (switch everything off)</button>
-        </div>
-        <p class="hint">
-          "Start clean" turns every category off so nothing is indexed, then you enable them one at
-          a time below. It never deletes data already stored — use Indexer-Global → each tab's purge
-          for that. If the indexer is not installed yet, install it from
-          <strong>Indexer-Global → Updates</strong>; it will index nothing until you switch a
-          category on here.
-        </p>
-      </article>
-
-      <div class="grid">
-        <!-- Chats -->
-        <article class="card" id="personal-mod-chats">
-          <div class="toggle-row">
-            <div class="toggle-text">
-              <strong>Chats</strong>
-              <span class="muted">Your encrypted one-to-one messages.</span>
-            </div>
-            <label class="switch" title="Index direct and group chats">
-              <input type="checkbox" id="personal-chat-enable"><span class="track"></span>
-            </label>
-          </div>
-          <div class="node-section personal-body" id="personal-chat-body" hidden>
-            <label class="stack">Your address, and anyone you host — one per line
-              <textarea id="personal-chat-addrs" rows="3" placeholder="kaspa:q…"></textarea>
-            </label>
-            <div class="row">
-              <button type="button" id="personal-chat-save" class="primary">Save addresses</button>
-              <span id="personal-chat-tag" class="tag">–</span>
-            </div>
-            <p class="hint">
-              Only chats touching these addresses are stored. Add a friend's address to host them on
-              your indexer. Leave it empty and this indexes everyone's chats, which is not personal.
-              Saving restarts the chat indexer.
-            </p>
-          </div>
-        </article>
-
-        <!-- Group chats -->
-        <article class="card" id="personal-mod-groups">
-          <div class="toggle-row">
-            <div class="toggle-text">
-              <strong>Group chats</strong>
-              <span class="muted">Turns on together with Chats.</span>
-            </div>
-            <span id="personal-group-state" class="tag">–</span>
-          </div>
-          <div class="node-section personal-body" id="personal-group-body" hidden>
-            <label class="stack">Your blinded group ids — one per line
-              <textarea id="personal-group-ids" rows="3" placeholder="64 hex characters, one per line"></textarea>
-            </label>
-            <div class="row">
-              <button type="button" id="personal-group-save" class="primary">Save group ids</button>
-              <span id="personal-group-tag" class="tag">–</span>
-            </div>
-            <p class="hint">
-              Your KaChat app already knows these ids — it sends them when it registers for
-              notifications. This indexer can't work them out on its own. Leave empty to keep every
-              group. Saving restarts the chat indexer.
-            </p>
-          </div>
-        </article>
-
-        <!-- Public chats -->
-        <article class="card" id="personal-mod-bcast">
-          <div class="toggle-row">
-            <div class="toggle-text">
-              <strong>Public chats</strong>
-              <span class="muted">Open channels you follow.</span>
-            </div>
-            <label class="switch" title="Index public chats">
-              <input type="checkbox" id="personal-bcast-enable"><span class="track"></span>
-            </label>
-          </div>
-          <div class="node-section personal-body" id="personal-bcast-body" hidden>
-            <p class="muted">
-              Public chats are open channels, so there is no "your address" filter — switching this
-              on stores the rooms the indexer follows. Choose exactly which rooms under
-              <strong>Indexer-Global → Public chats → Channels</strong>.
-            </p>
-            <p class="hint">
-              Chess is a network-wide leaderboard, so it belongs on Indexer-Global rather than a
-              personal indexer.
-            </p>
-          </div>
-        </article>
-
-        <!-- KaPosts -->
-        <article class="card" id="personal-mod-kaposts">
-          <div class="toggle-row">
-            <div class="toggle-text">
-              <strong>KaPosts</strong>
-              <span class="muted">The public posts feed.</span>
-            </div>
-            <label class="switch" title="Index KaPosts">
-              <input type="checkbox" id="personal-kaposts-enable"><span class="track"></span>
-            </label>
-          </div>
-          <div class="node-section personal-body" id="personal-kaposts-body" hidden>
-            <label class="stack">Your KaPosts address — index only your own posts
-              <input id="personal-kaposts-addr" placeholder="kaspa:q…" size="42">
-            </label>
-            <div class="row">
-              <button type="button" id="personal-kaposts-save" class="primary">Save address</button>
-              <button type="button" id="personal-kaposts-clear" class="ghost">Index everyone</button>
-              <span id="personal-kaposts-tag" class="tag">–</span>
-            </div>
-            <p class="hint">
-              With an address set, only your own posts and replies are stored. Clear it to index the
-              whole feed.
-            </p>
-          </div>
-        </article>
-      </div>
-
-      <article class="card span2">
-        <div class="node-head">
-          <h3>Share your indexer</h3>
-        </div>
-        <p class="muted">
-          Friends can point their KaChat app at your indexer instead of a public one. For each person
-          you host, add their <code>kaspa:</code> address to <strong>Chats</strong> above so their
-          messages get stored too.
-        </p>
-        <label class="stack">Your indexer address (share this)
-          <span class="row">
-            <input id="personal-share-url" readonly>
-            <button type="button" id="personal-share-copy" class="ghost">Copy</button>
-          </span>
-        </label>
-        <p class="hint">
-          This is the address of the panel you are on. The exact endpoint your friends enter depends
-          on how you expose the node — a domain and reverse proxy, a tunnel, or a LAN address. Keep
-          the circle small: a personal indexer is tuned for a handful of people, not the whole
-          network.
-        </p>
-      </article>
-    </section>
-
     <section id="tab-kachat" class="tab">
       <nav class="subnav" aria-label="KaChat">
         <button class="subtab-btn active" data-subtab="kachat-overview">Overview</button>
