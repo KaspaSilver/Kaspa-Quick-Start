@@ -3421,12 +3421,44 @@ async function loadKachatOverview() {
 const TRASH_SVG =
     '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2m2 0v14a1 1 0 01-1 1H6a1 1 0 01-1-1V6"/><path d="M10 11v6M14 11v6"/></svg>';
 
-// "Recently indexed" is a classic pager: 25 rows a page, Previous/Next through the
-// whole k_contents index. We keep a keyset-cursor stack (cursors[i] is the "before"
-// cursor that fetches page i; cursors[0] = null = newest) so Previous works on top
-// of the admin API's forward-only cursor.
+// "Recently indexed" is a numbered pager: 25 rows a page, click a page number to
+// jump anywhere in the whole k_contents index. The admin API returns {total, items}
+// for a given offset, so `total` tells us how many page buttons to show.
 const KAPOSTS_PAGE = 25;
-let kapostsPager = { cursors: [null], index: 0, atEnd: false };
+let kapostsPage = { page: 1, total: 0 };
+
+function renderRecentPager() {
+    const pager = $('kachat-recent-pager');
+    if (!pager) return;
+    const pages = Math.max(1, Math.ceil(kapostsPage.total / KAPOSTS_PAGE));
+    const cur = kapostsPage.page;
+    if (kapostsPage.total === 0) {
+        pager.innerHTML = '';
+        return;
+    }
+    // Windowed set: first, last, and the current page ±2, with … for the gaps.
+    const want = new Set([1, pages, cur, cur - 1, cur - 2, cur + 1, cur + 2]);
+    const shown = [...want].filter((n) => n >= 1 && n <= pages).sort((a, b) => a - b);
+
+    const btn = (n, label, extra = '') =>
+        `<button type="button" class="ghost mini" data-recent-page="${n}" ${extra}>${label}</button>`;
+
+    let html = btn(Math.max(1, cur - 1), '←', cur === 1 ? 'disabled' : '');
+    let prev = 0;
+    for (const n of shown) {
+        if (n - prev > 1) html += '<span class="muted" style="padding:0 2px">…</span>';
+        html +=
+            n === cur
+                ? `<button type="button" class="ghost mini" data-recent-page="${n}" aria-current="page" style="font-weight:700;text-decoration:underline">${n}</button>`
+                : btn(n, String(n));
+        prev = n;
+    }
+    html += btn(Math.min(pages, cur + 1), '→', cur === pages ? 'disabled' : '');
+    html += `<span class="muted" style="margin-left:8px">${fmtNum(kapostsPage.total)} item${
+        kapostsPage.total === 1 ? '' : 's'
+    }</span>`;
+    pager.innerHTML = html;
+}
 
 function renderRecentRows(rows) {
     const tbody = $('kachat-recent');
@@ -3451,40 +3483,29 @@ function renderRecentRows(rows) {
         : '<tr><td colspan="5" class="muted">Nothing indexed yet.</td></tr>';
 }
 
-async function loadRecentPage(index) {
-    const cursor = kapostsPager.cursors[index] ?? null;
-    let path = `moderation/recent?limit=${KAPOSTS_PAGE}`;
-    if (cursor) path += `&before_time=${cursor.time}&before_id=${cursor.id}`;
-    const rows = await kachat(path);
-    renderRecentRows(rows);
-    kapostsPager.index = index;
-    kapostsPager.atEnd = rows.length < KAPOSTS_PAGE;
-    // Record the cursor that fetches the NEXT page (this page's last row).
-    if (rows.length) {
-        const last = rows[rows.length - 1];
-        kapostsPager.cursors[index + 1] = { time: last.timestamp, id: last.id };
-    }
-    $('kachat-recent-prev').disabled = index === 0;
-    $('kachat-recent-next').disabled = kapostsPager.atEnd || rows.length === 0;
-    $('kachat-recent-count').textContent = rows.length
-        ? `Page ${index + 1}`
-        : index === 0
-          ? ''
-          : `Page ${index + 1} — nothing here`;
+async function loadRecentPage(page) {
+    const offset = (page - 1) * KAPOSTS_PAGE;
+    const res = await kachat(`moderation/recent?limit=${KAPOSTS_PAGE}&offset=${offset}`);
+    // New API returns {total, items}; tolerate the old bare-array shape until the indexer is updated
+    // (then there is just one page).
+    const items = Array.isArray(res) ? res : res.items || [];
+    const total = Array.isArray(res) ? items.length : res.total || 0;
+    renderRecentRows(items);
+    kapostsPage.page = page;
+    kapostsPage.total = total;
+    renderRecentPager();
 }
 
 async function loadKachatKaposts() {
     loadKachatFeatures();
-    kapostsPager = { cursors: [null], index: 0, atEnd: false };
+    kapostsPage = { page: 1, total: 0 };
     try {
-        await loadRecentPage(0);
+        await loadRecentPage(1);
     } catch (e) {
         $('kachat-recent').innerHTML = `<tr><td colspan="5" class="muted">${
             e instanceof IndexerDown ? 'The indexer is not running.' : 'Could not load.'
         }</td></tr>`;
-        $('kachat-recent-prev').disabled = true;
-        $('kachat-recent-next').disabled = true;
-        $('kachat-recent-count').textContent = '';
+        $('kachat-recent-pager').innerHTML = '';
     }
 }
 
@@ -4106,14 +4127,12 @@ $('kachat-bcast-channel').addEventListener('change', loadBroadcastRows);
 $('kachat-bcast-refresh').addEventListener('click', loadKachatBroadcasts);
 
 $('kachat-recent-refresh').addEventListener('click', loadKachatKaposts);
-$('kachat-recent-prev').addEventListener('click', () => {
-    if (kapostsPager.index > 0) {
-        loadRecentPage(kapostsPager.index - 1).catch((e) => toast(e.message, 'bad'));
-    }
-});
-$('kachat-recent-next').addEventListener('click', () => {
-    if (!kapostsPager.atEnd) {
-        loadRecentPage(kapostsPager.index + 1).catch((e) => toast(e.message, 'bad'));
+$('kachat-recent-pager').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-recent-page]');
+    if (!btn || btn.disabled) return;
+    const page = Number(btn.dataset.recentPage);
+    if (page && page !== kapostsPage.page) {
+        loadRecentPage(page).catch((err) => toast(err.message, 'bad'));
     }
 });
 
