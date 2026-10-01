@@ -3417,54 +3417,66 @@ async function loadKachatOverview() {
     }
 }
 
+// "Recently indexed" pages back through every KaPosts row in k_contents (newest
+// first) via a keyset cursor the admin API returns, so the whole index is
+// browsable, not just the latest page.
+const KAPOSTS_PAGE = 50;
+let kapostsRecent = { cursorTime: null, cursorId: null, done: false, count: 0 };
+
+function renderRecentRows(rows, append) {
+    const tbody = $('kachat-recent');
+    const html = rows
+        .map(
+            (r) => `<tr>
+                <td><button type="button" class="ghost mini" data-kachat-del-content="${escapeHtml(
+                    r.transaction_id,
+                )}" title="Delete this item">✕</button></td>
+                <td class="muted" title="${escapeHtml(kTime(r.timestamp))}">${escapeHtml(
+                    kAge(Date.now() - r.timestamp),
+                )}</td>
+                <td>${escapeHtml(r.content_type)}</td>
+                <td class="mono" title="${escapeHtml(r.sender_pubkey)}">${escapeHtml(
+                    r.sender_pubkey.slice(0, 12),
+                )}…</td>
+                <td>${escapeHtml(r.preview) || '<span class="muted">–</span>'}</td>
+              </tr>`,
+        )
+        .join('');
+    if (append) tbody.insertAdjacentHTML('beforeend', html);
+    else tbody.innerHTML = html || '<tr><td colspan="5" class="muted">Nothing indexed yet.</td></tr>';
+}
+
+async function loadRecentPage(append) {
+    let path = `moderation/recent?limit=${KAPOSTS_PAGE}`;
+    if (append && kapostsRecent.cursorTime != null) {
+        path += `&before_time=${kapostsRecent.cursorTime}&before_id=${kapostsRecent.cursorId}`;
+    }
+    const rows = await kachat(path);
+    renderRecentRows(rows, append);
+    if (rows.length) {
+        const last = rows[rows.length - 1];
+        kapostsRecent.cursorTime = last.timestamp;
+        kapostsRecent.cursorId = last.id;
+        kapostsRecent.count += rows.length;
+    }
+    kapostsRecent.done = rows.length < KAPOSTS_PAGE;
+    $('kachat-recent-more').hidden = kapostsRecent.done;
+    $('kachat-recent-count').textContent = kapostsRecent.count
+        ? `${fmtNum(kapostsRecent.count)} loaded${kapostsRecent.done ? ' (all of it)' : ''}`
+        : '';
+}
+
 async function loadKachatKaposts() {
     loadKachatFeatures();
+    kapostsRecent = { cursorTime: null, cursorId: null, done: false, count: 0 };
     try {
-        const rows = await kachat('moderation/recent?limit=25');
-        $('kachat-recent').innerHTML = rows.length
-            ? rows
-                  .map(
-                      (r) => `<tr>
-                        <td><button type="button" class="ghost mini" data-kachat-del-content="${escapeHtml(
-                            r.transaction_id,
-                        )}" title="Delete this item">✕</button></td>
-                        <td class="muted" title="${escapeHtml(kTime(r.timestamp))}">${escapeHtml(
-                            kAge(Date.now() - r.timestamp),
-                        )}</td>
-                        <td>${escapeHtml(r.content_type)}</td>
-                        <td class="mono" title="${escapeHtml(r.sender_pubkey)}">${escapeHtml(
-                            r.sender_pubkey.slice(0, 12),
-                        )}…<button type="button" class="ghost mini" data-kachat-pick="${escapeHtml(
-                            r.sender_pubkey,
-                        )}">use</button></td>
-                        <td>${escapeHtml(r.preview) || '<span class="muted">–</span>'}</td>
-                      </tr>`,
-                  )
-                  .join('')
-            : '<tr><td colspan="5" class="muted">Nothing indexed yet.</td></tr>';
+        await loadRecentPage(false);
     } catch (e) {
         $('kachat-recent').innerHTML = `<tr><td colspan="5" class="muted">${
             e instanceof IndexerDown ? 'The indexer is not running.' : 'Could not load.'
         }</td></tr>`;
-    }
-
-    try {
-        const rows = await kachat('kaposts/denylist');
-        $('kachat-denylist').innerHTML = rows.length
-            ? rows
-                  .map(
-                      (r) => `<tr>
-                        <td><button type="button" class="ghost mini" data-kachat-unblock="${escapeHtml(
-                            r.pubkey,
-                        )}" title="Allow this author again">✕</button></td>
-                        <td class="mono" title="${escapeHtml(r.pubkey)}">${escapeHtml(r.pubkey.slice(0, 18))}…</td>
-                        <td class="muted">${escapeHtml(kTime(r.added_at))}</td>
-                      </tr>`,
-                  )
-                  .join('')
-            : '<tr><td colspan="3" class="muted">Indexing every author.</td></tr>';
-    } catch {
-        $('kachat-denylist').innerHTML = '<tr><td colspan="3" class="muted">Could not load.</td></tr>';
+        $('kachat-recent-more').hidden = true;
+        $('kachat-recent-count').textContent = '';
     }
 }
 
@@ -3848,17 +3860,6 @@ async function loadKachatFeatures() {
     }
 }
 
-async function loadKachatSettings() {
-    try {
-        const s = await kachat('settings');
-        $('kachat-operator-addr').value = s.kaposts_operator_address || '';
-        $('kachat-kap-personal').checked = Boolean(s.kaposts_personal_mode);
-        $('kachat-kap-personal-body').hidden = !s.kaposts_personal_mode;
-    } catch {
-        /* the container settings above still work without the indexer */
-    }
-}
-
 /** Settings take a partial document, so only the changed field is sent. */
 async function saveKachatSettings(patch, message) {
     try {
@@ -3882,7 +3883,6 @@ function renderKachatOffline() {
     const message = 'The indexer is not running. Switch it on under Overview.';
     for (const [id, span] of [
         ['kachat-recent', 5],
-        ['kachat-denylist', 3],
         ['kachat-bcast-rows', 5],
     ]) {
         $(id).innerHTML = `<tr><td colspan="${span}" class="muted">${message}</td></tr>`;
@@ -3935,9 +3935,6 @@ function refreshKachatPanel() {
             break;
         case 'kachat-groups':
             loadKachatChat('group');
-            break;
-        case 'kachat-settings':
-            loadKachatSettings();
             break;
         case 'kachat-translate':
             loadTranslate();
@@ -4100,74 +4097,9 @@ function setKachatPolling(active) {
 $('kachat-bcast-channel').addEventListener('change', loadBroadcastRows);
 $('kachat-bcast-refresh').addEventListener('click', loadKachatBroadcasts);
 
-// Moderation: a dry run has to happen before the destructive button unlocks, so
-// nobody deletes an author's history on a typo'd pubkey.
-$('kachat-pk').addEventListener('input', () => {
-    $('kachat-remove').disabled = true;
-    $('kachat-mod-result').hidden = true;
-});
-
-$('kachat-preview').addEventListener('click', async () => {
-    const pubkey = $('kachat-pk').value.trim();
-    if (!pubkey) return toast('Enter an author pubkey first.', 'bad');
-    try {
-        const d = await kachat('moderation/remove', { method: 'POST', body: { pubkey, dry_run: true } });
-        kResult(
-            'kachat-mod-result',
-            `Removing this author would delete ${d.total} rows: ${d.contents} content, ${d.mentions} mentions, ` +
-                `${d.votes} votes, ${d.broadcasts} public chats, ${d.blocks} blocks, ${d.follows} follows.`,
-        );
-        $('kachat-remove').disabled = d.total === 0;
-    } catch (e) {
-        kResult('kachat-mod-result', e.message, true);
-    }
-});
-
-$('kachat-remove').addEventListener('click', async () => {
-    const pubkey = $('kachat-pk').value.trim();
-    if (!confirm(`Permanently delete every indexed row from ${pubkey.slice(0, 16)}…?\n\nThis cannot be undone here.`)) return;
-    try {
-        const d = await kachat('moderation/remove', { method: 'POST', body: { pubkey, dry_run: false } });
-        kResult('kachat-mod-result', `Deleted ${d.total} rows.`);
-        $('kachat-remove').disabled = true;
-        loadKachatKaposts();
-    } catch (e) {
-        kResult('kachat-mod-result', e.message, true);
-    }
-});
-
-$('kachat-block').addEventListener('click', async () => {
-    const pubkey = $('kachat-pk').value.trim();
-    if (!pubkey) return toast('Enter an author pubkey first.', 'bad');
-    if (!confirm(`Block ${pubkey.slice(0, 16)}…?\n\nEverything of theirs is purged and nothing new is stored.`)) return;
-    try {
-        await kachat('kaposts/denylist/add', { method: 'POST', body: { pubkey } });
-        kResult('kachat-mod-result', 'Blocked, purged, and no longer indexed.');
-        loadKachatKaposts();
-    } catch (e) {
-        kResult('kachat-mod-result', e.message, true);
-    }
-});
-
-// Personal mode is not a stored flag: the indexer reports it on whenever an
-// operator address is set. So switching on only reveals the field, and
-// switching off is what actually writes, by clearing the address.
-$('kachat-kap-personal').addEventListener('change', (e) => {
-    $('kachat-kap-personal-body').hidden = !e.target.checked;
-    if (e.target.checked) {
-        $('kachat-operator-addr').focus();
-        return;
-    }
-    if (!confirm('Turn off KaPosts personal mode?\n\nEvery author gets indexed again. Anyone you blocked by hand stays blocked.')) {
-        e.target.checked = true;
-        $('kachat-kap-personal-body').hidden = false;
-        return;
-    }
-    saveKachatSettings({ kaposts_operator_address: '' }, 'Personal mode off.');
-});
-
-$('kachat-kap-save').addEventListener('click', () =>
-    saveKachatSettings({ kaposts_operator_address: $('kachat-operator-addr').value.trim() }, 'Address saved.'),
+$('kachat-recent-refresh').addEventListener('click', loadKachatKaposts);
+$('kachat-recent-more').addEventListener('click', () =>
+    loadRecentPage(true).catch((e) => toast(e.message, 'bad')),
 );
 
 for (const [id, key, label] of [
@@ -4365,23 +4297,12 @@ $('kachat-purge-chat-btn').addEventListener('click', async () => {
 // Row buttons are created as the tables render, so they are handled from the
 // section rather than bound one by one.
 $('tab-kachat').addEventListener('click', async (event) => {
-    const button = event.target.closest('button[data-kachat-pick], button[data-kachat-unblock], button[data-kachat-del-content], button[data-kachat-del-bcast]');
+    const button = event.target.closest('button[data-kachat-del-content], button[data-kachat-del-bcast]');
     if (!button) return;
     const d = button.dataset;
 
-    if (d.kachatPick) {
-        $('kachat-pk').value = d.kachatPick;
-        $('kachat-remove').disabled = true;
-        selectSubtab($('tab-kachat'), 'kachat-kaposts');
-        $('kachat-pk').focus();
-        return;
-    }
     try {
-        if (d.kachatUnblock) {
-            await kachat('kaposts/denylist/remove', { method: 'POST', body: { pubkey: d.kachatUnblock } });
-            toast('Unblocked. Their content can be indexed again.');
-            loadKachatKaposts();
-        } else if (d.kachatDelContent) {
+        if (d.kachatDelContent) {
             if (!confirm('Delete this item from the index?')) return;
             await kachat('kaposts/delete', { method: 'POST', body: { tx_id: d.kachatDelContent } });
             toast('Deleted.');

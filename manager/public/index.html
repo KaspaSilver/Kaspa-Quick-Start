@@ -990,6 +990,7 @@
         <button class="subtab-btn" data-subtab="kachat-chess">Chess</button>
         <button class="subtab-btn" data-subtab="kachat-translate">Translation</button>
         <button class="subtab-btn" data-subtab="kachat-transfer">Export / Import</button>
+        <button class="subtab-btn" data-subtab="kachat-delete">Delete</button>
         <button class="subtab-btn" data-subtab="kachat-settings">Settings</button>
         <button class="subtab-btn" data-subtab="kachat-updates">Updates</button>
         <button class="subtab-btn" data-subtab="kachat-uninstall">Uninstall</button>
@@ -1048,108 +1049,31 @@
       </div>
 
       <div id="sub-kachat-kaposts" class="subtab">
-        <article class="card span2">
-          <div class="node-head">
-            <h3>Index KaPosts</h3>
-          </div>
-          <p class="muted">
-            Posts, replies, quotes, reposts, votes and follows. Turning this off
-            stops new ones being stored right away; the chain is untouched and
-            what you already have stays until you delete it.
-          </p>
-            <div class="toggle-row">
-              <div class="toggle-text">
-                <strong>KaPosts</strong>
-                <span class="muted">The on-chain social feed.</span>
-              </div>
-              <label class="switch"><input type="checkbox" id="kachat-tg-kaposts"><span class="track"></span></label>
-            </div>
-        </article>
-
-        <article class="card span2">
-          <h3>Moderation by author</h3>
-          <p class="muted">
-            <strong>Remove</strong> deletes an author's rows once.
-            <strong>Block</strong> also adds them to your deny list, so the indexer
-            purges everything of theirs and stores nothing from them again. The
-            chain itself never changes, only this indexer's copy of it.
-          </p>
-          <div class="row">
-            <input id="kachat-pk" placeholder="66-hex compressed pubkey (02/03…) or 64-hex x-only" size="48">
-            <button type="button" id="kachat-preview" class="ghost">Dry run</button>
-            <button type="button" id="kachat-remove" class="danger" disabled>Remove permanently</button>
-            <button type="button" id="kachat-block" class="ghost">Block and stop indexing</button>
-          </div>
-          <div id="kachat-mod-result" class="verdict" hidden></div>
-        </article>
-
-        <article class="card span2">
+        <article class="card">
           <div class="toggle-row">
             <div class="toggle-text">
-              <strong>Personal mode</strong>
-              <span class="muted">
-                Curate this indexer with your own block list. When it is on, the
-                indexer watches the chain for blocks you publish and purges those
-                authors.
-              </span>
+              <strong>KaPosts</strong>
             </div>
-            <label class="switch"><input type="checkbox" id="kachat-kap-personal"><span class="track"></span></label>
-          </div>
-          <div id="kachat-kap-personal-body" hidden>
-            <label class="stack">Your KaChat address or addresses, one per line
-              <textarea id="kachat-operator-addr" rows="2" placeholder="kaspa:q…"></textarea>
-            </label>
-            <div class="row">
-              <button type="button" id="kachat-kap-save" class="primary">Save address</button>
-            </div>
-            <p class="hint">
-              The indexer works out your pubkey from this and deny-lists anyone you
-              block on chain, restoring them if you unblock. That needs the KaChat
-              app to publish blocks on chain, so until then use the Block button
-              above to curate the list yourself.
-            </p>
+            <label class="switch"><input type="checkbox" id="kachat-tg-kaposts"><span class="track"></span></label>
           </div>
         </article>
 
-        <article class="card">
-          <h3>Blocked authors</h3>
-          <p class="muted">
-            Everyone here is purged and stays un-indexed while listed. Remove
-            someone to let their content back in; re-indexing backfills what was
-            missed.
-          </p>
-          <div class="scroll-x">
-            <table class="blocks">
-              <thead><tr><th></th><th>Author</th><th>Added</th></tr></thead>
-              <tbody id="kachat-denylist"><tr><td colspan="3" class="muted">Indexing every author.</td></tr></tbody>
-            </table>
+        <article class="card span2">
+          <div class="node-head">
+            <h3>Recently indexed</h3>
+            <button type="button" id="kachat-recent-refresh" class="ghost" style="margin-left:auto">Refresh</button>
           </div>
-        </article>
-
-        <article class="card">
-          <h3>Recently indexed</h3>
+          <p class="muted">Every post, reply, quote, repost, vote and follow this indexer holds, newest first.</p>
           <div class="scroll-x">
             <table class="blocks">
               <thead><tr><th></th><th>When</th><th>Type</th><th>Author</th><th>Preview</th></tr></thead>
               <tbody id="kachat-recent"><tr><td colspan="5" class="muted">Nothing yet.</td></tr></tbody>
             </table>
           </div>
-        </article>
-
-        <article class="card span2 danger-zone">
-          <h3>Delete KaPosts data</h3>
-          <p class="muted">
-            This removes the indexer's stored copy only. The post is still on
-            chain, and a re-index would bring it back. It happens immediately
-            and cannot be undone from here.
-          </p>
-          <label class="stack">Delete a KaPosts item by transaction id
-            <span class="row">
-              <input id="kachat-del-content" placeholder="content transaction id (hex)" size="40">
-              <button type="button" id="kachat-del-content-btn" class="danger">Delete item</button>
-            </span>
-          </label>
-          <div id="kachat-kaposts-del-result" class="verdict" hidden></div>
+          <div class="row">
+            <button type="button" id="kachat-recent-more" class="ghost" hidden>Load more</button>
+            <span class="muted" id="kachat-recent-count"></span>
+          </div>
         </article>
       </div>
 
@@ -1560,6 +1484,24 @@
 
           <article class="card span2 uninstall-card" data-uninstall="translate"></article>
         </div>
+      </div>
+
+      <div id="sub-kachat-delete" class="subtab">
+        <article class="card span2 danger-zone">
+          <h3>Delete KaPosts data</h3>
+          <p class="muted">
+            This removes the indexer's stored copy only. The post is still on
+            chain, and a re-index would bring it back. It happens immediately
+            and cannot be undone from here.
+          </p>
+          <label class="stack">Delete a KaPosts item by transaction id
+            <span class="row">
+              <input id="kachat-del-content" placeholder="content transaction id (hex)" size="40">
+              <button type="button" id="kachat-del-content-btn" class="danger">Delete item</button>
+            </span>
+          </label>
+          <div id="kachat-kaposts-del-result" class="verdict" hidden></div>
+        </article>
       </div>
 
       <div id="sub-kachat-settings" class="subtab">
