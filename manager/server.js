@@ -3011,8 +3011,10 @@ route('PUT', /^\/api\/names\/config$/, async (req, res) => {
 });
 
 // The published testnet-10 manifest ships with the panel (lib/names/): it is public
-// on-chain data, byte-identical to the copy the iOS, Android and Desktop apps bundle,
-// while kachat-domains itself is private. One click writes it to conf/names and applies.
+// on-chain data, byte-identical to the copy the KaChat apps bundle, while kachat-domains
+// itself is private. One click writes it to conf/names and applies. It is registry v2
+// (82f4315c…0f89); re-clicking replaces a v1 file of the same name, and the follower
+// starts fresh tables when the registry id changes.
 const BUNDLED_NAMES_MANIFEST = 'kachat-names-testnet-10.json';
 route('POST', /^\/api\/names\/use-bundled$/, async (req, res) => {
     const src = path.join(path.dirname(fileURLToPath(import.meta.url)), 'lib', 'names', BUNDLED_NAMES_MANIFEST);
