@@ -43,6 +43,19 @@ export const SERVICES = [
             'Point KaChat clients at https://{domain}. Content, chat and push registration all answer there: the panel routes /handshakes, /contextual-messages, /payments, /self-stash, /group-messages, /group-control and /v1/push to the chat indexer, and everything else to the content API. The admin dashboard and the internal push injection point are never published.',
     },
     {
+        // The testnet-10 indexer (KACHAT_NAMES_APP_CONTRACT.md §3): its own name, the
+        // same routes as mainnet. This is the URL the app owner sets as the apps'
+        // testnet default; .kachat switches over once /names/status reports synced.
+        key: 'kachat-testnet',
+        kind: 'kachat-testnet',
+        rootOnly: true,
+        testnet: true,
+        label: 'KaChat indexer (testnet-10)',
+        detail: 'The testnet indexer: KaPosts, chat, push and .kachat names, on a name of its own.',
+        afterNote:
+            'Send https://{domain} to the KaChat app owner: it becomes the apps\' testnet indexer. Install and start the testnet Kaspad and Indexer from the Testnet view if they are not running, and set the .kachat manifest under .kachat so names answer here.',
+    },
+    {
         key: 'desktop',
         kind: 'desktop',
         sharedPath: '/app',
@@ -139,6 +152,13 @@ export function readiness({ nodeCfg = loadNodeConfig(), appsCfg = loadAppsConfig
             ? { ready: true }
             : { ready: false, reason: `${APPS[key].label} is switched off under Apps.` };
     }
+
+    // Lives in the testnet view; whether its containers run is shown there, so
+    // here it only says what has to be true for the name to answer.
+    state['kachat-testnet'] = {
+        ready: true,
+        reason: 'Answers once the testnet Kaspad and Indexer are installed and running (Testnet view).',
+    };
 
     // The panel is the one service where publishing is refused rather than
     // merely unready: without a password, a domain would hand the Docker daemon

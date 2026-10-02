@@ -5,7 +5,10 @@ import { LETSENCRYPT_DIR, NGINX_CONF_D, NGINX_SNIPPETS } from './paths.js';
 import { docker, PROXY_CONTAINER } from './dockerctl.js';
 import { htpasswdLine } from './auth.js';
 import { ports } from './kaspad-args.js';
-import { APPS } from './apps.js';
+import { APPS, KACHAT_TESTNET_PUBLISH } from './apps.js';
+
+/** How a published app kind is served: its hostname, port, routes, blocks, CORS. */
+const publishOf = (kind) => (kind === 'kachat-testnet' ? KACHAT_TESTNET_PUBLISH : APPS[kind]?.publish);
 import { DASHBOARD_PORT } from './bridge.js';
 
 const DOMAIN_RE = /^(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))*$/;
@@ -40,6 +43,7 @@ export const TARGET_KINDS = {
     manager: { label: 'This control panel', websocket: false, grpc: false },
     bridge: { label: 'Stratum bridge dashboard', websocket: false, grpc: false },
     kachat: { label: 'KaChat indexer API', websocket: true, grpc: false },
+    'kachat-testnet': { label: 'KaChat indexer API (testnet-10)', websocket: true, grpc: false },
     desktop: { label: 'KaChat Desktop', websocket: true, grpc: false },
     nextcloud: { label: 'Nextcloud', websocket: false, grpc: false },
     custom: { label: 'Custom host:port', websocket: false, grpc: false },
@@ -142,16 +146,17 @@ export function upstreamFor(proxy, nodeConfig) {
         case 'bridge':
             return { scheme: 'http', host: 'bridge', port: DASHBOARD_PORT, websocket: false, grpc: false };
         case 'kachat':
+        case 'kachat-testnet':
         case 'desktop':
         case 'nextcloud': {
-            const app = APPS[proxy.target.kind];
+            const publish = publishOf(proxy.target.kind);
             return {
                 scheme: 'http',
-                host: app.publish.hostname,
-                port: app.publish.port,
-                websocket: app.publish.websocket,
+                host: publish.hostname,
+                port: publish.port,
+                websocket: publish.websocket,
                 grpc: false,
-                maxBodySize: app.publish.maxBodySize ?? null,
+                maxBodySize: publish.maxBodySize ?? null,
             };
         }
         default:
@@ -376,7 +381,7 @@ function locationBlock(up, proxy, indent = '        ', { strip = null, cors = nu
  * the knowledge of which port serves what stays with the app.
  */
 function extraLocations(proxy, { hsts = false } = {}) {
-    const publish = APPS[proxy.target?.kind]?.publish;
+    const publish = publishOf(proxy.target?.kind);
     if (!publish) return [];
 
     const cors = publish.cors ?? null;
@@ -449,7 +454,7 @@ export function renderDomain(domain, hosts, nodeConfig, { publicHttpsPort = 443 
         for (const proxy of ordered) {
             const up = upstreamFor(proxy, nodeConfig);
             const path = normalizePath(proxy.path);
-            const cors = APPS[proxy.target?.kind]?.publish?.cors ?? null;
+            const cors = publishOf(proxy.target?.kind)?.cors ?? null;
             if (path === '/') {
                 lines.push(...extraLocations(proxy, { hsts: useTls }));
                 lines.push('    location / {');

@@ -283,6 +283,9 @@ for (const item of document.querySelectorAll('.nav-item')) {
 const NET_VIEW_KEY = 'kqs-network-view';
 const TESTNET_TABS = new Set(['overview', 'kaspad', 'mining', 'kachat', 'names', 'proxy', 'logs', 'global', 'support']);
 
+// Proxy & domains state (filled by loadPublish). Declared up here because
+// applyNetworkView runs at load and re-renders it.
+let publishState = { services: [], domains: [] };
 // Which lifecycle unit each shared nav switch drives in the testnet view.
 const TESTNET_UNIT = { node: 'node-testnet', mining: 'mining-testnet', kachat: 'kachat-testnet' };
 const TESTNET_UNIT_VALUES = new Set(Object.values(TESTNET_UNIT));
@@ -323,6 +326,9 @@ function applyNetworkView(net) {
     }
     const note = $('net-note');
     if (note) note.hidden = !testnet;
+
+    // Proxy & domains lists the services of the network being viewed.
+    if (publishState.services.length) renderPublishServices();
 
     // If the tab you were on is now hidden, fall back to Overview.
     const active = document.querySelector('.nav-item.active');
@@ -4730,7 +4736,6 @@ async function loadProxies() {
  * node. The proxy-host dialog is still here for the details, reached from a
  * published row rather than from a screen of its own.
  */
-let publishState = { services: [], domains: [] };
 
 async function loadPublish() {
     try {
@@ -4822,10 +4827,15 @@ $('proxy-body').addEventListener('click', async (event) => {
     }
 });
 
+// What each network view offers to publish: the testnet view is the testnet indexer
+// (plus this panel, which serves both); mainnet is everything else.
+const publishableInView = (s) => (networkView === 'testnet' ? s.testnet || s.key === 'panel' : !s.testnet);
+
 function renderPublishServices() {
     const { services, domains } = publishState;
 
     $('publish-body').innerHTML = services
+        .filter(publishableInView)
         .map((s) => {
             // The proxy host behind this row, and the domain record behind
             // that. Both are read all over the cells below, so they are worked

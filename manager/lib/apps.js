@@ -146,6 +146,14 @@ export const APPS = {
     },
 };
 
+/**
+ * The testnet-10 indexer (lifecycle unit `kachat-testnet`) is not an app of its
+ * own here -- it is the same image on the testnet profile -- but it gets its own
+ * public hostname (KACHAT_NAMES_APP_CONTRACT.md §3): the same 3080/8600 route
+ * split, private blocks and CORS as mainnet, aimed at the testnet container.
+ */
+export const KACHAT_TESTNET_PUBLISH = { ...APPS.kachat.publish, hostname: 'kachat-app-testnet' };
+
 export const DEFAULT_APPS_CONFIG = {
     kachat: {
         enabled: false,
