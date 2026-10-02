@@ -1013,8 +1013,10 @@ route('POST', /^\/api\/jobs\/([a-z0-9-]+)\/cancel$/, async (req, res, match) => 
 
 route('GET', /^\/api\/update\/check$/, async (req, res, match, url) => {
     const includePrereleases = url.searchParams.get('prereleases') === '1';
+    // ?net=testnet compares against the testnet-10 node's own version.
+    const testnet = url.searchParams.get('net') === 'testnet';
     try {
-        sendJson(res, 200, await updater.checkLatest({ includePrereleases }));
+        sendJson(res, 200, await updater.checkLatest({ includePrereleases, testnet }));
     } catch (err) {
         fail(res, 502, err.message);
     }
@@ -1023,24 +1025,32 @@ route('GET', /^\/api\/update\/check$/, async (req, res, match, url) => {
 route('POST', /^\/api\/update\/apply$/, async (req, res) => {
     const body = await readBody(req);
     let version = String(body.version || '').trim();
+    // `testnet: true` updates only the testnet-10 node (its own version pin).
+    const testnet = body.testnet === true;
 
     // Never install a version the user pasted without confirming it exists
     // upstream; this is the one place the stack pulls code from the internet.
     let info;
+    let releases;
     try {
-        info = await updater.checkLatest({ includePrereleases: Boolean(body.includePrereleases) });
+        info = await updater.checkLatest({ includePrereleases: Boolean(body.includePrereleases), testnet });
+        releases = await updater.listReleases();
     } catch (err) {
         return fail(res, 502, `Cannot reach GitHub to verify the release: ${err.message}`);
     }
     if (!version) version = info.latest;
-    if (version !== info.latest) {
-        return fail(res, 400, `Only the newest release (${info.latest}) can be installed from here.`);
+    // Any published release may be installed -- newer, older (pinning back) or a
+    // prerelease (testnet runs Toccata builds) -- but only one that exists upstream.
+    if (version !== info.latest && !releases.some((r) => r.tag === version)) {
+        return fail(res, 400, `${version} is not a release of ${info.repo}.`);
     }
-    if (info.current && updater.compareVersions(info.current, version) >= 0) {
+    if (info.current && version === info.latest && updater.compareVersions(info.current, version) >= 0) {
         return sendJson(res, 200, { ok: true, alreadyCurrent: true, version });
     }
 
-    const job = jobs.start(`Update kaspad to ${version}`, (onLine) => updater.applyUpdate(version, onLine));
+    const job = jobs.start(`Update ${testnet ? 'the testnet kaspad' : 'kaspad'} to ${version}`, (onLine) =>
+        updater.applyUpdate(version, onLine, { testnet }),
+    );
     sendJson(res, 202, { ok: true, jobId: job.id, version });
 });
 

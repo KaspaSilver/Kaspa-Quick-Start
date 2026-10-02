@@ -365,11 +365,17 @@ function refreshKaspadForView() {
     refreshStatus().catch(() => {});
     uninstallSignature = null;
     renderUninstallCards();
+    // A version check belongs to one node; drop it so Update cannot act on the other's.
+    latestRelease = null;
+    $('apply-update').disabled = true;
+    $('update-status').className = 'update-status';
+    $('update-status').textContent = 'Not checked yet.';
+    $('release-notes').hidden = true;
 }
 
-// Updates, How to go public and Am I public? are about the mainnet node (the node
-// software image is shared); the Testnet view hides them.
-const MAINNET_ONLY_KASPAD_SUBTABS = new Set(['updates', 'public-howto', 'public']);
+// How to go public and Am I public? are about the mainnet node; the Testnet view hides
+// them. Updates stays: the testnet node has its own version pin (KASPAD_TESTNET_VERSION).
+const MAINNET_ONLY_KASPAD_SUBTABS = new Set(['public-howto', 'public']);
 function applyKaspadSubtabsForView() {
     const section = $('tab-kaspad');
     if (!section) return;
@@ -1635,7 +1641,7 @@ $('check-update').addEventListener('click', async () => {
     const status = $('update-status');
     setUpdateStatus(status, 'checking', 'Checking GitHub…');
     try {
-        const r = await api('/api/update/check');
+        const r = await api(`/api/update/check${networkView === 'testnet' ? '?net=testnet' : ''}`);
         latestRelease = r;
         $('upstream-repo').textContent = r.repo;
         $('apply-update').disabled = !r.updateAvailable || !r.hasLinuxAsset;
@@ -1660,8 +1666,9 @@ $('check-update').addEventListener('click', async () => {
 
 $('apply-update').addEventListener('click', async () => {
     if (!latestRelease) return;
+    const testnet = networkView === 'testnet';
     const ok = confirm(
-        `Update kaspad to ${latestRelease.latest}?\n\n` +
+        `Update ${testnet ? 'the testnet-10 kaspad' : 'kaspad'} to ${latestRelease.latest}?\n\n` +
             'The node will stop for a moment while the new version is installed. ' +
             'Your chain data is kept, so there is no resync.',
     );
@@ -1672,7 +1679,7 @@ $('apply-update').addEventListener('click', async () => {
         title: `Updating kaspad to ${latestRelease.latest}`,
         note: 'The image is rebuilt and the node restarted onto it. Chain data is kept, so there is no resync.',
         request: async () => {
-            const r = await api('/api/update/apply', { method: 'POST', body: { version: latestRelease.latest } });
+            const r = await api('/api/update/apply', { method: 'POST', body: { version: latestRelease.latest, testnet } });
             return r.alreadyCurrent ? { ...r, message: 'Already on the newest version. Nothing to do.' } : r;
         },
     });
@@ -1738,9 +1745,9 @@ $('install-release').addEventListener('click', async () => {
     }
     await runAction({
         key: 'node',
-        title: `Installing kaspad ${version}`,
+        title: `Installing ${networkView === 'testnet' ? 'the testnet kaspad' : 'kaspad'} ${version}`,
         note: 'The image is rebuilt at that version. Chain data is kept, so there is no resync.',
-        request: () => api('/api/update/apply', { method: 'POST', body: { version } }),
+        request: () => api('/api/update/apply', { method: 'POST', body: { version, testnet: networkView === 'testnet' } }),
     });
 });
 

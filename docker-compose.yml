@@ -478,11 +478,11 @@ services:
   # ======================================================================
 
   kaspad-testnet:
-    image: kaspa-one-click/kaspad:${KASPAD_VERSION:-v2.0.1}
+    image: kaspa-one-click/kaspad:${KASPAD_TESTNET_VERSION:-${KASPAD_VERSION:-v2.0.1}}
     build:
       context: ./kaspad
       args:
-        KASPAD_VERSION: ${KASPAD_VERSION:-v2.0.1}
+        KASPAD_VERSION: ${KASPAD_TESTNET_VERSION:-${KASPAD_VERSION:-v2.0.1}}
         REPO_URL: ${KASPAD_REPO_URL:-https://github.com/kaspanet/rusty-kaspa}
     container_name: kaspa-node-kaspad-testnet
     hostname: kaspad-testnet
@@ -505,11 +505,11 @@ services:
         max-file: "5"
 
   bridge-testnet:
-    image: kaspa-one-click/bridge:${KASPAD_VERSION:-v2.0.1}
+    image: kaspa-one-click/bridge:${KASPAD_TESTNET_VERSION:-${KASPAD_VERSION:-v2.0.1}}
     build:
       context: ./bridge
       args:
-        KASPAD_VERSION: ${KASPAD_VERSION:-v2.0.1}
+        KASPAD_VERSION: ${KASPAD_TESTNET_VERSION:-${KASPAD_VERSION:-v2.0.1}}
         REPO_URL: ${KASPAD_REPO_URL:-https://github.com/kaspanet/rusty-kaspa}
     container_name: kaspa-node-bridge-testnet
     hostname: bridge-testnet

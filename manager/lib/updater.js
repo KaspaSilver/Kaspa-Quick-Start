@@ -1,6 +1,6 @@
 import { compose, containerState, imageVersion, KASPAD_CONTAINER, BRIDGE_CONTAINER } from './dockerctl.js';
 import { readEnvFile, updateEnvFile, loadManagerConfig, saveManagerConfig } from './store.js';
-import { rpc } from './rpc.js';
+import { rpc, rpcTestnet } from './rpc.js';
 import { loadBridgeConfig } from './bridge.js';
 
 const REPO = process.env.UPSTREAM_REPO || 'kaspanet/rusty-kaspa';
@@ -36,17 +36,28 @@ export function compareVersions(a, b) {
  * because it comes from the process itself; the image label is the fallback for
  * a node that is stopped or still starting.
  */
-export async function runningVersion() {
+// The testnet-10 node has its own version pin (KASPAD_TESTNET_VERSION, defaulting to
+// mainnet's): testnet runs Toccata and may need a different -- often prerelease -- kaspad.
+const KASPAD_TESTNET_CONTAINER = 'kaspa-node-kaspad-testnet';
+const BRIDGE_TESTNET_CONTAINER = 'kaspa-node-bridge-testnet';
+const target = (testnet) =>
+    testnet
+        ? { client: rpcTestnet, container: KASPAD_TESTNET_CONTAINER, envKey: 'KASPAD_TESTNET_VERSION' }
+        : { client: rpc, container: KASPAD_CONTAINER, envKey: 'KASPAD_VERSION' };
+
+export async function runningVersion({ testnet = false } = {}) {
+    const t = target(testnet);
     try {
-        const info = await rpc.call('getInfo', {}, 4000);
+        const info = await t.client.call('getInfo', {}, 4000);
         if (info?.serverVersion) return { version: `v${String(info.serverVersion).replace(/^v/, '')}`, source: 'rpc' };
     } catch {
         /* fall through to the image label */
     }
-    const label = await imageVersion(KASPAD_CONTAINER);
+    const label = await imageVersion(t.container);
     if (label) return { version: label, source: 'image' };
     const env = readEnvFile();
-    return env.KASPAD_VERSION ? { version: env.KASPAD_VERSION, source: 'env' } : { version: null, source: 'unknown' };
+    const pinned = env[t.envKey] || (testnet ? env.KASPAD_VERSION : null);
+    return pinned ? { version: pinned, source: 'env' } : { version: null, source: 'unknown' };
 }
 
 /**
@@ -54,7 +65,7 @@ export async function runningVersion() {
  * `includePrereleases` walks the release list instead of /releases/latest,
  * which GitHub defines as the newest non-prerelease, non-draft release.
  */
-export async function checkLatest({ includePrereleases = false } = {}) {
+export async function checkLatest({ includePrereleases = false, testnet = false } = {}) {
     const url = includePrereleases ? `${API}/releases?per_page=20` : `${API}/releases/latest`;
     const res = await fetch(url, { headers: ghHeaders, signal: AbortSignal.timeout(15_000) });
     if (!res.ok) {
@@ -76,7 +87,7 @@ export async function checkLatest({ includePrereleases = false } = {}) {
     // a source build, so surface that up front instead of failing mid-update.
     const hasLinuxAsset = (latest.assets || []).some((a) => /linux-amd64\.zip$/.test(a.name || ''));
 
-    const current = await runningVersion();
+    const current = await runningVersion({ testnet });
     const cfg = loadManagerConfig();
     cfg.updates.lastCheckedAt = new Date().toISOString();
     cfg.updates.latestKnown = latest.tag_name;
@@ -135,8 +146,9 @@ export async function listReleases({ force = false } = {}) {
     return value;
 }
 
-export async function applyUpdate(version, onLine = () => {}) {
+export async function applyUpdate(version, onLine = () => {}, { testnet = false } = {}) {
     if (!TAG_RE.test(version)) throw new Error(`Refusing to install "${version}": not a release tag.`);
+    if (testnet) return applyTestnetUpdate(version, onLine);
 
     const previous = readEnvFile().KASPAD_VERSION || null;
     onLine(`Updating kaspad ${previous ?? '(unknown)'} -> ${version}`);
@@ -192,6 +204,54 @@ export async function applyUpdate(version, onLine = () => {}) {
         if (previous) updateEnvFile({ KASPAD_VERSION: previous });
         onLine(`Update failed: ${err.message}`);
         if (previous) onLine(`Reverted the configured version to ${previous}.`);
+        throw err;
+    }
+}
+
+/**
+ * The testnet-10 node's update: its own pin, its own image tag, and only the testnet
+ * containers are rebuilt/recreated -- the mainnet node and bridge are never touched.
+ */
+async function applyTestnetUpdate(version, onLine) {
+    const env = readEnvFile();
+    const previous = env.KASPAD_TESTNET_VERSION || null;
+    onLine(`Updating the testnet kaspad ${previous ?? env.KASPAD_VERSION ?? '(unknown)'} -> ${version}`);
+    updateEnvFile({ KASPAD_TESTNET_VERSION: version });
+    try {
+        onLine('Building the testnet kaspad image...');
+        await compose(['build', '--pull', 'kaspad-testnet'], { onLine, profile: 'testnet', timeoutMs: 90 * 60_000 });
+        if ((await containerState(KASPAD_TESTNET_CONTAINER)).running) {
+            onLine('Restarting the testnet node...');
+            await compose(['up', '-d', '--no-deps', '--force-recreate', 'kaspad-testnet'], {
+                onLine,
+                profile: 'testnet',
+                timeoutMs: 10 * 60_000,
+            });
+            onLine(`The testnet node is now running ${version}.`);
+        } else {
+            onLine(`The testnet node is stopped, so it stays stopped. It runs ${version} when you start it.`);
+        }
+        // The testnet stratum bridge ships in the same release; rebuild it only if it exists.
+        if ((await containerState(BRIDGE_TESTNET_CONTAINER)).exists) {
+            onLine('Rebuilding the testnet stratum bridge, which ships in the same release...');
+            try {
+                await compose(['build', '--pull', 'bridge-testnet'], { onLine, profile: 'testnet-mining', timeoutMs: 90 * 60_000 });
+                if ((await containerState(BRIDGE_TESTNET_CONTAINER)).running) {
+                    await compose(['up', '-d', '--no-deps', '--force-recreate', 'bridge-testnet'], {
+                        onLine,
+                        profile: 'testnet-mining',
+                        timeoutMs: 10 * 60_000,
+                    });
+                }
+            } catch (err) {
+                onLine(`The testnet bridge did not rebuild: ${err.message}`);
+            }
+        }
+        return { ok: true, version, previous, testnet: true };
+    } catch (err) {
+        updateEnvFile({ KASPAD_TESTNET_VERSION: previous ?? '' });
+        onLine(`Update failed: ${err.message}`);
+        onLine(previous ? `Reverted the testnet version to ${previous}.` : 'The testnet node stays on the mainnet version.');
         throw err;
     }
 }
