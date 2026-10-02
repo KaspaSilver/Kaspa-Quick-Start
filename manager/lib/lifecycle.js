@@ -156,7 +156,8 @@ export const UNITS = {
     // `prepare` that writes its testnet config before create/start.
     'node-testnet': {
         label: 'Kaspad (testnet-10)',
-        tab: null,
+        // Shares the mainnet twin's tab/health-dot; the testnet view renders it there.
+        tab: 'kaspad',
         profile: 'testnet',
         services: ['kaspad-testnet'],
         containers: ['kaspa-node-kaspad-testnet'],
@@ -172,7 +173,7 @@ export const UNITS = {
     },
     'kachat-testnet': {
         label: 'KaChat Indexer (testnet-10)',
-        tab: null,
+        tab: 'kachat',
         profile: 'testnet-kachat',
         services: ['kachat-db-testnet', 'kachat-app-testnet'],
         containers: ['kaspa-node-kachat-testnet', 'kaspa-node-kachat-db-testnet'],
@@ -184,7 +185,7 @@ export const UNITS = {
     },
     'mining-testnet': {
         label: 'Stratum bridge (testnet-10)',
-        tab: null,
+        tab: 'mining',
         profile: 'testnet-mining',
         services: ['bridge-testnet'],
         containers: ['kaspa-node-bridge-testnet'],

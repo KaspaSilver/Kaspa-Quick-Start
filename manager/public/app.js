@@ -274,16 +274,25 @@ for (const item of document.querySelectorAll('.nav-item')) {
 
 // --- network view (Mainnet / Testnet) ---
 //
-// Phase 1: a view filter over the nav. Testnet narrows the list to the services a
-// testnet deployment uses -- the node, mining, the KaChat indexer and the proxy --
-// and hides the rest (Desktop, Bot, Push, the Apps). It is remembered across
-// reloads. The parallel testnet stack these controls are shaped for comes next; for
-// now they still manage the one node, which is why the note under the switch says so.
+// Testnet narrows the nav to the services a testnet deployment uses -- the node,
+// mining, the KaChat indexer and the (shared) proxy -- and, crucially, re-points the
+// shared Kaspad/Mining/Indexer switches, install buttons and health dots at the
+// parallel *-testnet units, so both networks run side by side from one panel. The
+// choice is remembered across reloads.
 const NET_VIEW_KEY = 'kqs-network-view';
 const TESTNET_TABS = new Set(['overview', 'kaspad', 'mining', 'kachat', 'proxy', 'logs', 'global', 'support']);
 
+// Which lifecycle unit each shared nav switch drives in the testnet view.
+const TESTNET_UNIT = { node: 'node-testnet', mining: 'mining-testnet', kachat: 'kachat-testnet' };
+const TESTNET_UNIT_VALUES = new Set(Object.values(TESTNET_UNIT));
+// The current view. Read by the service renderers + switch handler so one set of
+// controls drives mainnet or testnet depending on it.
+let networkView = 'mainnet';
+const effectiveService = (key) => (networkView === 'testnet' && TESTNET_UNIT[key] ? TESTNET_UNIT[key] : key);
+
 function applyNetworkView(net) {
     const testnet = net === 'testnet';
+    networkView = testnet ? 'testnet' : 'mainnet';
 
     // Show/hide each nav row by whether its tab belongs in the testnet view.
     for (const row of document.querySelectorAll('.nav .nav-row')) {
@@ -317,6 +326,10 @@ function applyNetworkView(net) {
     } catch {
         /* private mode / storage disabled — the view just won't persist */
     }
+
+    // Re-render the sidebar rows so the shared switches/dots reflect the units this
+    // view drives (guarded: loadServices is defined later but hoisted).
+    if (typeof loadServices === 'function') loadServices().catch(() => {});
 }
 
 for (const tabBtn of document.querySelectorAll('.net-tab')) {
@@ -966,13 +979,20 @@ for (const input of document.querySelectorAll('[data-service]')) {
             }
         }
 
+        // In the testnet view the shared switches drive the *-testnet units via the
+        // generic start/stop route; mainnet keeps its bespoke actions (the node's
+        // start/stop is a dedicated endpoint, not /api/services/node).
+        const unitKey = effectiveService(service);
+        const request =
+            unitKey === service ? SERVICE_ACTIONS[service] : (on) => start(unitKey)(on);
+
         const job = await runAction({
-            key: service,
-            title: `${wanted ? 'Starting' : 'Stopping'} ${name}`,
+            key: unitKey,
+            title: `${wanted ? 'Starting' : 'Stopping'} ${name}${unitKey !== service ? ' (testnet)' : ''}`,
             note: wanted
                 ? 'Starting a container that already exists is quick. Nothing is rebuilt.'
                 : 'The container stops and keeps everything: its data, its image, and the container itself.',
-            request: () => SERVICE_ACTIONS[service](wanted),
+            request: () => request(wanted),
         });
 
         // Setting .checked does not fire change, so putting the switch back is
@@ -1125,8 +1145,12 @@ async function refreshStatus() {
     const containerTag = $('stat-container');
     containerTag.textContent = s.container.status || 'absent';
     containerTag.className = `tag ${running ? 'ok' : 'off'}`;
-    setNavSwitch('node', running);
-    setNavHealth('kaspad', !running ? 'bad' : synced ? 'ok' : 'warn');
+    // The shared node switch/dot belong to the testnet unit while that view is on;
+    // loadServices renders them from the testnet state then.
+    if (networkView !== 'testnet') {
+        setNavSwitch('node', running);
+        setNavHealth('kaspad', !running ? 'bad' : synced ? 'ok' : 'warn');
+    }
     $('stat-network').textContent = s.rpc.dag?.networkName || s.network;
     $('stat-version').textContent = s.version?.version || '–';
     $('stat-uptime').textContent = running ? fmtDuration(s.container.startedAt) : '–';
@@ -1893,7 +1917,9 @@ async function loadMining() {
     // renderEconomics just drew the live figure; if the user is in what-if mode
     // put their typed hashrate back in charge of the numbers.
     if (!useMyMiners) recalcProjection();
-    setNavHealth('mining', !c.enabled ? 'off' : r.container?.running ? 'ok' : 'bad');
+    if (networkView !== 'testnet') {
+        setNavHealth('mining', !c.enabled ? 'off' : r.container?.running ? 'ok' : 'bad');
+    }
 }
 
 function renderMiningState(container, stats) {
@@ -5086,6 +5112,9 @@ async function loadServices() {
         return;
     }
     for (const [key, state] of Object.entries(serviceState)) {
+        // The *-testnet units have no sidebar row of their own; the shared
+        // Kaspad/Mining/Indexer rows render them when the testnet view is on.
+        if (TESTNET_UNIT_VALUES.has(key)) continue;
         renderServiceRow(key, state);
         renderInstallGate(key, state);
     }
@@ -5119,14 +5148,20 @@ function renderServiceRow(key, state) {
     const row = label?.closest('.nav-row');
     if (!row) return;
 
+    // In the testnet view, a shared row (node/mining/kachat) reflects and installs
+    // its *-testnet unit instead. The testnet units carry the same `tab` as their
+    // mainnet twin, so the health dot still resolves to the right light.
+    const unitKey = effectiveService(key);
+    if (unitKey !== key) state = serviceState[unitKey] ?? { installed: false, running: false, tab: state?.tab };
+
     let button = row.querySelector('[data-install]');
     if (!button) {
         button = document.createElement('button');
         button.className = 'nav-install';
-        button.dataset.install = key;
         button.textContent = 'Install';
         row.appendChild(button);
     }
+    button.dataset.install = unitKey;
 
     const installed = Boolean(state?.installed);
     // Something with nothing to run gets the Install button like everything
@@ -5156,6 +5191,11 @@ function renderServiceRow(key, state) {
  * covered, it reads as what it is: a preview of what installing gets you.
  */
 function renderInstallGate(key, state) {
+    // In the testnet view the shared tabs gate on their *-testnet unit's install
+    // state (and install it).
+    const unitKey = effectiveService(key);
+    if (unitKey !== key) state = serviceState[unitKey] ?? { installed: false, tab: state?.tab, label: state?.label };
+
     // The switch key and the tab name are not always the same word: the node's
     // switch is 'node' and its tab is 'kaspad'.
     const section = document.getElementById(`tab-${state?.tab ?? key}`);
@@ -5169,7 +5209,7 @@ function renderInstallGate(key, state) {
 
     // Left alone while its install runs: the overlay in front of it has the
     // log, and rebuilding this would put a live Install button back underneath.
-    if (pendingAction?.key === key && gate) return;
+    if (pendingAction?.key === unitKey && gate) return;
 
     if (!gate) {
         gate = document.createElement('div');
@@ -5177,11 +5217,12 @@ function renderInstallGate(key, state) {
         section.appendChild(gate);
     }
     // Already built and still saying the same thing. The poll comes round every
-    // ten seconds and there is nothing here that changes in between.
-    if (gate.dataset.builtFor === key) return;
-    gate.dataset.builtFor = key;
+    // ten seconds and there is nothing here that changes in between. Keyed by
+    // view too, so flipping Mainnet/Testnet rebuilds it for the other unit.
+    if (gate.dataset.builtFor === `${unitKey}:${networkView}`) return;
+    gate.dataset.builtFor = `${unitKey}:${networkView}`;
 
-    const label = escapeHtml(state?.label ?? key);
+    const label = escapeHtml(state?.label ?? unitKey);
     gate.innerHTML = `
       <div class="install-gate-card">
         <h3>${label} is not installed</h3>
@@ -5190,7 +5231,7 @@ function renderInstallGate(key, state) {
                 ? 'Installing downloads the firmware and checks it against the hashes the release publishes.'
                 : 'Installing builds its image and creates its container. It stays switched off afterwards -- the switch in the sidebar is what starts it. Everything behind this is what it will look like.'
         }</p>
-        <button class="primary big" data-install="${escapeHtml(key)}">Install ${label}</button>
+        <button class="primary big" data-install="${escapeHtml(unitKey)}">Install ${label}</button>
       </div>`;
 }
 
