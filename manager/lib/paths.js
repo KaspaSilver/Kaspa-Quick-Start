@@ -21,6 +21,9 @@ export const PORTS_OVERRIDE = path.join(CONF_DIR, 'ports.yml');
 export const ENV_FILE = path.join(STACK_LOCAL, '.env');
 
 export const NODE_CONFIG_FILE = path.join(CONF_DIR, 'node.json');
+// Testnet-10 runs as a parallel stack beside mainnet, so its node settings and
+// generated args live in their own files, never shared with mainnet's.
+export const NODE_TESTNET_CONFIG_FILE = path.join(CONF_DIR, 'node-testnet.json');
 export const MANAGER_CONFIG_FILE = path.join(CONF_DIR, 'manager.json');
 export const PROXIES_FILE = path.join(CONF_DIR, 'proxies.json');
 // The domains someone has pointed at this machine, whether or not anything is
@@ -29,12 +32,17 @@ export const PROXIES_FILE = path.join(CONF_DIR, 'proxies.json');
 // mind about, what answers on it.
 export const DOMAINS_FILE = path.join(CONF_DIR, 'domains.json');
 export const KASPAD_ARGS_FILE = path.join(CONF_DIR, 'kaspad.args');
+export const KASPAD_TESTNET_ARGS_FILE = path.join(CONF_DIR, 'kaspad-testnet.args');
+export const PORTS_TESTNET_OVERRIDE = path.join(CONF_DIR, 'ports-testnet.yml');
+// Where the .kachat names genesis manifest(s) live, mounted read-only into the
+// testnet indexer at /names (see docker-compose.yml, KACHAT_NAMES_MANIFEST).
+export const NAMES_DIR = path.join(CONF_DIR, 'names');
 
 // The host-side equivalents, for `docker run -v` and compose `-f`.
 export const hostPath = (...parts) => path.posix.join(STACK_HOST.replace(/\\/g, '/'), ...parts);
 
 export function ensureDirs() {
-    for (const dir of [CONF_DIR, PROXY_DIR, NGINX_CONF_D, NGINX_SNIPPETS, LETSENCRYPT_DIR, WEBROOT_DIR]) {
+    for (const dir of [CONF_DIR, PROXY_DIR, NGINX_CONF_D, NGINX_SNIPPETS, LETSENCRYPT_DIR, WEBROOT_DIR, NAMES_DIR]) {
         fs.mkdirSync(dir, { recursive: true });
     }
 }

@@ -5,6 +5,7 @@ import {
     ENV_FILE,
     MANAGER_CONFIG_FILE,
     NODE_CONFIG_FILE,
+    NODE_TESTNET_CONFIG_FILE,
     PROXIES_FILE,
 } from './paths.js';
 
@@ -141,6 +142,16 @@ function mergeDefaults(value, defaults) {
 
 export const loadNodeConfig = () => readJson(NODE_CONFIG_FILE, DEFAULT_NODE_CONFIG);
 export const saveNodeConfig = (cfg) => writeJson(NODE_CONFIG_FILE, cfg);
+
+// The testnet-10 node runs beside mainnet with its own settings. Same shape as the
+// mainnet node config, fixed to testnet-10. Nothing is published by default — the
+// testnet node is reached over the internal docker network by the testnet indexer.
+export const DEFAULT_TESTNET_NODE_CONFIG = {
+    ...structuredClone(DEFAULT_NODE_CONFIG),
+    network: 'testnet-10',
+};
+export const loadTestnetNodeConfig = () => readJson(NODE_TESTNET_CONFIG_FILE, DEFAULT_TESTNET_NODE_CONFIG);
+export const saveTestnetNodeConfig = (cfg) => writeJson(NODE_TESTNET_CONFIG_FILE, cfg);
 
 export const loadManagerConfig = () => readJson(MANAGER_CONFIG_FILE, DEFAULT_MANAGER_CONFIG);
 export const saveManagerConfig = (cfg) => writeJson(MANAGER_CONFIG_FILE, cfg);
