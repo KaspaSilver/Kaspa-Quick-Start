@@ -225,6 +225,38 @@ body {
 }
 .nav-group-title:first-child { margin-top: 2px; }
 
+/* Mainnet / Testnet view switch — a segmented control under Overview. */
+.net-switch {
+    display: flex;
+    gap: 4px;
+    margin: 8px 4px 2px;
+    padding: 3px;
+    background: var(--line);
+    border-radius: 9px;
+}
+.net-tab {
+    flex: 1;
+    padding: 6px 8px;
+    font-size: 12px;
+    font-weight: 600;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    border-radius: 7px;
+    cursor: pointer;
+}
+.net-tab:hover { color: var(--text); }
+.net-tab.active { background: var(--panel); color: var(--text); }
+.net-note {
+    margin: 4px 8px 2px;
+    font-size: 11px;
+    color: var(--muted);
+    opacity: 0.8;
+}
+/* Collapsed sidebar: the switch would overflow the rail, so hide it there. */
+.sidebar.collapsed .net-switch,
+.sidebar.collapsed .net-note { display: none; }
+
 .nav-item {
     display: flex;
     align-items: center;
@@ -269,6 +301,10 @@ body {
     padding-right: 6px;
     border-radius: 8px;
 }
+/* An author display rule beats the UA [hidden] rule, so hiding rows/headings in the
+   testnet view needs this explicit override. */
+.nav-row[hidden],
+.nav-group-title[hidden] { display: none; }
 .nav-row:hover { background: var(--panel-2); }
 .nav-row:hover .nav-item { color: var(--text); }
 .nav-row.active {

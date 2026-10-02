@@ -96,6 +96,18 @@
         </button>
       </div>
 
+      <!--
+        Network view switch. Mainnet shows the full stack; Testnet narrows the nav
+        to the node, mining, the KaChat indexer and the proxy -- the services a
+        testnet deployment uses. Today this is a view filter (phase 1); the parallel
+        testnet stack it is shaped for comes next.
+      -->
+      <div class="net-switch" role="tablist" aria-label="Network">
+        <button type="button" class="net-tab active" data-net="mainnet" role="tab" aria-selected="true">Mainnet</button>
+        <button type="button" class="net-tab" data-net="testnet" role="tab" aria-selected="false">Testnet</button>
+      </div>
+      <p class="net-note" id="net-note" hidden>Preview — testnet services aren't provisioned yet.</p>
+
       <p class="nav-group-title">Node</p>
       <div class="nav-row">
         <button class="nav-item" data-tab="kaspad" title="Kaspad">

@@ -272,6 +272,66 @@ for (const item of document.querySelectorAll('.nav-item')) {
     item.addEventListener('click', () => selectTab(item.dataset.tab));
 }
 
+// --- network view (Mainnet / Testnet) ---
+//
+// Phase 1: a view filter over the nav. Testnet narrows the list to the services a
+// testnet deployment uses -- the node, mining, the KaChat indexer and the proxy --
+// and hides the rest (Desktop, Bot, Push, the Apps). It is remembered across
+// reloads. The parallel testnet stack these controls are shaped for comes next; for
+// now they still manage the one node, which is why the note under the switch says so.
+const NET_VIEW_KEY = 'kqs-network-view';
+const TESTNET_TABS = new Set(['overview', 'kaspad', 'mining', 'kachat', 'proxy', 'logs', 'global', 'support']);
+
+function applyNetworkView(net) {
+    const testnet = net === 'testnet';
+
+    // Show/hide each nav row by whether its tab belongs in the testnet view.
+    for (const row of document.querySelectorAll('.nav .nav-row')) {
+        const tab = el('.nav-item', row)?.dataset.tab;
+        row.hidden = testnet && tab ? !TESTNET_TABS.has(tab) : false;
+    }
+    // Hide a group heading when every row under it (up to the next heading) is hidden.
+    for (const title of document.querySelectorAll('.nav .nav-group-title')) {
+        let anyVisible = false;
+        for (let n = title.nextElementSibling; n && !n.classList.contains('nav-group-title'); n = n.nextElementSibling) {
+            if (n.classList.contains('nav-row') && !n.hidden) anyVisible = true;
+        }
+        title.hidden = !anyVisible;
+    }
+
+    // Reflect the choice on the switch + note.
+    for (const tabBtn of document.querySelectorAll('.net-tab')) {
+        const on = tabBtn.dataset.net === net;
+        tabBtn.classList.toggle('active', on);
+        tabBtn.setAttribute('aria-selected', on ? 'true' : 'false');
+    }
+    const note = $('net-note');
+    if (note) note.hidden = !testnet;
+
+    // If the tab you were on is now hidden, fall back to Overview.
+    const active = document.querySelector('.nav-item.active');
+    if (active && active.closest('.nav-row')?.hidden) selectTab('overview');
+
+    try {
+        localStorage.setItem(NET_VIEW_KEY, net);
+    } catch {
+        /* private mode / storage disabled — the view just won't persist */
+    }
+}
+
+for (const tabBtn of document.querySelectorAll('.net-tab')) {
+    tabBtn.addEventListener('click', () => applyNetworkView(tabBtn.dataset.net));
+}
+
+// Restore the remembered view on load (default mainnet = full nav).
+applyNetworkView((() => {
+    try {
+        return localStorage.getItem(NET_VIEW_KEY) === 'testnet' ? 'testnet' : 'mainnet';
+    } catch {
+        return 'mainnet';
+    }
+})());
+
 // --- kaspad log ---
 
 /**
