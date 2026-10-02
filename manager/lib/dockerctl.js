@@ -116,7 +116,7 @@ export const docker = (args, opts) => run('docker', args, opts);
 function composeFiles() {
     const files = ['-f', COMPOSE_FILE];
     if (fs.existsSync(PORTS_OVERRIDE)) files.push('-f', PORTS_OVERRIDE);
-    for (const name of ['bridge-ports.yml', 'apps-ports.yml']) {
+    for (const name of ['bridge-ports.yml', 'apps-ports.yml', 'ports-testnet.yml', 'bridge-ports-testnet.yml']) {
         const override = path.join(CONF_DIR, name);
         if (fs.existsSync(override)) files.push('-f', override);
     }

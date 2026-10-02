@@ -516,6 +516,8 @@ services:
     profiles: ["testnet-mining"]
     restart: unless-stopped
     stop_grace_period: 30s
+    # Its own config file, pointed at the testnet node (the manager writes it).
+    command: ["--config", "/conf/bridge-testnet.yaml", "--node-mode", "external"]
     volumes:
       - bridge-testnet-data:/data
       - ${STACK_DIR}/conf:/conf:ro

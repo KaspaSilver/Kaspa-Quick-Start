@@ -1,6 +1,9 @@
 import fs from 'node:fs';
 import { compose, docker, containerState } from './dockerctl.js';
 import { FIRMWARE_DIR, uninstall as uninstallKassigner } from './kassigner.js';
+import { writeTestnetArgsFile } from './kaspad-args.js';
+import { loadTestnetNodeConfig } from './store.js';
+import { loadBridgeConfig, writeTestnetBridgeFiles } from './bridge.js';
 
 /**
  * Install, start, stop, uninstall -- for everything in the stack that is a
@@ -144,6 +147,57 @@ export const UNITS = {
         buildable: [],
         data: 'nothing. Your domains and certificates live in the stack directory and are kept',
     },
+
+    // ---- Testnet-10 stack (runs alongside mainnet) --------------------------
+    //
+    // A parallel node + indexer + mining on testnet-10. `images: []` on all three:
+    // they share mainnet's built images (kaspad/kachat/bridge), so uninstalling a
+    // testnet unit must never remove the image mainnet is still using. Each has a
+    // `prepare` that writes its testnet config before create/start.
+    'node-testnet': {
+        label: 'Kaspad (testnet-10)',
+        tab: null,
+        profile: 'testnet',
+        services: ['kaspad-testnet'],
+        containers: ['kaspa-node-kaspad-testnet'],
+        primary: 'kaspa-node-kaspad-testnet',
+        volumes: ['kaspa-node-testnet-data'],
+        images: [],
+        buildable: ['kaspad-testnet'],
+        prepare: (onLine) => {
+            onLine?.('Writing the testnet node args (--testnet --netsuffix=10).');
+            writeTestnetArgsFile(loadTestnetNodeConfig());
+        },
+        data: 'the testnet-10 synced chain',
+    },
+    'kachat-testnet': {
+        label: 'KaChat Indexer (testnet-10)',
+        tab: null,
+        profile: 'testnet-kachat',
+        services: ['kachat-db-testnet', 'kachat-app-testnet'],
+        containers: ['kaspa-node-kachat-testnet', 'kaspa-node-kachat-db-testnet'],
+        primary: 'kaspa-node-kachat-testnet',
+        volumes: ['kaspa-node-kachat-db-testnet-data', 'kaspa-node-kachat-app-testnet-data'],
+        images: [],
+        buildable: ['kachat-app-testnet'],
+        data: 'the testnet indexed chat history and its Postgres database',
+    },
+    'mining-testnet': {
+        label: 'Stratum bridge (testnet-10)',
+        tab: null,
+        profile: 'testnet-mining',
+        services: ['bridge-testnet'],
+        containers: ['kaspa-node-bridge-testnet'],
+        primary: 'kaspa-node-bridge-testnet',
+        volumes: ['kaspa-node-bridge-testnet-data'],
+        images: [],
+        buildable: ['bridge-testnet'],
+        prepare: (onLine) => {
+            onLine?.('Writing the testnet mining config (pointed at the testnet node).');
+            writeTestnetBridgeFiles(loadBridgeConfig());
+        },
+        data: "the testnet bridge's own share and block records",
+    },
 };
 
 /**
@@ -226,6 +280,10 @@ export async function install(key, onLine = () => {}) {
     const unit = unitFor(key);
     if (!unit) throw new Error(`No such service: ${key}`);
 
+    // Some units generate config before their container is created (e.g. the
+    // testnet node writes its --testnet args file).
+    await unit.prepare?.(onLine);
+
     if (unit.buildable.length) {
         onLine(`Building ${unit.label}. The first time can take a while.`);
         await compose(['build', ...unit.buildable], { onLine, profile: unit.profile, timeoutMs: 120 * 60_000 });
@@ -244,6 +302,9 @@ export async function setRunning(key, running, onLine = () => {}) {
     if (!unit) throw new Error(`No such service: ${key}`);
 
     if (running) {
+        // Re-generate config on start too, so a settings change made while the
+        // service was stopped takes effect (same reason `up -d` is used below).
+        await unit.prepare?.(onLine);
         onLine(`Starting ${unit.label}.`);
         // `up -d` rather than `start`, so a container whose configuration
         // changed while it was stopped comes back with the new one.
