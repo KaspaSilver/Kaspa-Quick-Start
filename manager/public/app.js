@@ -131,6 +131,8 @@ function showApp() {
     // sitting empty until someone navigates away and back.
     setHostPolling(document.querySelector('.nav-item.active')?.dataset.tab === 'overview');
     startPolling();
+    // A remembered Testnet view hides Kaspad's mainnet-only sub-tabs from the start.
+    applyKaspadSubtabsForView();
     loadSettings();
     loadProxies();
     loadMining();
@@ -346,7 +348,36 @@ function applyNetworkView(net) {
 }
 
 for (const tabBtn of document.querySelectorAll('.net-tab')) {
-    tabBtn.addEventListener('click', () => applyNetworkView(tabBtn.dataset.net));
+    tabBtn.addEventListener('click', () => {
+        applyNetworkView(tabBtn.dataset.net);
+        refreshKaspadForView();
+    });
+}
+
+// Kaspad's tab follows the network being viewed: status, settings and the log
+// are re-read for the other node. Only on a click -- at load everything below is
+// still being declared, and the first status poll/loadSettings read the view anyway.
+function refreshKaspadForView() {
+    applyKaspadSubtabsForView();
+    setKaspadLog(false);
+    if (activeSubtab('kaspad') === 'kaspadlog') setKaspadLog(true);
+    loadSettings().catch(() => {});
+    refreshStatus().catch(() => {});
+    uninstallSignature = null;
+    renderUninstallCards();
+}
+
+// Updates, How to go public and Am I public? are about the mainnet node (the node
+// software image is shared); the Testnet view hides them.
+const MAINNET_ONLY_KASPAD_SUBTABS = new Set(['updates', 'public-howto', 'public']);
+function applyKaspadSubtabsForView() {
+    const section = $('tab-kaspad');
+    if (!section) return;
+    const testnet = networkView === 'testnet';
+    for (const button of section.querySelectorAll('.subtab-btn')) {
+        button.hidden = testnet && MAINNET_ONLY_KASPAD_SUBTABS.has(button.dataset.subtab);
+    }
+    if (testnet && MAINNET_ONLY_KASPAD_SUBTABS.has(activeSubtab('kaspad'))) selectSubtab(section, 'overview');
 }
 
 // Restore the remembered view on load (default mainnet = full nav).
@@ -381,7 +412,7 @@ function setKaspadLog(active) {
 
     const view = $('kaspadlog-view');
     view.textContent = '';
-    kaspadLogStream = new EventSource('/api/logs/stream?container=kaspad');
+    kaspadLogStream = new EventSource(`/api/logs/stream?container=${networkView === 'testnet' ? 'kaspad-testnet' : 'kaspad'}`);
 
     kaspadLogStream.addEventListener('line', (event) => {
         const { line } = JSON.parse(event.data);
@@ -1110,13 +1141,18 @@ function reloadIfManagerRestarted(id) {
 
 async function refreshStatus() {
     let s;
+    const testnet = networkView === 'testnet';
     try {
-        s = await api('/api/status');
+        s = await api(testnet ? '/api/status-testnet' : '/api/status');
     } catch {
         return;
     }
     if (reloadIfManagerRestarted(s.bootId)) return;
-    lastStatus = s;
+    // The view may have flipped while this was in flight; a stale answer for the
+    // other node must not paint over the current one.
+    if (testnet !== (networkView === 'testnet')) return;
+    // lastStatus is read as "the mainnet node" elsewhere, so testnet never sets it.
+    if (!testnet) lastStatus = s;
 
     const running = s.container.running;
     const synced = s.rpc.synced === true;
@@ -1147,7 +1183,8 @@ async function refreshStatus() {
         detail.hidden = true;
     }
 
-    renderSyncSteps(sync, synced, running);
+    // The step list is reconstructed from mainnet's log; the testnet status has none.
+    renderSyncSteps(sync, synced, running && !sync?.simple);
 
     $('stat-blocks').textContent = fmtNum(s.rpc.dag?.blockCount);
     $('stat-headers').textContent = fmtNum(s.rpc.dag?.headerCount);
@@ -1725,11 +1762,14 @@ const FLAGS = [
 ];
 
 async function loadSettings() {
-    const r = await api('/api/config');
+    const testnet = networkView === 'testnet';
+    const r = await api(testnet ? '/api/config-testnet' : '/api/config');
     currentConfig = r.config;
     const c = r.config;
 
     $('cfg-network').value = c.network;
+    // The testnet node is always testnet-10; mainnet's selector is not offered there.
+    $('cfg-network').disabled = testnet;
 
     for (const flag of FLAGS) $(`cfg-flag-${flag}`).checked = Boolean(c.flags[flag]);
 
@@ -1798,7 +1838,8 @@ $('settings-form').addEventListener('submit', async (event) => {
     const err = $('settings-error');
     err.hidden = true;
     try {
-        await api('/api/config', { method: 'PUT', body: { config: collectConfig() } });
+        const route = networkView === 'testnet' ? '/api/config-testnet' : '/api/config';
+        await api(route, { method: 'PUT', body: { config: collectConfig() } });
         setTimeout(loadSettings, 1500);
     } catch (e) {
         err.textContent = e.message;
@@ -5134,6 +5175,9 @@ const UNINSTALL_COPY = {
     mining: "the bridge's own share and block records",
     proxy: 'nothing. Your domains and certificates live in the stack directory and are kept',
     translate: 'the downloaded language models, which are several gigabytes and have to be fetched again',
+    'node-testnet': 'the synced testnet-10 chain. The mainnet node is not touched',
+    'mining-testnet': "the testnet bridge's share and block records. Mainnet mining is not touched",
+    'kachat-testnet': 'the testnet indexed history, the .kachat registry tables and their Postgres database. The mainnet indexer is not touched',
 };
 
 async function loadServices() {
@@ -5274,14 +5318,15 @@ function renderInstallGate(key, state) {
 let uninstallSignature = null;
 
 function renderUninstallCards() {
-    const signature = Object.entries(serviceState)
+    const signature = `${networkView}|${Object.entries(serviceState)
         .map(([key, state]) => `${key}:${state?.installed ? 1 : 0}`)
-        .join(',');
+        .join(',')}`;
     if (signature === uninstallSignature) return;
     uninstallSignature = signature;
 
     for (const card of document.querySelectorAll('.uninstall-card')) {
-        const key = card.dataset.uninstall;
+        // In the Testnet view the node / mining / indexer cards remove the testnet unit.
+        const key = effectiveService(card.dataset.uninstall);
         const state = serviceState[key];
         const installed = Boolean(state?.installed);
 

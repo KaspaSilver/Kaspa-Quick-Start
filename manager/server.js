@@ -23,7 +23,7 @@ import {
     saveProxies,
     saveTestnetNodeConfig,
 } from './lib/store.js';
-import { buildArgs, portMatrix, ports, publicPorts, renderPortsOverride, renderTestnetPortsOverride, setPortState, writeArgsFile } from './lib/kaspad-args.js';
+import { buildArgs, portMatrix, ports, publicPorts, renderPortsOverride, renderTestnetPortsOverride, setPortState, writeArgsFile, writeTestnetArgsFile } from './lib/kaspad-args.js';
 import * as dockerctl from './lib/dockerctl.js';
 import * as nginx from './lib/nginx.js';
 import * as certbot from './lib/certbot.js';
@@ -47,7 +47,7 @@ import * as lifecycle from './lib/lifecycle.js';
 import * as host from './lib/host.js';
 import * as bot from './lib/bot.js';
 import * as backup from './lib/backup.js';
-import { nodeSnapshot, rpc } from './lib/rpc.js';
+import { nodeSnapshot, rpc, rpcTestnet } from './lib/rpc.js';
 import { jobs } from './lib/jobs.js';
 import {
     authConfigured,
@@ -726,6 +726,87 @@ route('POST', /^\/api\/ports\/(p2p|grpc|borsh|json)$/, async (req, res, match) =
 // (conf/ports-testnet.yml), so the Testnet view's Ports table never touches -- or
 // restarts -- the mainnet node.
 const KASPAD_TESTNET_CONTAINER = 'kaspa-node-kaspad-testnet';
+// The Testnet view's Kaspad tab: the testnet node's own status and settings.
+// Nothing here reads or writes the mainnet node.
+const testnetRpcUrl = (cfg = loadTestnetNodeConfig()) => `ws://kaspad-testnet:${ports(cfg).json}`;
+
+route('GET', /^\/api\/status-testnet$/, async (req, res) => {
+    const cfg = loadTestnetNodeConfig();
+    rpcTestnet.setUrl(testnetRpcUrl(cfg));
+    const [state, snapshot, published] = await Promise.all([
+        dockerctl.containerState(KASPAD_TESTNET_CONTAINER),
+        nodeSnapshot(rpcTestnet),
+        dockerctl.publishedPorts(KASPAD_TESTNET_CONTAINER).catch(() => []),
+    ]);
+    const synced = Boolean(snapshot.sync?.isSynced ?? snapshot.info?.isSynced ?? false);
+    const dag = snapshot.dag;
+    // No log-reconstructed progress here (that follows mainnet's log); headers vs
+    // blocks is the honest, simpler signal for the testnet node.
+    const percent = synced
+        ? 100
+        : dag?.headerCount
+          ? Math.min(99.9, (100 * Number(dag.blockCount ?? 0)) / Number(dag.headerCount))
+          : 0;
+    const peers = Array.isArray(snapshot.peers?.peerInfo) ? snapshot.peers.peerInfo : [];
+    const inbound = peers.filter((p) => p.isOutbound === false).length;
+    sendJson(res, 200, {
+        testnet: true,
+        container: state,
+        rpc: { reachable: snapshot.reachable, error: snapshot.error, info: snapshot.info, dag, synced },
+        sync: {
+            percent,
+            label: synced ? 'synced' : snapshot.reachable ? 'syncing (blocks vs headers)' : 'starting up',
+            estimated: !synced,
+            simple: true,
+        },
+        peers: { total: peers.length, inbound, outbound: peers.length - inbound },
+        p2pReachable: peers.length ? inbound > 0 : null,
+        ready: state.running && snapshot.reachable && synced,
+        bootId: BOOT_ID,
+        version: { version: snapshot.info?.serverVersion ?? null },
+        network: cfg.network,
+        ports: ports(cfg),
+        portMatrix: portMatrix(cfg, { indexer: true }),
+        published,
+        disk: null,
+        dataSplit: null,
+        pruning: null,
+    });
+});
+
+route('GET', /^\/api\/config-testnet$/, async (req, res) => {
+    const cfg = loadTestnetNodeConfig();
+    sendJson(res, 200, {
+        config: cfg,
+        networks: { 'testnet-10': { ...NETWORKS['testnet-10'] } },
+        argsPreview: ['--appdir=/data', '--yes', '--utxoindex', ...buildArgs(cfg, { indexer: true })],
+        testnet: true,
+    });
+});
+
+route('PUT', /^\/api\/config-testnet$/, async (req, res) => {
+    const body = await readBody(req);
+    // Same validation as mainnet, pinned to testnet-10 whatever the form sent.
+    const { cfg, errors } = sanitizeNodeConfig({ ...(body.config ?? {}), network: 'testnet-10' });
+    if (errors.length) return fail(res, 400, 'The configuration has problems.', { details: errors });
+    // Published ports are managed from the Ports table; keep them.
+    cfg.expose = loadTestnetNodeConfig().expose ?? cfg.expose;
+    saveTestnetNodeConfig(cfg);
+    const job = jobs.start('Apply testnet node configuration', async (onLine) => {
+        const args = writeTestnetArgsFile(cfg);
+        renderTestnetPortsOverride(cfg);
+        onLine(`kaspad (testnet) arguments: ${args.join(' ')}`);
+        const state = await lifecycle.status('node-testnet').catch(() => null);
+        if (state?.running) {
+            onLine('Recreating the testnet node with the new settings.');
+            await lifecycle.setRunning('node-testnet', true, onLine);
+        } else {
+            onLine('The testnet node is not running; the settings apply when it starts.');
+        }
+    });
+    sendJson(res, 202, { ok: true, jobId: job.id, config: cfg });
+});
+
 route('GET', /^\/api\/ports-testnet$/, async (req, res) => {
     const cfg = loadTestnetNodeConfig();
     const published = await dockerctl.publishedPorts(KASPAD_TESTNET_CONTAINER).catch(() => []);
@@ -784,6 +865,7 @@ const containerFor = (url) => {
         case 'proxy': return dockerctl.PROXY_CONTAINER;
         case 'bridge': return dockerctl.BRIDGE_CONTAINER;
         case 'kachat': return dockerctl.KACHAT_CONTAINER;
+        case 'kaspad-testnet': return KASPAD_TESTNET_CONTAINER;
         case 'nextcloud': return dockerctl.NEXTCLOUD_CONTAINER;
         // The detached sidecar that rebuilds the panel, so its progress can be
         // streamed into the update overlay while it runs.

@@ -143,13 +143,15 @@ class WrpcClient {
 }
 
 export const rpc = new WrpcClient();
+// The testnet-10 node (kaspad-testnet) runs beside mainnet; the Testnet view reads it here.
+export const rpcTestnet = new WrpcClient();
 
 /**
  * Collects everything the dashboard shows in one shot. Each call is optional --
  * a node that is still opening its database answers nothing, and the UI should
  * show "starting" rather than an error page.
  */
-export async function nodeSnapshot() {
+export async function nodeSnapshot(client = rpc) {
     const out = {
         reachable: false,
         info: null,
@@ -161,7 +163,7 @@ export async function nodeSnapshot() {
         error: null,
     };
     try {
-        out.info = await rpc.call('getInfo', {});
+        out.info = await client.call('getInfo', {});
         out.reachable = true;
     } catch (err) {
         out.error = err.message;
@@ -176,7 +178,7 @@ export async function nodeSnapshot() {
     await Promise.all(
         optional.map(async ([key, method]) => {
             try {
-                out[key] = await rpc.call(method, {});
+                out[key] = await client.call(method, {});
             } catch {
                 out[key] = null;
             }
