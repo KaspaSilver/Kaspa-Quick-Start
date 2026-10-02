@@ -464,6 +464,153 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # ======================================================================
+  # Testnet-10 stack (opt-in, runs ALONGSIDE mainnet)
+  #
+  # A full second set — node, indexer (+ its own Postgres) and mining bridge —
+  # on testnet-10, each its own container, volume and internal hostname, so a
+  # beefy host can run both networks at once. Nothing is shared with mainnet:
+  # different chain, different data. Everything sits behind testnet-* profiles,
+  # so a bare `up -d` (the installer's default) leaves it all down; the panel's
+  # Testnet view brings up only what you enable. Ports don't collide — testnet
+  # uses 162xx/172xx — and host port mappings (if any) are added by the manager
+  # via conf/*-testnet.yml overrides, exactly like mainnet.
+  # ======================================================================
+
+  kaspad-testnet:
+    image: kaspa-one-click/kaspad:${KASPAD_VERSION:-v2.0.1}
+    build:
+      context: ./kaspad
+      args:
+        KASPAD_VERSION: ${KASPAD_VERSION:-v2.0.1}
+        REPO_URL: ${KASPAD_REPO_URL:-https://github.com/kaspanet/rusty-kaspa}
+    container_name: kaspa-node-kaspad-testnet
+    hostname: kaspad-testnet
+    profiles: ["testnet"]
+    restart: unless-stopped
+    stop_grace_period: 180s
+    environment:
+      # Same image + entrypoint as mainnet; only the args file and data dir differ.
+      # The manager writes conf/kaspad-testnet.args with --testnet --netsuffix=10.
+      KASPAD_ARGS_FILE: /conf/kaspad-testnet.args
+    volumes:
+      - kaspad-testnet-data:/data
+      - ${STACK_DIR}/conf:/conf:ro
+    networks:
+      - kaspa
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  bridge-testnet:
+    image: kaspa-one-click/bridge:${KASPAD_VERSION:-v2.0.1}
+    build:
+      context: ./bridge
+      args:
+        KASPAD_VERSION: ${KASPAD_VERSION:-v2.0.1}
+        REPO_URL: ${KASPAD_REPO_URL:-https://github.com/kaspanet/rusty-kaspa}
+    container_name: kaspa-node-bridge-testnet
+    hostname: bridge-testnet
+    profiles: ["testnet-mining"]
+    restart: unless-stopped
+    stop_grace_period: 30s
+    volumes:
+      - bridge-testnet-data:/data
+      - ${STACK_DIR}/conf:/conf:ro
+    networks:
+      - kaspa
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  kachat-db-testnet:
+    image: postgres:17-alpine
+    container_name: kaspa-node-kachat-db-testnet
+    hostname: kachat-db-testnet
+    profiles: ["testnet-kachat"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${KACHAT_DB_USER:-kachat}
+      POSTGRES_PASSWORD: ${KACHAT_DB_PASSWORD:-}
+      POSTGRES_DB: ${KACHAT_DB_NAME:-kachat}
+    volumes:
+      - kachat-db-testnet-data:/var/lib/postgresql/data
+    networks:
+      - kaspa
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${KACHAT_DB_USER:-kachat}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  kachat-app-testnet:
+    image: kaspa-one-click/kachat:${KACHAT_REF:-main}
+    build:
+      context: ${KACHAT_REPO:-https://github.com/KaspaSilver/KaChat-Indexer.git}#${KACHAT_REF:-main}
+      dockerfile: docker/kachat/Dockerfile.kachat-app
+    container_name: kaspa-node-kachat-testnet
+    hostname: kachat-app-testnet
+    profiles: ["testnet-kachat"]
+    restart: unless-stopped
+    stop_grace_period: 90s
+    environment:
+      # The TESTNET node on this network, BORSH wRPC on the testnet port (17210).
+      KASPA_NODE_ADDRESS: kaspad-testnet
+      KASPA_NODE_PORT: ${KACHAT_TESTNET_NODE_PORT:-17210}
+      KASPA_NODE_WBORSH_URL: ws://kaspad-testnet:${KACHAT_TESTNET_NODE_PORT:-17210}
+      NETWORK: testnet-10
+      NETWORK_TYPE: testnet-10
+      DB_USER: ${KACHAT_DB_USER:-kachat}
+      DB_PASSWORD: ${KACHAT_DB_PASSWORD:-}
+      DB_NAME: ${KACHAT_DB_NAME:-kachat}
+      DB_PORT: 5432
+      DB_HOST: kachat-db-testnet
+      SKI_PORT: 8500
+      WEBSERVER_PORT: 3080
+      ADMIN_PORT: 3081
+      CHAT_API_PORT: 8600
+      KASIA_INDEXER_DB_ROOT: /app/data
+      KASIA_API_BIND: 0.0.0.0:8600
+      LIBRETRANSLATE_URL: ${LIBRETRANSLATE_URL:-http://libretranslate:5000}
+      INTERNAL_PUSH_SECRET: ${KACHAT_PUSH_SECRET:-}
+      # Same APNs/FCM credentials as mainnet; the separate DB above is what keeps
+      # the testnet push registrations apart (per KACHAT_NAMES_INDEXER.md part A).
+      FCM_PROJECT_ID: ${KACHAT_FCM_PROJECT_ID:-}
+      FCM_SERVICE_ACCOUNT_PATH: /push/fcm/service-account.json
+      APNS_TOPIC: ${KACHAT_APNS_TOPIC:-}
+      APNS_KEY_ID: ${KACHAT_APNS_KEY_ID:-}
+      APNS_TEAM_ID: ${KACHAT_APNS_TEAM_ID:-}
+      APNS_ENVIRONMENT: ${KACHAT_APNS_ENVIRONMENT:-production}
+      APNS_KEY_PATH: /push/apns/AuthKey.p8
+      # .kachat names module (KACHAT_NAMES_INDEXER.md parts B-E): off until a
+      # testnet genesis manifest is configured. Mounted read-only below.
+      KACHAT_NAMES_MANIFEST: ${KACHAT_NAMES_MANIFEST_TESTNET:-}
+      RUST_LOG: info
+    volumes:
+      - kachat-app-testnet-data:/app/data
+      - ${STACK_DIR}/conf/push:/push:ro
+      # .kachat names manifests (testnet genesis output), read-only.
+      - ${STACK_DIR}/conf/names:/names:ro
+      - ${STACK_DIR}/kachat/run-admin.sh:/app/run-admin.sh:ro
+      - ${STACK_DIR}/kachat/run-webserver.sh:/app/run-webserver.sh:ro
+      - ${STACK_DIR}/kachat/run-processor.sh:/app/run-processor.sh:ro
+      - ${STACK_DIR}/kachat/run-ingest.sh:/app/run-ingest.sh:ro
+    networks:
+      - kaspa
+    depends_on:
+      - kachat-db-testnet
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "3" }
+
 networks:
   kaspa:
     name: kaspa-node-net
@@ -483,3 +630,12 @@ volumes:
     name: kaspa-node-nextcloud-data
   libretranslate-models:
     name: kaspa-node-libretranslate-models
+  # Testnet-10 stack — separate data from mainnet.
+  kaspad-testnet-data:
+    name: kaspa-node-testnet-data
+  bridge-testnet-data:
+    name: kaspa-node-bridge-testnet-data
+  kachat-db-testnet-data:
+    name: kaspa-node-kachat-db-testnet-data
+  kachat-app-testnet-data:
+    name: kaspa-node-kachat-app-testnet-data
