@@ -5948,7 +5948,9 @@ async function loadNames() {
             tag.className = `tag ${s.synced ? 'ok' : 'warn'}`;
         }
         setText('names-network', s.network || 'testnet-10');
-        setText('names-covenant', s.registryCovenantId || '–');
+        // The indexer withholds registryCovenantId until synced (it is the apps'
+        // switch to use it); the manifest's id comes through separately.
+        setText('names-covenant', s.manifestRegistryCovenantId || s.registryCovenantId || '–');
         setText('names-genesis', s.genesisTxId || '–');
         setText('names-daa', s.indexedDaa != null ? fmtNum(s.indexedDaa) : '–');
         setText('names-synced', s.synced ? 'yes' : 'no');

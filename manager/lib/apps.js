@@ -53,7 +53,10 @@ export const APPS = {
             // `/internal/push` is the injection point upstream is emphatic
             // about never exposing, and it is one prefix away from a route that
             // is exposed on purpose.
-            deny: ['/self-stash-gc-orphans', '/internal/push'],
+            // `/contextual-messages/import` is an unauthenticated bulk insert
+            // that sits under the public `/contextual-messages` prefix; public,
+            // anyone could write forged 1:1 rows into the store.
+            deny: ['/self-stash-gc-orphans', '/internal/push', '/contextual-messages/import'],
             // The indexer is read cross-origin by browser clients: the web app
             // at kachat.app (and anyone self-hosting it on their own domain) is
             // a different origin from this API, so without these headers the
