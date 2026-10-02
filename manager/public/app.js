@@ -1205,8 +1205,19 @@ async function refreshStatus() {
         verdict.textContent = 'Waiting for peer information…';
     }
 
-    renderPorts(s);
+    // The Testnet view shows the testnet node's own ports (162xx/172xx/182xx);
+    // mainnet's status never drives that table.
+    if (networkView === 'testnet') renderTestnetPorts();
+    else renderPorts(s);
     applyNodeGating(s);
+}
+
+async function renderTestnetPorts() {
+    try {
+        renderPorts(await api('/api/ports-testnet'));
+    } catch {
+        /* the next status poll tries again */
+    }
 }
 
 /**
@@ -1445,7 +1456,7 @@ function renderPorts(s) {
     // The switch shows intent; the node's own reading catches up a few seconds
     // later. When it matches -- or the grace window lapses -- the hold is done.
     const effective = (key, axis, serverOn) => {
-        const id = `${key}:${axis}`;
+        const id = `${networkView}:${key}:${axis}`;
         const held = pendingPorts.get(id);
         if (!held) return serverOn;
         if (held.value === serverOn || now > held.until) {
@@ -1514,13 +1525,16 @@ $('ports-body').addEventListener('change', async (event) => {
     // Hold the intent so the next status poll cannot redraw it back while the
     // node restarts with the change. renderPorts clears the hold once the node
     // reports the same value, or after this grace window if it never takes.
-    pendingPorts.set(`${key}:${axis}`, { value, until: Date.now() + 60_000 });
+    // The Testnet view drives the testnet node only; mainnet is never touched from it.
+    const hold = `${networkView}:${key}:${axis}`;
+    pendingPorts.set(hold, { value, until: Date.now() + 60_000 });
     event.target.disabled = true;
     try {
-        await api(`/api/ports/${key}`, { method: 'POST', body: { [axis]: value } });
+        const route = networkView === 'testnet' ? `/api/ports-testnet/${key}` : `/api/ports/${key}`;
+        await api(route, { method: 'POST', body: { [axis]: value } });
     } catch (e) {
         // The node was not changed; drop the hold and put the switch back.
-        pendingPorts.delete(`${key}:${axis}`);
+        pendingPorts.delete(hold);
         event.target.checked = !value;
         toast(e.message, 'bad');
     } finally {

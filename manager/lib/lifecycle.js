@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { compose, docker, containerState } from './dockerctl.js';
 import { FIRMWARE_DIR, uninstall as uninstallKassigner } from './kassigner.js';
-import { writeTestnetArgsFile } from './kaspad-args.js';
+import { renderTestnetPortsOverride, writeTestnetArgsFile } from './kaspad-args.js';
 import { loadTestnetNodeConfig } from './store.js';
 import { loadBridgeConfig, writeTestnetBridgeFiles } from './bridge.js';
 
@@ -166,8 +166,10 @@ export const UNITS = {
         images: [],
         buildable: ['kaspad-testnet'],
         prepare: (onLine) => {
-            onLine?.('Writing the testnet node args (--testnet --netsuffix=10).');
-            writeTestnetArgsFile(loadTestnetNodeConfig());
+            onLine?.('Writing the testnet node args (--testnet --netsuffix=10) and its published ports.');
+            const cfg = loadTestnetNodeConfig();
+            writeTestnetArgsFile(cfg);
+            renderTestnetPortsOverride(cfg);
         },
         data: 'the testnet-10 synced chain',
     },

@@ -14,14 +14,16 @@ import {
     loadManagerConfig,
     loadNodeConfig,
     loadProxies,
+    loadTestnetNodeConfig,
     readEnvFile,
     updateEnvFile,
     saveDomains,
     saveManagerConfig,
     saveNodeConfig,
     saveProxies,
+    saveTestnetNodeConfig,
 } from './lib/store.js';
-import { buildArgs, portMatrix, ports, publicPorts, renderPortsOverride, setPortState, writeArgsFile } from './lib/kaspad-args.js';
+import { buildArgs, portMatrix, ports, publicPorts, renderPortsOverride, renderTestnetPortsOverride, setPortState, writeArgsFile } from './lib/kaspad-args.js';
 import * as dockerctl from './lib/dockerctl.js';
 import * as nginx from './lib/nginx.js';
 import * as certbot from './lib/certbot.js';
@@ -716,6 +718,47 @@ route('POST', /^\/api\/ports\/(p2p|grpc|borsh|json)$/, async (req, res, match) =
     const job = jobs.start(`${before.name} (${before.port})`, (onLine) => {
         for (const change of changes) onLine(change);
         return applyNodeConfig(cfg, onLine);
+    });
+    sendJson(res, 202, { ok: true, jobId: job.id, changes });
+});
+
+// Testnet-10 node ports: its own config (conf/node-testnet.json) and override
+// (conf/ports-testnet.yml), so the Testnet view's Ports table never touches -- or
+// restarts -- the mainnet node.
+const KASPAD_TESTNET_CONTAINER = 'kaspa-node-kaspad-testnet';
+route('GET', /^\/api\/ports-testnet$/, async (req, res) => {
+    const cfg = loadTestnetNodeConfig();
+    const published = await dockerctl.publishedPorts(KASPAD_TESTNET_CONTAINER).catch(() => []);
+    // The testnet indexer always dials wRPC Borsh, so that listener stays bound.
+    sendJson(res, 200, { network: cfg.network, portMatrix: portMatrix(cfg, { indexer: true }), published });
+});
+
+route('POST', /^\/api\/ports-testnet\/(p2p|grpc|borsh|json)$/, async (req, res, match) => {
+    const key = match[1];
+    const body = await readBody(req);
+    const wanted = {
+        local: typeof body.local === 'boolean' ? body.local : undefined,
+        public: typeof body.public === 'boolean' ? body.public : undefined,
+    };
+    if (wanted.local === undefined && wanted.public === undefined) {
+        return fail(res, 400, 'Send local and/or public as booleans.');
+    }
+    const cfg = loadTestnetNodeConfig();
+    const before = portMatrix(cfg).find((e) => e.key === key);
+    const changes = setPortState(cfg, key, wanted);
+    if (!changes.length) return sendJson(res, 200, { ok: true, unchanged: true });
+
+    saveTestnetNodeConfig(cfg);
+    const job = jobs.start(`Testnet ${before.name} (${before.port})`, async (onLine) => {
+        for (const change of changes) onLine(change);
+        renderTestnetPortsOverride(cfg);
+        const state = await lifecycle.status('node-testnet').catch(() => null);
+        if (state?.running) {
+            onLine('Recreating the testnet node with the new ports.');
+            await lifecycle.setRunning('node-testnet', true, onLine);
+        } else {
+            onLine('The testnet node is not running; the ports apply when it starts.');
+        }
     });
     sendJson(res, 202, { ok: true, jobId: job.id, changes });
 });

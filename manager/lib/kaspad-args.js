@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { KASPAD_ARGS_FILE, KASPAD_TESTNET_ARGS_FILE, PORTS_OVERRIDE } from './paths.js';
+import { KASPAD_ARGS_FILE, KASPAD_TESTNET_ARGS_FILE, PORTS_OVERRIDE, PORTS_TESTNET_OVERRIDE } from './paths.js';
 import { NETWORKS } from './store.js';
 
 export const ports = (cfg) => NETWORKS[cfg.network] ?? NETWORKS.mainnet;
@@ -137,7 +137,7 @@ export function writeTestnetArgsFile(cfg, siblings = {}) {
  * kaspad's list empty and this override owns it entirely. Rewriting this file
  * and running `docker compose up -d kaspad` is what opens or closes a port.
  */
-export function renderPortsOverride(cfg) {
+export function renderPortsOverride(cfg, { file = PORTS_OVERRIDE, service = 'kaspad' } = {}) {
     const p = ports(cfg);
     // Each port carries its own address now: 'local' binds 127.0.0.1 (this
     // machine only), 'public' binds 0.0.0.0 (the network), 'off' publishes
@@ -160,14 +160,24 @@ export function renderPortsOverride(cfg) {
         '# Published host ports for kaspad. Removing a mapping makes the port',
         '# reachable only from the internal docker network.',
         'services:',
-        '  kaspad:',
+        `  ${service}:`,
         '    ports:',
     ];
     if (mappings.length === 0) lines.push('      []');
     for (const { bind, port } of mappings) lines.push(`      - "${bind}:${port}:${port}/tcp"`);
 
-    fs.writeFileSync(PORTS_OVERRIDE, `${lines.join('\n')}\n`, 'utf8');
+    fs.writeFileSync(file, `${lines.join('\n')}\n`, 'utf8');
     return mappings.map((m) => m.port);
+}
+
+/**
+ * The testnet-10 node's published ports (conf/ports-testnet.yml, for the
+ * kaspad-testnet service). Same off / local / public model as mainnet, on the
+ * testnet numbers (P2P 16211, gRPC 16210, wRPC Borsh 17210, wRPC JSON 18210),
+ * which never collide with mainnet's.
+ */
+export function renderTestnetPortsOverride(cfg) {
+    return renderPortsOverride(cfg, { file: PORTS_TESTNET_OVERRIDE, service: 'kaspad-testnet' });
 }
 
 /** The ports a user has to open on their router/firewall to go public. */
