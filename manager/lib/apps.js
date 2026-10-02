@@ -45,6 +45,10 @@ export const APPS = {
                 { location: '/group-messages', port: 8600 },
                 { location: '/group-control', port: 8600 },
                 { location: '/v1/push', port: 8600 },
+                // The apps' indexer health check (iOS ping, Desktop "test indexer")
+                // decodes the chat indexer's JSON /metrics; left on 3080 it got the
+                // content API's Prometheus text and failed.
+                { location: '/metrics', port: 8600 },
             ],
             // Not decoration. `/self-stash-gc-orphans` is a top-level
             // maintenance route that lives under the `/self-stash` prefix, so
