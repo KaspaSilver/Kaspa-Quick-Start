@@ -1183,8 +1183,7 @@ async function refreshStatus() {
         detail.hidden = true;
     }
 
-    // The step list is reconstructed from mainnet's log; the testnet status has none.
-    renderSyncSteps(sync, synced, running && !sync?.simple);
+    renderSyncSteps(sync, synced, running);
 
     $('stat-blocks').textContent = fmtNum(s.rpc.dag?.blockCount);
     $('stat-headers').textContent = fmtNum(s.rpc.dag?.headerCount);

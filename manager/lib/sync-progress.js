@@ -36,131 +36,6 @@ export const PHASES = [
 
 const phaseIndex = (key) => PHASES.findIndex((p) => p.key === key);
 
-const state = {
-    phase: 'starting',
-    phasePercent: null, // kaspad's own figure, where it reports one
-    processed: null,
-    objectName: null,
-    lastBlockTime: null,
-    utxoChunks: 0,
-    utxoCount: 0,
-    utxoTotal: null,
-    trustedBlocks: null,
-    peer: null,
-    updatedAt: null,
-    lastLine: null,
-};
-
-// Never let the reported phase go backwards during a session. Peers drop and
-// IBD restarts mid-sync; showing the bar snap back to 8% every time it does
-// would look like the node was losing its work, which it is not.
-function enterPhase(key) {
-    if (phaseIndex(key) > phaseIndex(state.phase)) {
-        state.phase = key;
-        state.phasePercent = null;
-    }
-}
-
-const MATCHERS = [
-    [/IBD: Processed ([\d,]+) (block headers|blocks) \((\d+)%\)(?:.*last block timestamp: (.+))?/, (m) => {
-        enterPhase(m[2] === 'block headers' ? 'headers' : 'blocks');
-        state.processed = Number(m[1].replace(/,/g, ''));
-        state.objectName = m[2];
-        state.phasePercent = Number(m[3]);
-        if (m[4]) state.lastBlockTime = m[4].trim();
-    }],
-    [/Received (\d+) UTXO set chunks so far, totaling in (\d+) UTXOs/, (m) => {
-        enterPhase('utxoset');
-        state.utxoChunks = Number(m[1]);
-        state.utxoCount = Number(m[2]);
-    }],
-    [/Finished receiving the UTXO set\. Total UTXOs: (\d+)/, (m) => {
-        enterPhase('utxoset');
-        state.utxoTotal = Number(m[1]);
-        state.utxoCount = Number(m[1]);
-        state.phasePercent = 100;
-    }],
-    [/Starting IBD with headers proof with peer (\S+)/, (m) => {
-        enterPhase('proof');
-        state.peer = m[1];
-    }],
-    [/IBD started with peer (\S+)/, (m) => {
-        enterPhase('connecting');
-        state.peer = m[1];
-    }],
-    [/validating pruning points consistency/, () => enterPhase('proof')],
-    [/Starting to process (\d+) trusted blocks/, (m) => {
-        enterPhase('trusted');
-        state.trustedBlocks = Number(m[1]);
-    }],
-    [/Done processing trusted blocks/, () => enterPhase('trusted')],
-    [/downloading the pruning point SMT state/, () => enterPhase('smt')],
-    [/IBD with peer \S+ completed successfully/, () => enterPhase('blocks')],
-];
-
-function consume(line) {
-    for (const [re, apply] of MATCHERS) {
-        const m = re.exec(line);
-        if (!m) continue;
-        apply(m);
-        state.updatedAt = Date.now();
-        state.lastLine = line.replace(/^\S+\s+/, '').trim().slice(0, 200);
-        return;
-    }
-}
-
-// ------------------------------------------------------------------ follow --
-
-let stop = null;
-let restartTimer = null;
-
-export function start(log = () => {}) {
-    if (stop) return;
-    try {
-        stop = streamLogs(KASPAD_CONTAINER, consume, { tail: 400 });
-    } catch (err) {
-        log(`sync progress: cannot follow kaspad logs: ${err.message}`);
-    }
-    // `docker logs -f` ends when the container stops or is recreated, which
-    // happens on every settings change, so reattach rather than going blind.
-    clearInterval(restartTimer);
-    restartTimer = setInterval(() => {
-        if (!stop) return;
-        try {
-            stop();
-        } catch {
-            /* already gone */
-        }
-        stop = streamLogs(KASPAD_CONTAINER, consume, { tail: 50 });
-    }, 60_000);
-    restartTimer.unref?.();
-}
-
-/** Called when the node is recreated, so the next session starts clean. */
-export function reset() {
-    Object.assign(state, {
-        phase: 'starting',
-        phasePercent: null,
-        processed: null,
-        objectName: null,
-        utxoChunks: 0,
-        utxoCount: 0,
-        utxoTotal: null,
-        lastLine: null,
-    });
-    if (stop) {
-        try {
-            stop();
-        } catch {
-            /* noop */
-        }
-        stop = null;
-    }
-    start();
-}
-
-// ---------------------------------------------------------------- snapshot --
-
 /**
  * The UTXO set has no announced total, so its share of the bar is filled by an
  * asymptotic curve on the chunk count: always rising, never reaching the end of
@@ -169,48 +44,188 @@ export function reset() {
  */
 const utxoFraction = (chunks) => 1 - Math.exp(-chunks / 45_000);
 
-export function snapshot({ synced = false } = {}) {
-    if (synced) {
+/**
+ * One tracker per node container: the mainnet node and the testnet-10 node each
+ * follow their own log. Same phases and matchers -- testnet's kaspad logs the
+ * same IBD lines.
+ */
+export function createSyncTracker(container) {
+    const state = {
+        phase: 'starting',
+        phasePercent: null, // kaspad's own figure, where it reports one
+        processed: null,
+        objectName: null,
+        lastBlockTime: null,
+        utxoChunks: 0,
+        utxoCount: 0,
+        utxoTotal: null,
+        trustedBlocks: null,
+        peer: null,
+        updatedAt: null,
+        lastLine: null,
+    };
+
+    // Never let the reported phase go backwards during a session. Peers drop and
+    // IBD restarts mid-sync; showing the bar snap back to 8% every time it does
+    // would look like the node was losing its work, which it is not.
+    function enterPhase(key) {
+        if (phaseIndex(key) > phaseIndex(state.phase)) {
+            state.phase = key;
+            state.phasePercent = null;
+        }
+    }
+
+    const MATCHERS = [
+        [/IBD: Processed ([\d,]+) (block headers|blocks) \((\d+)%\)(?:.*last block timestamp: (.+))?/, (m) => {
+            enterPhase(m[2] === 'block headers' ? 'headers' : 'blocks');
+            state.processed = Number(m[1].replace(/,/g, ''));
+            state.objectName = m[2];
+            state.phasePercent = Number(m[3]);
+            if (m[4]) state.lastBlockTime = m[4].trim();
+        }],
+        [/Received (\d+) UTXO set chunks so far, totaling in (\d+) UTXOs/, (m) => {
+            enterPhase('utxoset');
+            state.utxoChunks = Number(m[1]);
+            state.utxoCount = Number(m[2]);
+        }],
+        [/Finished receiving the UTXO set\. Total UTXOs: (\d+)/, (m) => {
+            enterPhase('utxoset');
+            state.utxoTotal = Number(m[1]);
+            state.utxoCount = Number(m[1]);
+            state.phasePercent = 100;
+        }],
+        [/Starting IBD with headers proof with peer (\S+)/, (m) => {
+            enterPhase('proof');
+            state.peer = m[1];
+        }],
+        [/IBD started with peer (\S+)/, (m) => {
+            enterPhase('connecting');
+            state.peer = m[1];
+        }],
+        [/validating pruning points consistency/, () => enterPhase('proof')],
+        [/Starting to process (\d+) trusted blocks/, (m) => {
+            enterPhase('trusted');
+            state.trustedBlocks = Number(m[1]);
+        }],
+        [/Done processing trusted blocks/, () => enterPhase('trusted')],
+        [/downloading the pruning point SMT state/, () => enterPhase('smt')],
+        [/IBD with peer \S+ completed successfully/, () => enterPhase('blocks')],
+    ];
+
+    function consume(line) {
+        for (const [re, apply] of MATCHERS) {
+            const m = re.exec(line);
+            if (!m) continue;
+            apply(m);
+            state.updatedAt = Date.now();
+            state.lastLine = line.replace(/^\S+\s+/, '').trim().slice(0, 200);
+            return;
+        }
+    }
+
+    // ------------------------------------------------------------------ follow --
+
+    let stop = null;
+    let restartTimer = null;
+
+    function start(log = () => {}) {
+        if (stop) return;
+        try {
+            stop = streamLogs(container, consume, { tail: 400 });
+        } catch (err) {
+            log(`sync progress: cannot follow kaspad logs: ${err.message}`);
+        }
+        // `docker logs -f` ends when the container stops or is recreated, which
+        // happens on every settings change, so reattach rather than going blind.
+        clearInterval(restartTimer);
+        restartTimer = setInterval(() => {
+            if (!stop) return;
+            try {
+                stop();
+            } catch {
+                /* already gone */
+            }
+            stop = streamLogs(container, consume, { tail: 50 });
+        }, 60_000);
+        restartTimer.unref?.();
+    }
+
+    /** Called when the node is recreated, so the next session starts clean. */
+    function reset() {
+        Object.assign(state, {
+            phase: 'starting',
+            phasePercent: null,
+            processed: null,
+            objectName: null,
+            utxoChunks: 0,
+            utxoCount: 0,
+            utxoTotal: null,
+            lastLine: null,
+        });
+        if (stop) {
+            try {
+                stop();
+            } catch {
+                /* noop */
+            }
+            stop = null;
+        }
+        start();
+    }
+
+    // ---------------------------------------------------------------- snapshot --
+
+    function snapshot({ synced = false } = {}) {
+        if (synced) {
+            return {
+                phase: 'synced',
+                label: 'Synced with the network',
+                percent: 100,
+                estimated: false,
+                detail: null,
+                phasePercent: 100,
+                lastLine: state.lastLine,
+            };
+        }
+
+        const phase = PHASES.find((p) => p.key === state.phase) ?? PHASES[0];
+        const width = phase.end - phase.start;
+        let within = 0;
+        let estimated = false;
+        let detail = null;
+
+        if (state.phase === 'headers' || state.phase === 'blocks') {
+            within = (state.phasePercent ?? 0) / 100;
+            if (state.processed != null) {
+                detail = `${state.processed.toLocaleString()} ${state.objectName}` +
+                    (state.phasePercent != null ? ` · ${state.phasePercent}% of this stage` : '');
+            }
+        } else if (state.phase === 'utxoset') {
+            within = state.utxoTotal ? 1 : utxoFraction(state.utxoChunks);
+            estimated = !state.utxoTotal;
+            detail = `${state.utxoCount.toLocaleString()} UTXOs in ${state.utxoChunks.toLocaleString()} chunks`;
+        } else if (state.phase === 'trusted' && state.trustedBlocks) {
+            detail = `${state.trustedBlocks.toLocaleString()} trusted blocks`;
+        }
+
         return {
-            phase: 'synced',
-            label: 'Synced with the network',
-            percent: 100,
-            estimated: false,
-            detail: null,
-            phasePercent: 100,
+            phase: phase.key,
+            label: phase.label,
+            percent: Math.min(99.9, phase.start + width * Math.max(0, Math.min(1, within))),
+            estimated,
+            detail,
+            phasePercent: state.phasePercent,
+            lastBlockTime: state.lastBlockTime,
             lastLine: state.lastLine,
+            stale: state.updatedAt ? Date.now() - state.updatedAt > 120_000 : true,
         };
     }
 
-    const phase = PHASES.find((p) => p.key === state.phase) ?? PHASES[0];
-    const width = phase.end - phase.start;
-    let within = 0;
-    let estimated = false;
-    let detail = null;
-
-    if (state.phase === 'headers' || state.phase === 'blocks') {
-        within = (state.phasePercent ?? 0) / 100;
-        if (state.processed != null) {
-            detail = `${state.processed.toLocaleString()} ${state.objectName}` +
-                (state.phasePercent != null ? ` · ${state.phasePercent}% of this stage` : '');
-        }
-    } else if (state.phase === 'utxoset') {
-        within = state.utxoTotal ? 1 : utxoFraction(state.utxoChunks);
-        estimated = !state.utxoTotal;
-        detail = `${state.utxoCount.toLocaleString()} UTXOs in ${state.utxoChunks.toLocaleString()} chunks`;
-    } else if (state.phase === 'trusted' && state.trustedBlocks) {
-        detail = `${state.trustedBlocks.toLocaleString()} trusted blocks`;
-    }
-
-    return {
-        phase: phase.key,
-        label: phase.label,
-        percent: Math.min(99.9, phase.start + width * Math.max(0, Math.min(1, within))),
-        estimated,
-        detail,
-        phasePercent: state.phasePercent,
-        lastBlockTime: state.lastBlockTime,
-        lastLine: state.lastLine,
-        stale: state.updatedAt ? Date.now() - state.updatedAt > 120_000 : true,
-    };
+    return { start, reset, snapshot, consume };
 }
+
+// The mainnet node's tracker, with the module's original API.
+const mainnet = createSyncTracker(KASPAD_CONTAINER);
+export const start = mainnet.start;
+export const reset = mainnet.reset;
+export const snapshot = mainnet.snapshot;

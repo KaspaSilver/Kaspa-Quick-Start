@@ -35,6 +35,7 @@ import * as geoip from './lib/geoip.js';
 import * as apps from './lib/apps.js';
 import * as kachatProxy from './lib/kachat-proxy.js';
 import * as syncProgress from './lib/sync-progress.js';
+import { createSyncTracker } from './lib/sync-progress.js';
 import * as network from './lib/network.js';
 import * as emission from './lib/emission.js';
 import * as pruning from './lib/pruning.js';
@@ -729,6 +730,10 @@ const KASPAD_TESTNET_CONTAINER = 'kaspa-node-kaspad-testnet';
 // The Testnet view's Kaspad tab: the testnet node's own status and settings.
 // Nothing here reads or writes the mainnet node.
 const testnetRpcUrl = (cfg = loadTestnetNodeConfig()) => `ws://kaspad-testnet:${ports(cfg).json}`;
+// The testnet node's own log-reconstructed sync progress (RPC reports blockCount 0 for the
+// whole header and UTXO-set phases, so blocks/headers would sit at 0%).
+const testnetSync = createSyncTracker('kaspa-node-kaspad-testnet');
+let testnetStartedAt = null;
 
 route('GET', /^\/api\/status-testnet$/, async (req, res) => {
     const cfg = loadTestnetNodeConfig();
@@ -740,25 +745,18 @@ route('GET', /^\/api\/status-testnet$/, async (req, res) => {
     ]);
     const synced = Boolean(snapshot.sync?.isSynced ?? snapshot.info?.isSynced ?? false);
     const dag = snapshot.dag;
-    // No log-reconstructed progress here (that follows mainnet's log); headers vs
-    // blocks is the honest, simpler signal for the testnet node.
-    const percent = synced
-        ? 100
-        : dag?.headerCount
-          ? Math.min(99.9, (100 * Number(dag.blockCount ?? 0)) / Number(dag.headerCount))
-          : 0;
+    // A recreated testnet node starts a fresh sync session.
+    if (state.startedAt && state.startedAt !== testnetStartedAt) {
+        if (testnetStartedAt !== null) testnetSync.reset();
+        testnetStartedAt = state.startedAt;
+    }
     const peers = Array.isArray(snapshot.peers?.peerInfo) ? snapshot.peers.peerInfo : [];
     const inbound = peers.filter((p) => p.isOutbound === false).length;
     sendJson(res, 200, {
         testnet: true,
         container: state,
         rpc: { reachable: snapshot.reachable, error: snapshot.error, info: snapshot.info, dag, synced },
-        sync: {
-            percent,
-            label: synced ? 'synced' : snapshot.reachable ? 'syncing (blocks vs headers)' : 'starting up',
-            estimated: !synced,
-            simple: true,
-        },
+        sync: testnetSync.snapshot({ synced }),
         peers: { total: peers.length, inbound, outbound: peers.length - inbound },
         p2pReachable: peers.length ? inbound > 0 : null,
         ready: state.running && snapshot.reachable && synced,
@@ -3624,6 +3622,7 @@ async function bootstrap() {
     }
 
     syncProgress.start(log);
+    testnetSync.start(log);
     duckdns.scheduleFromConfig(log);
     scheduleExternalIpWatch(log);
     backup.scheduleBackup(log);
