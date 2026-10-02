@@ -146,6 +146,14 @@
           <span class="track"></span>
         </label>
       </div>
+      <!-- .kachat names registry — testnet only (runs on the testnet indexer). -->
+      <div class="nav-row">
+        <button class="nav-item" data-tab="names" data-testnet-only title=".kachat names">
+          <span class="nav-dot none"></span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/><circle cx="19" cy="17" r="2"/></svg>
+          <span class="label">.kachat</span>
+        </button>
+      </div>
       <div class="nav-row">
         <button class="nav-item" data-tab="desktop" title="Desktop">
           <span class="nav-dot" data-health="desktop"></span>
@@ -1538,6 +1546,68 @@
       </div>
 
 </section>
+
+    <!--
+      .kachat names registry (testnet). The registry is a set of Kaspa covenant
+      contracts the testnet indexer follows; see KACHAT_NAMES_INDEXER.md. This tab
+      configures and watches that module. It is testnet-only (the nav item is hidden
+      on mainnet) and stays dark until a genesis manifest is published.
+    -->
+    <section id="tab-names" class="tab">
+      <article class="card span2">
+        <div class="node-head">
+          <h3>.kachat names</h3>
+          <span id="names-state" class="tag">–</span>
+        </div>
+        <p class="muted">
+          <code>.kachat</code> names are a registry of Kaspa <strong>covenant</strong> contracts
+          (names, gaps and marketplace offers) plus address profiles. The testnet indexer follows
+          them on testnet-10; mainnet comes later, after an audit, with the same code. This panel
+          runs and watches that module.
+        </p>
+        <p class="hint">
+          Testnet-only for now. It needs the <strong>testnet KaChat Indexer</strong> running (enable
+          it from the Indexer row in this Testnet view) and a genesis manifest from the
+          <code>kachat-domains</code> CLI. The module stays off until a manifest is configured.
+        </p>
+      </article>
+
+      <div class="grid">
+        <article class="card">
+          <div class="node-head"><h3>Registry status</h3>
+            <button type="button" id="names-refresh" class="ghost" style="margin-left:auto">Refresh</button>
+          </div>
+          <dl class="kv vertical" id="names-status">
+            <div><dt>Network</dt><dd id="names-network">–</dd></div>
+            <div><dt>Registry covenant id</dt><dd class="mono" id="names-covenant">–</dd></div>
+            <div><dt>Genesis tx</dt><dd class="mono" id="names-genesis">–</dd></div>
+            <div><dt>Indexed DAA</dt><dd id="names-daa">–</dd></div>
+            <div><dt>Synced</dt><dd id="names-synced">–</dd></div>
+          </dl>
+          <p class="hint" id="names-status-note">Waiting for the testnet indexer's names module.</p>
+        </article>
+
+        <article class="card">
+          <h3>Genesis manifest</h3>
+          <p class="muted">
+            After the TN10 genesis, drop <code>kachat-names-testnet-10.json</code> from the
+            <code>kachat-domains</code> CLI into the names folder, then enable the module. The
+            indexer reads it from <code>KACHAT_NAMES_MANIFEST</code>.
+          </p>
+          <label class="stack">Manifest file name (in the stack's conf/names folder)
+            <span class="row">
+              <input id="names-manifest-path" placeholder="kachat-names-testnet-10.json" size="34">
+              <button type="button" id="names-manifest-save" class="primary">Save &amp; apply</button>
+            </span>
+          </label>
+          <div id="names-manifest-result" class="verdict" hidden></div>
+          <p class="hint">
+            Saving restarts the testnet indexer so it picks up the manifest. With none set, the
+            module stays off and the registry endpoints answer 503.
+          </p>
+        </article>
+      </div>
+    </section>
 
     <!-- ------------------------------------------------------- nextcloud -->
     <section id="tab-desktop" class="tab">

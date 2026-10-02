@@ -2987,6 +2987,71 @@ route('POST', /^\/api\/services\/([a-z-]+)\/uninstall$/, async (req, res, match)
     sendJson(res, 202, { ok: true, jobId: job.id });
 });
 
+// --------------------------------------------------------- .kachat names ----
+// The testnet names registry (KACHAT_NAMES_INDEXER.md). The module runs on the
+// TESTNET indexer and stays off until a genesis manifest is configured. These
+// routes manage that manifest and surface the module's status; the heavy
+// covenant-follower + /names/* API live in the indexer itself.
+
+route('GET', /^\/api\/names\/config$/, async (req, res) => {
+    const current = readEnvFile().KACHAT_NAMES_MANIFEST_TESTNET || '';
+    const manifest = current.startsWith('/names/') ? current.slice('/names/'.length) : current;
+    const state = await lifecycle.status('kachat-testnet').catch(() => null);
+    sendJson(res, 200, { manifest, running: Boolean(state?.running), installed: Boolean(state?.installed) });
+});
+
+route('PUT', /^\/api\/names\/config$/, async (req, res) => {
+    const body = await readBody(req);
+    const file = String(body.manifest ?? '').trim();
+    // Just a file name: it lives in conf/names, mounted read-only into the indexer.
+    if (file.includes('/') || file.includes('..')) {
+        return fail(res, 400, 'Enter just the file name; it lives in the conf/names folder.');
+    }
+    updateEnvFile({ KACHAT_NAMES_MANIFEST_TESTNET: file ? `/names/${file}` : '' });
+
+    const job = jobs.start('Apply .kachat names manifest', async (onLine) => {
+        onLine(file ? `Names manifest set to ${file}.` : 'Names manifest cleared (module off).');
+        const state = await lifecycle.status('kachat-testnet').catch(() => null);
+        if (state?.running) {
+            onLine('Restarting the testnet indexer so it reads the manifest...');
+            await lifecycle.setRunning('kachat-testnet', true, onLine); // up -d re-reads .env
+            onLine('Done.');
+        } else if (state?.installed) {
+            onLine('The testnet indexer is stopped; the manifest applies next time it starts.');
+        } else {
+            onLine('The testnet indexer is not installed yet; install it from the Indexer row.');
+        }
+    });
+    sendJson(res, 202, { ok: true, jobId: job.id });
+});
+
+route('GET', /^\/api\/names\/status$/, async (req, res) => {
+    // Proxy the testnet indexer's names status over the internal network, and treat
+    // its absence as "not available yet" rather than an error.
+    try {
+        const r = await fetch('http://kachat-app-testnet:3080/names/status', {
+            signal: AbortSignal.timeout(4000),
+        });
+        if (r.status === 404) {
+            return sendJson(res, 200, {
+                available: false,
+                reason: 'off',
+                message: 'The names module is off — set a genesis manifest, or this indexer build predates it.',
+            });
+        }
+        if (!r.ok) {
+            return sendJson(res, 200, { available: false, reason: 'error', message: `Names status returned ${r.status}.` });
+        }
+        sendJson(res, 200, { available: true, ...(await r.json()) });
+    } catch {
+        sendJson(res, 200, {
+            available: false,
+            reason: 'unreachable',
+            message: 'The testnet indexer is not reachable — enable it from the Indexer row in the Testnet view.',
+        });
+    }
+});
+
 // -------------------------------------------------------------------- push --
 // Mobile push for the KaChat indexer: Android via Firebase (FCM) and iPhone via
 // Apple (APNs). The non-secret identifiers live

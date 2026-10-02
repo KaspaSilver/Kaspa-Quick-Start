@@ -264,6 +264,7 @@ function selectTab(name) {
     if (name === 'global') loadGlobal().catch(() => {});
     if (name === 'bot') loadBot().catch(() => {});
     if (name === 'push') loadPush().catch(() => {});
+    if (name === 'names') loadNames().catch(() => {});
     // On the drawer layout, picking a destination should get out of the way.
     if (MOBILE()) closeDrawer();
 }
@@ -280,7 +281,7 @@ for (const item of document.querySelectorAll('.nav-item')) {
 // parallel *-testnet units, so both networks run side by side from one panel. The
 // choice is remembered across reloads.
 const NET_VIEW_KEY = 'kqs-network-view';
-const TESTNET_TABS = new Set(['overview', 'kaspad', 'mining', 'kachat', 'proxy', 'logs', 'global', 'support']);
+const TESTNET_TABS = new Set(['overview', 'kaspad', 'mining', 'kachat', 'names', 'proxy', 'logs', 'global', 'support']);
 
 // Which lifecycle unit each shared nav switch drives in the testnet view.
 const TESTNET_UNIT = { node: 'node-testnet', mining: 'mining-testnet', kachat: 'kachat-testnet' };
@@ -295,9 +296,15 @@ function applyNetworkView(net) {
     networkView = testnet ? 'testnet' : 'mainnet';
 
     // Show/hide each nav row by whether its tab belongs in the testnet view.
+    // A `data-testnet-only` item (the .kachat registry) shows only in the testnet view.
     for (const row of document.querySelectorAll('.nav .nav-row')) {
-        const tab = el('.nav-item', row)?.dataset.tab;
-        row.hidden = testnet && tab ? !TESTNET_TABS.has(tab) : false;
+        const item = el('.nav-item', row);
+        const tab = item?.dataset.tab;
+        row.hidden = testnet
+            ? tab
+                ? !TESTNET_TABS.has(tab)
+                : false
+            : item?.hasAttribute('data-testnet-only') ?? false;
     }
     // Hide a group heading when every row under it (up to the next heading) is hidden.
     for (const title of document.querySelectorAll('.nav .nav-group-title')) {
@@ -5905,6 +5912,74 @@ $('backup-restore')?.addEventListener('click', async () => {
 // -------------------------------------------------------------------- push ---
 // The Push Service panel: FCM (Android) + APNs (iPhone) credentials for the
 // KaChat indexer. Loaded on arrival, saved through /api/push.
+// --- .kachat names registry (testnet) ---
+
+async function loadNames() {
+    const setText = (id, v) => {
+        const e = $(id);
+        if (e) e.textContent = v;
+    };
+    // Manifest config (don't clobber a half-typed filename).
+    try {
+        const cfg = await api('/api/names/config');
+        const box = $('names-manifest-path');
+        if (box && document.activeElement !== box) box.value = cfg.manifest || '';
+    } catch {
+        /* manager route missing (old build) — leave the field as-is */
+    }
+
+    const tag = $('names-state');
+    const blank = () => {
+        for (const id of ['names-network', 'names-covenant', 'names-genesis', 'names-daa', 'names-synced']) setText(id, '–');
+    };
+    try {
+        const s = await api('/api/names/status');
+        if (!s || s.available === false) {
+            if (tag) {
+                tag.textContent = { off: 'no manifest', unreachable: 'indexer off' }[s?.reason] || 'not running';
+                tag.className = 'tag off';
+            }
+            blank();
+            setText('names-status-note', s?.message || 'The testnet names module is not available yet.');
+            return;
+        }
+        if (tag) {
+            tag.textContent = s.synced ? 'synced' : 'syncing';
+            tag.className = `tag ${s.synced ? 'ok' : 'warn'}`;
+        }
+        setText('names-network', s.network || 'testnet-10');
+        setText('names-covenant', s.registryCovenantId || '–');
+        setText('names-genesis', s.genesisTxId || '–');
+        setText('names-daa', s.indexedDaa != null ? fmtNum(s.indexedDaa) : '–');
+        setText('names-synced', s.synced ? 'yes' : 'no');
+        setText('names-status-note', '');
+    } catch {
+        if (tag) {
+            tag.textContent = 'not running';
+            tag.className = 'tag off';
+        }
+        blank();
+        setText('names-status-note', 'The testnet names module is not available yet.');
+    }
+}
+
+$('names-refresh')?.addEventListener('click', () => loadNames().catch(() => {}));
+$('names-manifest-save')?.addEventListener('click', async () => {
+    const manifest = $('names-manifest-path').value.trim();
+    try {
+        await api('/api/names/config', { method: 'PUT', body: { manifest } });
+        kResult(
+            'names-manifest-result',
+            manifest
+                ? 'Saved. The testnet indexer is restarting to read the manifest.'
+                : 'Cleared. The names module is now off.',
+        );
+        setTimeout(() => loadNames().catch(() => {}), 1500);
+    } catch (e) {
+        kResult('names-manifest-result', e.message, true);
+    }
+});
+
 async function loadPush() {
     let d;
     try {
