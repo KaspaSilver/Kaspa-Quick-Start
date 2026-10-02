@@ -5992,6 +5992,17 @@ $('names-manifest-save')?.addEventListener('click', async () => {
     }
 });
 
+$('names-manifest-bundled')?.addEventListener('click', async () => {
+    try {
+        const r = await api('/api/names/use-bundled', { method: 'POST' });
+        $('names-manifest-path').value = r.manifest;
+        kResult('names-manifest-result', 'Manifest written and applied. The testnet indexer is restarting to read it.');
+        setTimeout(() => loadNames().catch(() => {}), 1500);
+    } catch (e) {
+        kResult('names-manifest-result', e.message, true);
+    }
+});
+
 async function loadPush() {
     let d;
     try {

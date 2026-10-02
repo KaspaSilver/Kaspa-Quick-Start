@@ -6,7 +6,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { CONF_DIR, DOMAINS_FILE, ensureDirs, KASPAD_ARGS_FILE, NODE_CONFIG_FILE, PROXIES_FILE, STACK_HOST } from './lib/paths.js';
+import { CONF_DIR, DOMAINS_FILE, ensureDirs, KASPAD_ARGS_FILE, NAMES_DIR, NODE_CONFIG_FILE, PROXIES_FILE, STACK_HOST } from './lib/paths.js';
 import {
     DEFAULT_NODE_CONFIG,
     NETWORKS,
@@ -3007,9 +3007,26 @@ route('PUT', /^\/api\/names\/config$/, async (req, res) => {
     if (file.includes('/') || file.includes('..')) {
         return fail(res, 400, 'Enter just the file name; it lives in the conf/names folder.');
     }
-    updateEnvFile({ KACHAT_NAMES_MANIFEST_TESTNET: file ? `/names/${file}` : '' });
+    sendJson(res, 202, { ok: true, jobId: applyNamesManifest(file).id });
+});
 
-    const job = jobs.start('Apply .kachat names manifest', async (onLine) => {
+// The published testnet-10 manifest ships with the panel (lib/names/): it is public
+// on-chain data, byte-identical to the copy the iOS, Android and Desktop apps bundle,
+// while kachat-domains itself is private. One click writes it to conf/names and applies.
+const BUNDLED_NAMES_MANIFEST = 'kachat-names-testnet-10.json';
+route('POST', /^\/api\/names\/use-bundled$/, async (req, res) => {
+    const src = path.join(path.dirname(fileURLToPath(import.meta.url)), 'lib', 'names', BUNDLED_NAMES_MANIFEST);
+    const text = fs.readFileSync(src, 'utf8');
+    const manifest = JSON.parse(text);
+    if (!manifest.registryCovenantId || !manifest.genesis?.txid) return fail(res, 500, 'The bundled manifest is incomplete.');
+    fs.mkdirSync(NAMES_DIR, { recursive: true });
+    fs.writeFileSync(path.join(NAMES_DIR, BUNDLED_NAMES_MANIFEST), text);
+    sendJson(res, 202, { ok: true, manifest: BUNDLED_NAMES_MANIFEST, jobId: applyNamesManifest(BUNDLED_NAMES_MANIFEST).id });
+});
+
+function applyNamesManifest(file) {
+    updateEnvFile({ KACHAT_NAMES_MANIFEST_TESTNET: file ? `/names/${file}` : '' });
+    return jobs.start('Apply .kachat names manifest', async (onLine) => {
         onLine(file ? `Names manifest set to ${file}.` : 'Names manifest cleared (module off).');
         const state = await lifecycle.status('kachat-testnet').catch(() => null);
         if (state?.running) {
@@ -3022,8 +3039,7 @@ route('PUT', /^\/api\/names\/config$/, async (req, res) => {
             onLine('The testnet indexer is not installed yet; install it from the Indexer row.');
         }
     });
-    sendJson(res, 202, { ok: true, jobId: job.id });
-});
+}
 
 route('GET', /^\/api\/names\/status$/, async (req, res) => {
     // Proxy the testnet indexer's names status over the internal network, and treat

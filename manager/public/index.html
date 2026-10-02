@@ -1590,14 +1590,16 @@
         <article class="card">
           <h3>Genesis manifest</h3>
           <p class="muted">
-            After the TN10 genesis, drop <code>kachat-names-testnet-10.json</code> from the
-            <code>kachat-domains</code> CLI into the names folder, then enable the module. The
-            indexer reads it from <code>KACHAT_NAMES_MANIFEST</code>.
+            The testnet-10 registry is live. Use the published manifest (the same file the
+            KaChat apps ship), or name your own file in the stack's conf/names folder.
+          </p>
+          <p class="row">
+            <button type="button" id="names-manifest-bundled" class="primary">Use the testnet-10 manifest</button>
           </p>
           <label class="stack">Manifest file name (in the stack's conf/names folder)
             <span class="row">
               <input id="names-manifest-path" placeholder="kachat-names-testnet-10.json" size="34">
-              <button type="button" id="names-manifest-save" class="primary">Save &amp; apply</button>
+              <button type="button" id="names-manifest-save">Save &amp; apply</button>
             </span>
           </label>
           <div id="names-manifest-result" class="verdict" hidden></div>
