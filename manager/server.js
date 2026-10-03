@@ -1441,7 +1441,7 @@ route('DELETE', /^\/api\/domains\/([a-f0-9]{12})$/, async (req, res, match) => {
  * edits, so a service published from this screen can be opened there and given
  * an allowlist or a password without any of it being a special case.
  */
-route('POST', /^\/api\/publish\/([a-z]+)$/, async (req, res, match) => {
+route('POST', /^\/api\/publish\/([a-z][a-z-]*)$/, async (req, res, match) => {
     const service = publish.serviceFor(match[1]);
     if (!service) return fail(res, 404, 'No such service.');
 
@@ -1541,7 +1541,7 @@ async function attachDomain(service, domain, ssl, extras = null) {
 
 // ----------------------------------------------------------- setup wizard --
 
-route('GET', /^\/api\/setup\/([a-z]+)$/, async (req, res, match) => {
+route('GET', /^\/api\/setup\/([a-z][a-z-]*)$/, async (req, res, match) => {
     const plan = publish.setupPlan(match[1], { panelHasPassword: authConfigured(), proxyOn: proxyEnabled() });
     if (!plan) return fail(res, 404, 'No such service.');
 
@@ -1559,7 +1559,7 @@ route('GET', /^\/api\/setup\/([a-z]+)$/, async (req, res, match) => {
  * console, because "it did not work" is unanswerable when the failure could
  * have been any one of six things.
  */
-route('POST', /^\/api\/setup\/([a-z]+)$/, async (req, res, match) => {
+route('POST', /^\/api\/setup\/([a-z][a-z-]*)$/, async (req, res, match) => {
     const key = match[1];
     const plan = publish.setupPlan(key, { panelHasPassword: authConfigured(), proxyOn: proxyEnabled() });
     if (!plan) return fail(res, 404, 'No such service.');
