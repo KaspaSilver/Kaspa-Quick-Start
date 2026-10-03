@@ -873,20 +873,39 @@ const containerFor = (url) => {
     }
 };
 
+// A filtered log source (container + line tag), e.g. ?container=kachat-names.
+const filteredSourceFor = (url) =>
+    url.searchParams.get('container') === dockerctl.NAMES_LOG_SOURCE.key ? dockerctl.NAMES_LOG_SOURCE : null;
+
 route('GET', /^\/api\/logs$/, async (req, res, match, url) => {
     const tail = Math.min(Number(url.searchParams.get('tail')) || 300, 5000);
+    const filtered = filteredSourceFor(url);
+    if (filtered) return sendJson(res, 200, { text: await dockerctl.filteredLogs(filtered, tail) });
     sendJson(res, 200, { text: await dockerctl.logs(containerFor(url), tail) });
 });
 
 route('GET', /^\/api\/logs\/stream$/, async (req, res, match, url) => {
     const { send, onClose } = sse(req, res);
+    const filtered = filteredSourceFor(url);
+    if (filtered) {
+        // Its container may not exist (no testnet stack): say so instead of an empty box.
+        if (!(await dockerctl.containerState(filtered.name)).exists) {
+            send('line', { line: '[panel] The testnet indexer is not installed, so there is no .kachat names log yet.' });
+            return onClose(() => {});
+        }
+        // A deep backlog: names lines are a small share of the container's output.
+        const stop = dockerctl.streamLogs(filtered.name, dockerctl.filterFor(filtered, (line) => send('line', { line })), {
+            tail: 3000,
+        });
+        return onClose(stop);
+    }
     const stop = dockerctl.streamLogs(containerFor(url), (line) => send('line', { line }));
     onClose(stop);
 });
 
 route('GET', /^\/api\/logs\/containers$/, async (req, res) => {
     const rows = await Promise.all(
-        dockerctl.STACK_CONTAINERS.map(async (c) => ({ ...c, state: await dockerctl.containerState(c.name) })),
+        dockerctl.LOG_SOURCES.map(async (c) => ({ ...c, state: await dockerctl.containerState(c.name) })),
     );
     sendJson(res, 200, { containers: rows.filter((c) => c.state.exists) });
 });
@@ -912,14 +931,16 @@ route('GET', /^\/api\/logs\/containers$/, async (req, res) => {
 route('GET', /^\/api\/logs\/stream-all$/, async (req, res) => {
     const { send, onClose } = sse(req, res);
 
-    const followers = new Map(); // name -> { stop, startedAt }
+    // Keyed by source, not container: one container can feed two tiles (the full
+    // testnet indexer log and its filtered .kachat names lines).
+    const followers = new Map(); // source key -> { stop, startedAt }
     let listed = null;
     let closed = false;
 
-    const detach = (name) => {
-        const follower = followers.get(name);
+    const detach = (key) => {
+        const follower = followers.get(key);
         if (!follower) return;
-        followers.delete(name);
+        followers.delete(key);
         try {
             follower.stop();
         } catch {
@@ -931,7 +952,7 @@ route('GET', /^\/api\/logs\/stream-all$/, async (req, res) => {
         if (closed) return;
 
         const present = [];
-        for (const c of dockerctl.STACK_CONTAINERS) {
+        for (const c of dockerctl.LOG_SOURCES) {
             const state = await dockerctl.containerState(c.name);
             if (state.exists) present.push({ ...c, state });
         }
@@ -951,18 +972,21 @@ route('GET', /^\/api\/logs\/stream-all$/, async (req, res) => {
             });
         }
 
-        const names = new Set(present.map((c) => c.name));
-        for (const name of [...followers.keys()]) if (!names.has(name)) detach(name);
+        const keys = new Set(present.map((c) => c.key));
+        for (const key of [...followers.keys()]) if (!keys.has(key)) detach(key);
 
         for (const c of present) {
-            const follower = followers.get(c.name);
+            const follower = followers.get(c.key);
             // startedAt is what tells one run of a container from the next, and
             // a new run means the old `docker logs` has already exited.
             if (follower && follower.startedAt === c.state.startedAt) continue;
-            detach(c.name);
-            followers.set(c.name, {
+            detach(c.key);
+            followers.set(c.key, {
                 startedAt: c.state.startedAt,
-                stop: dockerctl.streamLogs(c.name, (line) => send('line', { key: c.key, line }), { tail: 60 }),
+                // A filtered source reads deeper: its lines are a small share of the container's.
+                stop: dockerctl.streamLogs(c.name, dockerctl.filterFor(c, (line) => send('line', { key: c.key, line })), {
+                    tail: c.match ? 3000 : 60,
+                }),
             });
         }
     };
@@ -972,7 +996,7 @@ route('GET', /^\/api\/logs\/stream-all$/, async (req, res) => {
     onClose(() => {
         closed = true;
         clearInterval(timer);
-        for (const name of [...followers.keys()]) detach(name);
+        for (const key of [...followers.keys()]) detach(key);
     });
 });
 

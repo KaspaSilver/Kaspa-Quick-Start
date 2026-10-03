@@ -278,6 +278,8 @@ function selectTab(name) {
     // Same for the kaspad log: no point streaming it from another section.
     if (name !== 'kaspad') setKaspadLog(false);
     else setKaspadLog(activeSubtab('kaspad') === 'kaspadlog');
+    // The .kachat names log streams only while its tab is open.
+    setNamesLog(name === 'names');
     // Read on arrival rather than polled: nothing on it changes by itself.
     if (name === 'global') loadGlobal().catch(() => {});
     if (name === 'bot') loadBot().catch(() => {});
@@ -461,6 +463,39 @@ function setKaspadLog(active) {
     });
 
     kaspadLogStream.addEventListener('error', () => {
+        view.textContent += '\n[the log stream dropped; reopen this tab to reconnect]\n';
+    });
+}
+
+/**
+ * The .kachat tab's log card: the testnet indexer's [names] lines, streamed only
+ * while that tab is open (same connection budget as the kaspad log above).
+ */
+let namesLogStream = null;
+
+function setNamesLog(active) {
+    if (!active) {
+        namesLogStream?.close();
+        namesLogStream = null;
+        return;
+    }
+    if (namesLogStream) return;
+
+    const view = $('nameslog-view');
+    if (!view) return;
+    view.textContent = '';
+    namesLogStream = new EventSource('/api/logs/stream?container=kachat-names');
+    namesLogStream.addEventListener('line', (event) => {
+        const { line } = JSON.parse(event.data);
+        const follow = $('nameslog-follow').checked;
+        const atBottom = view.scrollHeight - view.scrollTop - view.clientHeight < 40;
+        view.textContent += `${line}\n`;
+        if (view.textContent.length > KASPAD_LOG_LINES * 200) {
+            view.textContent = view.textContent.split('\n').slice(-KASPAD_LOG_LINES).join('\n');
+        }
+        if (follow && atBottom) view.scrollTop = view.scrollHeight;
+    });
+    namesLogStream.addEventListener('error', () => {
         view.textContent += '\n[the log stream dropped; reopen this tab to reconnect]\n';
     });
 }

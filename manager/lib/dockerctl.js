@@ -56,6 +56,40 @@ export const STACK_CONTAINERS = [
     { key: 'kachat-db-testnet', label: 'kachat postgres (testnet)', name: 'kaspa-node-kachat-db-testnet' },
 ];
 
+/**
+ * The .kachat names module has no container of its own: it runs inside the testnet
+ * indexer and tags every line `[names]` (docs/KACHAT_NAMES_PANEL_LOGS.md in KaChat-Indexer).
+ * A log source is a container plus an optional line filter.
+ */
+export const NAMES_LOG_SOURCE = {
+    key: 'kachat-names',
+    label: '.kachat names',
+    name: 'kaspa-node-kachat-testnet',
+    match: '[names]',
+};
+
+/** Every log source the Logs page shows: each container, plus the filtered ones. */
+export const LOG_SOURCES = STACK_CONTAINERS.flatMap((c) => (c.key === 'kachat-testnet' ? [c, NAMES_LOG_SOURCE] : [c]));
+
+const ANSI = /\x1b\[[0-9;]*m/g;
+export const stripAnsi = (line) => line.replace(ANSI, '');
+
+/** Wraps a line handler so a filtered source only passes its tagged, colour-free lines. */
+export function filterFor(source, onLine) {
+    if (!source?.match) return onLine;
+    return (line) => {
+        const clean = stripAnsi(line);
+        if (clean.includes(source.match)) onLine(clean);
+    };
+}
+
+/** The last `tail` matching lines of a filtered source (read deep: they are a small share). */
+export async function filteredLogs(source, tail = 300) {
+    const text = await logs(source.name, 5000);
+    const keep = text.split('\n').map(stripAnsi).filter((l) => l.includes(source.match));
+    return keep.slice(-tail).join('\n');
+}
+
 export class CommandError extends Error {
     constructor(message, { code, stdout, stderr }) {
         super(message);
