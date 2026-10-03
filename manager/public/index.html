@@ -2513,10 +2513,10 @@
           <p class="muted" id="password-state">–</p>
           <div class="row">
             <label class="inline" id="password-current-row" hidden>
-              Current <input id="password-current" type="password" size="16" autocomplete="current-password">
+              Current <span class="pw-field"><input id="password-current" type="password" size="16" autocomplete="current-password"><button type="button" class="pw-eye" data-pw-toggle="password-current" aria-label="Show password" aria-pressed="false" title="Show password"></button></span>
             </label>
-            <label class="inline">New <input id="password-new" type="password" size="18" autocomplete="new-password"></label>
-            <label class="inline">Repeat <input id="password-repeat" type="password" size="18" autocomplete="new-password"></label>
+            <label class="inline">New <span class="pw-field"><input id="password-new" type="password" size="18" autocomplete="new-password"><button type="button" class="pw-eye" data-pw-toggle="password-new" aria-label="Show password" aria-pressed="false" title="Show password"></button></span></label>
+            <label class="inline">Repeat <span class="pw-field"><input id="password-repeat" type="password" size="18" autocomplete="new-password"><button type="button" class="pw-eye" data-pw-toggle="password-repeat" aria-label="Show password" aria-pressed="false" title="Show password"></button></span></label>
             <button id="password-save" class="primary">Save</button>
             <button id="password-clear" class="ghost danger" hidden>Remove it</button>
           </div>

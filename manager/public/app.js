@@ -7171,6 +7171,38 @@ async function waitForPanelRestart(note, resultId = 'password-result') {
     kResult(resultId, 'The panel has not come back. Check `docker logs kaspa-node-manager`.', true);
 }
 
+// Eye toggles on password fields: show what is being typed, then hide it again.
+const EYE_OPEN =
+    '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_SHUT =
+    '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a20.3 20.3 0 0 1 5.06-5.94"/><path d="M9.9 4.24A10.4 10.4 0 0 1 12 4c7 0 11 7 11 7a20.4 20.4 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+for (const btn of document.querySelectorAll('[data-pw-toggle]')) btn.innerHTML = EYE_OPEN;
+document.addEventListener('click', (event) => {
+    const btn = event.target.closest?.('[data-pw-toggle]');
+    if (!btn) return;
+    const input = document.getElementById(btn.dataset.pwToggle);
+    if (!input) return;
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    btn.innerHTML = show ? EYE_SHUT : EYE_OPEN;
+    const label = show ? 'Hide password' : 'Show password';
+    btn.setAttribute('aria-label', label);
+    btn.setAttribute('aria-pressed', show ? 'true' : 'false');
+    btn.title = label;
+});
+
+// Hide every revealed password again once it has been used, so it is not left on screen.
+function hidePasswords() {
+    for (const btn of document.querySelectorAll('[data-pw-toggle]')) {
+        const input = document.getElementById(btn.dataset.pwToggle);
+        if (input) input.type = 'password';
+        btn.innerHTML = EYE_OPEN;
+        btn.setAttribute('aria-label', 'Show password');
+        btn.setAttribute('aria-pressed', 'false');
+        btn.title = 'Show password';
+    }
+}
+
 $('password-save').addEventListener('click', async () => {
     const password = $('password-new').value;
     const repeat = $('password-repeat').value;
@@ -7187,6 +7219,7 @@ $('password-save').addEventListener('click', async () => {
         $('password-new').value = '';
         $('password-repeat').value = '';
         $('password-current').value = '';
+        hidePasswords();
         // The first password opens the panel to the network (0.0.0.0), which needs
         // the container recreated; sign in again once it is back.
         if (r.rebinding) {
