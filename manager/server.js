@@ -859,47 +859,40 @@ route('POST', /^\/api\/node\/(start|stop|restart)$/, async (req, res, match) => 
     sendJson(res, 202, { ok: true, jobId: job.id });
 });
 
-const containerFor = (url) => {
-    switch (url.searchParams.get('container')) {
-        case 'proxy': return dockerctl.PROXY_CONTAINER;
-        case 'bridge': return dockerctl.BRIDGE_CONTAINER;
-        case 'kachat': return dockerctl.KACHAT_CONTAINER;
-        case 'kaspad-testnet': return KASPAD_TESTNET_CONTAINER;
-        case 'nextcloud': return dockerctl.NEXTCLOUD_CONTAINER;
-        // The detached sidecar that rebuilds the panel, so its progress can be
-        // streamed into the update overlay while it runs.
-        case 'panel-update': return 'kaspa-node-panel-update';
-        default: return dockerctl.KASPAD_CONTAINER;
-    }
+/**
+ * The log source `?container=` names: any key from dockerctl.LOG_SOURCES (a
+ * container, or a container plus a line filter), or the panel-update sidecar.
+ * Anything else is kaspad, as it always was.
+ */
+const KASPAD_SOURCE = { key: 'kaspad', label: 'kaspad', name: dockerctl.KASPAD_CONTAINER };
+const sourceFor = (url) => {
+    const key = url.searchParams.get('container');
+    // The detached sidecar that rebuilds the panel, so its progress can be
+    // streamed into the update overlay while it runs.
+    if (key === 'panel-update') return { key, label: 'panel update', name: 'kaspa-node-panel-update' };
+    return dockerctl.logSource(key) ?? KASPAD_SOURCE;
 };
-
-// A filtered log source (container + line tag), e.g. ?container=kachat-names.
-const filteredSourceFor = (url) =>
-    url.searchParams.get('container') === dockerctl.NAMES_LOG_SOURCE.key ? dockerctl.NAMES_LOG_SOURCE : null;
 
 route('GET', /^\/api\/logs$/, async (req, res, match, url) => {
     const tail = Math.min(Number(url.searchParams.get('tail')) || 300, 5000);
-    const filtered = filteredSourceFor(url);
-    if (filtered) return sendJson(res, 200, { text: await dockerctl.filteredLogs(filtered, tail) });
-    sendJson(res, 200, { text: await dockerctl.logs(containerFor(url), tail) });
+    const source = sourceFor(url);
+    if (source.match) return sendJson(res, 200, { text: await dockerctl.filteredLogs(source, tail) });
+    sendJson(res, 200, { text: await dockerctl.logs(source.name, tail) });
 });
 
 route('GET', /^\/api\/logs\/stream$/, async (req, res, match, url) => {
     const { send, onClose } = sse(req, res);
-    const filtered = filteredSourceFor(url);
-    if (filtered) {
-        // Its container may not exist (no testnet stack): say so instead of an empty box.
-        if (!(await dockerctl.containerState(filtered.name)).exists) {
-            send('line', { line: '[panel] The testnet indexer is not installed, so there is no .kachat names log yet.' });
-            return onClose(() => {});
-        }
-        // A deep backlog: names lines are a small share of the container's output.
-        const stop = dockerctl.streamLogs(filtered.name, dockerctl.filterFor(filtered, (line) => send('line', { line })), {
-            tail: 3000,
-        });
-        return onClose(stop);
+    const source = sourceFor(url);
+    // A source whose container is not there says so, instead of an empty box.
+    // (The sidecar is exempt: the update overlay opens this just before it starts.)
+    if (source.key !== 'panel-update' && !(await dockerctl.containerState(source.name)).exists) {
+        send('line', { line: `[panel] ${source.label} is not installed on this machine, so it has no log yet.` });
+        return onClose(() => {});
     }
-    const stop = dockerctl.streamLogs(containerFor(url), (line) => send('line', { line }));
+    // A filtered source reads a deep backlog: its lines are a small share of the container's.
+    const stop = dockerctl.streamLogs(source.name, dockerctl.filterFor(source, (line) => send('line', { line })), {
+        ...(source.match ? { tail: 3000 } : {}),
+    });
     onClose(stop);
 });
 

@@ -667,14 +667,7 @@
       </div>
 
       <div id="sub-kaspadlog" class="subtab">
-        <article class="card">
-          <h3>
-            kaspad log
-            <span class="zoom" role="group" aria-label="Log text size"><button type="button" class="zoom-btn" data-zoom="-1" data-zoom-view="kaspad" title="Smaller text" aria-label="Smaller log text">−</button><button type="button" class="zoom-btn" data-zoom="1" data-zoom-view="kaspad" title="Larger text" aria-label="Larger log text">+</button></span>
-            <label class="check tail" title="Jump to the newest line as it arrives. Untick to scroll back through history without being pulled to the bottom."><input type="checkbox" id="kaspadlog-follow" checked> auto-scroll</label>
-          </h3>
-          <pre id="kaspadlog-view" class="logview" data-logview="kaspad"></pre>
-        </article>
+        <div class="svclog" data-svclog="kaspad"></div>
       </div>
     
       <div id="sub-kaspad-uninstall" class="subtab">
@@ -692,6 +685,7 @@
         <button class="subtab-btn" data-subtab="mining-connect" data-mainnet-only>Connect Your Miner</button>
         <button class="subtab-btn" data-subtab="mining-roi" data-mainnet-only>ROI calculator</button>
         <button class="subtab-btn" data-subtab="mining-settings" data-mainnet-only>Settings</button>
+        <button class="subtab-btn" data-subtab="mining-log">Log</button>
         <button class="subtab-btn" data-subtab="mining-uninstall">Uninstall</button>
       </nav>
 
@@ -1015,6 +1009,10 @@
         </div>
       </div>
     
+      <div id="sub-mining-log" class="subtab">
+        <div class="svclog" data-svclog="mining"></div>
+      </div>
+
       <div id="sub-mining-uninstall" class="subtab">
         <div class="grid">
           <article class="card span2 uninstall-card" data-uninstall="mining"></article>
@@ -1043,6 +1041,7 @@
         <button class="subtab-btn" data-subtab="kachat-delete">Delete</button>
         <button class="subtab-btn" data-subtab="kachat-settings" data-mainnet-only>Settings</button>
         <button class="subtab-btn" data-subtab="kachat-updates">Updates</button>
+        <button class="subtab-btn" data-subtab="kachat-log">Logs</button>
         <button class="subtab-btn" data-subtab="kachat-uninstall">Uninstall</button>
       </nav>
 
@@ -1573,6 +1572,10 @@
         </div>
       </div>
     
+      <div id="sub-kachat-log" class="subtab">
+        <div class="svclog" data-svclog="kachat"></div>
+      </div>
+
       <div id="sub-kachat-uninstall" class="subtab">
         <div class="grid">
           <article class="card span2 uninstall-card" data-uninstall="kachat"></article>
@@ -1644,14 +1647,7 @@
         </article>
       </div>
       <!-- The names module's own log: the testnet indexer's [names] lines only. -->
-      <article class="card span2">
-        <h3>
-          .kachat names log
-          <span class="zoom" role="group" aria-label="Log text size"><button type="button" class="zoom-btn" data-zoom="-1" data-zoom-view="names" title="Smaller text" aria-label="Smaller log text">−</button><button type="button" class="zoom-btn" data-zoom="1" data-zoom-view="names" title="Larger text" aria-label="Larger log text">+</button></span>
-          <label class="check tail" title="Jump to the newest line as it arrives. Untick to scroll back through history without being pulled to the bottom."><input type="checkbox" id="nameslog-follow" checked> auto-scroll</label>
-        </h3>
-        <pre id="nameslog-view" class="logview" data-logview="names"></pre>
-      </article>
+      <div class="svclog" data-svclog="names" data-title=".kachat names log"></div>
     </section>
 
     <!-- ------------------------------------------------------- nextcloud -->
@@ -1659,6 +1655,7 @@
       <div class="subtabs">
         <button class="subtab-btn active" data-subtab="desktop-overview">Overview</button>
         <button class="subtab-btn" data-subtab="desktop-updates">Updates</button>
+        <button class="subtab-btn" data-subtab="desktop-log">Log</button>
         <button class="subtab-btn" data-subtab="desktop-uninstall">Uninstall</button>
       </div>
 
@@ -1723,6 +1720,10 @@
         </div>
       </div>
     
+      <div id="sub-desktop-log" class="subtab">
+        <div class="svclog" data-svclog="desktop"></div>
+      </div>
+
       <div id="sub-desktop-uninstall" class="subtab">
         <div class="grid">
           <article class="card span2 uninstall-card" data-uninstall="desktop"></article>
@@ -1736,6 +1737,7 @@
         <button class="subtab-btn active" data-subtab="nextcloud-overview">Overview</button>
         <button class="subtab-btn" data-subtab="nextcloud-settings">Settings</button>
         <button class="subtab-btn" data-subtab="nextcloud-updates">Updates</button>
+        <button class="subtab-btn" data-subtab="nextcloud-log">Logs</button>
         <button class="subtab-btn" data-subtab="nextcloud-uninstall">Uninstall</button>
       </nav>
 
@@ -1874,6 +1876,10 @@
         </div>
       </div>
     
+      <div id="sub-nextcloud-log" class="subtab">
+        <div class="svclog" data-svclog="nextcloud"></div>
+      </div>
+
       <div id="sub-nextcloud-uninstall" class="subtab">
         <div class="grid">
           <article class="card span2 uninstall-card" data-uninstall="nextcloud"></article>
@@ -1888,6 +1894,7 @@
         <button class="subtab-btn active" data-subtab="bot-overview">Overview</button>
         <button class="subtab-btn" data-subtab="bot-setup">Setup</button>
         <button class="subtab-btn" data-subtab="bot-updates">Updates</button>
+        <button class="subtab-btn" data-subtab="bot-log">Log</button>
         <button class="subtab-btn" data-subtab="bot-uninstall">Uninstall</button>
       </nav>
 
@@ -2154,6 +2161,10 @@
         </div>
       </div>
 
+      <div id="sub-bot-log" class="subtab">
+        <div class="svclog" data-svclog="bot"></div>
+      </div>
+
       <div id="sub-bot-uninstall" class="subtab">
         <div class="grid">
           <article class="card span2 uninstall-card" data-uninstall="bot"></article>
@@ -2218,6 +2229,8 @@
           <p class="hint">Saving restarts the KaChat indexer to load the new settings (about two minutes). If the indexer is switched off, they apply the next time it starts.</p>
           <div id="push-result" class="verdict" hidden></div>
         </article>
+        <!-- The indexer's push lines only (both the chat indexer and KaPosts sends). -->
+        <div class="svclog span2" data-svclog="push" data-title="push service log"></div>
       </div>
 </section>
 
@@ -2227,6 +2240,7 @@
         <button class="subtab-btn active" data-subtab="proxy-overview">Overview</button>
         <button class="subtab-btn" data-subtab="proxy-advanced">Advanced</button>
         <button class="subtab-btn" data-subtab="proxy-restart">Restart</button>
+        <button class="subtab-btn" data-subtab="proxy-log">Log</button>
         <button class="subtab-btn" data-subtab="proxy-uninstall">Uninstall</button>
       </nav>
 
@@ -2396,6 +2410,10 @@
         </div>
       </div>
 
+      <div id="sub-proxy-log" class="subtab">
+        <div class="svclog" data-svclog="proxy"></div>
+      </div>
+
       <div id="sub-proxy-uninstall" class="subtab">
         <div class="grid">
           <article class="card span2 uninstall-card" data-uninstall="proxy"></article>
@@ -2546,6 +2564,7 @@
         <button class="subtab-btn active" data-subtab="global-password">Password</button>
         <button class="subtab-btn" data-subtab="global-address">Address</button>
         <button class="subtab-btn" data-subtab="global-update">Updates</button>
+        <button class="subtab-btn" data-subtab="global-log">Panel log</button>
         <button class="subtab-btn" data-subtab="global-teardown">Remove everything</button>
       </nav>
 
@@ -2639,6 +2658,10 @@
       <!-- Last, and on its own. It deletes the node, its chain data and this
            panel, and it used to sit at the bottom of the same page as the two
            things anybody actually opens this screen for. -->
+      <div id="sub-global-log" class="subtab">
+        <div class="svclog" data-svclog="global" data-title="control panel log"></div>
+      </div>
+
       <div id="sub-global-teardown" class="subtab">
         <div class="grid">
         <article class="card span2 danger-zone">

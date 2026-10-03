@@ -2422,3 +2422,29 @@ body { -webkit-tap-highlight-color: transparent; }
 /* Network views: parts that only exist for one network. */
 body.testnet-view [data-mainnet-only] { display: none !important; }
 body:not(.testnet-view) [data-testnet-only]:not(.nav-item):not(.nav-row) { display: none !important; }
+
+/* Per-section log cards: one chip per container when a section has several. */
+.svclog-chips {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-left: 8px;
+    vertical-align: middle;
+}
+.svclog-chip {
+    font: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 2px 9px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+}
+.svclog-chip:hover { color: var(--accent); }
+.svclog-chip.active {
+    color: var(--accent);
+    border-color: var(--accent-dim);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+}

@@ -45,48 +45,81 @@ export const STACK_CONTAINERS = [
     { key: 'bridge', label: 'stratum bridge', name: BRIDGE_CONTAINER },
     { key: 'kachat', label: 'kachat indexer', name: KACHAT_CONTAINER },
     { key: 'kachat-db', label: 'kachat postgres', name: 'kaspa-node-kachat-db' },
+    { key: 'libretranslate', label: 'libretranslate', name: 'kaspa-node-libretranslate' },
+    { key: 'kachat-desktop', label: 'kachat desktop', name: 'kaspa-node-kachat-desktop' },
+    { key: 'kachat-bot', label: 'kachat bot', name: 'kaspa-node-kachat-bot' },
     { key: 'nextcloud', label: 'nextcloud', name: NEXTCLOUD_CONTAINER },
     { key: 'nextcloud-db', label: 'nextcloud mariadb', name: 'kaspa-node-nextcloud-db' },
+    { key: 'nextcloud-redis', label: 'nextcloud redis', name: 'kaspa-node-nextcloud-redis' },
+    { key: 'nextcloud-imaginary', label: 'nextcloud imaginary', name: 'kaspa-node-nextcloud-imaginary' },
     { key: 'proxy', label: 'nginx proxy', name: PROXY_CONTAINER },
     { key: 'manager', label: 'control panel', name: 'kaspa-node-manager' },
     // The testnet-10 stack (runs beside mainnet, or alone on a testnet-only machine).
     { key: 'kaspad-testnet', label: 'kaspad (testnet)', name: 'kaspa-node-kaspad-testnet' },
     { key: 'bridge-testnet', label: 'stratum bridge (testnet)', name: 'kaspa-node-bridge-testnet' },
+    { key: 'cpuminer-testnet', label: 'cpu miner (testnet)', name: 'kaspa-node-cpuminer-testnet' },
     { key: 'kachat-testnet', label: 'kachat indexer (testnet)', name: 'kaspa-node-kachat-testnet' },
     { key: 'kachat-db-testnet', label: 'kachat postgres (testnet)', name: 'kaspa-node-kachat-db-testnet' },
 ];
 
 /**
- * The .kachat names module has no container of its own: it runs inside the testnet
- * indexer and tags every line `[names]` (docs/KACHAT_NAMES_PANEL_LOGS.md in KaChat-Indexer).
- * A log source is a container plus an optional line filter.
+ * Log sources with no container of their own: modules that run inside an indexer
+ * container and tag their lines. A source is a container plus a line filter
+ * (`match`, a substring or a RegExp tested on the colour-free line); each is listed
+ * right after the container it reads.
+ *
+ * - .kachat names: the testnet indexer's `[names]` lines
+ *   (docs/KACHAT_NAMES_PANEL_LOGS.md in KaChat-Indexer).
+ * - Push service: the chat indexer's push lines (`[Push]`, `[PushRegistry]`,
+ *   "Push register …") plus the processor's KaPosts push sends.
  */
+const PUSH_MATCH = /push/i;
 export const NAMES_LOG_SOURCE = {
     key: 'kachat-names',
     label: '.kachat names',
     name: 'kaspa-node-kachat-testnet',
     match: '[names]',
 };
+export const FILTERED_LOG_SOURCES = [
+    { key: 'kachat-push', label: 'push service', name: KACHAT_CONTAINER, match: PUSH_MATCH, after: 'kachat' },
+    { ...NAMES_LOG_SOURCE, after: 'kachat-testnet' },
+    {
+        key: 'kachat-push-testnet',
+        label: 'push service (testnet)',
+        name: 'kaspa-node-kachat-testnet',
+        match: PUSH_MATCH,
+        after: 'kachat-testnet',
+    },
+];
 
 /** Every log source the Logs page shows: each container, plus the filtered ones. */
-export const LOG_SOURCES = STACK_CONTAINERS.flatMap((c) => (c.key === 'kachat-testnet' ? [c, NAMES_LOG_SOURCE] : [c]));
+export const LOG_SOURCES = STACK_CONTAINERS.flatMap((c) => [
+    c,
+    ...FILTERED_LOG_SOURCES.filter((f) => f.after === c.key).map(({ after, ...f }) => f),
+]);
+
+/** A log source by its key (what `?container=` carries), or undefined. */
+export const logSource = (key) => LOG_SOURCES.find((s) => s.key === key);
 
 const ANSI = /\x1b\[[0-9;]*m/g;
 export const stripAnsi = (line) => line.replace(ANSI, '');
 
 /** Wraps a line handler so a filtered source only passes its tagged, colour-free lines. */
+const matches = (source, clean) =>
+    source.match instanceof RegExp ? source.match.test(clean) : clean.includes(source.match);
+
 export function filterFor(source, onLine) {
     if (!source?.match) return onLine;
     return (line) => {
         const clean = stripAnsi(line);
-        if (clean.includes(source.match)) onLine(clean);
+        if (matches(source, clean)) onLine(clean);
     };
 }
 
 /** The last `tail` matching lines of a filtered source (read deep: they are a small share). */
 export async function filteredLogs(source, tail = 300) {
     const text = await logs(source.name, 5000);
-    const keep = text.split('\n').map(stripAnsi).filter((l) => l.includes(source.match));
+    const keep = text.split('\n').map(stripAnsi).filter((l) => matches(source, l));
     return keep.slice(-tail).join('\n');
 }
 

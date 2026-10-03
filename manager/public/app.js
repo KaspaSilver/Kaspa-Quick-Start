@@ -275,11 +275,8 @@ function selectTab(name) {
     setHostPolling(name === 'overview');
     // The KaChat panels do the same, and each one loads only itself.
     setKachatPolling(name === 'kachat');
-    // Same for the kaspad log: no point streaming it from another section.
-    if (name !== 'kaspad') setKaspadLog(false);
-    else setKaspadLog(activeSubtab('kaspad') === 'kaspadlog');
-    // The .kachat names log streams only while its tab is open.
-    setNamesLog(name === 'names');
+    // A section's log streams only while it is on screen.
+    syncSvcLog();
     // Read on arrival rather than polled: nothing on it changes by itself.
     if (name === 'global') loadGlobal().catch(() => {});
     if (name === 'bot') loadBot().catch(() => {});
@@ -292,6 +289,139 @@ function selectTab(name) {
 for (const item of document.querySelectorAll('.nav-item')) {
     item.addEventListener('click', () => selectTab(item.dataset.tab));
 }
+
+// --- per-section logs ---
+
+/**
+ * Every section that runs something has a log card (`<div class="svclog"
+ * data-svclog="…">`), filled in here. Which containers a card can show depends on
+ * the network being viewed, so the Kaspad tab's log is kaspad-testnet's in the
+ * Testnet view; a section with several containers gets a chip per container.
+ * Keys are dockerctl.LOG_SOURCES keys (some are a container plus a line filter).
+ *
+ * Only one card streams at a time -- the one on screen. Browsers allow roughly
+ * six concurrent connections to one origin, and the status poll, the all-logs
+ * stream and the job console already want several of them, so a card's stream
+ * is opened on demand and closed the moment you navigate away.
+ */
+const SVC_LOGS = {
+    kaspad: { mainnet: [['kaspad', 'kaspad']], testnet: [['kaspad-testnet', 'kaspad']] },
+    mining: {
+        mainnet: [['bridge', 'stratum bridge']],
+        testnet: [['cpuminer-testnet', 'cpu miner'], ['bridge-testnet', 'stratum bridge']],
+    },
+    kachat: {
+        mainnet: [['kachat', 'indexer'], ['kachat-db', 'postgres'], ['libretranslate', 'libretranslate']],
+        testnet: [['kachat-testnet', 'indexer'], ['kachat-db-testnet', 'postgres']],
+    },
+    names: { mainnet: [['kachat-names', '.kachat names']], testnet: [['kachat-names', '.kachat names']] },
+    desktop: { mainnet: [['kachat-desktop', 'kachat desktop']] },
+    bot: { mainnet: [['kachat-bot', 'kachat bot']] },
+    push: { mainnet: [['kachat-push', 'push service']], testnet: [['kachat-push-testnet', 'push service']] },
+    nextcloud: {
+        mainnet: [
+            ['nextcloud', 'nextcloud'],
+            ['nextcloud-db', 'mariadb'],
+            ['nextcloud-redis', 'redis'],
+            ['nextcloud-imaginary', 'imaginary'],
+        ],
+    },
+    proxy: { mainnet: [['proxy', 'nginx proxy']] },
+    global: { mainnet: [['manager', 'control panel']] },
+};
+const SVC_LOG_LINES = 2000;
+const svcLogPick = {}; // card -> chosen source key, per network
+let svcLog = null; // { card, key, stream }
+
+const svcLogSources = (card) => {
+    const nets = SVC_LOGS[card] ?? {};
+    return (networkView === 'testnet' && nets.testnet) || nets.mainnet || [];
+};
+
+function renderSvcLogCard(node) {
+    const card = node.dataset.svclog;
+    const sources = svcLogSources(card);
+    const pick = svcLogPick[`${card}:${networkView}`] ?? sources[0]?.[0];
+    const title = node.dataset.title || `${sources.find(([k]) => k === pick)?.[1] ?? card} log`;
+    const chips =
+        sources.length > 1
+            ? `<span class="svclog-chips" role="group" aria-label="Which log">${sources
+                  .map(
+                      ([key, label]) =>
+                          `<button type="button" class="svclog-chip${key === pick ? ' active' : ''}" data-svclog-pick="${key}">${escapeHtml(label)}</button>`,
+                  )
+                  .join('')}</span>`
+            : '';
+    node.innerHTML = `<article class="card span2">
+        <h3>
+          ${escapeHtml(sources.length > 1 ? 'Logs' : title)}
+          ${chips}
+          <span class="zoom" role="group" aria-label="Log text size"><button type="button" class="zoom-btn" data-zoom="-1" data-zoom-view="${card}" title="Smaller text" aria-label="Smaller log text">−</button><button type="button" class="zoom-btn" data-zoom="1" data-zoom-view="${card}" title="Larger text" aria-label="Larger log text">+</button></span>
+          <label class="check tail" title="Jump to the newest line as it arrives. Untick to scroll back through history without being pulled to the bottom."><input type="checkbox" data-svclog-follow checked> auto-scroll</label>
+        </h3>
+        <pre class="logview" data-logview="${card}"></pre>
+      </article>`;
+    restoreLogSize(card);
+    return pick;
+}
+
+/** The log card on screen right now, if any (inside the active tab and sub-tab). */
+function visibleSvcLog() {
+    for (const node of document.querySelectorAll('section.tab.active .svclog')) {
+        const sub = node.closest('.subtab');
+        if (!sub || sub.classList.contains('active')) return node;
+    }
+    return null;
+}
+
+function stopSvcLog() {
+    svcLog?.stream.close();
+    svcLog = null;
+}
+
+/** Streams the visible card's chosen log; closes the stream when no card is visible. */
+function syncSvcLog() {
+    const node = visibleSvcLog();
+    const card = node?.dataset.svclog;
+    const sources = card ? svcLogSources(card) : [];
+    if (!node || !sources.length) return stopSvcLog();
+    const want = svcLogPick[`${card}:${networkView}`] ?? sources[0][0];
+    if (svcLog && svcLog.card === card && svcLog.key === want && svcLog.node === node) return;
+    stopSvcLog();
+
+    const key = renderSvcLogCard(node);
+    const view = node.querySelector('pre');
+    const followBox = node.querySelector('[data-svclog-follow]');
+    const stream = new EventSource(`/api/logs/stream?container=${encodeURIComponent(key)}`);
+    svcLog = { card, key, node, stream };
+
+    stream.addEventListener('line', (event) => {
+        const { line } = JSON.parse(event.data);
+        // Only chase the bottom when the reader is already there, so scrolling
+        // back through history is not yanked away on the next line.
+        const atBottom = view.scrollHeight - view.scrollTop - view.clientHeight < 40;
+        view.textContent += `${line}\n`;
+        // Trim from the front so a long-running container does not grow the DOM
+        // node without limit.
+        if (view.textContent.length > SVC_LOG_LINES * 200) {
+            view.textContent = view.textContent.split('\n').slice(-SVC_LOG_LINES).join('\n');
+        }
+        if (followBox.checked && atBottom) view.scrollTop = view.scrollHeight;
+    });
+    stream.addEventListener('error', () => {
+        view.textContent += '\n[the log stream dropped; reopen this tab to reconnect]\n';
+        stream.close();
+    });
+}
+
+document.addEventListener('click', (event) => {
+    const chip = event.target.closest?.('[data-svclog-pick]');
+    if (!chip) return;
+    const card = chip.closest('.svclog')?.dataset.svclog;
+    if (!card) return;
+    svcLogPick[`${card}:${networkView}`] = chip.dataset.svclogPick;
+    syncSvcLog();
+});
 
 // --- network view (Mainnet / Testnet) ---
 //
@@ -380,8 +510,9 @@ for (const tabBtn of document.querySelectorAll('.net-tab')) {
 // still being declared, and the first status poll/loadSettings read the view anyway.
 function refreshKaspadForView() {
     applyKaspadSubtabsForView();
-    setKaspadLog(false);
-    if (activeSubtab('kaspad') === 'kaspadlog') setKaspadLog(true);
+    // Every log card re-reads the viewed network's containers.
+    stopSvcLog();
+    syncSvcLog();
     loadSettings().catch(() => {});
     refreshStatus().catch(() => {});
     uninstallSignature = null;
@@ -421,85 +552,6 @@ applyNetworkView((() => {
     }
 })());
 
-// --- kaspad log ---
-
-/**
- * Streams kaspad's log into the Log sub-tab, and only while that tab is open.
- *
- * Browsers allow roughly six concurrent connections to one origin, and the
- * status poll, the all-logs stream and the job console already want several of
- * them, so this one is opened on demand and closed the moment you navigate
- * away.
- */
-let kaspadLogStream = null;
-const KASPAD_LOG_LINES = 2000;
-
-function setKaspadLog(active) {
-    if (!active) {
-        kaspadLogStream?.close();
-        kaspadLogStream = null;
-        return;
-    }
-    if (kaspadLogStream) return;
-
-    const view = $('kaspadlog-view');
-    view.textContent = '';
-    kaspadLogStream = new EventSource(`/api/logs/stream?container=${networkView === 'testnet' ? 'kaspad-testnet' : 'kaspad'}`);
-
-    kaspadLogStream.addEventListener('line', (event) => {
-        const { line } = JSON.parse(event.data);
-        // Only chase the bottom when the reader is already there, so scrolling
-        // back through history is not yanked away on the next line.
-        const follow = $('kaspadlog-follow').checked;
-        const atBottom = view.scrollHeight - view.scrollTop - view.clientHeight < 40;
-
-        view.textContent += `${line}\n`;
-        // Trim from the front so a long-running node does not grow the DOM node
-        // without limit.
-        if (view.textContent.length > KASPAD_LOG_LINES * 200) {
-            view.textContent = view.textContent.split('\n').slice(-KASPAD_LOG_LINES).join('\n');
-        }
-        if (follow && atBottom) view.scrollTop = view.scrollHeight;
-    });
-
-    kaspadLogStream.addEventListener('error', () => {
-        view.textContent += '\n[the log stream dropped; reopen this tab to reconnect]\n';
-    });
-}
-
-/**
- * The .kachat tab's log card: the testnet indexer's [names] lines, streamed only
- * while that tab is open (same connection budget as the kaspad log above).
- */
-let namesLogStream = null;
-
-function setNamesLog(active) {
-    if (!active) {
-        namesLogStream?.close();
-        namesLogStream = null;
-        return;
-    }
-    if (namesLogStream) return;
-
-    const view = $('nameslog-view');
-    if (!view) return;
-    view.textContent = '';
-    namesLogStream = new EventSource('/api/logs/stream?container=kachat-names');
-    namesLogStream.addEventListener('line', (event) => {
-        const { line } = JSON.parse(event.data);
-        const follow = $('nameslog-follow').checked;
-        const atBottom = view.scrollHeight - view.scrollTop - view.clientHeight < 40;
-        view.textContent += `${line}\n`;
-        if (view.textContent.length > KASPAD_LOG_LINES * 200) {
-            view.textContent = view.textContent.split('\n').slice(-KASPAD_LOG_LINES).join('\n');
-        }
-        if (follow && atBottom) view.scrollTop = view.scrollHeight;
-    });
-    namesLogStream.addEventListener('error', () => {
-        view.textContent += '\n[the log stream dropped; reopen this tab to reconnect]\n';
-    });
-}
-
 // --- sub-tabs (panels inside one destination) ---
 
 function selectSubtab(section, name) {
@@ -509,8 +561,8 @@ function selectSubtab(section, name) {
     for (const panel of section.querySelectorAll(':scope > .subtab')) {
         panel.classList.toggle('active', panel.id === `sub-${name}`);
     }
-    // The kaspad log only streams while it is on screen.
-    setKaspadLog(name === 'kaspadlog');
+    // A log card only streams while it is on screen.
+    syncSvcLog();
     // The world map is fetched the first time "Am I public?" is opened.
     if (name === 'public') loadPublicMap().catch(() => {});
     // The go-public wizard reads live state each time it is opened.
@@ -6874,7 +6926,6 @@ document.addEventListener('click', (event) => {
     if (node && atBottom) node.scrollTop = node.scrollHeight;
 });
 
-restoreLogSize('kaspad');
 
 // None of these is a service, so their dots stay hollow rather than implying a
 // state they cannot have.
