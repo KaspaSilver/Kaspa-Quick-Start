@@ -214,10 +214,26 @@ $('firstrun-form').addEventListener('submit', async (event) => {
         // The response carries a session cookie and the password is in force at
         // once (auth reads it live from .env), so there is no restart to wait on
         // -- just reload into the panel, already signed in.
-        await api('/api/auth/password', { method: 'POST', body: { password } });
+        const r = await api('/api/auth/password', { method: 'POST', body: { password } });
         localStorage.setItem(SETUP_KEY, '1');
         const status = $('firstrun-status');
         status.hidden = false;
+        if (r.rebinding) {
+            // Opening the panel to the network recreates its container; wait for it.
+            status.textContent = 'Password set. Restarting so other machines on your network can reach the panel…';
+            const deadline = Date.now() + 120_000;
+            let wentDown = false;
+            while (Date.now() < deadline) {
+                await new Promise((res) => setTimeout(res, 1500));
+                try {
+                    const h = await fetch('/healthz', { cache: 'no-store' });
+                    if (h.ok && wentDown) return location.reload();
+                } catch {
+                    wentDown = true;
+                }
+            }
+            return location.reload();
+        }
         status.textContent = 'Password set. Opening the panel…';
         location.reload();
     } catch (e) {
@@ -4809,6 +4825,17 @@ async function loadPublish() {
             $('ports-bind-https').value = p.bindHttps;
             $('panel-port').value = p.panel;
             $('panel-port-state').textContent = `This panel answers on port ${p.panel}. The reverse proxy holds ${p.bindHttp} and ${p.bindHttps} on this machine.`;
+            const lan = $('panel-lan');
+            if (lan) {
+                lan.checked = Boolean(p.panelLan);
+                // Never offered without a password: the panel controls Docker.
+                lan.disabled = !p.panelLan && !p.hasPassword;
+                $('panel-lan-state').textContent = p.panelLan
+                    ? `Other machines on your network can open it at this computer's address, port ${p.panel} (bound to ${p.panelBind}).`
+                    : p.hasPassword
+                      ? `Only this machine can open it (bound to ${p.panelBind}).`
+                      : `Only this machine can open it. Set an admin password first to open it to your network.`;
+            }
         }
     } catch {
         // The proxy card above already reports anything that is actually wrong.
@@ -7127,10 +7154,10 @@ function renderPasswordCard(isSet) {
  * done by a detached container a second or two after the request returns, so
  * "still answering" does not yet mean "finished".
  */
-async function waitForPanelRestart(note) {
+async function waitForPanelRestart(note, resultId = 'password-result') {
     const deadline = Date.now() + 120_000;
     let wentDown = false;
-    kResult('password-result', note, false);
+    kResult(resultId, note, false);
 
     while (Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, 1500));
@@ -7141,7 +7168,7 @@ async function waitForPanelRestart(note) {
             wentDown = true;
         }
     }
-    kResult('password-result', 'The panel has not come back. Check `docker logs kaspa-node-manager`.', true);
+    kResult(resultId, 'The panel has not come back. Check `docker logs kaspa-node-manager`.', true);
 }
 
 $('password-save').addEventListener('click', async () => {
@@ -7153,13 +7180,20 @@ $('password-save').addEventListener('click', async () => {
 
     $('password-save').disabled = true;
     try {
-        await api('/api/auth/password', {
+        const r = await api('/api/auth/password', {
             method: 'POST',
             body: { password, current: $('password-current').value },
         });
         $('password-new').value = '';
         $('password-repeat').value = '';
         $('password-current').value = '';
+        // The first password opens the panel to the network (0.0.0.0), which needs
+        // the container recreated; sign in again once it is back.
+        if (r.rebinding) {
+            return waitForPanelRestart(
+                'Password saved. The panel is restarting so other machines on your network can reach it; sign in again in a few seconds.',
+            );
+        }
         // In force immediately (auth reads .env live) and the response refreshed
         // the session, so no restart to wait on.
         kResult('password-result', 'Password saved. It is in force now.', false);
@@ -7197,6 +7231,36 @@ $('panel-port-save').addEventListener('click', async () => {
         toast(e.message, 'bad');
     } finally {
         $('panel-port-save').disabled = false;
+    }
+});
+
+$('panel-lan')?.addEventListener('change', async (event) => {
+    const lan = event.target.checked;
+    const ok = confirm(
+        lan
+            ? 'Let other machines on your network open this panel?\n\nIt restarts (the node and every app keep running) and asks for the admin password from anywhere but this computer.'
+            : 'Limit the panel to this machine only?\n\nIt restarts. Afterwards it opens only at http://localhost on the server itself.',
+    );
+    if (!ok) {
+        event.target.checked = !lan;
+        return;
+    }
+    event.target.disabled = true;
+    try {
+        const r = await api('/api/panel/bind', { method: 'POST', body: { lan } });
+        if (r.unchanged) return;
+        const onThisMachine = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(location.hostname);
+        if (!lan && !onThisMachine) {
+            // This address stops answering; the panel is now only on the server itself.
+            kResult('panel-lan-result', 'Done. The panel now answers only on the server itself (http://localhost).', false);
+            return;
+        }
+        await waitForPanelRestart('Restarting the panel with the new address…', 'panel-lan-result');
+    } catch (e) {
+        event.target.checked = !lan;
+        toast(e.message, 'bad');
+    } finally {
+        event.target.disabled = false;
     }
 });
 

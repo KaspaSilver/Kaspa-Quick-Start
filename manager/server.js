@@ -1296,6 +1296,25 @@ route('POST', /^\/api\/panel\/port$/, async (req, res) => {
     sendJson(res, 202, { ok: true, port: wanted, restarting: true });
 });
 
+/**
+ * Who can reach the panel's own port: this machine only (127.0.0.1) or other
+ * machines on the network too (0.0.0.0). Opening it needs a password -- the panel
+ * drives the Docker daemon. The mapping is fixed at container creation, so this
+ * recreates the panel through the same sidecar as a port change.
+ */
+route('POST', /^\/api\/panel\/bind$/, async (req, res) => {
+    const body = await readBody(req);
+    const lan = body.lan === true;
+    if (lan && !authConfigured()) {
+        return fail(res, 409, 'Set an admin password first. The panel controls Docker, so it is never opened to the network without one.');
+    }
+    const wanted = lan ? '0.0.0.0' : '127.0.0.1';
+    if (managerBind() === wanted) return sendJson(res, 200, { ok: true, unchanged: true, bind: wanted });
+    updateEnvFile({ MANAGER_BIND: wanted });
+    await selfservice.restartManager();
+    sendJson(res, 202, { ok: true, restarting: true, bind: wanted });
+});
+
 route('GET', /^\/api\/proxy\/portcheck$/, async (req, res) => {
     const domain = loadDomains()[0]?.domain ?? null;
     const mgr = loadManagerConfig().proxy;
@@ -1368,6 +1387,11 @@ route('GET', /^\/api\/publish$/, async (req, res) => {
             bindHttp: Number(readEnvFile().HTTP_PORT) || 80,
             bindHttps: Number(readEnvFile().HTTPS_PORT) || 443,
             panel: Number(readEnvFile().GUI_PORT) || 8080,
+            // Where the panel's port is published: 127.0.0.1 (this machine) or 0.0.0.0
+            // (other machines on the network too).
+            panelBind: managerBind(),
+            panelLan: !isLoopbackBind(),
+            hasPassword: authConfigured(),
         },
         container: await dockerctl.containerState(dockerctl.PROXY_CONTAINER),
     });
@@ -3001,7 +3025,20 @@ route('POST', /^\/api\/auth\/password$/, async (req, res) => {
     if (password.length < 8) return fail(res, 400, 'Use at least 8 characters.');
     if (password.length > 200) return fail(res, 400, 'That is longer than 200 characters.');
 
+    const firstPassword = !authConfigured();
     updateEnvFile({ ADMIN_PASSWORD_HASH: hashPassword(password) });
+
+    // The installer keeps a password-less panel on 127.0.0.1, and its first-run
+    // screen says so ("only this machine can reach the panel"). Setting the first
+    // password is what makes reaching it from elsewhere safe, so that is when it
+    // opens up: publish on 0.0.0.0 and recreate this container (the port mapping is
+    // fixed at creation). Changing an existing password never moves the bind -- that
+    // is the "Reachable from other machines" switch.
+    if (firstPassword && isLoopbackBind()) {
+        updateEnvFile({ MANAGER_BIND: '0.0.0.0' });
+        await selfservice.restartManager();
+        return sendJson(res, 202, { ok: true, rebinding: true, bind: '0.0.0.0' });
+    }
     // Auth reads the hash live from .env, so this is in force immediately with
     // no restart. Issue a session in the same response so whoever just set the
     // password is not locked straight back out and made to sign in again.
