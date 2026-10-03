@@ -569,7 +569,8 @@ services:
       KASPA_NODE_PORT: ${KACHAT_TESTNET_NODE_PORT:-17210}
       KASPA_NODE_WBORSH_URL: ws://kaspad-testnet:${KACHAT_TESTNET_NODE_PORT:-17210}
       NETWORK: testnet-10
-      NETWORK_TYPE: testnet-10
+      # The chat indexer wants the network *type* (it applies the -10 suffix itself).
+      NETWORK_TYPE: testnet
       DB_USER: ${KACHAT_DB_USER:-kachat}
       DB_PASSWORD: ${KACHAT_DB_PASSWORD:-}
       DB_NAME: ${KACHAT_DB_NAME:-kachat}
