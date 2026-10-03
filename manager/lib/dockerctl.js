@@ -49,6 +49,11 @@ export const STACK_CONTAINERS = [
     { key: 'nextcloud-db', label: 'nextcloud mariadb', name: 'kaspa-node-nextcloud-db' },
     { key: 'proxy', label: 'nginx proxy', name: PROXY_CONTAINER },
     { key: 'manager', label: 'control panel', name: 'kaspa-node-manager' },
+    // The testnet-10 stack (runs beside mainnet, or alone on a testnet-only machine).
+    { key: 'kaspad-testnet', label: 'kaspad (testnet)', name: 'kaspa-node-kaspad-testnet' },
+    { key: 'bridge-testnet', label: 'stratum bridge (testnet)', name: 'kaspa-node-bridge-testnet' },
+    { key: 'kachat-testnet', label: 'kachat indexer (testnet)', name: 'kaspa-node-kachat-testnet' },
+    { key: 'kachat-db-testnet', label: 'kachat postgres (testnet)', name: 'kaspa-node-kachat-db-testnet' },
 ];
 
 export class CommandError extends Error {
