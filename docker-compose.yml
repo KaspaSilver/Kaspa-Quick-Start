@@ -529,6 +529,32 @@ services:
         max-size: "20m"
         max-file: "3"
 
+  # Testnet-10 is mined on CPUs: kaspanet/cpuminer ("kaspa-miner", maintained by Kaspa
+  # core for testnets) talks straight to the testnet node's gRPC. The panel writes the
+  # reward address and thread count to .env from Mining (Testnet view).
+  cpuminer-testnet:
+    image: kaspanet/cpuminer:${CPUMINER_VERSION:-latest}
+    container_name: kaspa-node-cpuminer-testnet
+    profiles: ["testnet-cpuminer"]
+    restart: unless-stopped
+    command:
+      - --testnet
+      - --kaspad-address
+      - kaspad-testnet
+      - --port
+      - "16210"
+      - --mining-address
+      - ${TESTNET_MINING_ADDRESS:-}
+      - --threads
+      - "${TESTNET_MINING_THREADS:-1}"
+    networks:
+      - kaspa
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   kachat-db-testnet:
     image: postgres:17-alpine
     container_name: kaspa-node-kachat-db-testnet

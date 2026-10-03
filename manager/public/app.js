@@ -305,7 +305,8 @@ const TESTNET_TABS = new Set(['overview', 'kaspad', 'mining', 'kachat', 'names',
 // applyNetworkView runs at load and re-renders it.
 let publishState = { services: [], domains: [] };
 // Which lifecycle unit each shared nav switch drives in the testnet view.
-const TESTNET_UNIT = { node: 'node-testnet', mining: 'mining-testnet', kachat: 'kachat-testnet' };
+// Testnet mining is the CPU miner (kaspanet/cpuminer), not the ASIC stratum bridge.
+const TESTNET_UNIT = { node: 'node-testnet', mining: 'cpuminer-testnet', kachat: 'kachat-testnet' };
 const TESTNET_UNIT_VALUES = new Set(Object.values(TESTNET_UNIT));
 // The current view. Read by the service renderers + switch handler so one set of
 // controls drives mainnet or testnet depending on it.
@@ -1986,7 +1987,48 @@ $('instances-body').addEventListener('click', (event) => {
 let miningPortOffset = 0;
 const miningQuery = () => (networkView === 'testnet' ? '?net=testnet' : '');
 
+// ---- Testnet: the CPU miner card ----
+async function loadCpuMiner() {
+    const r = await api('/api/cpuminer');
+    const s = r.state ?? {};
+    const tag = $('cpuminer-state');
+    tag.textContent = !s.installed ? 'not installed' : s.running ? 'mining' : 'stopped';
+    tag.className = `tag ${!s.installed ? 'off' : s.running ? 'ok' : ''}`;
+    const h = r.stats?.hashrate;
+    $('cpuminer-hashrate').textContent = s.running && h ? `${h.value} ${h.unit}` : '–';
+    $('cpuminer-blocks').textContent = s.running ? fmtNum(r.stats?.blocks ?? 0) : '–';
+    const note = $('cpuminer-note');
+    note.hidden = !(s.running && r.stats?.notSynced) && Boolean(r.config.address);
+    note.className = 'verdict';
+    note.textContent = !r.config.address
+        ? 'Set your testnet reward address and save, then switch the miner on in the sidebar.'
+        : 'Waiting for the testnet node to finish syncing; the miner starts hashing once it has.';
+    // Never overwrite what someone is typing.
+    if (document.activeElement !== $('cpuminer-address')) $('cpuminer-address').value = r.config.address;
+    if (document.activeElement !== $('cpuminer-threads')) $('cpuminer-threads').value = r.config.threads;
+    $('cpuminer-threads').max = r.cpus;
+    $('cpuminer-cores').textContent = `of ${r.cpus} cores`;
+    const last = $('cpuminer-last');
+    last.hidden = !(s.running && r.stats?.lastLine);
+    last.textContent = r.stats?.lastLine ?? '';
+}
+
+$('cpuminer-save')?.addEventListener('click', async () => {
+    const body = { address: $('cpuminer-address').value.trim(), threads: Number($('cpuminer-threads').value) };
+    $('cpuminer-save').disabled = true;
+    try {
+        const r = await api('/api/cpuminer', { method: 'PUT', body });
+        toast(r.jobId ? 'Saved. Restarting the miner with the new settings.' : 'Saved.');
+        await loadCpuMiner();
+    } catch (e) {
+        toast(e.message, 'bad');
+    } finally {
+        $('cpuminer-save').disabled = false;
+    }
+});
+
 async function loadMining() {
+    if (networkView === 'testnet') return loadCpuMiner();
     const r = await api(`/api/mining${miningQuery()}`);
     miningPortOffset = r.stratumOffset ?? 0;
     miningConfig = r.config;
@@ -2538,6 +2580,7 @@ $('mining-check').addEventListener('click', async () => {
 });
 
 async function refreshMiningStats() {
+    if (networkView === 'testnet') return void loadCpuMiner().catch(() => {});
     if (!miningConfig?.enabled) return;
     try {
         const [stats, state] = await Promise.all([api(`/api/mining/stats${miningQuery()}`), api(`/api/mining${miningQuery()}`)]);
@@ -5300,6 +5343,7 @@ const UNINSTALL_COPY = {
     translate: 'the downloaded language models, which are several gigabytes and have to be fetched again',
     'node-testnet': 'the synced testnet-10 chain. The mainnet node is not touched',
     'mining-testnet': "the testnet bridge's share and block records. Mainnet mining is not touched",
+    'cpuminer-testnet': 'only the miner container. Your testnet rewards stay on the chain at your address. Mainnet mining is not touched',
     'kachat-testnet': 'the testnet indexed history, the .kachat registry tables and their Postgres database. The mainnet indexer is not touched',
 };
 

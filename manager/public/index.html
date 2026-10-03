@@ -689,24 +689,50 @@
     <section id="tab-mining" class="tab">
       <nav class="subnav" aria-label="Mining">
         <button class="subtab-btn active" data-subtab="mining-overview">Overview</button>
-        <button class="subtab-btn" data-subtab="mining-connect">Connect Your Miner</button>
+        <button class="subtab-btn" data-subtab="mining-connect" data-mainnet-only>Connect Your Miner</button>
         <button class="subtab-btn" data-subtab="mining-roi" data-mainnet-only>ROI calculator</button>
         <button class="subtab-btn" data-subtab="mining-settings" data-mainnet-only>Settings</button>
         <button class="subtab-btn" data-subtab="mining-uninstall">Uninstall</button>
       </nav>
 
       <div id="sub-mining-overview" class="subtab active">
-        <article class="card span2" id="mining-card">
+        <!-- Testnet-10 is mined on CPUs (kaspanet/cpuminer), not ASICs. -->
+        <article class="card span2" id="cpuminer-card" data-testnet-only>
+          <div class="node-head">
+            <h3>CPU miner (testnet-10)</h3>
+            <span id="cpuminer-state" class="tag">off</span>
+          </div>
+          <p class="muted">
+            Testnet is mined with your CPU, not an ASIC. The miner (Kaspa's own
+            <code>kaspanet/cpuminer</code>) talks straight to this machine's testnet node and pays
+            the rewards to your testnet address. Its switch in the sidebar starts and stops it.
+          </p>
+          <div class="grid stats">
+            <div class="stat"><span id="cpuminer-hashrate">–</span><small>hashrate</small></div>
+            <div class="stat"><span id="cpuminer-blocks">–</span><small>blocks found</small></div>
+          </div>
+          <p class="verdict" id="cpuminer-note" hidden></p>
+          <label class="stack">Reward address (testnet)
+            <input id="cpuminer-address" placeholder="kaspatest:q…" autocomplete="off" spellcheck="false">
+          </label>
+          <div class="row">
+            <label class="inline">Threads <input type="number" id="cpuminer-threads" min="1" size="4"></label>
+            <span class="muted" id="cpuminer-cores"></span>
+            <button type="button" id="cpuminer-save" class="primary">Save</button>
+          </div>
+          <p class="hint">
+            Leave some cores free: the testnet node and indexer run on this machine too.
+            Saving while it runs restarts the miner with the new settings.
+          </p>
+          <p class="hint mono" id="cpuminer-last" hidden></p>
+        </article>
+        <article class="card span2" id="mining-card" data-mainnet-only>
           <div class="node-head">
             <h3>Stratum bridge</h3>
             <span id="mining-state" class="tag">off</span>
             <span id="mining-version" class="badge" title="The stratum bridge ships in the node's release, so this tracks the node"></span>
           </div>
           <div id="mining-blockers" class="verdict bad" hidden></div>
-          <p class="hint" data-testnet-only>
-            The testnet-10 stratum bridge, mining on the testnet node. Its stratum ports are the
-            mainnet ports + 100, and its other settings follow Mainnet, Mining, Settings.
-          </p>
           <p class="error" id="mining-error" hidden></p>
 
           <div class="row">

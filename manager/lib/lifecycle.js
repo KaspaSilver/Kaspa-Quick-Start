@@ -4,6 +4,7 @@ import { FIRMWARE_DIR, uninstall as uninstallKassigner } from './kassigner.js';
 import { renderTestnetPortsOverride, writeTestnetArgsFile } from './kaspad-args.js';
 import { loadTestnetNodeConfig } from './store.js';
 import { loadBridgeConfig, writeTestnetBridgeFiles } from './bridge.js';
+import * as cpuminer from './cpuminer.js';
 
 /**
  * Install, start, stop, uninstall -- for everything in the stack that is a
@@ -185,6 +186,41 @@ export const UNITS = {
         buildable: ['kachat-app-testnet'],
         data: 'the testnet indexed chat history and its Postgres database',
     },
+    // Testnet is mined on CPUs: kaspanet/cpuminer straight to the testnet node's gRPC.
+    // The Testnet view's Mining switch drives this unit (not the ASIC stratum bridge).
+    'cpuminer-testnet': {
+        label: 'CPU miner (testnet-10)',
+        tab: 'mining',
+        profile: 'testnet-cpuminer',
+        services: ['cpuminer-testnet'],
+        containers: [cpuminer.CONTAINER],
+        primary: cpuminer.CONTAINER,
+        volumes: [],
+        images: [],
+        buildable: [],
+        prepare: async (onLine, { starting = false } = {}) => {
+            const cfg = cpuminer.loadConfig();
+            cpuminer.writeEnv(cfg);
+            // Installing only creates the container; the address is needed to mine, and is
+            // set on the Mining tab, which opens once it is installed.
+            if (!starting) return;
+            const { errors } = cpuminer.validate(cfg);
+            if (errors.length) throw new Error(`Set the testnet reward address and threads under Mining first. ${errors.join(' ')}`);
+            // The miner needs the testnet node's gRPC listener; make sure it is on.
+            const args = writeTestnetArgsFile(loadTestnetNodeConfig());
+            if (args.changed && (await containerState('kaspa-node-kaspad-testnet')).running) {
+                onLine?.("Turning on the testnet node's gRPC listener for the miner (recreating the testnet node).");
+                renderTestnetPortsOverride(loadTestnetNodeConfig());
+                await compose(['up', '-d', '--no-deps', '--force-recreate', 'kaspad-testnet'], {
+                    onLine,
+                    profile: 'testnet',
+                    timeoutMs: 10 * 60_000,
+                });
+            }
+            onLine?.(`Mining to ${cfg.address} with ${cfg.threads} thread${cfg.threads === 1 ? '' : 's'}.`);
+        },
+        data: 'nothing: the rewards are on the testnet chain, at your address',
+    },
     'mining-testnet': {
         label: 'Stratum bridge (testnet-10)',
         tab: 'mining',
@@ -307,7 +343,7 @@ export async function setRunning(key, running, onLine = () => {}) {
     if (running) {
         // Re-generate config on start too, so a settings change made while the
         // service was stopped takes effect (same reason `up -d` is used below).
-        await unit.prepare?.(onLine);
+        await unit.prepare?.(onLine, { starting: true });
         onLine(`Starting ${unit.label}.`);
         // `up -d` rather than `start`, so a container whose configuration
         // changed while it was stopped comes back with the new one.

@@ -125,11 +125,20 @@ export function writeArgsFile(cfg, siblings = {}, file = KASPAD_ARGS_FILE) {
  * The testnet-10 node's args file (conf/kaspad-testnet.args, read by the
  * kaspad-testnet container). Same builder as mainnet — a `testnet-10` config
  * yields `--testnet --netsuffix=10` and the 162xx ports automatically — written
- * to the testnet file. The testnet indexer always dials wRPC-Borsh, so that
- * listener is forced on regardless of published ports.
+ * to the testnet file. Its in-stack listeners are always on, whatever is published:
+ * wRPC-Borsh for the testnet indexer, gRPC for the testnet CPU miner and bridge.
+ * Returns whether the file changed (a running node needs recreating to pick it up).
  */
 export function writeTestnetArgsFile(cfg, siblings = {}) {
-    return writeArgsFile(cfg, { indexer: true, ...siblings }, KASPAD_TESTNET_ARGS_FILE);
+    let before = null;
+    try {
+        before = fs.readFileSync(KASPAD_TESTNET_ARGS_FILE, 'utf8');
+    } catch {
+        /* first write */
+    }
+    const args = writeArgsFile(cfg, { indexer: true, mining: true, ...siblings }, KASPAD_TESTNET_ARGS_FILE);
+    const changed = before !== fs.readFileSync(KASPAD_TESTNET_ARGS_FILE, 'utf8');
+    return Object.assign(args, { changed });
 }
 
 /**

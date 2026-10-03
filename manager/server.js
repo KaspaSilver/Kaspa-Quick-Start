@@ -41,6 +41,7 @@ import * as emission from './lib/emission.js';
 import * as pruning from './lib/pruning.js';
 import * as kassigner from './lib/kassigner.js';
 import * as selfservice from './lib/selfservice.js';
+import * as cpuminer from './lib/cpuminer.js';
 import * as publish from './lib/publish.js';
 import * as portcheck from './lib/portcheck.js';
 import * as push from './lib/push.js';
@@ -1876,6 +1877,24 @@ async function testnetMiningStatus() {
         extraSubnets: loadManagerConfig().scan.extraSubnets,
     };
 }
+
+// ---- Testnet-10 CPU miner (the Testnet view's Mining tab) -------------------
+route('GET', /^\/api\/cpuminer$/, async (req, res) => {
+    const [state, stats] = await Promise.all([lifecycle.status('cpuminer-testnet'), cpuminer.stats()]);
+    sendJson(res, 200, { config: cpuminer.loadConfig(), cpus: cpuminer.cpuCount(), state, stats });
+});
+
+route('PUT', /^\/api\/cpuminer$/, async (req, res) => {
+    const body = await readBody(req);
+    const { cfg, errors } = cpuminer.validate(body);
+    if (errors.length) return fail(res, 400, errors.join(' '));
+    cpuminer.saveConfig(cfg);
+    const state = await lifecycle.status('cpuminer-testnet');
+    if (!state?.running) return sendJson(res, 200, { ok: true, config: cfg });
+    // Running: recreate it on the new address / threads.
+    const job = jobs.start('Apply testnet miner settings', (onLine) => lifecycle.setRunning('cpuminer-testnet', true, onLine));
+    sendJson(res, 202, { ok: true, config: cfg, jobId: job.id });
+});
 
 route('GET', /^\/api\/mining$/, async (req, res, match, url) => {
     if (url.searchParams.get('net') === 'testnet') return sendJson(res, 200, await testnetMiningStatus());
