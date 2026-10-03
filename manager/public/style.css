@@ -2418,3 +2418,7 @@ body { -webkit-tap-highlight-color: transparent; }
 @media (max-width: 860px) {
     main { overflow-x: clip; }
 }
+
+/* Network views: parts that only exist for one network. */
+body.testnet-view [data-mainnet-only] { display: none !important; }
+body:not(.testnet-view) [data-testnet-only]:not(.nav-item):not(.nav-row) { display: none !important; }

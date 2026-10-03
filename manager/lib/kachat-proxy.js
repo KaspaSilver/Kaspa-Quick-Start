@@ -14,6 +14,10 @@
 
 const ADMIN_ORIGIN = process.env.KACHAT_ADMIN_ORIGIN || 'http://kachat-app:3081';
 export const MOUNT = '/kachat';
+// The testnet-10 indexer's admin API, for the Testnet view's Indexer tab. A separate
+// mount so nothing the Testnet view does can reach the mainnet indexer.
+const TESTNET_ADMIN_ORIGIN = process.env.KACHAT_TESTNET_ADMIN_ORIGIN || 'http://kachat-app-testnet:3081';
+export const TESTNET_MOUNT = '/kachat-testnet';
 
 /** Headers that describe a hop, not the payload, and must not be forwarded. */
 const HOP_BY_HOP = new Set([
@@ -29,8 +33,11 @@ const HOP_BY_HOP = new Set([
     'content-length',
 ]);
 
-export async function handle(req, res, url) {
-    const target = url.pathname.slice(MOUNT.length) || '/';
+export const handle = (req, res, url) => proxy(req, res, url, MOUNT, ADMIN_ORIGIN);
+export const handleTestnet = (req, res, url) => proxy(req, res, url, TESTNET_MOUNT, TESTNET_ADMIN_ORIGIN);
+
+async function proxy(req, res, url, mount, origin) {
+    const target = url.pathname.slice(mount.length) || '/';
 
     // Only the API is reachable. Upstream's own page is no longer served through
     // here, and nothing else on that port should be exposed by accident.
@@ -40,7 +47,7 @@ export async function handle(req, res, url) {
         return;
     }
 
-    const upstream = `${ADMIN_ORIGIN}${target}${url.search}`;
+    const upstream = `${origin}${target}${url.search}`;
 
     let body;
     if (!['GET', 'HEAD'].includes(req.method)) {

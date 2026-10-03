@@ -344,8 +344,8 @@
     <section id="tab-kaspad" class="tab">
       <nav class="subnav" aria-label="Kaspad">
         <button class="subtab-btn active" data-subtab="overview">Overview</button>
-        <button class="subtab-btn" data-subtab="public-howto">How to go public</button>
-        <button class="subtab-btn" data-subtab="public">Am I public?</button>
+        <button class="subtab-btn" data-subtab="public-howto" data-mainnet-only>How to go public</button>
+        <button class="subtab-btn" data-subtab="public" data-mainnet-only>Am I public?</button>
         <button class="subtab-btn" data-subtab="settings">Settings</button>
         <button class="subtab-btn" data-subtab="updates">Updates</button>
         <button class="subtab-btn" data-subtab="kaspadlog">Log</button>
@@ -690,8 +690,8 @@
       <nav class="subnav" aria-label="Mining">
         <button class="subtab-btn active" data-subtab="mining-overview">Overview</button>
         <button class="subtab-btn" data-subtab="mining-connect">Connect Your Miner</button>
-        <button class="subtab-btn" data-subtab="mining-roi">ROI calculator</button>
-        <button class="subtab-btn" data-subtab="mining-settings">Settings</button>
+        <button class="subtab-btn" data-subtab="mining-roi" data-mainnet-only>ROI calculator</button>
+        <button class="subtab-btn" data-subtab="mining-settings" data-mainnet-only>Settings</button>
         <button class="subtab-btn" data-subtab="mining-uninstall">Uninstall</button>
       </nav>
 
@@ -703,6 +703,10 @@
             <span id="mining-version" class="badge" title="The stratum bridge ships in the node's release, so this tracks the node"></span>
           </div>
           <div id="mining-blockers" class="verdict bad" hidden></div>
+          <p class="hint" data-testnet-only>
+            The testnet-10 stratum bridge, mining on the testnet node. Its stratum ports are the
+            mainnet ports + 100, and its other settings follow Mainnet, Mining, Settings.
+          </p>
           <p class="error" id="mining-error" hidden></p>
 
           <div class="row">
@@ -728,7 +732,7 @@
             <p class="hint" id="m-unreachable" hidden></p>
           </div>
 
-          <div class="node-section" id="earnings-section">
+          <div class="node-section" id="earnings-section" data-mainnet-only>
             <h3>Projected earnings</h3>
               <div class="earn-row">
                 <label for="earn-hashrate">Hashrate</label>
@@ -962,7 +966,7 @@
               </p>
               <div class="row">
                 <button type="button" id="mining-save" class="primary">Apply &amp; restart bridge</button>
-                <button type="button" class="ghost" data-bridge="restart">Restart bridge</button>
+                <button type="button" class="ghost" data-bridge="restart" data-mainnet-only>Restart bridge</button>
               </div>
               <p class="error" id="mining-settings-error" hidden></p>
             </article>
@@ -1008,10 +1012,10 @@
         <button class="subtab-btn" data-subtab="kachat-chats">Chats</button>
         <button class="subtab-btn" data-subtab="kachat-groups">Group chats</button>
         <button class="subtab-btn" data-subtab="kachat-chess">Chess</button>
-        <button class="subtab-btn" data-subtab="kachat-translate">Translation</button>
+        <button class="subtab-btn" data-subtab="kachat-translate" data-mainnet-only>Translation</button>
         <button class="subtab-btn" data-subtab="kachat-transfer">Export / Import</button>
         <button class="subtab-btn" data-subtab="kachat-delete">Delete</button>
-        <button class="subtab-btn" data-subtab="kachat-settings">Settings</button>
+        <button class="subtab-btn" data-subtab="kachat-settings" data-mainnet-only>Settings</button>
         <button class="subtab-btn" data-subtab="kachat-updates">Updates</button>
         <button class="subtab-btn" data-subtab="kachat-uninstall">Uninstall</button>
       </nav>
@@ -1349,7 +1353,7 @@
           <div id="kachat-import-result" class="verdict" hidden></div>
         </article>
 
-        <article class="card span2">
+        <article class="card span2" data-mainnet-only>
           <h3>Automatic backup</h3>
           <p class="muted">
             Every night at 12&nbsp;AM (server time) this writes <strong>one</strong> combined,
@@ -1393,14 +1397,14 @@
               commits newer than the one this image was built from. Indexed data is
               kept, so there is no re-scan of the chain.
             </p>
-            <label class="inline">Branch / tag
+            <label class="inline" data-mainnet-only>Branch / tag
               <select id="kachat-ref"><option value="main">main</option></select>
               <button type="button" class="ghost mini" id="kachat-refs-scan" title="Look up the branches and tags this repository has">Rescan</button>
             </label>
-            <label class="inline" id="kachat-ref-custom-row" hidden>Ref
+            <label class="inline" id="kachat-ref-custom-row" data-mainnet-only hidden>Ref
               <input id="kachat-ref-custom" size="24" placeholder="branch, tag or commit">
             </label>
-            <label class="inline">Network
+            <label class="inline" data-mainnet-only>Network
               <select id="kachat-network">
                 <option value="mainnet">Mainnet</option>
                 <option value="testnet-10">Testnet 10</option>
@@ -1411,8 +1415,12 @@
             <div class="row">
               <button type="button" id="kachat-check" class="ghost">Check for updates</button>
               <button type="button" id="kachat-update" class="primary" disabled>Update</button>
-              <button type="button" id="kachat-rebuild" class="ghost">Rebuild from this branch</button>
+              <button type="button" id="kachat-rebuild" class="ghost" data-mainnet-only>Rebuild from this branch</button>
             </div>
+            <p class="hint" data-testnet-only>
+              The testnet-10 indexer. Update rebuilds KaChat-Indexer at the stack's branch and
+              recreates only the testnet indexer; the mainnet indexer keeps running untouched.
+            </p>
             <p class="hint">
               Rebuild is what to press after changing the branch or network; Update
               is for staying where you are. The network must match the node's, or

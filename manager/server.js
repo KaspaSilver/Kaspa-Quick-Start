@@ -1838,7 +1838,47 @@ async function networkHashesPerSecond(stats) {
     return { value: 0, source: null };
 }
 
-route('GET', /^\/api\/mining$/, async (req, res) => {
+// ---- Testnet-10 mining (bridge-testnet): status and stats only. Its config is the
+// mainnet bridge config rendered against kaspad-testnet with stratum ports +100
+// (writeTestnetBridgeFiles), so there is nothing of its own to edit here. Counters
+// are not accumulated or persisted: that state belongs to the mainnet bridge.
+const BRIDGE_TESTNET_CONTAINER = 'kaspa-node-bridge-testnet';
+const TESTNET_STRATUM_OFFSET = 100;
+
+async function testnetMiningStatus() {
+    const cfg = bridge.loadBridgeConfig();
+    const [state, nodeState, snapshot] = await Promise.all([
+        dockerctl.containerState(BRIDGE_TESTNET_CONTAINER),
+        dockerctl.containerState(KASPAD_TESTNET_CONTAINER),
+        nodeSnapshot(rpcTestnet),
+    ]);
+    const stats = state.running ? await bridge.fetchStats(bridge.TESTNET_STATS_URL) : null;
+    const synced = Boolean(snapshot.sync?.isSynced ?? snapshot.info?.isSynced ?? false);
+    const reason = !nodeState.running
+        ? 'The testnet node is not running.'
+        : !snapshot.reachable
+          ? 'The testnet node is still starting up.'
+          : !synced
+            ? 'The testnet node is still syncing.'
+            : null;
+    return {
+        testnet: true,
+        stratumOffset: TESTNET_STRATUM_OFFSET,
+        // Shown for the stratum ports; `enabled` follows the testnet bridge itself.
+        config: { ...cfg, enabled: state.exists },
+        container: state,
+        stats,
+        version: await dockerctl.imageVersion(BRIDGE_TESTNET_CONTAINER).catch(() => null),
+        blockers: [],
+        readiness: { ready: !reason, reason },
+        publicIp: await duckdns.publicIp(),
+        lan: await network.primaryLanAddress(),
+        extraSubnets: loadManagerConfig().scan.extraSubnets,
+    };
+}
+
+route('GET', /^\/api\/mining$/, async (req, res, match, url) => {
+    if (url.searchParams.get('net') === 'testnet') return sendJson(res, 200, await testnetMiningStatus());
     const cfg = bridge.loadBridgeConfig();
     const [state, stats, version] = await Promise.all([
         dockerctl.containerState(dockerctl.BRIDGE_CONTAINER),
@@ -2017,7 +2057,12 @@ route('POST', /^\/api\/mining\/scan$/, async (req, res) => {
     }
 });
 
-route('GET', /^\/api\/mining\/stats$/, async (req, res) => {
+route('GET', /^\/api\/mining\/stats$/, async (req, res, match, url) => {
+    if (url.searchParams.get('net') === 'testnet') {
+        const state = await dockerctl.containerState(BRIDGE_TESTNET_CONTAINER);
+        if (!state.running) return sendJson(res, 200, { enabled: state.exists, reachable: false, workers: [], blocks: [] });
+        return sendJson(res, 200, { enabled: true, ...(await bridge.fetchStats(bridge.TESTNET_STATS_URL)) });
+    }
     const cfg = bridge.loadBridgeConfig();
     if (!cfg.enabled) return sendJson(res, 200, { enabled: false, reachable: false, workers: [], blocks: [] });
     sendJson(res, 200, { enabled: true, ...(await bridgeStatsWithIps()) });
@@ -2659,8 +2704,12 @@ route('GET', /^\/api\/kachat\/translate$/, async (req, res) => {
 // serves the leaderboard on its content API (kachat-app:3080); the panel just fetches and
 // displays it. Read-only: nothing here changes the stack.
 const CHESS_ORIGIN = process.env.KACHAT_CONTENT_ORIGIN || 'http://kachat-app:3080';
-route('GET', /^\/api\/chess$/, async (req, res) => {
-    const state = await dockerctl.containerState('kaspa-node-kachat');
+const CHESS_TESTNET_ORIGIN = 'http://kachat-app-testnet:3080';
+route('GET', /^\/api\/chess$/, async (req, res, match, url) => {
+    // ?net=testnet reads the testnet-10 indexer's chess-arena instead.
+    const testnet = url.searchParams.get('net') === 'testnet';
+    const origin = testnet ? CHESS_TESTNET_ORIGIN : CHESS_ORIGIN;
+    const state = await dockerctl.containerState(testnet ? 'kaspa-node-kachat-testnet' : 'kaspa-node-kachat');
     if (!state.exists) {
         return sendJson(res, 200, { installed: false, running: false, leaderboard: [], tournaments: [] });
     }
@@ -2669,8 +2718,8 @@ route('GET', /^\/api\/chess$/, async (req, res) => {
     let error = null;
     try {
         const [lb, ts] = await Promise.all([
-            fetch(`${CHESS_ORIGIN}/chess/leaderboard?limit=100`, { signal: AbortSignal.timeout(6000) }),
-            fetch(`${CHESS_ORIGIN}/chess/tournaments?limit=200`, { signal: AbortSignal.timeout(6000) }),
+            fetch(`${origin}/chess/leaderboard?limit=100`, { signal: AbortSignal.timeout(6000) }),
+            fetch(`${origin}/chess/tournaments?limit=200`, { signal: AbortSignal.timeout(6000) }),
         ]);
         if (lb.ok) leaderboard = (await lb.json()).players ?? [];
         if (ts.ok) tournaments = (await ts.json()).tournaments ?? [];
@@ -3099,7 +3148,62 @@ route('POST', /^\/api\/services\/([a-z-]+)\/install$/, async (req, res, match) =
             bridge.writeBridgeFiles(miningCfg, loadNodeConfig());
         }
 
+        // The testnet indexer is built from KaChat-Indexer at KACHAT_REF; record which
+        // commit, so its Updates tab can say whether it is behind.
+        const upstream =
+            match[1] === 'kachat-testnet'
+                ? await selfservice.latestCommit({ repo: apps.APPS.kachat.repo, ref: readEnvFile().KACHAT_REF || 'main' }).catch(() => null)
+                : null;
         await lifecycle.install(match[1], onLine);
+        if (upstream) apps.writeBuildRecord('kachat-testnet', { sha: upstream.sha, ref: readEnvFile().KACHAT_REF || 'main', builtAt: new Date().toISOString() });
+    });
+    sendJson(res, 202, { ok: true, jobId: job.id });
+});
+
+// ---- Testnet-10 indexer updates. It is the same image as mainnet's (kaspa-one-click/
+// kachat:<KACHAT_REF>), so an update rebuilds that from KaChat-Indexer and recreates
+// only the testnet indexer; the mainnet indexer keeps its running container.
+route('GET', /^\/api\/kachat-testnet\/update$/, async (req, res) => {
+    const ref = readEnvFile().KACHAT_REF || 'main';
+    const built = apps.readBuildRecord('kachat-testnet');
+    let latest = null;
+    let error = null;
+    try {
+        latest = await selfservice.latestCommit({ repo: apps.APPS.kachat.repo, ref });
+    } catch (err) {
+        error = err.message;
+    }
+    sendJson(res, 200, {
+        repo: apps.APPS.kachat.repo,
+        ref,
+        built,
+        latest,
+        error,
+        updateAvailable: Boolean(latest && (!built?.sha || built.sha !== latest.sha)),
+        state: await lifecycle.status('kachat-testnet'),
+    });
+});
+
+route('POST', /^\/api\/kachat-testnet\/update$/, async (req, res) => {
+    const state = await lifecycle.status('kachat-testnet');
+    if (!state?.installed) return fail(res, 409, 'The testnet indexer is not installed yet.');
+    const ref = readEnvFile().KACHAT_REF || 'main';
+    const job = jobs.start('Update the testnet indexer', async (onLine) => {
+        const upstream = await selfservice.latestCommit({ repo: apps.APPS.kachat.repo, ref }).catch(() => null);
+        onLine(`Building KaChat-Indexer@${ref}${upstream ? ` (${upstream.shortSha})` : ''} for the testnet indexer.`);
+        await dockerctl.compose(['build', 'kachat-app-testnet'], { onLine, profile: 'testnet-kachat', timeoutMs: 120 * 60_000 });
+        if ((await lifecycle.status('kachat-testnet'))?.running) {
+            onLine('Recreating the testnet indexer on the new build.');
+            await dockerctl.compose(['up', '-d', '--no-deps', '--force-recreate', 'kachat-app-testnet'], {
+                onLine,
+                profile: 'testnet-kachat',
+                timeoutMs: 10 * 60_000,
+            });
+        } else {
+            onLine('The testnet indexer is stopped; it runs the new build when you start it.');
+        }
+        if (upstream) apps.writeBuildRecord('kachat-testnet', { sha: upstream.sha, ref, builtAt: new Date().toISOString() });
+        onLine('Done. The mainnet indexer was not touched.');
     });
     sendJson(res, 202, { ok: true, jobId: job.id });
 });
@@ -3506,6 +3610,11 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === kachatProxy.MOUNT || url.pathname.startsWith(`${kachatProxy.MOUNT}/`)) {
         if (authRequired() && !isAuthenticated(req)) return fail(res, 401, 'Not signed in.');
         return kachatProxy.handle(req, res, url);
+    }
+    // The testnet-10 indexer's admin API (the Testnet view's Indexer tab).
+    if (url.pathname === kachatProxy.TESTNET_MOUNT || url.pathname.startsWith(`${kachatProxy.TESTNET_MOUNT}/`)) {
+        if (authRequired() && !isAuthenticated(req)) return fail(res, 401, 'Not signed in.');
+        return kachatProxy.handleTestnet(req, res, url);
     }
 
     const isApi = url.pathname.startsWith('/api/') || url.pathname === '/healthz';

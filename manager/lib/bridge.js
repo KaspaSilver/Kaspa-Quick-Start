@@ -278,10 +278,13 @@ export const rejectedBlockCount = () => rejectedBlocks.size;
  * bridge/src/prom.rs. Everything is optional -- a bridge that just started has
  * no workers and no blocks, which is a normal state, not an error.
  */
-export async function fetchStats() {
+// The testnet-10 bridge (bridge-testnet) serves the same dashboard API on the same port.
+export const TESTNET_STATS_URL = `http://bridge-testnet:${DASHBOARD_PORT}/api/stats`;
+
+export async function fetchStats(url = STATS_URL) {
     let raw;
     try {
-        const res = await fetch(STATS_URL, { signal: AbortSignal.timeout(5000) });
+        const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
         if (!res.ok) throw new Error(`bridge returned ${res.status}`);
         raw = await res.json();
     } catch (err) {

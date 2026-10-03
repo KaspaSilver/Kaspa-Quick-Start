@@ -315,6 +315,8 @@ const effectiveService = (key) => (networkView === 'testnet' && TESTNET_UNIT[key
 function applyNetworkView(net) {
     const testnet = net === 'testnet';
     networkView = testnet ? 'testnet' : 'mainnet';
+    // Hides [data-mainnet-only] / shows [data-testnet-only] parts of every tab.
+    document.body.classList.toggle('testnet-view', testnet);
 
     // Show/hide each nav row by whether its tab belongs in the testnet view.
     // A `data-testnet-only` item (the .kachat registry) shows only in the testnet view.
@@ -381,6 +383,12 @@ function refreshKaspadForView() {
     refreshStatus().catch(() => {});
     uninstallSignature = null;
     renderUninstallCards();
+    // The Indexer and Mining tabs read the viewed network's containers.
+    if (activeSubtab('kachat')) refreshKachatPanel();
+    if (activeSubtab('kachat') === 'kachat-chess') loadChess().catch(() => {});
+    if (activeSubtab('kachat') === 'kachat-updates') loadTestnetIndexerUpdate().catch(() => {});
+    loadMining().catch(() => {});
+    if (appsState) renderAppState('kachat', appsState.apps?.kachat ?? {});
     // A version check belongs to one node; drop it so Update cannot act on the other's.
     latestRelease = null;
     $('apply-update').disabled = true;
@@ -389,17 +397,16 @@ function refreshKaspadForView() {
     $('release-notes').hidden = true;
 }
 
-// How to go public and Am I public? are about the mainnet node; the Testnet view hides
-// them. Updates stays: the testnet node has its own version pin (KASPAD_TESTNET_VERSION).
-const MAINNET_ONLY_KASPAD_SUBTABS = new Set(['public-howto', 'public']);
+// Sub-tabs marked data-mainnet-only (CSS hides them in the Testnet view) must not
+// stay selected there: fall back to the section's first visible sub-tab.
 function applyKaspadSubtabsForView() {
-    const section = $('tab-kaspad');
-    if (!section) return;
-    const testnet = networkView === 'testnet';
-    for (const button of section.querySelectorAll('.subtab-btn')) {
-        button.hidden = testnet && MAINNET_ONLY_KASPAD_SUBTABS.has(button.dataset.subtab);
+    if (networkView !== 'testnet') return;
+    for (const section of document.querySelectorAll('section.tab')) {
+        const active = section.querySelector('.subtab-btn.active');
+        if (!active || !active.hasAttribute('data-mainnet-only')) continue;
+        const first = section.querySelector('.subtab-btn:not([data-mainnet-only])');
+        if (first) selectSubtab(section, first.dataset.subtab);
     }
-    if (testnet && MAINNET_ONLY_KASPAD_SUBTABS.has(activeSubtab('kaspad'))) selectSubtab(section, 'overview');
 }
 
 // Restore the remembered view on load (default mainnet = full nav).
@@ -478,6 +485,7 @@ function selectSubtab(section, name) {
     // Chess is its own read-only view (the leaderboard the indexer replays), so it
     // loads its own data rather than the general indexer-panel refresh.
     if (name === 'kachat-chess') loadChess().catch(() => {});
+    if (name === 'kachat-updates') loadTestnetIndexerUpdate().catch(() => {});
     else if (name === 'kachat-transfer') { loadBackup().catch(() => {}); refreshKachatPanel(); }
     else if (name.startsWith('kachat-')) refreshKachatPanel();
     // Its own call: refreshKachatPanel gives up when the indexer is not
@@ -1974,8 +1982,13 @@ $('instances-body').addEventListener('click', (event) => {
     renderInstances(rows.filter((_, i) => i !== index));
 });
 
+// Stratum ports shown on Connect: the testnet bridge listens on the mainnet ports + 100.
+let miningPortOffset = 0;
+const miningQuery = () => (networkView === 'testnet' ? '?net=testnet' : '');
+
 async function loadMining() {
-    const r = await api('/api/mining');
+    const r = await api(`/api/mining${miningQuery()}`);
+    miningPortOffset = r.stratumOffset ?? 0;
     miningConfig = r.config;
     miningPublicIp = r.publicIp;
     miningLan = r.lan;
@@ -2288,7 +2301,7 @@ function renderStratumTargets(cfg) {
     $('stratum-local').innerHTML = cfg.instances
         .map((inst) =>
             stratumRow(
-                inst.stratumPort,
+                inst.stratumPort + miningPortOffset,
                 lanIp ?? 'this-machine-ip',
                 inst.minShareDiff,
                 lanIp ? '<span class="tag ok">ready</span>' : '<span class="tag">LAN address unknown</span>',
@@ -2299,7 +2312,7 @@ function renderStratumTargets(cfg) {
     $('stratum-public').innerHTML = cfg.instances
         .map((inst) =>
             stratumRow(
-                inst.stratumPort,
+                inst.stratumPort + miningPortOffset,
                 miningPublicIp ?? 'your-public-ip',
                 inst.minShareDiff,
                 inst.publish
@@ -2509,7 +2522,7 @@ $('mining-check').addEventListener('click', async () => {
     const el = $('mining-update-status');
     setUpdateStatus(el, 'checking', 'Checking GitHub…');
     try {
-        const r = await api('/api/update/check');
+        const r = await api(`/api/update/check${networkView === 'testnet' ? '?net=testnet' : ''}`);
         if (r.updateAvailable) {
             setUpdateStatus(
                 el,
@@ -2527,7 +2540,7 @@ $('mining-check').addEventListener('click', async () => {
 async function refreshMiningStats() {
     if (!miningConfig?.enabled) return;
     try {
-        const [stats, state] = await Promise.all([api('/api/mining/stats'), api('/api/mining')]);
+        const [stats, state] = await Promise.all([api(`/api/mining/stats${miningQuery()}`), api(`/api/mining${miningQuery()}`)]);
         // In "use my miners" mode the earnings follow the miners live, so redraw
         // them from the same fetch. Do it first: it refreshes the block reward
         // and price the blocks table reads. A what-if is left untouched.
@@ -3006,6 +3019,8 @@ function appStatusNote(state, { absent, stopped }) {
 }
 
 function renderAppState(name, state) {
+    // The Testnet view's Indexer tab describes the testnet indexer, never mainnet's.
+    if (name === 'kachat' && networkView === 'testnet') return renderTestnetIndexerState();
     const badge = $(`${name}-state`);
     const container = state.container ?? {};
     const running = container.running;
@@ -3397,13 +3412,16 @@ const CHAT_HEADLINE = [
 
 class IndexerDown extends Error {}
 
+const kachatBase = () => (networkView === 'testnet' ? '/kachat-testnet/api/' : '/kachat/api/');
+
 async function kachat(path, { method = 'GET', body, raw = false } = {}) {
     // When the container is not there, the proxy still spends five seconds
     // failing to resolve its hostname before giving up. We already know the
     // answer, so do not make anyone wait for it.
     if (appsState && !kachatRunning()) throw new IndexerDown('The indexer is not running.');
 
-    const res = await fetch(`/kachat/api/${path}`, {
+    // The Testnet view talks only to the testnet indexer's admin API.
+    const res = await fetch(`${kachatBase()}${path}`, {
         method,
         headers: body ? { 'Content-Type': 'application/json' } : {},
         body: body ? JSON.stringify(body) : undefined,
@@ -3507,7 +3525,79 @@ function kResult(id, text, bad = false) {
 
 // --- loaders ---
 
-const kachatRunning = () => Boolean(appsState?.apps?.kachat?.container?.running);
+const kachatRunning = () =>
+    networkView === 'testnet'
+        ? Boolean(serviceState?.['kachat-testnet']?.running)
+        : Boolean(appsState?.apps?.kachat?.container?.running);
+
+// ---- The testnet-10 indexer in the Indexer tab ----------------------------------
+let testnetIndexerUpdate = null;
+
+function renderTestnetIndexerState() {
+    const unit = serviceState?.['kachat-testnet'] ?? {};
+    const badge = $('kachat-state');
+    if (badge) {
+        badge.textContent = !unit.installed ? 'not installed' : unit.running ? 'running' : 'stopped';
+        badge.className = `tag ${!unit.installed ? 'off' : unit.running ? 'ok' : ''}`;
+    }
+    const notice = $('kachat-notice');
+    if (notice) {
+        notice.hidden = Boolean(unit.running);
+        notice.className = 'verdict';
+        notice.textContent = !unit.installed
+            ? 'The testnet indexer is not installed yet.'
+            : 'The testnet indexer is not running. Its switch in the sidebar starts it.';
+    }
+    const build = $('kachat-build');
+    const built = testnetIndexerUpdate?.built;
+    if (build) {
+        build.textContent = built?.sha
+            ? `Testnet indexer built from ${String(built.sha).slice(0, 7)} on ${new Date(built.builtAt).toLocaleString()}`
+            : 'Testnet indexer: no build recorded yet (check for updates).';
+    }
+}
+
+async function loadTestnetIndexerUpdate() {
+    if (networkView !== 'testnet') return;
+    const status = $('kachat-update-status');
+    setUpdateStatus(status, 'checking', 'Checking KaChat-Indexer…');
+    try {
+        const r = await api('/api/kachat-testnet/update');
+        testnetIndexerUpdate = r;
+        renderTestnetIndexerState();
+        $('kachat-update').disabled = !r.updateAvailable || !r.state?.installed;
+        if (r.error) setUpdateStatus(status, 'error', r.error);
+        else if (r.updateAvailable) {
+            setUpdateStatus(status, 'available', `${r.repo}@${r.ref} has ${r.latest.shortSha}: ${r.latest.message}`);
+        } else setUpdateStatus(status, 'current', `Up to date with ${r.repo}@${r.ref} (${r.latest?.shortSha ?? '?'}).`);
+    } catch (e) {
+        setUpdateStatus(status, 'error', e.message);
+    }
+}
+
+// In the Testnet view the Indexer's Check / Update buttons act on the testnet indexer.
+// Capture phase, so the mainnet handlers on the buttons never see these clicks.
+document.addEventListener(
+    'click',
+    (event) => {
+        if (networkView !== 'testnet') return;
+        const id = event.target?.closest?.('button')?.id;
+        if (id !== 'kachat-check' && id !== 'kachat-update' && id !== 'kachat-rebuild') return;
+        event.stopPropagation();
+        event.preventDefault();
+        if (id === 'kachat-check') return void loadTestnetIndexerUpdate();
+        if (id === 'kachat-update') {
+            if (!confirm('Update the testnet-10 indexer?\n\nIt rebuilds KaChat-Indexer and recreates only the testnet indexer. Indexed data is kept.')) return;
+            return void runAction({
+                key: 'kachat-testnet',
+                title: 'Updating the testnet indexer',
+                note: 'Compiles KaChat-Indexer from source, then recreates only the testnet indexer. The mainnet indexer is not touched.',
+                request: () => api('/api/kachat-testnet/update', { method: 'POST' }),
+            }).then(() => loadTestnetIndexerUpdate());
+        }
+    },
+    true,
+);
 
 async function loadKachatOverview() {
     try {
@@ -4410,7 +4500,7 @@ $('kachat-import-file').addEventListener('change', async (e) => {
     if (!file) return;
     kResult('kachat-file-result', `Uploading ${file.name} (${kBytes(file.size)}).`);
     try {
-        const res = await fetch('/kachat/api/chat-import-file', { method: 'POST', body: file });
+        const res = await fetch(`${kachatBase()}chat-import-file`, { method: 'POST', body: file });
         // Upstream answers this one in plain text, not JSON.
         const text = (await res.text()).trim();
         if (!res.ok) throw new Error(text || res.statusText);
@@ -5823,7 +5913,7 @@ async function loadChess() {
     const err = $('chess-error');
     err.hidden = true;
     try {
-        renderChess(await api('/api/chess'));
+        renderChess(await api(`/api/chess${networkView === 'testnet' ? '?net=testnet' : ''}`));
     } catch (e) {
         err.textContent = e.message;
         err.hidden = false;
