@@ -5585,13 +5585,24 @@ function renderUninstallCards() {
         const state = serviceState[key];
         const installed = Boolean(state?.installed);
 
+        // Testnet units share mainnet's built images, so they never remove any.
+        const testnetUnit = TESTNET_UNIT_VALUES.has(key);
+        const removes = testnetUnit
+            ? 'Removes the testnet containers and, by default, their data. The images are shared with mainnet, so they are kept (Global settings → Clear cache frees them when nothing uses them).'
+            : 'Removes the containers, the images built for it, and by default its data.';
+        // One nginx serves both networks: there is no testnet-only proxy to remove.
+        const sharedProxy =
+            key === 'proxy' && networkView === 'testnet'
+                ? `<div class="notice"><p><strong>Shared with mainnet.</strong> There is one proxy for both networks, so this removes the proxy mainnet uses too: every published mainnet and testnet domain stops answering until it is installed again. Your domains and certificates are kept.</p></div>`
+                : '';
         card.innerHTML = `
       <h3>Uninstall ${escapeHtml(state?.label ?? key)}</h3>
       <p class="muted">
-        Removes the containers, the images built for it, and by default its data.
+        ${removes}
         Everything else in the panel leaves all of that alone: stopping a service
         keeps it, and this is the only place that does not.
       </p>
+      ${sharedProxy}
       <div class="notice">
         <p><strong>What goes:</strong> ${escapeHtml(UNINSTALL_COPY[key] ?? 'its data')}.</p>
         <p class="muted">Installing it again afterwards starts from nothing, and rebuilds.</p>
