@@ -2448,3 +2448,24 @@ body:not(.testnet-view) [data-testnet-only]:not(.nav-item):not(.nav-row) { displ
     border-color: var(--accent-dim);
     background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
+
+/* In-page confirm (askConfirm in app.js): above every overlay, including the job console. */
+.ask-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    background: color-mix(in srgb, #000 55%, transparent);
+}
+.ask-box {
+    width: min(460px, 100%);
+    max-height: calc(100vh - 32px);
+    overflow: auto;
+    background: var(--panel);
+}
+.ask-box h3 { margin: 0 0 8px; }
+.ask-detail { white-space: pre-line; margin: 0 0 14px; }
+.ask-detail:empty { display: none; }
+.ask-actions { justify-content: flex-end; }

@@ -290,6 +290,53 @@ for (const item of document.querySelectorAll('.nav-item')) {
     item.addEventListener('click', () => selectTab(item.dataset.tab));
 }
 
+// --- in-page confirm ---
+
+/**
+ * A yes/no question asked inside the page, in place of window.confirm().
+ *
+ * Browsers can block or auto-dismiss native dialogs (Chrome's "prevent this page
+ * from creating additional dialogs", embedded views), and window.confirm then
+ * answers "cancel" without showing anything: buttons looked dead. This cannot be
+ * suppressed. The first line of the message is the question; the rest is detail.
+ */
+function askConfirm(message) {
+    return new Promise((resolve) => {
+        const [question, ...rest] = String(message).split('\n');
+        const scrim = document.createElement('div');
+        scrim.className = 'ask-scrim';
+        scrim.innerHTML = `<div class="ask-box card" role="alertdialog" aria-modal="true" aria-labelledby="ask-q">
+            <h3 id="ask-q"></h3>
+            <p class="ask-detail muted"></p>
+            <div class="row ask-actions">
+              <button type="button" class="ghost" data-ask="no">Cancel</button>
+              <button type="button" class="primary" data-ask="yes">Continue</button>
+            </div>
+          </div>`;
+        scrim.querySelector('#ask-q').textContent = question;
+        scrim.querySelector('.ask-detail').textContent = rest.join('\n').trim();
+        const done = (answer) => {
+            document.removeEventListener('keydown', onKey, true);
+            scrim.remove();
+            resolve(answer);
+        };
+        const onKey = (event) => {
+            if (event.key === 'Escape') {
+                event.stopPropagation();
+                done(false);
+            }
+        };
+        scrim.addEventListener('click', (event) => {
+            if (event.target === scrim) return done(false);
+            const answer = event.target.closest?.('[data-ask]')?.dataset.ask;
+            if (answer) done(answer === 'yes');
+        });
+        document.addEventListener('keydown', onKey, true);
+        document.body.appendChild(scrim);
+        scrim.querySelector('[data-ask="yes"]').focus();
+    });
+}
+
 // --- per-section logs ---
 
 /**
@@ -1006,7 +1053,7 @@ $('action-cancel').addEventListener('click', async () => {
     const action = pendingAction;
     if (!action?.jobId || action.finished) return;
     if (
-        !confirm(
+        !await askConfirm(
             `Cancel "${action.title}"?\n\n` +
                 'Whatever it has already done stays done -- this stops it where it is rather than undoing it. ' +
                 'A build keeps the parts it finished, so starting again does not start from the beginning.',
@@ -1128,7 +1175,7 @@ for (const input of document.querySelectorAll('[data-service]')) {
         // get back in and turn it on again.
         if (service === 'proxy' && !wanted && panelAccess.viaProxy) {
             const where = panelAccess.directUrl || 'the panel on its own port';
-            const proceed = confirm(
+            const proceed = await askConfirm(
                 'You are viewing this panel through the reverse proxy, so stopping it will ' +
                     'disconnect you and this page will freeze on "Stopping…".\n\n' +
                     `Open the panel directly at ${where} on the machine running the node first, ` +
@@ -1780,7 +1827,7 @@ $('check-update').addEventListener('click', async () => {
 $('apply-update').addEventListener('click', async () => {
     if (!latestRelease) return;
     const testnet = networkView === 'testnet';
-    const ok = confirm(
+    const ok = await askConfirm(
         `Update ${testnet ? 'the testnet-10 kaspad' : 'kaspad'} to ${latestRelease.latest}?\n\n` +
             'The node will stop for a moment while the new version is installed. ' +
             'Your chain data is kept, so there is no resync.',
@@ -1848,7 +1895,7 @@ $('install-release').addEventListener('click', async () => {
     if (!version) return;
     const running = latestRelease?.current;
     if (
-        !confirm(
+        !await askConfirm(
             `Install kaspad ${version}?\n\n` +
                 (running ? `You are running ${running}. ` : '') +
                 'The node stops for a moment while it is built. Your chain data is kept, so there is no resync.',
@@ -3488,7 +3535,7 @@ for (const name of ['kachat', 'desktop', 'nextcloud']) {
     });
 
     $(`${name}-update`).addEventListener('click', async () => {
-        if (!confirm(`Rebuild ${name} from the newest commit?\n\nIt will be unavailable while it rebuilds.`)) return;
+        if (!await askConfirm(`Rebuild ${name} from the newest commit?\n\nIt will be unavailable while it rebuilds.`)) return;
         await runAction({
             key: name,
             title: `Rebuilding ${appsState?.apps?.[name]?.label ?? name}`,
@@ -3710,7 +3757,7 @@ async function loadTestnetIndexerUpdate() {
 // Capture phase, so the mainnet handlers on the buttons never see these clicks.
 document.addEventListener(
     'click',
-    (event) => {
+    async (event) => {
         if (networkView !== 'testnet') return;
         const id = event.target?.closest?.('button')?.id;
         if (id !== 'kachat-check' && id !== 'kachat-update' && id !== 'kachat-rebuild') return;
@@ -3718,7 +3765,7 @@ document.addEventListener(
         event.preventDefault();
         if (id === 'kachat-check') return void loadTestnetIndexerUpdate();
         if (id === 'kachat-update') {
-            if (!confirm('Update the testnet-10 indexer?\n\nIt rebuilds KaChat-Indexer and recreates only the testnet indexer. Indexed data is kept.')) return;
+            if (!await askConfirm('Update the testnet-10 indexer?\n\nIt rebuilds KaChat-Indexer and recreates only the testnet indexer. Indexed data is kept.')) return;
             return void runAction({
                 key: 'kachat-testnet',
                 title: 'Updating the testnet indexer',
@@ -4695,7 +4742,7 @@ $('kachat-del-bcast-btn').addEventListener('click', async () => {
 
 $('kachat-purge-channel-btn').addEventListener('click', async () => {
     const channel = $('kachat-purge-channel').value;
-    if (!confirm(`Delete every stored public chat in #${channel}?`)) return;
+    if (!await askConfirm(`Delete every stored public chat in #${channel}?`)) return;
     try {
         const d = await kachat('broadcasts/delete', { method: 'POST', body: { channel } });
         kResult('kachat-bcast-del-result', `Deleted ${d.deleted} broadcasts from #${channel}.`);
@@ -4705,7 +4752,7 @@ $('kachat-purge-channel-btn').addEventListener('click', async () => {
 });
 
 $('kachat-purge-all-btn').addEventListener('click', async () => {
-    if (!confirm('Delete every stored public chat in every channel?\n\nThis cannot be undone here.')) return;
+    if (!await askConfirm('Delete every stored public chat in every channel?\n\nThis cannot be undone here.')) return;
     try {
         const d = await kachat('broadcasts/delete', { method: 'POST', body: { all: true } });
         kResult('kachat-bcast-del-result', `Deleted ${d.deleted} broadcasts.`);
@@ -4715,7 +4762,7 @@ $('kachat-purge-all-btn').addEventListener('click', async () => {
 });
 
 $('kachat-purge-chat-btn').addEventListener('click', async () => {
-    if (!confirm('Wipe every message, group, handshake and payment from the chat store?\n\nThis cannot be undone here.'))
+    if (!await askConfirm('Wipe every message, group, handshake and payment from the chat store?\n\nThis cannot be undone here.'))
         return;
     try {
         await kachat('chat/purge', { method: 'POST' });
@@ -4734,12 +4781,12 @@ $('tab-kachat').addEventListener('click', async (event) => {
 
     try {
         if (d.kachatDelContent) {
-            if (!confirm('Delete this KaPosts item from the index?\n\nThis removes the indexer\'s stored copy only — it is still on chain, and a re-index would bring it back. This cannot be undone here.')) return;
+            if (!await askConfirm('Delete this KaPosts item from the index?\n\nThis removes the indexer\'s stored copy only — it is still on chain, and a re-index would bring it back. This cannot be undone here.')) return;
             await kachat('kaposts/delete', { method: 'POST', body: { tx_id: d.kachatDelContent } });
             toast('Deleted.');
             loadKachatKaposts();
         } else if (d.kachatDelBcast) {
-            if (!confirm('Delete this public chat from the index?\n\nThis removes the indexer\'s stored copy only — it is still on chain, and a re-index would bring it back. This cannot be undone here.')) return;
+            if (!await askConfirm('Delete this public chat from the index?\n\nThis removes the indexer\'s stored copy only — it is still on chain, and a re-index would bring it back. This cannot be undone here.')) return;
             await kachat('broadcasts/delete', { method: 'POST', body: { tx_id: d.kachatDelBcast } });
             toast('Deleted.');
             loadKachatBroadcasts();
@@ -4888,7 +4935,7 @@ $('kassigner-devices').addEventListener('click', async (event) => {
     const port = event.target.dataset?.flash;
     if (!port || !chosenBoard) return;
     if (
-        !confirm(
+        !await askConfirm(
             `Write KasSigner ${kassignerState?.release || ''} to ${port}?\n\n` +
                 `Board: ${chosenBoard.label}\n\n` +
                 'Everything currently on the device is replaced. The image was checked against the hash the project publishes.',
@@ -5125,7 +5172,7 @@ $('proxy-body').addEventListener('click', async (event) => {
     // Removing a host takes a name off the internet, which is not a thing to do
     // on a mis-click. The certificate is deliberately left on disk: it is still
     // valid, and putting the name back should not mean asking for another.
-    if (!confirm(`Stop answering for ${proxy?.domain}?\n\nThe nginx configuration for it is removed. Its certificate is kept.`)) {
+    if (!await askConfirm(`Stop answering for ${proxy?.domain}?\n\nThe nginx configuration for it is removed. Its certificate is kept.`)) {
         return;
     }
     try {
@@ -5229,7 +5276,7 @@ $('publish-body').addEventListener('click', async (event) => {
     if (!unpublish) return;
 
     const service = publishState.services.find((s) => s.key === unpublish);
-    if (!confirm(`Stop publishing ${service?.label ?? unpublish} on ${service?.domain}?\n\nThe name stays on your list and the certificate is left alone.`)) {
+    if (!await askConfirm(`Stop publishing ${service?.label ?? unpublish} on ${service?.domain}?\n\nThe name stays on your list and the certificate is left alone.`)) {
         return;
     }
     event.target.disabled = true;
@@ -5878,7 +5925,7 @@ $('bot-wallet-create').addEventListener('click', async () => {
 
 $('bot-wallet-regen').addEventListener('click', async () => {
     if (
-        !confirm(
+        !await askConfirm(
             'Replace the sending wallet?\n\nThis creates a NEW key and address. Any KAS on the current wallet stays with the OLD key, which you lose access to here unless you have revealed and saved it. Reveal and back it up first if it holds anything.',
         )
     ) {
@@ -6042,7 +6089,7 @@ $('bot-check').addEventListener('click', async () => {
 });
 
 $('bot-update').addEventListener('click', async () => {
-    if (!confirm('Rebuild the bot from the newest commit?\n\nIt stops sending notifications while it rebuilds.')) return;
+    if (!await askConfirm('Rebuild the bot from the newest commit?\n\nIt stops sending notifications while it rebuilds.')) return;
     await runAction({
         key: 'bot',
         title: 'Rebuilding KaChat Bot',
@@ -6249,7 +6296,7 @@ $('backup-run')?.addEventListener('click', async () => {
 $('backup-restore')?.addEventListener('click', async () => {
     const p = $('backup-restore-path').value.trim();
     if (!p) return;
-    if (!confirm(`Restore OVERWRITES the current KaPosts database and re-imports the chat store from:\n${p}\n\nContinue?`)) return;
+    if (!await askConfirm(`Restore OVERWRITES the current KaPosts database and re-imports the chat store from:\n${p}\n\nContinue?`)) return;
     const el = $('backup-status'); el.hidden = false; el.textContent = 'Restoring… do not close this page.';
     try {
         await api('/api/kachat/backup/restore', { method: 'POST', body: { path: p } });
@@ -6522,7 +6569,7 @@ $('setup-domain-list').addEventListener('click', async (event) => {
     const id = event.target.dataset?.domainDel;
     if (!id) return;
     const record = publishState.domains.find((d) => d.id === id);
-    if (!confirm(`Remove ${record?.domain}?\n\nNothing is published on it, so this only takes the name off the list.`)) return;
+    if (!await askConfirm(`Remove ${record?.domain}?\n\nNothing is published on it, so this only takes the name off the list.`)) return;
     try {
         await api(`/api/domains/${id}`, { method: 'DELETE' });
         await loadPublish();
@@ -6848,7 +6895,7 @@ $('proxy-form').addEventListener('submit', async (event) => {
         // A brand new https host has no certificate yet; offer to fetch it now.
         const saved = proxies.find((p) => p.domain === payload.domain);
         if (saved && payload.ssl.mode === 'letsencrypt' && !saved.certificate) {
-            if (confirm(`Request a Let's Encrypt certificate for ${payload.domain} now?\n\nPort 80 must already reach this machine.`)) {
+            if (await askConfirm(`Request a Let's Encrypt certificate for ${payload.domain} now?\n\nPort 80 must already reach this machine.`)) {
                 await api(`/api/proxies/${saved.id}/certificate`, {
                     method: 'POST',
                     body: { email: payload.ssl.email, staging: $('px-staging').checked },
@@ -7486,7 +7533,7 @@ $('password-save').addEventListener('click', async () => {
 
 $('panel-port-save').addEventListener('click', async () => {
     const port = Number($('panel-port').value);
-    if (!confirm(`Move this panel to port ${port}?\n\nIt restarts, and this page will follow it to the new address. Anything you have bookmarked stops working.`)) return;
+    if (!await askConfirm(`Move this panel to port ${port}?\n\nIt restarts, and this page will follow it to the new address. Anything you have bookmarked stops working.`)) return;
 
     $('panel-port-save').disabled = true;
     try {
@@ -7516,7 +7563,7 @@ $('panel-port-save').addEventListener('click', async () => {
 
 $('panel-lan')?.addEventListener('change', async (event) => {
     const lan = event.target.checked;
-    const ok = confirm(
+    const ok = await askConfirm(
         lan
             ? 'Let other machines on your network open this panel?\n\nIt restarts (the node and every app keep running) and asks for the admin password from anywhere but this computer.'
             : 'Limit the panel to this machine only?\n\nIt restarts. Afterwards it opens only at http://localhost on the server itself.',
@@ -7545,7 +7592,7 @@ $('panel-lan')?.addEventListener('change', async (event) => {
 });
 
 $('password-clear').addEventListener('click', async () => {
-    if (!confirm('Remove the password?\n\nAnyone who can reach this port will then have full control of the node and of Docker. Only sensible while the panel is on 127.0.0.1.')) {
+    if (!await askConfirm('Remove the password?\n\nAnyone who can reach this port will then have full control of the node and of Docker. Only sensible while the panel is on 127.0.0.1.')) {
         return;
     }
     $('password-clear').disabled = true;
@@ -7623,7 +7670,7 @@ $('global-update-btn').addEventListener('click', async () => {
     const button = $('global-update-btn');
     const repo = $('global-repo').value.trim();
     const ref = $('global-ref').value.trim();
-    if (!confirm(`Update the panel from ${repo}@${ref}?\n\nIt will go offline for a minute or two while it rebuilds. The node keeps running.`)) return;
+    if (!await askConfirm(`Update the panel from ${repo}@${ref}?\n\nIt will go offline for a minute or two while it rebuilds. The node keeps running.`)) return;
 
     button.disabled = true;
     try {
@@ -7753,7 +7800,7 @@ $('global-teardown-confirm').addEventListener('input', (event) => {
 });
 
 $('global-teardown-btn').addEventListener('click', async () => {
-    if (!confirm('Remove the node, all its data and this panel?\n\nThis cannot be undone. Docker itself stays installed.')) return;
+    if (!await askConfirm('Remove the node, all its data and this panel?\n\nThis cannot be undone. Docker itself stays installed.')) return;
 
     $('global-teardown-btn').disabled = true;
     const job = await runAction({
@@ -7813,7 +7860,7 @@ for (const button of document.querySelectorAll('[data-cache-clean]')) {
     button.addEventListener('click', async () => {
         const what = button.dataset.cacheClean;
         const title = button.textContent.trim();
-        if (!confirm(`${title}?\n\nVolumes, containers and images in use are kept. Unused images and build cache from other projects on this machine are cleared too.`)) return;
+        if (!await askConfirm(`${title}?\n\nVolumes, containers and images in use are kept. Unused images and build cache from other projects on this machine are cleared too.`)) return;
         await runAction({
             key: 'cache',
             title,
