@@ -3502,6 +3502,67 @@ route('POST', /^\/api\/system\/panel-update$/, async (req, res) => {
     }
 });
 
+/**
+ * Docker's reclaimable disk: build cache and images nothing uses.
+ *
+ * Every indexer, kaspad and panel update builds an image, and each build leaves
+ * its old image and gigabytes of layer cache behind, so the disk fills up with
+ * copies of things no longer running. This clears only that. Volumes (chain
+ * data, databases, Nextcloud files) and containers, running or stopped, are
+ * never touched: an image a stopped container still uses is kept too.
+ */
+const CACHE_CLEANS = {
+    build: {
+        title: 'Clear the build cache',
+        steps: [['builder', 'prune', '--all', '--force']],
+    },
+    dangling: {
+        title: 'Remove old untagged images',
+        steps: [['image', 'prune', '--force']],
+    },
+    unused: {
+        title: 'Remove all unused images and the build cache',
+        steps: [
+            ['builder', 'prune', '--all', '--force'],
+            ['image', 'prune', '--all', '--force'],
+        ],
+    },
+};
+
+route('GET', /^\/api\/system\/disk-cache$/, async (req, res) => {
+    try {
+        const { stdout } = await dockerctl.docker(['system', 'df', '--format', '{{json .}}'], { timeoutMs: 60_000 });
+        const rows = stdout
+            .split('\n')
+            .filter((l) => l.trim().startsWith('{'))
+            .map((l) => JSON.parse(l))
+            .map((r) => ({
+                type: r.Type,
+                total: Number(r.TotalCount) || 0,
+                active: Number(r.Active) || 0,
+                size: r.Size,
+                reclaimable: r.Reclaimable,
+            }));
+        sendJson(res, 200, { rows });
+    } catch (err) {
+        fail(res, 500, `docker system df failed: ${err.message}`);
+    }
+});
+
+route('POST', /^\/api\/system\/disk-cache\/clean$/, async (req, res) => {
+    const body = await readBody(req);
+    const clean = CACHE_CLEANS[String(body.what || '')];
+    if (!clean) return fail(res, 400, 'Unknown clean-up.');
+    const job = jobs.start(clean.title, async (onLine) => {
+        for (const args of clean.steps) {
+            onLine(`$ docker ${args.join(' ')}`);
+            await dockerctl.docker(args, { onLine, timeoutMs: 30 * 60_000 });
+        }
+        onLine('Volumes and containers were not touched.');
+    });
+    sendJson(res, 202, { ok: true, jobId: job.id });
+});
+
 route('POST', /^\/api\/system\/teardown$/, async (req, res) => {
     const body = await readBody(req);
     // Typed rather than clicked. This removes the node, its chain data and this

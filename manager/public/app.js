@@ -584,6 +584,7 @@ function selectSubtab(section, name) {
     // the tab that shows it is opened rather than on every page load.
     if (name === 'updates') loadReleasePicker().catch(() => {});
     if (name === 'kassigner-updates') loadKassignerReleases().catch(() => {});
+    if (name === 'global-cache') loadDiskCache().catch(() => {});
 }
 
 for (const button of document.querySelectorAll('.subtab-btn')) {
@@ -7752,5 +7753,47 @@ $('global-teardown-btn').addEventListener('click', async () => {
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js').catch(() => {});
+    });
+}
+
+// --- Global settings → Clear cache ---
+
+const CACHE_TYPE_LABELS = {
+    Images: 'Images',
+    Containers: 'Containers (never removed here)',
+    'Local Volumes': 'Volumes (never removed here)',
+    'Build Cache': 'Build cache',
+};
+
+async function loadDiskCache() {
+    const body = document.querySelector('#cache-usage tbody');
+    body.innerHTML = '<tr><td colspan="4" class="muted">Reading…</td></tr>';
+    try {
+        const { rows } = await api('/api/system/disk-cache');
+        body.innerHTML = rows
+            .map(
+                (r) =>
+                    `<tr><td>${escapeHtml(CACHE_TYPE_LABELS[r.type] ?? r.type)}</td><td>${r.total}${r.active ? ` (${r.active} in use)` : ''}</td><td>${escapeHtml(r.size)}</td><td>${escapeHtml(r.reclaimable)}</td></tr>`,
+            )
+            .join('');
+    } catch (e) {
+        body.innerHTML = `<tr><td colspan="4" class="bad">${escapeHtml(e.message)}</td></tr>`;
+    }
+}
+
+$('cache-refresh').addEventListener('click', () => loadDiskCache().catch(() => {}));
+
+for (const button of document.querySelectorAll('[data-cache-clean]')) {
+    button.addEventListener('click', async () => {
+        const what = button.dataset.cacheClean;
+        const title = button.textContent.trim();
+        if (!confirm(`${title}?\n\nVolumes, containers and images in use are kept. Unused images and build cache from other projects on this machine are cleared too.`)) return;
+        await runAction({
+            key: 'cache',
+            title,
+            note: 'Chain data, databases and running services are not touched.',
+            request: () => api('/api/system/disk-cache/clean', { method: 'POST', body: { what } }),
+        });
+        loadDiskCache().catch(() => {});
     });
 }

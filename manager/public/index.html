@@ -2565,6 +2565,7 @@
         <button class="subtab-btn" data-subtab="global-address">Address</button>
         <button class="subtab-btn" data-subtab="global-update">Updates</button>
         <button class="subtab-btn" data-subtab="global-log">Panel log</button>
+        <button class="subtab-btn" data-subtab="global-cache">Clear cache</button>
         <button class="subtab-btn" data-subtab="global-teardown">Remove everything</button>
       </nav>
 
@@ -2658,6 +2659,44 @@
       <!-- Last, and on its own. It deletes the node, its chain data and this
            panel, and it used to sit at the bottom of the same page as the two
            things anybody actually opens this screen for. -->
+      <div id="sub-global-cache" class="subtab">
+        <div class="grid">
+        <article class="card span2">
+          <h3>Clear Docker's cache</h3>
+          <p class="muted">
+            Every update of the node, the indexer or this panel builds a new image
+            and leaves the old one, plus its build cache, on disk. Over a few
+            updates that adds up to tens of gigabytes of copies of things that are
+            no longer running. This clears them out.
+          </p>
+          <ul class="plain">
+            <li><strong>Never touched:</strong> volumes (chain data, the indexer
+              databases, Nextcloud files), containers, running or stopped, and any
+              image a container still uses. Nothing has to resync.</li>
+            <li>Docker's cache is shared by everything on this machine, so this also
+              clears unused images and build cache left by your other projects.</li>
+            <li>After clearing the build cache, the next indexer or kaspad update
+              builds from scratch, so it takes longer that one time.</li>
+          </ul>
+          <table class="kv-table" id="cache-usage">
+            <thead><tr><th>What</th><th>Count</th><th>Size</th><th>Can be freed</th></tr></thead>
+            <tbody><tr><td colspan="4" class="muted">Not read yet.</td></tr></tbody>
+          </table>
+          <div class="row">
+            <button type="button" id="cache-refresh" class="ghost">Refresh</button>
+            <button type="button" class="ghost" data-cache-clean="dangling">Remove old untagged images</button>
+            <button type="button" class="ghost" data-cache-clean="build">Clear the build cache</button>
+            <button type="button" class="primary" data-cache-clean="unused">Clear everything unused</button>
+          </div>
+          <p class="hint">
+            "Clear everything unused" removes the build cache and every image no
+            container uses, for example the images of apps you uninstalled. They are
+            downloaded or rebuilt again if you install or update them later.
+          </p>
+        </article>
+        </div>
+      </div>
+
       <div id="sub-global-log" class="subtab">
         <div class="svclog" data-svclog="global" data-title="control panel log"></div>
       </div>
