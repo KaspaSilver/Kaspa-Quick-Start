@@ -2675,8 +2675,9 @@
               image a container still uses. Nothing has to resync.</li>
             <li>Docker's cache is shared by everything on this machine, so this also
               clears unused images and build cache left by your other projects.</li>
-            <li>After clearing the build cache, the next indexer or kaspad update
-              builds from scratch, so it takes longer that one time.</li>
+            <li><strong>Clean up</strong> keeps everything the current builds use, so
+              updates stay as fast as before. Only the deeper options below it make
+              the next update rebuild from scratch.</li>
           </ul>
           <table class="kv-table" id="cache-usage">
             <thead><tr><th>What</th><th>Count</th><th>Size</th><th>Can be freed</th></tr></thead>
@@ -2684,15 +2685,28 @@
           </table>
           <div class="row">
             <button type="button" id="cache-refresh" class="ghost">Refresh</button>
-            <button type="button" class="ghost" data-cache-clean="dangling">Remove old untagged images</button>
-            <button type="button" class="ghost" data-cache-clean="build">Clear the build cache</button>
-            <button type="button" class="primary" data-cache-clean="unused">Clear everything unused</button>
+            <button type="button" class="primary" data-cache-clean="smart">Clean up (keeps updates fast)</button>
           </div>
           <p class="hint">
-            "Clear everything unused" removes the build cache and every image no
-            container uses, for example the images of apps you uninstalled. They are
-            downloaded or rebuilt again if you install or update them later.
+            <strong>Clean up</strong> removes old untagged images, old versions of this
+            stack's own images that nothing runs any more, and build cache left by
+            superseded builds. The cache your current builds use is kept, so the next
+            update is just as fast. This is the one to use routinely.
           </p>
+          <details>
+            <summary>Deeper clean-ups (the next update is slower)</summary>
+            <div class="row">
+              <button type="button" class="ghost" data-cache-clean="dangling">Remove old untagged images</button>
+              <button type="button" class="ghost" data-cache-clean="build">Clear the whole build cache</button>
+              <button type="button" class="ghost" data-cache-clean="unused">Clear everything unused</button>
+            </div>
+            <p class="hint">
+              These free the most, but the next indexer or kaspad update then builds
+              from scratch. "Clear everything unused" also removes images no
+              container uses, such as those of apps you uninstalled; they are
+              downloaded again if you reinstall.
+            </p>
+          </details>
         </article>
         </div>
       </div>

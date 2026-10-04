@@ -3512,6 +3512,10 @@ route('POST', /^\/api\/system\/panel-update$/, async (req, res) => {
  * never touched: an image a stopped container still uses is kept too.
  */
 const CACHE_CLEANS = {
+    smart: {
+        title: 'Clean up without slowing anything down',
+        run: smartClean,
+    },
     build: {
         title: 'Clear the build cache',
         steps: [['builder', 'prune', '--all', '--force']],
@@ -3528,6 +3532,74 @@ const CACHE_CLEANS = {
         ],
     },
 };
+
+/** Images this stack builds itself (everything with a `build:` in docker-compose.yml). */
+const BUILT_IMAGES = 'kaspa-one-click/*';
+// A build's cache is last touched while it runs, a little before its image is
+// stamped Created; a slow Rust build takes well over an hour. Kept generous.
+const BUILD_MARGIN_HOURS = 24;
+
+/**
+ * Clears what accumulates from updates without costing the next update anything:
+ *
+ * 1. Untagged images: the previous image each rebuild replaced.
+ * 2. Old versions of this stack's own images that no container uses (a kaspad
+ *    or indexer version you moved off). `docker rmi` without --force refuses an
+ *    image any container uses, as a second guard.
+ * 3. Build cache that no current image was built from. Every build marks the
+ *    cache it used, so cache last used before the oldest image still in service
+ *    was built belongs only to superseded builds: the next update of anything
+ *    installed would not have reused it anyway.
+ *
+ * Third-party images and the cache the current builds use are kept, so updates
+ * stay exactly as fast as before.
+ */
+async function smartClean(onLine) {
+    const out = async (args) => (await dockerctl.docker(args, { timeoutMs: 5 * 60_000 })).stdout.trim();
+
+    onLine('$ docker image prune --force');
+    await dockerctl.docker(['image', 'prune', '--force'], { onLine, timeoutMs: 30 * 60_000 });
+
+    const containerIds = (await out(['ps', '-aq'])).split('\n').filter(Boolean);
+    const inUse = new Set(
+        containerIds.length
+            ? (await out(['inspect', '--format', '{{.Image}}', ...containerIds])).split('\n').filter(Boolean)
+            : [],
+    );
+    const built = (await out(['image', 'ls', '--no-trunc', '--filter', `reference=${BUILT_IMAGES}`, '--format', '{{.ID}} {{.Repository}}:{{.Tag}}']))
+        .split('\n')
+        .filter(Boolean)
+        .map((l) => {
+            const [id, ref] = l.split(' ');
+            return { id, ref };
+        });
+
+    const unused = built.filter((b) => !inUse.has(b.id));
+    if (unused.length) {
+        for (const { ref } of unused) {
+            onLine(`$ docker rmi ${ref}`);
+            await dockerctl.docker(['rmi', ref], { onLine, timeoutMs: 5 * 60_000 }).catch((e) => onLine(`kept ${ref}: ${e.message}`));
+        }
+    } else {
+        onLine('No old versions of this stack\'s images to remove.');
+    }
+
+    const live = [...new Set(built.filter((b) => inUse.has(b.id)).map((b) => b.id))];
+    if (!live.length) {
+        onLine('Nothing built by this stack is running, so the build cache is left alone.');
+        return;
+    }
+    const created = (await out(['image', 'inspect', '--format', '{{.Created}}', ...live]))
+        .split('\n')
+        .map((t) => Date.parse(t))
+        .filter(Number.isFinite);
+    const oldest = Math.min(...created);
+    const hours = Math.ceil((Date.now() - oldest) / 3_600_000) + BUILD_MARGIN_HOURS;
+    onLine(`Oldest image in service was built ${new Date(oldest).toISOString()}; clearing build cache unused for over ${hours}h.`);
+    const args = ['builder', 'prune', '--all', '--force', '--filter', `until=${hours}h`];
+    onLine(`$ docker ${args.join(' ')}`);
+    await dockerctl.docker(args, { onLine, timeoutMs: 30 * 60_000 });
+}
 
 route('GET', /^\/api\/system\/disk-cache$/, async (req, res) => {
     try {
@@ -3554,7 +3626,8 @@ route('POST', /^\/api\/system\/disk-cache\/clean$/, async (req, res) => {
     const clean = CACHE_CLEANS[String(body.what || '')];
     if (!clean) return fail(res, 400, 'Unknown clean-up.');
     const job = jobs.start(clean.title, async (onLine) => {
-        for (const args of clean.steps) {
+        if (clean.run) await clean.run(onLine);
+        for (const args of clean.steps ?? []) {
             onLine(`$ docker ${args.join(' ')}`);
             await dockerctl.docker(args, { onLine, timeoutMs: 30 * 60_000 });
         }
