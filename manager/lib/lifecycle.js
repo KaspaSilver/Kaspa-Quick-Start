@@ -404,9 +404,20 @@ export async function uninstall(key, { keepData = false, onLine = () => {} } = {
             timeoutMs: 30_000,
         }).catch(() => ({ stdout: '' }));
         for (const tag of stdout.split('\n').map((t) => t.trim()).filter(Boolean)) {
-            await docker(['image', 'rm', '-f', tag], { timeoutMs: 60_000 })
+            // Mainnet and testnet build the same images (kaspad, kachat, bridge),
+            // so a tag may still be what the other network's container runs.
+            // Keep it then: removing it would leave that container unable to be
+            // recreated until it is rebuilt.
+            const users = await docker(['ps', '-aq', '--filter', `ancestor=${tag}`], { timeoutMs: 30_000 })
+                .then((r) => r.stdout.trim())
+                .catch(() => '');
+            if (users) {
+                onLine(`Keeping image ${tag}: another container (e.g. the testnet twin) still uses it.`);
+                continue;
+            }
+            await docker(['image', 'rm', tag], { timeoutMs: 60_000 })
                 .then(() => removed.images.push(tag))
-                .catch(() => {});
+                .catch((err) => onLine(`  ${tag} was not removed: ${err.message}`));
         }
     }
 
