@@ -282,6 +282,9 @@ function selectTab(name) {
     if (name === 'bot') loadBot().catch(() => {});
     if (name === 'push') loadPush().catch(() => {});
     if (name === 'names') loadNames().catch(() => {});
+    // The machine's LAN address sits beside the title on Proxy & domains.
+    $('topbar-lan').hidden = name !== 'proxy';
+    if (name === 'proxy') loadLanIp().catch(() => {});
     // On the drawer layout, picking a destination should get out of the way.
     if (MOBILE()) closeDrawer();
 }
@@ -7869,4 +7872,22 @@ for (const button of document.querySelectorAll('[data-cache-clean]')) {
         });
         loadDiskCache().catch(() => {});
     });
+}
+
+// --- Proxy & domains: this machine's LAN address beside the title ---
+
+async function loadLanIp() {
+    const code = $('topbar-lan-ip');
+    const button = $('topbar-lan-copy');
+    try {
+        const { ip } = await api('/api/network/lan');
+        code.textContent = ip ?? 'unknown';
+        // The shared copy handler reads data-copy.
+        if (ip) button.dataset.copy = ip;
+        else delete button.dataset.copy;
+        button.disabled = !ip;
+    } catch {
+        code.textContent = 'unknown';
+        button.disabled = true;
+    }
 }

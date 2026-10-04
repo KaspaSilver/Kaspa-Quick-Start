@@ -261,6 +261,12 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
       </button>
       <h1 id="page-title">Dashboard</h1>
+      <!-- Proxy & domains only: the address other machines on the network reach this one at. -->
+      <span class="topbar-lan" id="topbar-lan" hidden>
+        <span class="muted">Local IP</span>
+        <code id="topbar-lan-ip">…</code>
+        <button type="button" class="copy-btn" id="topbar-lan-copy" disabled>Copy</button>
+      </span>
     </header>
 
     <main>

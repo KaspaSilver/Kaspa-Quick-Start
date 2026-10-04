@@ -2469,3 +2469,13 @@ body:not(.testnet-view) [data-testnet-only]:not(.nav-item):not(.nav-row) { displ
 .ask-detail { white-space: pre-line; margin: 0 0 14px; }
 .ask-detail:empty { display: none; }
 .ask-actions { justify-content: flex-end; }
+
+/* Proxy & domains: the LAN address beside the page title. */
+.topbar-lan {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    min-width: 0;
+}
+.topbar-lan code { font-size: 13px; user-select: all; }

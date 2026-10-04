@@ -1895,6 +1895,12 @@ async function testnetMiningStatus() {
     };
 }
 
+/** This machine's address on the local network (shown on Proxy & domains). */
+route('GET', /^\/api\/network\/lan$/, async (req, res) => {
+    const lan = await network.primaryLanAddress();
+    sendJson(res, 200, { ip: lan?.ip ?? null, iface: lan?.iface ?? null });
+});
+
 // ---- Testnet-10 CPU miner (the Testnet view's Mining tab) -------------------
 route('GET', /^\/api\/cpuminer$/, async (req, res) => {
     const [state, stats] = await Promise.all([lifecycle.status('cpuminer-testnet'), cpuminer.stats()]);
