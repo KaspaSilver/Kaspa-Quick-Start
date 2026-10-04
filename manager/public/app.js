@@ -5610,12 +5610,19 @@ function renderUninstallCards() {
       <label class="check">
         <input type="checkbox" data-keepdata="${key}"> Keep the data, remove only the containers and images
       </label>
-      <div class="row">
-        <button class="ghost danger" data-douninstall="${key}" ${installed ? '' : 'disabled'}>
-          ${installed ? 'Uninstall' : 'Not installed'}
-        </button>
-        <span class="muted">${installed ? '' : 'There is nothing here to remove.'}</span>
-      </div>`;
+      ${
+          installed
+              ? `<label class="stack">Type <code>${escapeHtml(key)}</code> to confirm
+        <span class="row">
+          <input data-uninstall-typed="${key}" placeholder="${escapeHtml(key)}" size="20" autocomplete="off" spellcheck="false">
+          <button class="ghost danger" data-douninstall="${key}" disabled>Uninstall</button>
+        </span>
+      </label>`
+              : `<div class="row">
+        <button class="ghost danger" disabled>Not installed</button>
+        <span class="muted">There is nothing here to remove.</span>
+      </div>`
+      }`;
     }
 }
 
@@ -5635,6 +5642,14 @@ document.addEventListener('click', async (event) => {
     });
 });
 
+// The Uninstall button arms only once the name is typed exactly.
+document.addEventListener('input', (event) => {
+    const key = event.target?.dataset?.uninstallTyped;
+    if (!key) return;
+    const button = document.querySelector(`[data-douninstall="${key}"]`);
+    if (button) button.disabled = event.target.value.trim() !== key;
+});
+
 document.addEventListener('click', async (event) => {
     const key = event.target?.dataset?.douninstall;
     if (!key) return;
@@ -5644,11 +5659,11 @@ document.addEventListener('click', async (event) => {
     const what = keepData ? 'its containers and images' : `its containers, images and ${UNINSTALL_COPY[key]}`;
 
     // Typed rather than clicked. This is the one action in the panel that
-    // deletes something a person cannot get back.
-    const typed = prompt(
-        `This removes ${what}.\n\nThis cannot be undone. Type the name to confirm:\n\n  ${key}`,
-    );
-    if (typed !== key) return toast(typed === null ? 'Nothing was removed.' : 'That did not match, so nothing was removed.');
+    // deletes something a person cannot get back. Typed into the card, not a
+    // prompt(): some browsers block or auto-dismiss dialogs, which made the
+    // button silently do nothing.
+    const typed = document.querySelector(`[data-uninstall-typed="${key}"]`)?.value.trim();
+    if (typed !== key) return toast('Type the name exactly to confirm. Nothing was removed.');
 
     await runAction({
         key,
