@@ -1599,6 +1599,12 @@
       on mainnet) and stays dark until a genesis manifest is published.
     -->
     <section id="tab-names" class="tab">
+      <nav class="subnav" aria-label=".kachat names">
+        <button class="subtab-btn active" data-subtab="names-overview">Overview</button>
+        <button class="subtab-btn" data-subtab="names-log">Log</button>
+      </nav>
+
+      <div id="sub-names-overview" class="subtab active">
       <article class="card span2">
         <div class="node-head">
           <h3>.kachat names</h3>
@@ -1654,8 +1660,12 @@
           </p>
         </article>
       </div>
+      </div>
+
       <!-- The names module's own log: the testnet indexer's [names] lines only. -->
-      <div class="svclog" data-svclog="names" data-title=".kachat names log"></div>
+      <div id="sub-names-log" class="subtab">
+        <div class="svclog" data-svclog="names" data-title=".kachat names log"></div>
+      </div>
     </section>
 
     <!-- ------------------------------------------------------- nextcloud -->
