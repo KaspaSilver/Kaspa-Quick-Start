@@ -6220,6 +6220,8 @@ async function loadProfiles() {
     err.hidden = true;
     try {
         renderProfiles(await api(`/api/profiles${networkView === 'testnet' ? '?net=testnet' : ''}`));
+        // Keep the page on a refresh; start over when the network changed.
+        await loadProfilesHistory(profilesHistory.net === networkView ? profilesHistory.page : 1);
     } catch (e) {
         err.textContent = e.message;
         err.hidden = false;
@@ -6294,25 +6296,89 @@ function renderProfiles(data) {
             '</tbody></table>';
     }
 
-    const recent = $('profiles-recent');
-    const list = st?.recent || [];
-    if (!list.length) {
-        recent.innerHTML = empty(st ? 'No profiles saved yet.' : 'No data yet.');
+}
+
+// "Every profile save": the indexer's all-time /profiles/history, 25 a page, with the
+// same windowed numbered pager as KaPosts' "Recently indexed".
+let profilesHistory = { page: 1, total: 0, limit: 25, net: null };
+
+async function loadProfilesHistory(page = 1) {
+    const box = $('profiles-recent');
+    const qs = new URLSearchParams({ page: String(page) });
+    if (networkView === 'testnet') qs.set('net', 'testnet');
+    const address = $('profiles-history-address').value.trim();
+    if (address) qs.set('address', address);
+    const r = await api(`/api/profiles/history?${qs}`);
+    profilesHistory = { page: r.page || page, total: r.total || 0, limit: r.limit || 25, net: networkView };
+    const empty = (what) => `<p class="muted">${escapeHtml(what)}</p>`;
+    if (r.error) {
+        box.innerHTML = empty(r.error);
+    } else if (!r.items?.length) {
+        box.innerHTML = empty(address ? 'This address has no profile saves.' : 'No profiles saved yet.');
     } else {
         // Links are shown as text, never fetched: the panel doesn't load anyone's pictures.
         const link = (u) => (u ? escapeHtml(String(u).replace(/^https:\/\//, '')) : '<span class="muted">–</span>');
-        recent.innerHTML =
-            '<table class="blocks"><thead><tr><th>When</th><th>Address</th><th>Avatar</th><th>Banner</th><th>Bio</th><th>Linktree</th></tr></thead><tbody>' +
-            list
+        box.innerHTML =
+            '<table class="blocks"><thead><tr><th>When</th><th>Address</th><th>Avatar</th><th>Banner</th><th>Bio</th><th>Linktree</th><th></th></tr></thead><tbody>' +
+            r.items
                 .map(
-                    (r) =>
-                        `<tr><td>${escapeHtml(chessWhen(r.updatedAt))}</td><td class="mono" title="${escapeHtml(r.address)}">${escapeHtml(chessShort(r.address))}</td>` +
-                        `<td>${link(r.avatar)}</td><td>${link(r.banner)}</td><td>${link(r.bio)}</td><td>${link(r.linktree)}</td></tr>`,
+                    (x) =>
+                        `<tr><td title="${escapeHtml(new Date(x.savedAt).toLocaleString())}">${escapeHtml(chessWhen(x.savedAt))}</td>` +
+                        `<td class="mono"><a href="#" data-profiles-address="${escapeHtml(x.address)}" title="Show only ${escapeHtml(x.address)}">${escapeHtml(chessShort(x.address))}</a></td>` +
+                        `<td>${link(x.avatar)}</td><td>${link(x.banner)}</td><td>${link(x.bio)}</td><td>${link(x.linktree)}</td>` +
+                        `<td>${x.current ? '<span class="tag ok">current</span>' : '<span class="muted">replaced</span>'}</td></tr>`,
                 )
                 .join('') +
             '</tbody></table>';
     }
+    renderProfilesPager();
 }
+
+function renderProfilesPager() {
+    const pager = $('profiles-history-pager');
+    const { page: cur, total, limit } = profilesHistory;
+    if (!total) {
+        pager.innerHTML = '';
+        return;
+    }
+    const pages = Math.max(1, Math.ceil(total / limit));
+    const want = new Set([1, pages, cur, cur - 1, cur - 2, cur + 1, cur + 2]);
+    const shown = [...want].filter((n) => n >= 1 && n <= pages).sort((a, b) => a - b);
+    const btn = (n, label, extra = '') =>
+        `<button type="button" class="ghost mini" data-profiles-page="${n}" ${extra}>${label}</button>`;
+    let html = btn(Math.max(1, cur - 1), '←', cur === 1 ? 'disabled' : '');
+    let prev = 0;
+    for (const n of shown) {
+        if (n - prev > 1) html += '<span class="muted" style="padding:0 2px">…</span>';
+        html += n === cur ? btn(n, String(n), 'aria-current="page" style="font-weight:700;text-decoration:underline"') : btn(n, String(n));
+        prev = n;
+    }
+    html += btn(Math.min(pages, cur + 1), '→', cur === pages ? 'disabled' : '');
+    html += `<span class="muted" style="margin-left:8px">${fmtNum(total)} save${total === 1 ? '' : 's'}</span>`;
+    pager.innerHTML = html;
+}
+
+$('profiles-history-pager').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-profiles-page]');
+    if (!btn || btn.disabled) return;
+    const page = Number(btn.dataset.profilesPage);
+    if (page && page !== profilesHistory.page) loadProfilesHistory(page).catch((err) => toast(err.message, 'bad'));
+});
+
+// Clicking an address narrows the list to it; clearing the box shows everyone again.
+$('profiles-recent').addEventListener('click', (e) => {
+    const a = e.target.closest('[data-profiles-address]');
+    if (!a) return;
+    e.preventDefault();
+    $('profiles-history-address').value = a.dataset.profilesAddress;
+    loadProfilesHistory(1).catch((err) => toast(err.message, 'bad'));
+});
+
+let profilesFilterTimer = null;
+$('profiles-history-address').addEventListener('input', () => {
+    clearTimeout(profilesFilterTimer);
+    profilesFilterTimer = setTimeout(() => loadProfilesHistory(1).catch((err) => toast(err.message, 'bad')), 400);
+});
 
 $('profiles-refresh').addEventListener('click', () => loadProfiles().catch(() => {}));
 

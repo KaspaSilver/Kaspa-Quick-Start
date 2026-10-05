@@ -1389,8 +1389,16 @@
           </article>
         </div>
         <article class="card span2">
-          <h3>Recently saved</h3>
+          <div class="node-head">
+            <h3>Every profile save</h3>
+            <input id="profiles-history-address" placeholder="filter by address (kaspa:… / kaspatest:…)" size="40" autocomplete="off" spellcheck="false" style="margin-left:auto">
+          </div>
+          <p class="muted">
+            All time, newest first. Each save replaces that address's previous profile;
+            <span class="tag ok">current</span> marks the one in use now.
+          </p>
           <div class="scroll-x" id="profiles-recent"><p class="muted">Loading…</p></div>
+          <div class="row" id="profiles-history-pager"></div>
         </article>
       </div>
 

@@ -2809,6 +2809,33 @@ route('GET', /^\/api\/profiles$/, async (req, res, match, url) => {
     sendJson(res, 200, { installed: true, running: state.running, stats, error });
 });
 
+// Every profile save, all time, one page at a time (the indexer's GET /profiles/history),
+// for the Profiles tab's numbered pager. ?net=testnet, ?page=, ?address=.
+route('GET', /^\/api\/profiles\/history$/, async (req, res, match, url) => {
+    const testnet = url.searchParams.get('net') === 'testnet';
+    const origin = testnet ? CHESS_TESTNET_ORIGIN : CHESS_ORIGIN;
+    const limit = 25;
+    const page = Math.max(1, Number(url.searchParams.get('page')) || 1);
+    const qs = new URLSearchParams({ limit: String(limit), offset: String((page - 1) * limit) });
+    const address = (url.searchParams.get('address') || '').trim();
+    if (address) qs.set('address', address);
+    try {
+        const r = await fetch(`${origin}/profiles/history?${qs}`, { signal: AbortSignal.timeout(8000) });
+        if (r.ok) return sendJson(res, 200, { ...(await r.json()), page, limit });
+        const error =
+            r.status === 404
+                ? 'This indexer has no profile history yet. Update KaChat-Indexer.'
+                : r.status === 400
+                  ? 'That is not a Kaspa address.'
+                  : r.status === 503
+                    ? 'The indexer is not following profiles yet.'
+                    : `The indexer answered ${r.status}.`;
+        sendJson(res, 200, { total: 0, items: [], page, limit, error });
+    } catch {
+        sendJson(res, 200, { total: 0, items: [], page, limit, error: 'Could not reach the KaChat indexer.' });
+    }
+});
+
 // Downloads any argos model a requested language needs but the volume does not
 // have yet. Models pivot through English, so each language needs en->X and
 // X->en; already-installed pairs are skipped, and a language with no upstream
