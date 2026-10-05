@@ -134,6 +134,8 @@ services:
       KASPA_NODE_WBORSH_URL: ws://kaspad:${KACHAT_NODE_PORT:-17110}
       NETWORK: ${KACHAT_NETWORK:-mainnet}
       NETWORK_TYPE: ${KACHAT_NETWORK:-mainnet}
+      # Address profiles follower's first-run start block (hex); empty = the node's pruning point.
+      KACHAT_PROFILES_SCAN_FROM: ${KACHAT_PROFILES_SCAN_FROM:-}
       DB_USER: ${KACHAT_DB_USER:-kachat}
       DB_PASSWORD: ${KACHAT_DB_PASSWORD:-}
       DB_NAME: ${KACHAT_DB_NAME:-kachat}
@@ -622,6 +624,8 @@ services:
       # .kachat names module (KACHAT_NAMES_INDEXER.md parts B-E): off until a
       # testnet genesis manifest is configured. Mounted read-only below.
       KACHAT_NAMES_MANIFEST: ${KACHAT_NAMES_MANIFEST_TESTNET:-}
+      # Profiles follower start (hex); empty = the names manifest's scanFrom, else the pruning point.
+      KACHAT_PROFILES_SCAN_FROM: ${KACHAT_PROFILES_SCAN_FROM_TESTNET:-}
       RUST_LOG: info
     volumes:
       - kachat-app-testnet-data:/app/data

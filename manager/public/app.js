@@ -361,8 +361,13 @@ const SVC_LOGS = {
         testnet: [['cpuminer-testnet', 'cpu miner'], ['bridge-testnet', 'stratum bridge']],
     },
     kachat: {
-        mainnet: [['kachat', 'indexer'], ['kachat-db', 'postgres'], ['libretranslate', 'libretranslate']],
-        testnet: [['kachat-testnet', 'indexer'], ['kachat-db-testnet', 'postgres']],
+        mainnet: [
+            ['kachat', 'indexer'],
+            ['kachat-profiles', 'profiles'],
+            ['kachat-db', 'postgres'],
+            ['libretranslate', 'libretranslate'],
+        ],
+        testnet: [['kachat-testnet', 'indexer'], ['kachat-profiles-testnet', 'profiles'], ['kachat-db-testnet', 'postgres']],
     },
     names: { mainnet: [['kachat-names', '.kachat names']], testnet: [['kachat-names', '.kachat names']] },
     desktop: { mainnet: [['kachat-desktop', 'kachat desktop']] },

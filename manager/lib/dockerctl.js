@@ -70,6 +70,8 @@ export const STACK_CONTAINERS = [
  *
  * - .kachat names: the testnet indexer's `[names]` lines
  *   (docs/KACHAT_NAMES_PANEL_LOGS.md in KaChat-Indexer).
+ * - Address profiles: the profiles follower's `[profiles]` lines (both networks;
+ *   docs/KACHAT_PROFILES.md in KaChat-Indexer).
  * - Push service: the chat indexer's push lines (`[Push]`, `[PushRegistry]`,
  *   "Push register …") plus the processor's KaPosts push sends.
  */
@@ -82,7 +84,15 @@ export const NAMES_LOG_SOURCE = {
 };
 export const FILTERED_LOG_SOURCES = [
     { key: 'kachat-push', label: 'push service', name: KACHAT_CONTAINER, match: PUSH_MATCH, after: 'kachat' },
+    { key: 'kachat-profiles', label: 'address profiles', name: KACHAT_CONTAINER, match: '[profiles]', after: 'kachat' },
     { ...NAMES_LOG_SOURCE, after: 'kachat-testnet' },
+    {
+        key: 'kachat-profiles-testnet',
+        label: 'address profiles (testnet)',
+        name: 'kaspa-node-kachat-testnet',
+        match: '[profiles]',
+        after: 'kachat-testnet',
+    },
     {
         key: 'kachat-push-testnet',
         label: 'push service (testnet)',
