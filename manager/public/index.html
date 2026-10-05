@@ -1044,6 +1044,7 @@
         <button class="subtab-btn" data-subtab="kachat-chats">Chats</button>
         <button class="subtab-btn" data-subtab="kachat-groups">Group chats</button>
         <button class="subtab-btn" data-subtab="kachat-chess">Chess</button>
+        <button class="subtab-btn" data-subtab="kachat-profiles">Profiles</button>
         <button class="subtab-btn" data-subtab="kachat-translate" data-mainnet-only>Translation</button>
         <button class="subtab-btn" data-subtab="kachat-transfer">Export / Import</button>
         <button class="subtab-btn" data-subtab="kachat-delete">Delete</button>
@@ -1351,6 +1352,46 @@
             <div id="chess-tournament-board"><p class="muted">Loading…</p></div>
           </article>
         </div>
+      </div>
+
+      <!--
+        Address profiles: the avatar, banner, bio and Linktree people stamp to their own
+        address with a kchat:1:profile: self-send. Not tied to .kachat names, so it runs on
+        both networks. Read-only: the indexer's GET /profiles/stats.
+      -->
+      <div id="sub-kachat-profiles" class="subtab">
+        <div class="node-head">
+          <h3>Profiles</h3>
+          <span id="profiles-state" class="tag">–</span>
+          <button class="ghost" id="profiles-refresh" style="margin-left:auto">Refresh</button>
+        </div>
+        <p class="muted">
+          People stamping their socials to an address: a profile is a self-send from the
+          address, so it belongs to the address, not to any name.
+        </p>
+        <p class="error" id="profiles-error" hidden></p>
+        <div class="grid stats">
+          <div class="stat"><span id="profiles-total">–</span><small>addresses with a profile</small></div>
+          <div class="stat"><span id="profiles-new24h">–</span><small>new, last 24 h</small></div>
+          <div class="stat"><span id="profiles-new7d">–</span><small>new, last 7 days</small></div>
+          <div class="stat"><span id="profiles-new30d">–</span><small>new, last 30 days</small></div>
+          <div class="stat"><span id="profiles-saves7d">–</span><small>saves, last 7 days</small></div>
+          <div class="stat"><span id="profiles-records">–</span><small>records indexed</small></div>
+        </div>
+        <div class="grid">
+          <article class="card">
+            <h3>What people set</h3>
+            <div id="profiles-fields"><p class="muted">Loading…</p></div>
+          </article>
+          <article class="card">
+            <h3>Where it comes from</h3>
+            <div id="profiles-platforms"><p class="muted">Loading…</p></div>
+          </article>
+        </div>
+        <article class="card span2">
+          <h3>Recently saved</h3>
+          <div class="scroll-x" id="profiles-recent"><p class="muted">Loading…</p></div>
+        </article>
       </div>
 
       <div id="sub-kachat-transfer" class="subtab">

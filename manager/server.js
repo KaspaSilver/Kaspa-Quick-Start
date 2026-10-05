@@ -2776,6 +2776,39 @@ route('GET', /^\/api\/chess$/, async (req, res, match, url) => {
     sendJson(res, 200, { installed: true, running: state.running, leaderboard, tournaments, error });
 });
 
+// Address profiles: the avatar / banner / bio / Linktree links people stamp to their own
+// address (a kchat:1:profile: self-send). They belong to the address, not to a .kachat name,
+// so this works on both networks. The indexer's profiles follower serves the numbers on
+// GET /profiles/stats (kachat-indexer docs/KACHAT_PROFILES.md); read-only here.
+route('GET', /^\/api\/profiles$/, async (req, res, match, url) => {
+    // ?net=testnet reads the testnet-10 indexer instead.
+    const testnet = url.searchParams.get('net') === 'testnet';
+    const origin = testnet ? CHESS_TESTNET_ORIGIN : CHESS_ORIGIN;
+    const state = await dockerctl.containerState(testnet ? 'kaspa-node-kachat-testnet' : 'kaspa-node-kachat');
+    if (!state.exists) {
+        return sendJson(res, 200, { installed: false, running: false, stats: null });
+    }
+    let stats = null;
+    let error = null;
+    try {
+        const r = await fetch(`${origin}/profiles/stats`, { signal: AbortSignal.timeout(6000) });
+        if (r.ok) {
+            stats = await r.json();
+        } else if (r.status === 404) {
+            error = 'The indexer answered but not on /profiles/stats. Update KaChat-Indexer to a build with the profiles follower.';
+        } else if (r.status === 503) {
+            error = 'The indexer is not following profiles yet (its profiles follower is off or still starting).';
+        } else {
+            error = `The indexer answered ${r.status} on /profiles/stats.`;
+        }
+    } catch {
+        error = state.running
+            ? 'Could not reach the KaChat indexer. It may still be starting.'
+            : 'The KaChat indexer is not running.';
+    }
+    sendJson(res, 200, { installed: true, running: state.running, stats, error });
+});
+
 // Downloads any argos model a requested language needs but the volume does not
 // have yet. Models pivot through English, so each language needs en->X and
 // X->en; already-installed pairs are skipped, and a language with no upstream

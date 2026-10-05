@@ -570,6 +570,7 @@ function refreshKaspadForView() {
     // The Indexer and Mining tabs read the viewed network's containers.
     if (activeSubtab('kachat')) refreshKachatPanel();
     if (activeSubtab('kachat') === 'kachat-chess') loadChess().catch(() => {});
+    if (activeSubtab('kachat') === 'kachat-profiles') loadProfiles().catch(() => {});
     if (activeSubtab('kachat') === 'kachat-updates') loadTestnetIndexerUpdate().catch(() => {});
     loadMining().catch(() => {});
     if (appsState) renderAppState('kachat', appsState.apps?.kachat ?? {});
@@ -623,6 +624,7 @@ function selectSubtab(section, name) {
     // Chess is its own read-only view (the leaderboard the indexer replays), so it
     // loads its own data rather than the general indexer-panel refresh.
     if (name === 'kachat-chess') loadChess().catch(() => {});
+    if (name === 'kachat-profiles') loadProfiles().catch(() => {});
     if (name === 'kachat-updates') loadTestnetIndexerUpdate().catch(() => {});
     else if (name === 'kachat-transfer') { loadBackup().catch(() => {}); refreshKachatPanel(); }
     else if (name.startsWith('kachat-')) refreshKachatPanel();
@@ -6203,6 +6205,111 @@ function renderChess(data) {
 }
 
 $('chess-refresh').addEventListener('click', () => loadChess().catch(() => {}));
+
+// ---------------------------------------------------------- address profiles ---
+
+// Read-only stats on people stamping their socials to an address (kchat:1:profile:). Profiles
+// belong to the address, not to a .kachat name, so this shows on both networks.
+async function loadProfiles() {
+    const err = $('profiles-error');
+    err.hidden = true;
+    try {
+        renderProfiles(await api(`/api/profiles${networkView === 'testnet' ? '?net=testnet' : ''}`));
+    } catch (e) {
+        err.textContent = e.message;
+        err.hidden = false;
+    }
+}
+
+function renderProfiles(data) {
+    const state = $('profiles-state');
+    const st = data.stats;
+    if (!data.installed) {
+        state.textContent = 'not installed';
+        state.className = 'tag off';
+    } else if (!data.running) {
+        state.textContent = 'stopped';
+        state.className = 'tag off';
+    } else if (!st) {
+        state.textContent = 'not following';
+        state.className = 'tag warn';
+    } else if (st.synced === false) {
+        state.textContent = 'catching up';
+        state.className = 'tag warn';
+    } else {
+        state.textContent = 'live';
+        state.className = 'tag ok';
+    }
+
+    const err = $('profiles-error');
+    err.textContent = data.error || '';
+    err.hidden = !data.error;
+
+    const num = (v) => (v == null ? '–' : fmtNum(v));
+    $('profiles-total').textContent = num(st?.total);
+    $('profiles-new24h').textContent = num(st?.new24h);
+    $('profiles-new7d').textContent = num(st?.new7d);
+    $('profiles-new30d').textContent = num(st?.new30d);
+    $('profiles-saves7d').textContent = num(st?.saves7d);
+    $('profiles-records').textContent = num(st?.records);
+
+    const empty = (what) => `<p class="muted">${what}</p>`;
+    const fields = $('profiles-fields');
+    if (!st) {
+        fields.innerHTML = empty('No data yet.');
+    } else {
+        const total = st.total || 0;
+        const pct = (n) => (total ? ` <span class="muted">(${Math.round(((n || 0) * 100) / total)}%)</span>` : '');
+        const rows = [
+            ['Avatar', st.withAvatar],
+            ['Banner', st.withBanner],
+            ['Bio', st.withBio],
+            ['Linktree', st.withLinktree],
+            ['Primary .kachat name', st.withPrimaryName],
+        ];
+        fields.innerHTML =
+            '<table class="blocks"><thead><tr><th>Field</th><th>Profiles</th></tr></thead><tbody>' +
+            rows.map(([k, v]) => `<tr><td>${escapeHtml(k)}</td><td>${escapeHtml(num(v))}${pct(v)}</td></tr>`).join('') +
+            '</tbody></table>';
+    }
+
+    // platforms: {avatar: {x: 3, …}, banner: {…}, bio: {…}} -> one row per platform.
+    const plat = $('profiles-platforms');
+    const p = st?.platforms || {};
+    const names = [...new Set(['avatar', 'banner', 'bio'].flatMap((k) => Object.keys(p[k] || {})))];
+    if (!names.length) {
+        plat.innerHTML = empty(st ? 'No social links yet.' : 'No data yet.');
+    } else {
+        const used = (n) => ['avatar', 'banner', 'bio'].reduce((t, k) => t + ((p[k] || {})[n] || 0), 0);
+        names.sort((a, b) => used(b) - used(a));
+        const cell = (k, n) => `<td>${escapeHtml(num((p[k] || {})[n] || 0))}</td>`;
+        plat.innerHTML =
+            '<table class="blocks"><thead><tr><th>Platform</th><th>Avatar</th><th>Banner</th><th>Bio</th></tr></thead><tbody>' +
+            names.map((n) => `<tr><td>${escapeHtml(n)}</td>${cell('avatar', n)}${cell('banner', n)}${cell('bio', n)}</tr>`).join('') +
+            '</tbody></table>';
+    }
+
+    const recent = $('profiles-recent');
+    const list = st?.recent || [];
+    if (!list.length) {
+        recent.innerHTML = empty(st ? 'No profiles saved yet.' : 'No data yet.');
+    } else {
+        // Links are shown as text, never fetched: the panel doesn't load anyone's pictures.
+        const link = (u) => (u ? escapeHtml(String(u).replace(/^https:\/\//, '')) : '<span class="muted">–</span>');
+        recent.innerHTML =
+            '<table class="blocks"><thead><tr><th>When</th><th>Address</th><th>Avatar</th><th>Banner</th><th>Bio</th><th>Linktree</th></tr></thead><tbody>' +
+            list
+                .map(
+                    (r) =>
+                        `<tr><td>${escapeHtml(chessWhen(r.updatedAt))}</td><td class="mono" title="${escapeHtml(r.address)}">${escapeHtml(chessShort(r.address))}</td>` +
+                        `<td>${link(r.avatar)}</td><td>${link(r.banner)}</td><td>${link(r.bio)}</td><td>${link(r.linktree)}</td></tr>`,
+                )
+                .join('') +
+            '</tbody></table>';
+    }
+}
+
+$('profiles-refresh').addEventListener('click', () => loadProfiles().catch(() => {}));
 
 // ---------------------------------------------------------- automatic backup ---
 let backupPoll = null;
