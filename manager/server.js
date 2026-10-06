@@ -1669,6 +1669,13 @@ route('POST', /^\/api\/setup\/([a-z][a-z-]*)$/, async (req, res, match) => {
 
             const update = await duckdns.update({ domains: mgr.duckdns.domains, token: token || storedToken });
             onLine(`DuckDNS: ${update.body.split('\n').join(' ').trim()}`);
+            if (update.refused.length) {
+                // The name being published must be refreshable; others refused only warn.
+                if (update.refused.includes(`${subdomain}.duckdns.org`)) {
+                    throw new Error(duckdns.refusedNote([`${subdomain}.duckdns.org`]));
+                }
+                onLine(`! ${duckdns.refusedNote(update.refused)}`);
+            }
         }
 
         // --- does the name actually arrive here -----------------------------

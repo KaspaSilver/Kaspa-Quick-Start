@@ -69,6 +69,29 @@ export const normalizeDomains = (input) => [
  */
 export const isConfigured = (dd) => Boolean(normalizeDomains(dd?.domains).length && dd?.token);
 
+/** One request to DuckDNS for `list` (account labels). */
+async function requestUpdate(list, token, ip) {
+    const url = new URL(UPDATE_URL);
+    url.searchParams.set('domains', list.join(','));
+    url.searchParams.set('token', token);
+    // An empty ip makes DuckDNS use the source address of this request, which
+    // is the right answer for the common case of a node behind a home router.
+    url.searchParams.set('ip', ip ?? '');
+    url.searchParams.set('verbose', 'true');
+    const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+    const body = (await res.text()).trim();
+    return { ok: body.startsWith('OK'), body };
+}
+
+/**
+ * Refresh every saved name with the saved token.
+ *
+ * DuckDNS answers a bare "KO" for the whole request when any one name in it is not on the
+ * token's account (or the token is wrong). So with several names, a refused request is
+ * retried one name at a time: the names the token can update still get refreshed, and the
+ * result says exactly which were refused (`refused`, as `name.duckdns.org`). It throws only
+ * when nothing could be refreshed.
+ */
 export async function update({ domains, token, ip } = {}) {
     const cfg = loadManagerConfig();
     const list = normalizeDomains(domains ?? cfg.duckdns.domains);
@@ -77,26 +100,55 @@ export async function update({ domains, token, ip } = {}) {
     if (!list.length) throw new Error('No DuckDNS subdomain configured.');
     if (!useToken) throw new Error('No DuckDNS token configured.');
 
-    const url = new URL(UPDATE_URL);
-    url.searchParams.set('domains', list.join(','));
-    url.searchParams.set('token', useToken);
-    // An empty ip makes DuckDNS use the source address of this request, which
-    // is the right answer for the common case of a node behind a home router.
-    url.searchParams.set('ip', ip ?? '');
-    url.searchParams.set('verbose', 'true');
-
-    const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
-    const body = (await res.text()).trim();
-    const ok = body.startsWith('OK');
+    let { ok, body } = await requestUpdate(list, useToken, ip);
+    let refreshed = ok ? list : [];
+    let refused = [];
+    if (!ok && list.length > 1) {
+        for (const name of list) {
+            const one = await requestUpdate([name], useToken, ip).catch(() => ({ ok: false, body: '' }));
+            if (one.ok) {
+                refreshed.push(name);
+                body = one.body;
+            } else {
+                refused.push(name);
+            }
+        }
+        ok = refreshed.length > 0;
+    } else if (!ok) {
+        refused = list;
+    }
 
     const next = loadManagerConfig();
     next.duckdns.lastRunAt = new Date().toISOString();
-    next.duckdns.lastResult = ok ? `OK (${body.split('\n').slice(1).join(' ').trim() || 'no change'})` : `FAILED: ${body}`;
+    next.duckdns.lastResult = ok
+        ? `OK (${body.split('\n').slice(1).join(' ').trim() || 'no change'})${
+              refused.length ? `; refused: ${refused.map((d) => `${d}.duckdns.org`).join(', ')}` : ''
+          }`
+        : `FAILED: ${body}`;
     saveManagerConfig(next);
 
-    if (!ok) throw new Error(`DuckDNS rejected the update: ${body || 'empty response'}`);
-    return { ok, body, domains: list.map((d) => `${d}.duckdns.org`) };
+    if (!ok) {
+        throw new Error(
+            `DuckDNS rejected the update: ${body || 'empty response'}. ${
+                list.length > 1 ? 'None of the saved names can' : `${list[0]}.duckdns.org cannot`
+            } be updated with the saved token: check the token at duckdns.org (it changes if you regenerate it), and that the name is on that account.`,
+        );
+    }
+    return {
+        ok,
+        body,
+        domains: refreshed.map((d) => `${d}.duckdns.org`),
+        refused: refused.map((d) => `${d}.duckdns.org`),
+    };
 }
+
+/** Why a name was refused, in words (for job logs). */
+export const refusedNote = (names) =>
+    `DuckDNS refused ${names.join(', ')} with the saved token. ${
+        names.length === 1 ? 'That name is' : 'Those names are'
+    } probably on a different duckdns.org account (each account has its own token), or no longer exist${
+        names.length === 1 ? 's' : ''
+    } there. Remove ${names.length === 1 ? 'it' : 'them'} from this panel's DuckDNS names, or use that account's token.`;
 
 let timer = null;
 
@@ -111,7 +163,7 @@ export function scheduleFromConfig(log = () => {}) {
     const minutes = Math.max(5, Number(cfg.duckdns.intervalMinutes) || 5);
     const tick = () =>
         update().then(
-            (r) => log(`duckdns: refreshed ${r.domains.join(', ')}`),
+            (r) => log(`duckdns: refreshed ${r.domains.join(', ')}${r.refused.length ? `; ${refusedNote(r.refused)}` : ''}`),
             (err) => log(`duckdns: ${err.message}`),
         );
 

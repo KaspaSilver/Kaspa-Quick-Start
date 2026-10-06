@@ -7154,7 +7154,11 @@ async function loadDuckDns() {
 $('dd-now').addEventListener('click', async () => {
     try {
         const r = await api('/api/duckdns/update', { method: 'POST' });
-        toast(`Updated ${r.domains.join(', ')}`, 'good');
+        if (r.refused?.length) {
+            toast(`Updated ${r.domains.join(', ')}. DuckDNS refused ${r.refused.join(', ')}: that name is likely on another duckdns.org account (different token).`, 'bad');
+        } else {
+            toast(`Updated ${r.domains.join(', ')}`, 'good');
+        }
         loadDuckDns();
     } catch (e) {
         toast(e.message, 'bad');
