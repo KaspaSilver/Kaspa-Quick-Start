@@ -5471,8 +5471,11 @@ async function loadServices() {
     }
     for (const [key, state] of Object.entries(serviceState)) {
         // The *-testnet units have no sidebar row of their own; the shared
-        // Kaspad/Mining/Indexer rows render them when the testnet view is on.
-        if (TESTNET_UNIT_VALUES.has(key)) continue;
+        // Kaspad/Mining/Indexer rows render them when the testnet view is on. Every
+        // one of them, not just the switch-driven ones: the testnet stratum bridge
+        // (mining-testnet) also lives on the Mining tab, and drawing its gate here put
+        // "Stratum bridge (testnet-10) is not installed" over mainnet's Mining tab.
+        if (TESTNET_UNIT_VALUES.has(key) || key.endsWith('-testnet')) continue;
         renderServiceRow(key, state);
         renderInstallGate(key, state);
     }
