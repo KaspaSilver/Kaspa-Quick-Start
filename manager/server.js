@@ -1200,12 +1200,17 @@ route('POST', /^\/api\/proxies\/([a-f0-9]{12})\/certificate$/, async (req, res, 
     }
 
     const job = jobs.start(`Issue certificate for ${proxy.domain}`, async (onLine) => {
-        onLine(`Requesting a certificate for ${proxy.domain} from Let's Encrypt.`);
-        onLine('This needs port 80 reachable from the internet for that domain.');
+        const viaDns = duckdnsFor(proxy.domain);
+        onLine(`Requesting a certificate for ${viaDns?.wildcard ?? proxy.domain} from Let's Encrypt.`);
+        onLine(
+            viaDns
+                ? 'Proving the name with a DuckDNS TXT record, so no ports need to be open.'
+                : 'This needs port 80 reachable from the internet for that domain.',
+        );
         await certbot.issue(proxy.domain, email, {
             staging: Boolean(body.staging),
             onLine,
-            duckdns: duckdnsFor(proxy.domain),
+            duckdns: viaDns,
         });
 
         const current = loadProxies();
@@ -1755,10 +1760,10 @@ route('POST', /^\/api\/setup\/([a-z][a-z-]*)$/, async (req, res, match) => {
             onLine(`${domain} already has a certificate, so it is left alone.`);
         } else {
             const viaDns = duckdnsFor(domain);
-            if (!viaDns && duckdns.isSubdomain(domain)) {
+            if (viaDns?.wildcard) {
                 onLine(
-                    `${domain} is a name under ${duckdnsAccountFor(domain)}.duckdns.org, and DuckDNS can only put a TXT ` +
-                        'record on the account itself, so this one proves itself over port 80.',
+                    `${domain} is a name under ${duckdnsAccountFor(domain)}.duckdns.org, so this asks for ${viaDns.wildcard}, ` +
+                        'which DuckDNS can prove with a TXT record on the account. It covers this name and any other under it.',
                 );
             }
             onLine(
@@ -3133,9 +3138,15 @@ const renderOptions = () => ({ publicHttpsPort: loadManagerConfig().proxy.public
 function duckdnsFor(domain) {
     const label = duckdns.accountLabel(domain);
     if (!label || !String(domain || '').toLowerCase().endsWith('.duckdns.org')) return null;
-    if (duckdns.isSubdomain(domain)) return null;
     const token = loadManagerConfig().duckdns.token;
-    return token ? { subdomain: label, token } : null;
+    if (!token) return null;
+    // A name under an account (desktop.testing.duckdns.org): DuckDNS can only set the TXT
+    // record on the account, which is exactly where Let's Encrypt looks for a *wildcard*
+    // (_acme-challenge.testing.duckdns.org for *.testing.duckdns.org). So these get a
+    // wildcard certificate over DNS-01 -- no port 80 needed, which matters when 80/443 on
+    // the router belong to another machine.
+    if (duckdns.isSubdomain(domain)) return { subdomain: label, token, wildcard: `*.${label}.duckdns.org` };
+    return { subdomain: label, token };
 }
 
 /** The account behind a name, whether or not DNS-01 is possible for it. */

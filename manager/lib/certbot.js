@@ -49,8 +49,9 @@ sub = domain[: -len(".duckdns.org")]
 # asks at _acme-challenge.sub.testing.duckdns.org. Refused rather than done
 # wrongly: a validation that fails costs an hour of rate limit, and a TXT
 # record written to the account is one that some other certificate was relying
-# on. These names are issued over port 80 instead, and the panel routes them
-# that way; this is the guard for anything that gets here another way.
+# on. The panel issues such names as the account's wildcard (*.testing.duckdns.org),
+# for which certbot passes the account itself here; this is the guard for anything
+# that gets here another way.
 if "." in sub:
     sys.exit(
         "DuckDNS can only set a TXT record on an account, not on " + domain + ". "
@@ -132,8 +133,9 @@ export async function issue(domain, email, { staging = false, onLine, duckdns = 
         '--no-eff-email',
         '--keep-until-expiring',
         ...(contact ? ['-m', contact] : ['--register-unsafely-without-email']),
-        '-d',
-        domain,
+        // A name under a DuckDNS account is issued as the account's wildcard, but stored
+        // under the name itself (live/<domain>/), where nginx and the panel look for it.
+        ...(duckdns?.wildcard ? ['--cert-name', domain, '-d', duckdns.wildcard] : ['-d', domain]),
     ];
     if (staging) args.push('--staging');
     return docker(args, { onLine, timeoutMs: 5 * 60_000 });
