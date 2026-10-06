@@ -1733,7 +1733,8 @@ document.addEventListener('click', async (event) => {
     event.target.textContent = 'Testing…';
     try {
         const r = await api(`/api/portcheck?port=${port}`);
-        toast(`${r.ip}:${r.port} is ${r.open ? 'open' : 'closed'}. ${r.note}`, r.open ? 'good' : 'bad');
+        // No address in the message (screen-recording safe): it is this connection's.
+        toast(`Your public address, port ${r.port}, is ${r.open ? 'open' : 'closed'}. ${r.note}`, r.open ? 'good' : 'bad');
     } catch (e) {
         toast(e.message, 'bad');
     } finally {
@@ -2298,11 +2299,15 @@ function renderBlocks(blocks) {
 const MASK = '•••.•••.•••.•••';
 let publicRevealed = false;
 
-/** A masked value (HTML); pair it with revealButton(). */
-function privateValue(value) {
+/** A masked value (HTML); pair it with revealButton(). `mask` is what shows meanwhile. */
+function privateValue(value, mask = MASK) {
     const shown = publicRevealed;
-    return `<span class="private-value" data-private="${escapeHtml(value)}">${escapeHtml(shown ? value : MASK)}</span>`;
+    return `<span class="private-value" data-private="${escapeHtml(value)}" data-mask="${escapeHtml(mask)}">${escapeHtml(
+        shown ? value : mask,
+    )}</span>`;
 }
+// The last "Am I public?" location: its map pin is only drawn while revealed.
+let lastPublicGeo = null;
 // Same eye as the password fields: open = "show it", struck through = "hide it again".
 const revealButton = () =>
     `<button type="button" class="reveal-eye" data-reveal aria-pressed="${publicRevealed}" aria-label="${
@@ -2313,8 +2318,9 @@ document.addEventListener('click', (event) => {
     const btn = event.target.closest?.('[data-reveal]');
     if (!btn) return;
     publicRevealed = !publicRevealed;
-    for (const el of document.querySelectorAll('[data-private]')) el.textContent = publicRevealed ? el.dataset.private : MASK;
+    for (const el of document.querySelectorAll('[data-private]')) el.textContent = publicRevealed ? el.dataset.private : el.dataset.mask || MASK;
     for (const b of document.querySelectorAll('[data-reveal]')) b.outerHTML = revealButton();
+    pingLocation(publicRevealed ? lastPublicGeo : null);
 });
 
 function stratumRow(port, host, diff, note, { privateHost = false } = {}) {
@@ -2915,12 +2921,12 @@ function renderPublicCheck(r) {
               : r.probe?.detail || 'could not test';
     $('public-inbound').textContent = `${r.peers?.inbound ?? 0} in, ${r.peers?.outbound ?? 0} out`;
 
+    // The location is as identifying as the address: masked, and no map pin, until the
+    // eye button is pressed (it shares the address's toggle).
     const where = r.geo && (r.geo.city || r.geo.country) ? [r.geo.city, r.geo.country].filter(Boolean).join(', ') : null;
-    $('public-where').textContent = !where
+    $('public-where').innerHTML = !where
         ? ''
-        : yes
-          ? `Found you near ${where}.`
-          : `This connection looks like it is near ${where}.`;
+        : `${yes ? 'Found you near' : 'This connection looks like it is near'} ${privateValue(where, '••••••')}. ${revealButton()}`;
 
     const help = $('public-help');
     if (yes) {
@@ -2932,7 +2938,8 @@ function renderPublicCheck(r) {
             : `The port is published here, so the next step is your router: forward TCP port ${r.port} to this machine. Some home routers also refuse to connect back to your own address, which makes this test read worse than it is — an inbound peer above is the real proof.`;
     }
 
-    pingLocation(r.geo);
+    lastPublicGeo = r.geo ?? null;
+    pingLocation(publicRevealed ? lastPublicGeo : null);
 }
 
 $('public-run').addEventListener('click', runPublicCheck);
@@ -5399,8 +5406,9 @@ $('ports-check').addEventListener('click', async () => {
                     r.dns.error
                         ? `${r.dns.domain} does not resolve: ${r.dns.error} Nothing can reach it by name until it does.`
                         : r.dns.pointsHere
-                          ? `${r.dns.domain} resolves to ${r.dns.addresses.join(', ')}, which is this connection.`
-                          : `${r.dns.domain} resolves to ${r.dns.addresses.join(', ')}, which is not this connection (${r.ip}).`,
+                          // No addresses here: pointing at this connection means they are its own.
+                          ? `${r.dns.domain} resolves to this connection's public address.`
+                          : `${r.dns.domain} resolves to ${r.dns.addresses.join(', ')}, which is not this connection's public address.`,
                 ),
             );
         }
@@ -6680,8 +6688,9 @@ async function openSetup(key) {
     // there would be a name to delete rather than a head start.
     $('setup-token-note').hidden = !info.duckdns?.hasToken;
     $('setup-token').placeholder = info.duckdns?.hasToken ? 'unchanged' : 'from duckdns.org';
-    $('setup-ip').textContent = info.publicIp
-        ? `This connection looks like ${info.publicIp} from the outside. DuckDNS will point the name here.`
+    // The address is masked until its eye button is pressed (screen-recording safe).
+    $('setup-ip').innerHTML = info.publicIp
+        ? `This connection looks like ${privateValue(info.publicIp)} ${revealButton()} from the outside. DuckDNS will point the name here.`
         : 'Could not work out this connection\'s public address, which is not fatal: DuckDNS uses the address it sees.';
 
     $('setup-after').textContent = (service?.afterNote ?? '').replace('{domain}', 'that name');
