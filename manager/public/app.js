@@ -2289,13 +2289,42 @@ function renderBlocks(blocks) {
 // A miner needs the address of the machine it can actually route to: the LAN
 // address on your own network, the public one from outside. Showing only the
 // public IP sent people to an address their ASIC usually cannot reach.
-function stratumRow(port, host, diff, note) {
+// --- private values (screen-recording safe) ---
+//
+// The machine's public IP is not shown until asked for: the panel is filmed for video
+// guides, and an address sitting on screen is an address in every recording. A masked
+// value carries a Generate button that shows it for this page view (Hide puts it back);
+// Copy still copies the real value, since the clipboard is not on screen.
+const MASK = '•••.•••.•••.•••';
+let publicRevealed = false;
+
+/** A masked value plus its Generate/Hide button (HTML). */
+function privateValue(value) {
+    const shown = publicRevealed;
+    return `<span class="private-value" data-private="${escapeHtml(value)}">${escapeHtml(shown ? value : MASK)}</span>`;
+}
+const revealButton = () =>
+    `<button type="button" class="copy-btn reveal-btn" data-reveal>${publicRevealed ? 'Hide' : 'Generate'}</button>`;
+
+document.addEventListener('click', (event) => {
+    const btn = event.target.closest?.('[data-reveal]');
+    if (!btn) return;
+    publicRevealed = !publicRevealed;
+    for (const el of document.querySelectorAll('[data-private]')) el.textContent = publicRevealed ? el.dataset.private : MASK;
+    for (const b of document.querySelectorAll('[data-reveal]')) b.textContent = publicRevealed ? 'Hide' : 'Generate';
+});
+
+function stratumRow(port, host, diff, note, { privateHost = false } = {}) {
     const url = `stratum+tcp://${host}:${port}`;
+    const shown = privateHost
+        ? `stratum+tcp://${privateValue(host)}:${port}`
+        : escapeHtml(url);
     return `<tr>
       <td class="port">${port}</td>
       <td>
         <span class="copyable">
-          <code>${escapeHtml(url)}</code>
+          <code>${shown}</code>
+          ${privateHost ? revealButton() : ''}
           <button type="button" class="copy-btn" data-copy="${escapeHtml(url)}">Copy</button>
         </span>
       </td>
@@ -2477,6 +2506,8 @@ function renderStratumTargets(cfg) {
                 inst.publish
                     ? '<span class="tag">needs port forwarded</span>'
                     : '<span class="tag off">port not published</span>',
+                // The public IP is masked until Generate is pressed.
+                { privateHost: Boolean(miningPublicIp) },
             ),
         )
         .join('');
@@ -2870,7 +2901,8 @@ function renderPublicCheck(r) {
     v.className = `tag ${yes ? 'ok' : 'off'}`;
 
     $('public-facts').hidden = false;
-    $('public-node-ip').textContent = r.ip || '–';
+    // Masked until Generate is pressed (screen-recording safe).
+    $('public-node-ip').innerHTML = r.ip ? `${privateValue(r.ip)} ${revealButton()}` : '–';
     $('public-port').textContent = r.exposed ? `${r.port}` : `${r.port} — not published to the host`;
     $('public-probe').textContent =
         r.probe?.open === true

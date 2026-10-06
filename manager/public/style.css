@@ -2479,3 +2479,7 @@ body:not(.testnet-view) [data-testnet-only]:not(.nav-item):not(.nav-row) { displ
     min-width: 0;
 }
 .topbar-lan code { font-size: 13px; user-select: all; }
+
+/* Masked public addresses (Generate shows them). */
+.private-value { font-variant-numeric: tabular-nums; }
+.copyable .reveal-btn { margin-left: 4px; }
