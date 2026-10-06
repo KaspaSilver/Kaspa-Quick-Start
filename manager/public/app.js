@@ -278,9 +278,14 @@ for (const item of document.querySelectorAll('.nav-item')) {
 function askConfirm(message) {
     return new Promise((resolve) => {
         const [question, ...rest] = String(message).split('\n');
-        const scrim = document.createElement('div');
-        scrim.className = 'ask-scrim';
-        scrim.innerHTML = `<div class="ask-box card" role="alertdialog" aria-modal="true" aria-labelledby="ask-q">
+        // A real modal <dialog>, not a positioned div: other screens (the publish wizard,
+        // the proxy editor) are <dialog>s opened with showModal(), which sit in the
+        // browser's top layer above every z-index. Opening this one with showModal() too
+        // puts it on top of whichever dialog asked the question.
+        const dlg = document.createElement('dialog');
+        dlg.className = 'ask-dialog';
+        dlg.setAttribute('aria-labelledby', 'ask-q');
+        dlg.innerHTML = `<div class="ask-box card" role="alertdialog">
             <h3 id="ask-q"></h3>
             <p class="ask-detail muted"></p>
             <div class="row ask-actions">
@@ -288,27 +293,30 @@ function askConfirm(message) {
               <button type="button" class="primary" data-ask="yes">Continue</button>
             </div>
           </div>`;
-        scrim.querySelector('#ask-q').textContent = question;
-        scrim.querySelector('.ask-detail').textContent = rest.join('\n').trim();
+        dlg.querySelector('#ask-q').textContent = question;
+        dlg.querySelector('.ask-detail').textContent = rest.join('\n').trim();
+        let settled = false;
         const done = (answer) => {
-            document.removeEventListener('keydown', onKey, true);
-            scrim.remove();
+            if (settled) return;
+            settled = true;
+            if (dlg.open) dlg.close();
+            dlg.remove();
             resolve(answer);
         };
-        const onKey = (event) => {
-            if (event.key === 'Escape') {
-                event.stopPropagation();
-                done(false);
-            }
-        };
-        scrim.addEventListener('click', (event) => {
-            if (event.target === scrim) return done(false);
+        // Escape: answer "no" and close only this dialog, not the one underneath.
+        dlg.addEventListener('cancel', (event) => {
+            event.preventDefault();
+            done(false);
+        });
+        dlg.addEventListener('click', (event) => {
+            // A click on the backdrop lands on the <dialog> element itself.
+            if (event.target === dlg) return done(false);
             const answer = event.target.closest?.('[data-ask]')?.dataset.ask;
             if (answer) done(answer === 'yes');
         });
-        document.addEventListener('keydown', onKey, true);
-        document.body.appendChild(scrim);
-        scrim.querySelector('[data-ask="yes"]').focus();
+        document.body.appendChild(dlg);
+        dlg.showModal();
+        dlg.querySelector('[data-ask="yes"]').focus();
     });
 }
 

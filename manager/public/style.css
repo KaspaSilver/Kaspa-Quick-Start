@@ -2450,15 +2450,15 @@ body:not(.testnet-view) [data-testnet-only]:not(.nav-item):not(.nav-row) { displ
 }
 
 /* In-page confirm (askConfirm in app.js): above every overlay, including the job console. */
-.ask-scrim {
-    position: fixed;
-    inset: 0;
-    z-index: 10000;
-    display: grid;
-    place-items: center;
-    padding: 16px;
-    background: color-mix(in srgb, #000 55%, transparent);
+.ask-dialog {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    max-width: min(460px, calc(100vw - 32px));
+    width: 100%;
+    color: inherit;
 }
+.ask-dialog::backdrop { background: color-mix(in srgb, #000 55%, transparent); }
 .ask-box {
     width: min(460px, 100%);
     max-height: calc(100vh - 32px);
