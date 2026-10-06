@@ -5287,6 +5287,22 @@ function renderPublishServices() {
 
 }
 
+/**
+ * Asks Let's Encrypt for a name's certificate with the same progress screen and live log
+ * as every other job (the issue runs as a panel job; DuckDNS names wait ~30 s on a TXT
+ * record, so a bare toast read as nothing happening). Refreshes the lists afterwards.
+ */
+async function requestCertificate(proxyId, domain, body) {
+    await runAction({
+        key: `cert:${proxyId}`,
+        title: `Certificate for ${domain}`,
+        note: "Asking Let's Encrypt. A DuckDNS name is proven with a TXT record (no open ports); other names need port 80 to reach this machine.",
+        request: () => api(`/api/proxies/${proxyId}/certificate`, { method: 'POST', body }),
+    });
+    await loadProxies().catch(() => {});
+    await loadPublish().catch(() => {});
+}
+
 // Everything a published address needs is on its own row: set it up, retry the
 // certificate, open the details, take it down.
 $('publish-body').addEventListener('click', async (event) => {
@@ -5296,11 +5312,7 @@ $('publish-body').addEventListener('click', async (event) => {
 
     if (cert) {
         const proxy = proxies.find((p) => p.id === cert);
-        try {
-            await api(`/api/proxies/${cert}/certificate`, { method: 'POST', body: { email: proxy?.ssl?.email } });
-        } catch (e) {
-            toast(e.message, 'bad');
-        }
+        await requestCertificate(proxy?.id ?? cert, proxy?.domain ?? 'this name', { email: proxy?.ssl?.email });
         return;
     }
 
@@ -7112,11 +7124,8 @@ $('proxy-form').addEventListener('submit', async (event) => {
         // A brand new https host has no certificate yet; offer to fetch it now.
         const saved = proxies.find((p) => p.domain === payload.domain);
         if (saved && payload.ssl.mode === 'letsencrypt' && !saved.certificate) {
-            if (await askConfirm(`Request a Let's Encrypt certificate for ${payload.domain} now?\n\nPort 80 must already reach this machine.`)) {
-                await api(`/api/proxies/${saved.id}/certificate`, {
-                    method: 'POST',
-                    body: { email: payload.ssl.email, staging: $('px-staging').checked },
-                });
+            if (await askConfirm(`Request a Let's Encrypt certificate for ${payload.domain} now?`)) {
+                await requestCertificate(saved.id, payload.domain, { email: payload.ssl.email, staging: $('px-staging').checked });
             }
         }
     } catch (e) {
