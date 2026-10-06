@@ -61,6 +61,12 @@ import {
     issueSession,
     sessionCookie,
     verifyPassword,
+    verifyPasswordAsync,
+    clientKey,
+    loginBlockedFor,
+    recordLoginFailure,
+    recordLoginSuccess,
+    withLoginSlot,
 } from './lib/auth.js';
 
 // Identifies this manager process, and nothing more. The panel reads it on
@@ -444,12 +450,11 @@ route(
     /^\/api\/session$/,
     async (req, res) =>
         sendJson(res, 200, {
-            // `required` false means no password is set, so the panel is open to
-            // whoever can reach the port. The installer keeps that bound to
-            // loopback; the UI says so, and proxying it out is refused unless a
-            // password or proxy-level basic auth is in place.
-            required: authRequired(),
-            authenticated: !authRequired() || isAuthenticated(req),
+            // A password is always required (KQS-001). `needsSetup`: none is set
+            // yet, so the panel shows only its set-password screen.
+            required: true,
+            needsSetup: !authConfigured(),
+            authenticated: authConfigured() && isAuthenticated(req),
             // A stored hash that cannot be verified would otherwise present as
             // "your password is wrong", forever.
             passwordUnusable: passwordUnusable(),
@@ -466,12 +471,20 @@ route(
     /^\/api\/login$/,
     async (req, res) => {
         const body = await readBody(req);
-        if (!authRequired()) return sendJson(res, 200, { ok: true, required: false });
-        if (!verifyPassword(String(body.password ?? ''))) {
+        if (!authConfigured()) return fail(res, 409, 'No password is set yet. Set one first.');
+        // Throttled (KQS-005): 5 wrong tries lock this client out for a minute.
+        const key = clientKey(req);
+        const wait = loginBlockedFor(key);
+        if (wait) return fail(res, 429, `Too many wrong passwords. Try again in ${wait} s.`);
+        const ok = await withLoginSlot(() => verifyPasswordAsync(String(body.password ?? '')));
+        if (ok === null) return fail(res, 429, 'Busy checking other sign-ins. Try again in a moment.');
+        if (!ok) {
+            recordLoginFailure(key);
             // Constant-ish delay so the endpoint is not a fast password oracle.
             await new Promise((r) => setTimeout(r, 500));
             return fail(res, 401, 'Incorrect password.');
         }
+        recordLoginSuccess(key);
         const { token } = issueSession();
         const secure = (req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
         sendJson(res, 200, { ok: true }, { 'Set-Cookie': sessionCookie(token, { secure }) });
@@ -3133,70 +3146,61 @@ const managerBind = () => (readEnvFile().MANAGER_BIND || '0.0.0.0').trim();
 const isLoopbackBind = () => ['127.0.0.1', '::1', 'localhost'].includes(managerBind());
 
 /**
- * Sets, changes or clears the panel's own password.
+ * Sets or changes the panel's own password. It cannot be removed (KQS-001).
  *
- * The hash lives in .env and is read into the process once at startup, so this
- * writes the file and then has a sidecar replace this container. Nothing is
- * lost: the node, the proxy and every app keep running, and the browser is told
- * to expect a few seconds of silence.
+ * The hash lives in .env and auth reads it live, so it is in force at once.
  *
- * With no password set this route is open, because the panel is open -- anyone
- * who can reach it already has the Docker socket. Once one exists the ordinary
- * gate applies, and changing it also requires the current one, so a borrowed
- * session cannot lock the owner out.
+ * The first password: with none set, the route is open (nothing else is), but
+ * only for a request addressed to this machine itself -- localhost or one of its
+ * own IPs. A web page that rebinds its own domain to 127.0.0.1 arrives with its
+ * domain in Host and is refused, so it cannot set a password before the owner
+ * does. Changing an existing one needs a session and the current password, so a
+ * borrowed session cannot lock the owner out.
  */
-route('POST', /^\/api\/auth\/password$/, async (req, res) => {
+async function hostIsThisMachine(req) {
+    const host = String(req.headers.host || '')
+        .replace(/:\d+$/, '')
+        .replace(/^\[|\]$/g, '')
+        .toLowerCase();
+    if (['localhost', '127.0.0.1', '::1'].includes(host)) return true;
+    const own = await network.hostAddresses().catch(() => []);
+    return own.some((a) => a.ip === host);
+}
+
+route(
+    'POST',
+    /^\/api\/auth\/password$/,
+    async (req, res) => {
     const body = await readBody(req);
+    if (authConfigured()) {
+        if (!isAuthenticated(req)) return fail(res, 401, 'Not signed in.');
+    } else if (!(await hostIsThisMachine(req))) {
+        return fail(res, 403, 'Set the first password from this machine (http://localhost) or its own IP address.');
+    }
 
     if (authConfigured() && !verifyPassword(String(body.current || ''))) {
         return fail(res, 403, 'That is not the current password.');
     }
 
-    if (body.clear) {
-        if (!authConfigured()) return sendJson(res, 200, { ok: true, unchanged: true });
-        // Removing the password is only sane while the panel is on loopback and
-        // not on a domain; either would leave the Docker socket open.
-        const published = loadProxies().some((p) => p.target?.kind === 'manager');
-        if (published) {
-            return fail(res, 409, 'This panel is published on a domain, so it cannot have its password removed.', {
-                details: ['Unpublish it first, or keep the password.'],
-            });
-        }
-        if (!isLoopbackBind()) {
-            return fail(res, 409, `This panel is bound to ${managerBind()}, not to loopback, so it needs a password.`);
-        }
-        updateEnvFile({ ADMIN_PASSWORD_HASH: '' });
-        // Auth reads the hash live from .env, so clearing it is in force at once
-        // -- no container restart, and none of the cross-platform trouble that
-        // recreating this container involved.
-        return sendJson(res, 200, { ok: true, cleared: true }, { 'Set-Cookie': clearCookie() });
-    }
+    if (body.clear) return fail(res, 400, 'The panel always needs a password. It can be changed, not removed.');
 
     const password = String(body.password || '');
     if (password.length < 8) return fail(res, 400, 'Use at least 8 characters.');
     if (password.length > 200) return fail(res, 400, 'That is longer than 200 characters.');
 
-    const firstPassword = !authConfigured();
     updateEnvFile({ ADMIN_PASSWORD_HASH: hashPassword(password) });
 
-    // The installer keeps a password-less panel on 127.0.0.1, and its first-run
-    // screen says so ("only this machine can reach the panel"). Setting the first
-    // password is what makes reaching it from elsewhere safe, so that is when it
-    // opens up: publish on 0.0.0.0 and recreate this container (the port mapping is
-    // fixed at creation). Changing an existing password never moves the bind -- that
-    // is the "Reachable from other machines" switch.
-    if (firstPassword && isLoopbackBind()) {
-        updateEnvFile({ MANAGER_BIND: '0.0.0.0' });
-        await selfservice.restartManager();
-        return sendJson(res, 202, { ok: true, rebinding: true, bind: '0.0.0.0' });
-    }
+    // Setting a password never changes who can reach the panel (KQS-005): opening
+    // it to the network is only ever the "Reachable from other machines" switch.
     // Auth reads the hash live from .env, so this is in force immediately with
     // no restart. Issue a session in the same response so whoever just set the
     // password is not locked straight back out and made to sign in again.
     const { token } = issueSession();
     const secure = (req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
     sendJson(res, 200, { ok: true }, { 'Set-Cookie': sessionCookie(token, { secure }) });
-});
+    },
+    { auth: false },
+);
 
 // -------------------------------------------------------------- lifecycle --
 
@@ -3860,8 +3864,8 @@ const server = http.createServer(async (req, res) => {
     const match = routes.find((r) => r.method === req.method && r.pattern.test(url.pathname));
     if (!match) return fail(res, 404, 'Not found');
 
-    // With no password set the panel is open; the installer binds it to
-    // loopback so "open" means "open to this machine".
+    // Every route needs a session (KQS-001); with no password set yet there are
+    // none, so only the auth: false routes (session, login, first password) answer.
     if (match.auth && authRequired() && !isAuthenticated(req)) {
         return fail(res, 401, 'Not signed in.');
     }
@@ -3977,9 +3981,9 @@ async function bootstrap() {
         log(`                 Clear ADMIN_PASSWORD_HASH in ${STACK_HOST}/.env, recreate this container, and set a new one.`);
     }
     log(
-        authRequired()
+        authConfigured()
             ? 'auth           : password required'
-            : 'auth           : none (panel expects to be bound to 127.0.0.1)',
+            : 'auth           : no password yet; the panel serves only its set-password screen',
     );
 
     // Self-heal the first-boot race. kaspad and this container start together,

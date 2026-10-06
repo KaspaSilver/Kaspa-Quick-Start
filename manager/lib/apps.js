@@ -159,7 +159,9 @@ export const DEFAULT_APPS_CONFIG = {
         enabled: false,
         ref: 'main',
         network: 'mainnet',
-        publish: { api: false, chat: false },
+        // The raw chat port (8600) is never published (kachat-audits KQS-003): it
+        // carries unauthenticated maintenance routes. Reach it via Proxy & domains.
+        publish: { api: false },
         // Android push (Firebase). Only the non-secret project id lives here; the
         // service-account.json is written to conf/push/ by the Push Service panel.
         fcmProjectId: '',
@@ -303,7 +305,7 @@ export function validateAppsConfig(input) {
     else cfg.kachat.ref = kref;
 
     cfg.kachat.network = ['mainnet', 'testnet-10'].includes(k.network) ? k.network : 'mainnet';
-    cfg.kachat.publish = { api: Boolean(k.publish?.api), chat: Boolean(k.publish?.chat) };
+    cfg.kachat.publish = { api: Boolean(k.publish?.api) };
 
     const fcm = String(k.fcmProjectId ?? '').trim();
     if (fcm && !/^[a-z0-9-]{1,64}$/.test(fcm)) errors.push('FCM project id may only contain lowercase letters, digits and dashes.');
@@ -505,7 +507,6 @@ export function renderAppsPortsOverride(cfg) {
 
     const kachatPorts = [];
     if (cfg.kachat.publish.api) kachatPorts.push(APPS.kachat.ports.api.port);
-    if (cfg.kachat.publish.chat) kachatPorts.push(APPS.kachat.ports.chat.port);
     if (composeDefines('kachat-app')) {
         lines.push('  kachat-app:');
         lines.push('    ports:');

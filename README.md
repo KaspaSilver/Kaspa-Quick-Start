@@ -147,7 +147,6 @@ Nothing outside `manager/` is mounted, so changes to `docker-compose.yml`,
 | `18110` | wRPC JSON           | serve browser / JSON clients (the panel already uses it internally) |
 | `5555`  | stratum             | only if you mine, and only for miners outside this machine |
 | `3080`  | KaPosts REST API    | only if KaChat clients connect from outside this machine |
-| `8600`  | chat indexer API    | as above |
 | `8081`  | Nextcloud           | only if you reach Nextcloud without a proxy host |
 | `80`,`443` | reverse proxy    | only if you switch the proxy on for domains / HTTPS |
 | `8420`  | control panel       | bound to `127.0.0.1`, so do not forward it. Deliberately not 8080, which you may want for the proxy |
@@ -359,7 +358,7 @@ installer warns first, and it takes 30–60 minutes.
 --https-port <port>   nginx https port (default 443)
 --bind <address>      address the panel listens on (default 127.0.0.1)
 --password <pass>     require a password to open the panel
---no-password         drop a password set by an earlier run
+--no-password         drop a password set by an earlier run (the panel then asks for a new one)
 --version <vX.Y.Z>    install a specific kaspad release
 --yes                 no prompts
 ```
@@ -373,17 +372,23 @@ settings, chain data and existing password.
 
 ## Opening the panel to other machines
 
-The panel drives the Docker socket, which is root on the host. Without a
-password, anything that can reach the panel's port owns the machine, which is exactly
-why the default bind is loopback. To reach it from elsewhere, set a password
-first:
+The panel drives the Docker socket, which is root on the host, so it always needs
+a password. Until one is set it shows only its set-password screen, and that
+screen accepts the first password only from the machine itself
+(`http://localhost:8420` or the machine's own IP). Setting it does not open the
+panel to the network. Logins are rate-limited: five wrong passwords lock that
+client out for a minute.
+
+The panel speaks plain HTTP. To reach it from elsewhere, prefer an SSH tunnel or a
+proxy host (HTTPS) over a wider bind. If you do widen it (Global settings →
+"Reachable from other machines", or the installer):
 
 ```bash
 bash ~/.kaspa-node/install.sh --password 'something-long' --bind 0.0.0.0
 ```
 
-Or keep it loopback-only and forward the port over SSH, which needs no password
-and no open port at all:
+Or keep it loopback-only and forward the port over SSH, which needs no open port
+at all:
 
 ```bash
 ssh -N -L 8420:127.0.0.1:8420 you@your-node
@@ -399,9 +404,9 @@ password is set or that host has its own basic auth.
 
 ## Security notes
 
-- The panel has no password by default and is bound to `127.0.0.1`, so reaching
-  the port already means sitting at the machine. Those two defaults belong
-  together, so see below before changing either.
+- The panel always needs a password and is bound to `127.0.0.1` by default. A
+  password-less panel would be reachable from any web page through DNS rebinding,
+  so until one is set it serves only the set-password screen.
 - The manager container has access to the Docker socket, which is equivalent to
   root on the host. Treat the admin password accordingly.
 - Values that end up in nginx config or on the kaspad command line are validated

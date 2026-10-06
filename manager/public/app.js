@@ -164,31 +164,11 @@ $('logout').addEventListener('click', async () => {
 
 // --- first run: set the admin password on the panel, not in the terminal ---
 
-// Remembered per browser so the prompt does not return every visit once it has
-// been answered -- set, or deliberately skipped.
-const SETUP_KEY = 'kaspa-node-setup-done';
-
 function showFirstRun() {
     $('firstrun').classList.remove('hidden');
     $('login').classList.add('hidden');
     $('app').classList.add('hidden');
     stopPolling();
-}
-
-/** Wait for the panel to restart (setting a password replaces it), then reload. */
-async function waitForPanelReload() {
-    const deadline = Date.now() + 120_000;
-    let wentDown = false;
-    while (Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 1500));
-        try {
-            const res = await fetch('/healthz', { cache: 'no-store' });
-            if (res.ok && wentDown) return location.reload();
-        } catch {
-            wentDown = true;
-        }
-    }
-    location.reload();
 }
 
 $('firstrun-form').addEventListener('submit', async (event) => {
@@ -210,30 +190,13 @@ $('firstrun-form').addEventListener('submit', async (event) => {
     const btn = event.target.querySelector('button[type="submit"]');
     btn.disabled = true;
     try {
-        // No `current`: this only runs when none is set, where the route is open.
-        // The response carries a session cookie and the password is in force at
-        // once (auth reads it live from .env), so there is no restart to wait on
-        // -- just reload into the panel, already signed in.
-        const r = await api('/api/auth/password', { method: 'POST', body: { password } });
-        localStorage.setItem(SETUP_KEY, '1');
+        // No `current`: this only runs when none is set. The response carries a
+        // session cookie and the password is in force at once (auth reads it live
+        // from .env), so there is no restart to wait on -- just reload into the
+        // panel, already signed in.
+        await api('/api/auth/password', { method: 'POST', body: { password } });
         const status = $('firstrun-status');
         status.hidden = false;
-        if (r.rebinding) {
-            // Opening the panel to the network recreates its container; wait for it.
-            status.textContent = 'Password set. Restarting so other machines on your network can reach the panel…';
-            const deadline = Date.now() + 120_000;
-            let wentDown = false;
-            while (Date.now() < deadline) {
-                await new Promise((res) => setTimeout(res, 1500));
-                try {
-                    const h = await fetch('/healthz', { cache: 'no-store' });
-                    if (h.ok && wentDown) return location.reload();
-                } catch {
-                    wentDown = true;
-                }
-            }
-            return location.reload();
-        }
         status.textContent = 'Password set. Opening the panel…';
         location.reload();
     } catch (e) {
@@ -243,10 +206,6 @@ $('firstrun-form').addEventListener('submit', async (event) => {
     }
 });
 
-$('firstrun-skip').addEventListener('click', () => {
-    localStorage.setItem(SETUP_KEY, '1');
-    showApp();
-});
 
 // --------------------------------------------------------- navigation ---
 
@@ -3127,7 +3086,6 @@ async function loadApps() {
     $('kachat-ref').value = c.kachat.ref;
     $('kachat-network').value = c.kachat.network;
     $('kachat-pub-api').checked = c.kachat.publish.api;
-    $('kachat-pub-chat').checked = c.kachat.publish.chat;
     renderAppState('kachat', r.apps.kachat);
 
     // --- KaChat Desktop ---
@@ -3386,7 +3344,7 @@ function collectAppConfig(name) {
             enabled: Boolean(appsState?.config?.kachat?.enabled),
             ref: appRef('kachat'),
             network: $('kachat-network').value,
-            publish: { api: $('kachat-pub-api').checked, chat: $('kachat-pub-chat').checked },
+            publish: { api: $('kachat-pub-api').checked },
         };
     }
     if (name === 'desktop') {
@@ -7582,24 +7540,18 @@ api('/api/session')
     .then((s) => {
         if (s.panelVersion) $('version-badge').textContent = `v${s.panelVersion}`;
         panelAccess = { viaProxy: Boolean(s.viaProxy), directUrl: s.directUrl || '' };
-        renderPasswordCard(Boolean(s.required));
-        // No password set: skip the sign-in screen entirely and say why, so the
-        // absence of a login prompt reads as a decision rather than a bug.
-        $('logout').hidden = !s.required;
-        $('auth-note').hidden = Boolean(s.required);
+        renderPasswordCard(!s.needsSetup);
         if (s.passwordUnusable) {
             // No password will be accepted, so say that rather than let someone
             // retype a correct one until they give up.
             const note = $('login-error');
             note.hidden = false;
             note.textContent =
-                'The stored password cannot be read, so none will be accepted. It was truncated by an old bug in how the hash was saved. Clear ADMIN_PASSWORD_HASH in the .env file in your install directory, recreate the panel container, and set a new password from Global settings.';
+                'The stored password cannot be read, so none will be accepted. It was truncated by an old bug in how the hash was saved. Clear ADMIN_PASSWORD_HASH in the .env file in your install directory, recreate the panel container, and set a new password.';
         }
-        // No password and this browser has not answered the first-run prompt:
-        // invite them to set one here rather than expecting the installer to
-        // have printed it. Skipping is allowed -- the panel is loopback-only
-        // without one -- and is remembered so it does not nag.
-        if (!s.required && localStorage.getItem(SETUP_KEY) !== '1') {
+        // A password is always required (KQS-001): with none set, the only thing
+        // the panel shows is the screen to set one.
+        if (s.needsSetup) {
             showFirstRun();
         } else if (s.authenticated) {
             showApp();
@@ -7617,10 +7569,9 @@ api('/api/session')
  */
 function renderPasswordCard(isSet) {
     $('password-state').textContent = isSet
-        ? 'A password is required to open this panel. Change it below, or remove it if the panel is only ever reached from this machine.'
-        : 'No password is set. Anyone who can reach this port has full control of the node and of Docker, which is why the installer keeps the panel on 127.0.0.1 until you set one.';
+        ? 'A password is required to open this panel. Change it below; it cannot be removed, because the panel controls Docker on this machine.'
+        : 'No password is set yet.';
     $('password-current-row').hidden = !isSet;
-    $('password-clear').hidden = !isSet;
     $('password-save').textContent = isSet ? 'Change it' : 'Set a password';
 }
 
@@ -7687,7 +7638,7 @@ $('password-save').addEventListener('click', async () => {
 
     $('password-save').disabled = true;
     try {
-        const r = await api('/api/auth/password', {
+        await api('/api/auth/password', {
             method: 'POST',
             body: { password, current: $('password-current').value },
         });
@@ -7695,13 +7646,6 @@ $('password-save').addEventListener('click', async () => {
         $('password-repeat').value = '';
         $('password-current').value = '';
         hidePasswords();
-        // The first password opens the panel to the network (0.0.0.0), which needs
-        // the container recreated; sign in again once it is back.
-        if (r.rebinding) {
-            return waitForPanelRestart(
-                'Password saved. The panel is restarting so other machines on your network can reach it; sign in again in a few seconds.',
-            );
-        }
         // In force immediately (auth reads .env live) and the response refreshed
         // the session, so no restart to wait on.
         kResult('password-result', 'Password saved. It is in force now.', false);
@@ -7746,7 +7690,7 @@ $('panel-lan')?.addEventListener('change', async (event) => {
     const lan = event.target.checked;
     const ok = await askConfirm(
         lan
-            ? 'Let other machines on your network open this panel?\n\nIt restarts (the node and every app keep running) and asks for the admin password from anywhere but this computer.'
+            ? 'Let other machines on your network open this panel?\n\nIt restarts (the node and every app keep running). The panel speaks plain HTTP, so your password crosses the network unencrypted: only do this on a network you trust, and never on a server whose port faces the internet. For remote access use Proxy & domains (HTTPS) or an SSH tunnel.'
             : 'Limit the panel to this machine only?\n\nIt restarts. Afterwards it opens only at http://localhost on the server itself.',
     );
     if (!ok) {
@@ -7769,23 +7713,6 @@ $('panel-lan')?.addEventListener('change', async (event) => {
         toast(e.message, 'bad');
     } finally {
         event.target.disabled = false;
-    }
-});
-
-$('password-clear').addEventListener('click', async () => {
-    if (!await askConfirm('Remove the password?\n\nAnyone who can reach this port will then have full control of the node and of Docker. Only sensible while the panel is on 127.0.0.1.')) {
-        return;
-    }
-    $('password-clear').disabled = true;
-    try {
-        await api('/api/auth/password', { method: 'POST', body: { clear: true, current: $('password-current').value } });
-        // Cleared at once (auth reads .env live); no restart. Reload so the page
-        // drops back to the open, no-password state.
-        kResult('password-result', 'Password removed.', false);
-        location.reload();
-    } catch (e) {
-        toast(e.message, 'bad');
-        $('password-clear').disabled = false;
     }
 });
 

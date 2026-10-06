@@ -43,9 +43,9 @@
     <div class="brand"><img class="mark" src="kaspa-mark.png" alt="" width="22" height="22"> Kaspa Quick Start</div>
     <h2 class="firstrun-title">Welcome, set an admin password</h2>
     <p class="muted">
-      This panel controls Docker on this machine, so a password keeps it yours.
-      Set one now; you will need it to publish the panel on a domain later, and
-      to reach it from anywhere but this computer.
+      This panel controls Docker on this machine, so it always needs a password.
+      Set one now. The panel stays reachable from this machine only until you
+      turn on "Reachable from other machines" in Global settings.
     </p>
     <label>
       New password
@@ -58,7 +58,6 @@
     <button type="submit" class="primary">Set password &amp; continue</button>
     <p class="error" id="firstrun-error" hidden></p>
     <p class="hint" id="firstrun-status" hidden></p>
-    <button type="button" class="linklike" id="firstrun-skip">Skip for now (only this machine can reach the panel)</button>
   </form>
 </section>
 
@@ -246,10 +245,8 @@
     </nav>
 
     <div class="sidebar-foot">
-      <span id="auth-note" class="badge local" hidden
-            title="No admin password is set, so anyone who can reach this port has full control of the node and the Docker daemon. The installer binds the panel to 127.0.0.1 for that reason. Re-run it with --password to set one.">local only</span>
       <span id="version-badge" class="badge">–</span>
-      <button id="logout" class="ghost" hidden>Sign out</button>
+      <button id="logout" class="ghost">Sign out</button>
     </div>
   </aside>
 
@@ -1616,11 +1613,13 @@
           <article class="card span2">
             <h3>Published ports</h3>
             <p class="muted">
-              Both APIs already work for anything running alongside them here. Only
-              publish one if you have apps connecting from another machine.
+              The APIs already work for anything running alongside them here. Only
+              publish this if you have apps connecting from another machine. The chat
+              indexer API is not offered here: its raw port also carries maintenance
+              routes. To reach chat from outside, use Proxy &amp; domains, which
+              forwards only the public routes.
             </p>
             <label class="check"><input type="checkbox" id="kachat-pub-api"> KaPosts REST API on 3080</label>
-            <label class="check"><input type="checkbox" id="kachat-pub-chat"> Chat indexer API on 8600</label>
             <div class="row">
               <button type="button" id="kachat-save" class="primary">Apply settings</button>
             </div>
@@ -2648,7 +2647,6 @@
             <label class="inline">New <span class="pw-field"><input id="password-new" type="password" size="18" autocomplete="new-password"><button type="button" class="pw-eye" data-pw-toggle="password-new" aria-label="Show password" aria-pressed="false" title="Show password"></button></span></label>
             <label class="inline">Repeat <span class="pw-field"><input id="password-repeat" type="password" size="18" autocomplete="new-password"><button type="button" class="pw-eye" data-pw-toggle="password-repeat" aria-label="Show password" aria-pressed="false" title="Show password"></button></span></label>
             <button id="password-save" class="primary">Save</button>
-            <button id="password-clear" class="ghost danger" hidden>Remove it</button>
           </div>
           <p class="hint">
             This panel drives the Docker daemon, which is root on this machine.

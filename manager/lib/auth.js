@@ -11,11 +11,11 @@ const SESSION_SECRET =
         ? process.env.SESSION_SECRET
         : crypto.randomBytes(32).toString('hex');
 
-// Optional. The panel is bound to 127.0.0.1 by default, where "can reach the
-// port" already means "is sitting at this machine", so a password buys nothing.
-// Set one (install.sh --password) when binding the panel to a real interface or
-// proxying it to a domain -- the manager holds the Docker socket, which is root
-// on the host, so an exposed panel without a password is a full compromise.
+// Always required (kachat-audits KQS-001). Even on 127.0.0.1 a password-less panel
+// is reachable by any web page through DNS rebinding, and the manager holds the
+// Docker socket, which is root on the host. Until one is set the panel serves only
+// its set-password screen. The session cookie is SameSite=Strict and host-only, so
+// a page on another site (or a rebound one) never carries it.
 //
 // Read live from the .env file the panel mounts, not captured at startup. That
 // is what lets setting a password take effect at once, with no need to recreate
@@ -48,8 +48,8 @@ export const passwordUnusable = () => {
     return scheme !== 'scrypt' || !saltHex || !hashHex;
 };
 
-/** True when a caller must sign in. Mirrors authConfigured, named for intent. */
-export const authRequired = () => authConfigured();
+/** True when a caller must sign in: always (KQS-001). */
+export const authRequired = () => true;
 
 export function hashPassword(password, salt = crypto.randomBytes(16)) {
     const derived = crypto.scryptSync(password, salt, SCRYPT_KEYLEN);
@@ -133,4 +133,84 @@ export { COOKIE_NAME };
 export function htpasswdLine(user, password) {
     const digest = crypto.createHash('sha1').update(password).digest('base64');
     return `${user}:{SHA}${digest}`;
+}
+
+/**
+ * verifyPassword without blocking the event loop: scrypt runs on the thread pool,
+ * so a burst of login attempts cannot stall every other request (KQS-005).
+ */
+export async function verifyPasswordAsync(password) {
+    const hash = currentHash();
+    if (!hash) return false;
+    const [scheme, saltHex, hashHex] = hash.split(/[:$]/);
+    if (scheme !== 'scrypt' || !saltHex || !hashHex) return false;
+    let derived;
+    try {
+        derived = await new Promise((resolve, reject) =>
+            crypto.scrypt(password, Buffer.from(saltHex, 'hex'), SCRYPT_KEYLEN, (err, key) => (err ? reject(err) : resolve(key))),
+        );
+    } catch {
+        return false;
+    }
+    const expected = Buffer.from(hashHex, 'hex');
+    if (expected.length !== derived.length) return false;
+    return crypto.timingSafeEqual(expected, derived);
+}
+
+// ---- login throttling (KQS-005) ----
+//
+// Per client: 5 wrong passwords lock that client out for a minute. Behind the
+// panel's own nginx every request arrives from the proxy container, so the client
+// is the right-most X-Forwarded-For hop (the one nginx appended). A direct caller
+// can forge that header to look like many clients, so there is also a global
+// ceiling: 30 failures a minute from anyone pauses all logins for a minute, and
+// at most 2 password checks run at once.
+const PER_CLIENT_FAILS = 5;
+const GLOBAL_FAILS = 30;
+const LOCK_MS = 60_000;
+const MAX_CONCURRENT = 2;
+const failures = new Map(); // client -> { count, first, lockedUntil }
+let globalFails = { count: 0, first: 0, lockedUntil: 0 };
+let inFlight = 0;
+
+export function clientKey(req) {
+    const xff = String(req.headers['x-forwarded-for'] || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    return xff.length ? xff[xff.length - 1] : req.socket?.remoteAddress || 'unknown';
+}
+
+/** Seconds to wait before this client may try again, or 0. */
+export function loginBlockedFor(key, now = Date.now()) {
+    const until = Math.max(failures.get(key)?.lockedUntil || 0, globalFails.lockedUntil);
+    return until > now ? Math.ceil((until - now) / 1000) : 0;
+}
+
+export function recordLoginFailure(key, now = Date.now()) {
+    const bump = (f, limit) => {
+        if (now - f.first > LOCK_MS) Object.assign(f, { count: 0, first: now });
+        f.count += 1;
+        if (f.count >= limit) Object.assign(f, { lockedUntil: now + LOCK_MS, count: 0, first: now });
+        return f;
+    };
+    failures.set(key, bump(failures.get(key) || { count: 0, first: now, lockedUntil: 0 }, PER_CLIENT_FAILS));
+    bump(globalFails, GLOBAL_FAILS);
+    // Forget stale clients so the map cannot grow without bound.
+    if (failures.size > 10_000) {
+        for (const [k, f] of failures) if (now - f.first > LOCK_MS && f.lockedUntil < now) failures.delete(k);
+    }
+}
+
+export const recordLoginSuccess = (key) => failures.delete(key);
+
+/** Runs `fn` if fewer than MAX_CONCURRENT checks are running; null when busy. */
+export async function withLoginSlot(fn) {
+    if (inFlight >= MAX_CONCURRENT) return null;
+    inFlight += 1;
+    try {
+        return await fn();
+    } finally {
+        inFlight -= 1;
+    }
 }
