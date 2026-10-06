@@ -2480,6 +2480,22 @@ body:not(.testnet-view) [data-testnet-only]:not(.nav-item):not(.nav-row) { displ
 }
 .topbar-lan code { font-size: 13px; user-select: all; }
 
-/* Masked public addresses (Generate shows them). */
+/* Masked public addresses: the eye button shows them. */
 .private-value { font-variant-numeric: tabular-nums; }
-.copyable .reveal-btn { margin-left: 4px; }
+.reveal-eye {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    margin: 0 2px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    vertical-align: middle;
+}
+.reveal-eye:hover, .reveal-eye[aria-pressed="true"] { color: var(--accent); }
+.reveal-eye:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
