@@ -1661,14 +1661,19 @@ route('POST', /^\/api\/setup\/([a-z][a-z-]*)$/, async (req, res, match) => {
             // replacing it.
             const names = new Set(duckdns.normalizeDomains(mgr.duckdns.domains));
             names.add(subdomain);
-            mgr.duckdns.domains = [...names].join(',');
-            if (token) mgr.duckdns.token = token;
-            mgr.duckdns.enabled = true;
-            saveManagerConfig(mgr);
-            duckdns.scheduleFromConfig(log);
+            const domains = [...names].join(',');
 
-            const update = await duckdns.update({ domains: mgr.duckdns.domains, token: token || storedToken });
+            // Ask DuckDNS first; save the names (and a newly typed token) only once it has
+            // accepted them. Saving first meant a mistyped token replaced the good one, and
+            // every refresh after that failed with "KO".
+            const update = await duckdns.update({ domains, token: token || storedToken });
             onLine(`DuckDNS: ${update.body.split('\n').join(' ').trim()}`);
+            const saved = loadManagerConfig();
+            saved.duckdns.domains = domains;
+            if (token) saved.duckdns.token = token;
+            saved.duckdns.enabled = true;
+            saveManagerConfig(saved);
+            duckdns.scheduleFromConfig(log);
             if (update.refused.length) {
                 // The name being published must be refreshable; others refused only warn.
                 if (update.refused.includes(`${subdomain}.duckdns.org`)) {
