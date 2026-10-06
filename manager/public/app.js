@@ -6479,9 +6479,12 @@ async function loadNames() {
             setText('names-status-note', s?.message || 'The testnet names module is not available yet.');
             return;
         }
+        // A start block the node has pruned never comes back by itself
+        // (kachat-indexer docs/KACHAT_NAMES_PRUNED_START.md).
+        const pruned = s.error === 'start_block_pruned';
         if (tag) {
-            tag.textContent = s.synced ? 'synced' : 'syncing';
-            tag.className = `tag ${s.synced ? 'ok' : 'warn'}`;
+            tag.textContent = pruned ? 'stuck' : s.synced ? 'synced' : 'syncing';
+            tag.className = `tag ${pruned ? 'bad' : s.synced ? 'ok' : 'warn'}`;
         }
         setText('names-network', s.network || 'testnet-10');
         // The indexer withholds registryCovenantId until synced (it is the apps'
@@ -6490,7 +6493,14 @@ async function loadNames() {
         setText('names-genesis', s.genesisTxId || '–');
         setText('names-daa', s.indexedDaa != null ? fmtNum(s.indexedDaa) : '–');
         setText('names-synced', s.synced ? 'yes' : 'no');
-        setText('names-status-note', '');
+        setText(
+            'names-status-note',
+            pruned
+                ? `The follower cannot start: block ${String(s.startBlock || '').slice(0, 16)}… is older than this node keeps (about a day). Load a manifest the same day its genesis is sent, or run the node as an archival node. The apps are unaffected: they read the chain themselves.`
+                : s.manifestPriceCovenantId
+                  ? `Registry v3, price covenant ${s.manifestPriceCovenantId.slice(0, 12)}…`
+                  : '',
+        );
     } catch {
         if (tag) {
             tag.textContent = 'not running';
