@@ -26,7 +26,10 @@ async function api(path, { method = 'GET', body } = {}) {
         /* empty body */
     }
     if (res.status === 401) {
-        showLogin();
+        // With no password set yet, everything answers 401: stay on (or return to) the
+        // set-password screen rather than offering a sign-in nobody can complete.
+        if (needsSetup) showFirstRun();
+        else showLogin();
         throw new Error('Not signed in.');
     }
     if (!res.ok) {
@@ -41,6 +44,10 @@ async function api(path, { method = 'GET', body } = {}) {
 // to fall back on. Set once from /api/session. Used to warn before stopping the
 // proxy would disconnect the very page asking for it.
 let panelAccess = { viaProxy: false, directUrl: '' };
+
+// No admin password is set yet (from /api/session): the panel only shows the screen to set
+// one, and a 401 from any background request must not flip it to the sign-in screen.
+let needsSetup = false;
 
 let toastTimer;
 function toast(message, kind = '') {
@@ -152,6 +159,12 @@ $('login-form').addEventListener('submit', async (event) => {
         $('login-password').value = '';
         showApp();
     } catch (e) {
+        // 409: no password is set yet (e.g. it was cleared from .env), so set one instead.
+        if (/No password is set yet/.test(e.message)) {
+            needsSetup = true;
+            showFirstRun();
+            return;
+        }
         err.textContent = e.message;
         err.hidden = false;
     }
@@ -7544,7 +7557,11 @@ function connectJobs() {
 // finishing is reflected without a reload.
 // Ten seconds, not thirty: this is now the only thing that writes the switches,
 // so how stale it is, is how stale they are.
-setInterval(() => loadServices().catch(() => {}), 10_000);
+// Only while the panel itself is on screen: before sign-in (or before the first password is
+// set) every request answers 401, and polling would only bounce the auth screens around.
+setInterval(() => {
+    if (!$('app').classList.contains('hidden')) loadServices().catch(() => {});
+}, 10_000);
 
 api('/api/session')
     .then((s) => {
@@ -7561,6 +7578,7 @@ api('/api/session')
         }
         // A password is always required (KQS-001): with none set, the only thing
         // the panel shows is the screen to set one.
+        needsSetup = Boolean(s.needsSetup);
         if (s.needsSetup) {
             showFirstRun();
         } else if (s.authenticated) {
