@@ -6576,8 +6576,10 @@ async function loadNames() {
             'names-status-note',
             pruned
                 ? `The follower cannot start: block ${String(s.startBlock || '').slice(0, 16)}… is older than this node keeps (about a day). Load a manifest the same day its genesis is sent, or run the node as an archival node. The apps are unaffected: they read the chain themselves.`
-                : s.manifestPriceCovenantId
-                  ? `Registry v3, price covenant ${s.manifestPriceCovenantId.slice(0, 12)}…`
+                : s.registryVersion
+                  ? `Registry v${s.registryVersion}${
+                        s.manifestPriceCovenantId ? `, price covenant ${s.manifestPriceCovenantId.slice(0, 12)}…` : ', fixed prices'
+                    }`
                   : '',
         );
     } catch {
