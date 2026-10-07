@@ -621,6 +621,7 @@ function selectSubtab(section, name) {
     // the tab that shows it is opened rather than on every page load.
     if (name === 'updates') loadReleasePicker().catch(() => {});
     if (name === 'kassigner-updates') loadKassignerReleases().catch(() => {});
+    if (name === 'names-rules') loadNamesRules().catch(() => {});
     if (name === 'global-cache') loadDiskCache().catch(() => {});
 }
 
@@ -8100,4 +8101,171 @@ async function loadLanIp() {
         code.textContent = 'unknown';
         button.disabled = true;
     }
+}
+
+// --- .kachat → Rules: the rules of the registry contract that is running ---
+//
+// Fixed rules come from the contracts themselves (kachat-domains contracts/*.sil and
+// docs/REGISTRY_V4.md); every number comes from the manifest the testnet indexer follows
+// (/api/names/rules), so a redeployment changes this page by itself.
+
+const kasOf = (sompi) => {
+    const n = Number(sompi);
+    if (!Number.isFinite(n)) return '–';
+    const kas = n / 1e8;
+    return `${kas.toLocaleString(undefined, { maximumFractionDigits: 8 })} KAS`;
+};
+
+function spanOf(ms) {
+    const n = Number(ms);
+    if (!Number.isFinite(n) || n <= 0) return '–';
+    const units = [
+        [365 * 86_400_000, 'year'],
+        [86_400_000, 'day'],
+        [3_600_000, 'hour'],
+        [60_000, 'minute'],
+        [1000, 'second'],
+    ];
+    for (const [size, word] of units) {
+        if (n % size === 0 || n >= size * 2) {
+            const v = Math.round((n / size) * 100) / 100;
+            return `${v.toLocaleString()} ${word}${v === 1 ? '' : 's'}`;
+        }
+    }
+    return `${n} ms`;
+}
+
+const TIER_LABELS = ['1 character', '2 characters', '3 characters', '4 characters', '5 or more characters'];
+const TIER_KEYS = ['len1', 'len2', 'len3', 'len4', 'len5plus'];
+
+async function loadNamesRules() {
+    const box = $('names-rules');
+    let r;
+    try {
+        r = await api('/api/names/rules');
+    } catch (e) {
+        box.innerHTML = `<p class="error">${escapeHtml(e.message)}</p>`;
+        return;
+    }
+    const p = r.params || {};
+    const period = spanOf(p.periodMs);
+    const maxYears = Number(p.maxYears) || 0;
+    const prices = p.prices || {};
+    const hasTables = prices.register && prices.renew;
+    const v = Number(r.registryVersion) || 2;
+    const esc = escapeHtml;
+    const short = (h) => (h ? `<code title="${esc(h)}">${esc(String(h).slice(0, 16))}…</code>` : '–');
+
+    const priceRows = TIER_KEYS.map((k, i) => {
+        if (hasTables) {
+            return `<tr><td>${TIER_LABELS[i]}</td><td>${kasOf(prices.register[k])}</td><td>${kasOf(prices.renew[k])}</td></tr>`;
+        }
+        return `<tr><td>${TIER_LABELS[i]}</td><td colspan="2">${kasOf(prices[k])}</td></tr>`;
+    }).join('');
+
+    const commitSecs = Number(p.tCommit) ? Math.round(Number(p.tCommit) / 10) : null;
+    box.innerHTML = `
+      <article class="card span2 rules">
+        <h3>The registry</h3>
+        <p class="muted">
+          These are the rules the .kachat contract enforces on chain. Nobody can change them, not even
+          the deployer: a change means a new contract version and a new registry. The numbers below
+          come from the manifest this panel's testnet indexer follows${r.source === 'bundled' ? ' (none is loaded yet, so the bundled one is shown)' : ''}.
+        </p>
+        <dl class="kv vertical">
+          <div><dt>Network</dt><dd>${esc(r.network || '–')}</dd></div>
+          <div><dt>Contract version</dt><dd>registry v${v}${v >= 4 ? ' (fixed prices, no admin key)' : v === 3 ? ' (adjustable price record)' : ''}</dd></div>
+          <div><dt>Registry id</dt><dd>${short(r.registryCovenantId)}</dd></div>
+          <div><dt>Genesis transaction</dt><dd>${short(r.genesis?.txid)}</dd></div>
+          ${Object.entries(r.templateHashes || {})
+              .map(([k, h]) => `<div><dt>${esc(k.replace('Kachat', ''))} contract</dt><dd>${short(h)}</dd></div>`)
+              .join('')}
+        </dl>
+      </article>
+
+      <article class="card span2 rules">
+        <h3>Names</h3>
+        <ul class="plain">
+          <li>A name is 1 to 32 characters: lowercase <code>a-z</code>, digits <code>0-9</code> and <code>-</code>, not starting or ending with <code>-</code>. It is used as <code>name.kachat</code>.</li>
+          <li>Each name can have exactly one owner. This is enforced by the chain itself, not by any server.</li>
+          <li>An owner is a KaChat (Kaspa) address. Every action by an owner needs that address's signature.</li>
+          <li>Each registered name holds a <strong>${kasOf(p.bond)}</strong> deposit, returned when it is released or reclaimed.</li>
+        </ul>
+      </article>
+
+      <article class="card span2 rules">
+        <h3>Prices (per ${esc(period)})</h3>
+        <table class="blocks">
+          <thead><tr><th>Name length</th>${hasTables ? '<th>Register (first period)</th><th>Renew / extend (each period)</th>' : '<th colspan="2">Price per period</th>'}</tr></thead>
+          <tbody>${priceRows}</tbody>
+        </table>
+        <ul class="plain">
+          ${
+              hasTables
+                  ? `<li>Registering for several periods costs the register price for the first and the renew price for each one after it, so registering for two periods never costs more than registering for one and extending.</li>`
+                  : `<li>Registry v${v} reads its prices from an on-chain price record that an authority key can change; these are the genesis prices.</li>`
+          }
+          <li>The price goes to the Kaspa miners as part of the network fee. Nobody collects it: there is no treasury and no admin key${v >= 4 ? ', and no one can change these prices' : ''}.</li>
+          <li>The network fee for the transaction itself is paid on top.</li>
+        </ul>
+      </article>
+
+      <article class="card span2 rules">
+        <h3>Registering</h3>
+        <ul class="plain">
+          <li><strong>Two steps, so nobody can steal a name you are about to register.</strong> First a hidden commitment is sent, which reveals neither the name nor the owner. Then the registration spends it.</li>
+          <li>The commitment must be at least ${esc(String(p.tCommit ?? '–'))} DAA old before it can be used${commitSecs ? ` (about ${commitSecs} seconds at 10 blocks per second)` : ''}. A commitment that is never used can be cancelled and its KAS taken back.</li>
+          <li>A name can be prepaid for 1 to ${maxYears || '–'} period${maxYears === 1 ? '' : 's'} of ${esc(period)}.</li>
+          <li>Each registration splits a free range of the registry in two, so the same name can never be registered twice.</li>
+        </ul>
+      </article>
+
+      <article class="card span2 rules">
+        <h3>Keeping a name</h3>
+        <ul class="plain">
+          <li><strong>Extend:</strong> add periods to the current one at any time, as long as the name is never paid more than ${maxYears || '–'} period${maxYears === 1 ? '' : 's'} past the start of its current period.</li>
+          <li><strong>Renew:</strong> once renewal opens, ${esc(spanOf(p.renewWindowMs))} before the name expires, start a new period from the old expiry date, so no time is lost or gained. This also works during the grace period, and even after it, until someone reclaims the name.</li>
+          <li>Anyone can extend or renew a name, so names can be gifted time. It stays with its owner.</li>
+        </ul>
+      </article>
+
+      <article class="card span2 rules">
+        <h3>Expiry</h3>
+        <ul class="plain">
+          <li><strong>Active:</strong> until the paid period ends.</li>
+          <li><strong>Grace period, ${esc(spanOf(p.graceMs))}:</strong> the name has expired but still belongs to its owner and still resolves to them. The owner can still renew it.</li>
+          <li><strong>Lapsed:</strong> after the grace period, <em>anyone</em> can reclaim the name. That frees it for anyone to register, and the ${kasOf(p.bond)} deposit goes back to the last owner.</li>
+          <li>The owner can also release a name at any time and take the deposit back.</li>
+        </ul>
+      </article>
+
+      <article class="card span2 rules">
+        <h3>Selling and transferring</h3>
+        <ul class="plain">
+          <li><strong>Transfer:</strong> the owner can give the name to any address. Any listing is cleared.</li>
+          <li><strong>List:</strong> the owner sets an asking price, or 0 to take it off sale.</li>
+          <li><strong>Buy:</strong> anyone can buy a listed name for its asking price. The contract pays the seller in the same transaction, so a payment can never count for two purchases.</li>
+          <li>A sale or transfer keeps the name's paid period and expiry date.</li>
+        </ul>
+      </article>
+
+      <article class="card span2 rules">
+        <h3>Offers</h3>
+        <ul class="plain">
+          <li>Anyone can lock KAS as an offer on any name, listed or not. The offer is tied to the name and to its owner at that moment.</li>
+          <li><strong>Accept:</strong> only that owner can accept, and only while the name is still theirs. The name goes to the buyer and the owner receives the offer, less at most ${kasOf(p.offerMaxFee)} of network fee.</li>
+          <li><strong>Decline:</strong> the owner can send an offer back to the buyer at any time. If the name changes owner, every earlier offer can no longer be accepted.</li>
+          <li><strong>Withdraw:</strong> the buyer can take their KAS back at any time.</li>
+          <li><strong>Refund:</strong> once an offer's refund time has passed, anyone can send the KAS back to the buyer.</li>
+        </ul>
+      </article>
+
+      <article class="card span2 rules">
+        <h3>Safety</h3>
+        <ul class="plain">
+          <li>Every owner signature covers the whole transaction (SIGHASH_ALL), so a signed action can't be redirected.</li>
+          <li>No name can be seized, frozen or moved without its owner, except reclaiming a name after its grace period, which returns the deposit to the last owner.</li>
+          <li>Registry v${v}${v >= 4 ? ' has no admin or authority key of any kind' : ' has one admin power: the price authority key'}.</li>
+        </ul>
+      </article>`;
 }

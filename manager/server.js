@@ -3423,6 +3423,41 @@ route('PUT', /^\/api\/names\/config$/, async (req, res) => {
 // block, which a pruned node keeps for about a day (kachat-indexer
 // docs/KACHAT_NAMES_PRUNED_START.md).
 const BUNDLED_NAMES_MANIFEST = 'kachat-names-testnet-10.json';
+
+/**
+ * The rules of the registry the testnet indexer runs: the manifest it was given
+ * (KACHAT_NAMES_MANIFEST_TESTNET, a file in conf/names), else the bundled one. The .kachat
+ * Rules tab renders the contract's rules with these live numbers, so it can never describe a
+ * different deployment than the one being followed.
+ */
+route('GET', /^\/api\/names\/rules$/, async (req, res) => {
+    const configured = (readEnvFile().KACHAT_NAMES_MANIFEST_TESTNET || '').trim();
+    const file = configured.startsWith('/names/') ? path.basename(configured) : '';
+    const bundled = path.join(path.dirname(fileURLToPath(import.meta.url)), 'lib', 'names', BUNDLED_NAMES_MANIFEST);
+    const candidates = [file && { path: path.join(NAMES_DIR, file), source: 'active' }, { path: bundled, source: 'bundled' }].filter(Boolean);
+    for (const c of candidates) {
+        let m;
+        try {
+            m = JSON.parse(fs.readFileSync(c.path, 'utf8'));
+        } catch {
+            continue;
+        }
+        const hashes = Object.fromEntries(Object.entries(m.artifacts || {}).map(([k, a]) => [k, a?.templateHash ?? null]));
+        return sendJson(res, 200, {
+            source: c.source,
+            file: path.basename(c.path),
+            network: m.network ?? null,
+            status: m.status ?? null,
+            registryVersion: m.registryVersion ?? m.params?.registryVersion ?? 2,
+            registryCovenantId: m.registryCovenantId ?? null,
+            priceCovenantId: m.priceCovenantId ?? null,
+            genesis: { txid: m.genesis?.txid ?? null, scanFrom: m.genesis?.scanFrom ?? null },
+            params: m.params ?? {},
+            templateHashes: hashes,
+        });
+    }
+    fail(res, 404, 'No names manifest is configured or bundled.');
+});
 route('POST', /^\/api\/names\/use-bundled$/, async (req, res) => {
     const src = path.join(path.dirname(fileURLToPath(import.meta.url)), 'lib', 'names', BUNDLED_NAMES_MANIFEST);
     const text = fs.readFileSync(src, 'utf8');

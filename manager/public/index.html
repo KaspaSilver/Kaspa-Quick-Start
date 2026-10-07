@@ -1649,6 +1649,7 @@
     <section id="tab-names" class="tab">
       <nav class="subnav" aria-label=".kachat names">
         <button class="subtab-btn active" data-subtab="names-overview">Overview</button>
+        <button class="subtab-btn" data-subtab="names-rules">Rules</button>
         <button class="subtab-btn" data-subtab="names-log">Log</button>
       </nav>
 
@@ -1708,6 +1709,12 @@
           </p>
         </article>
       </div>
+      </div>
+
+      <!-- The rules of the contract that is running: fixed contract rules plus the live
+           numbers from the manifest the testnet indexer follows (/api/names/rules). -->
+      <div id="sub-names-rules" class="subtab">
+        <div id="names-rules"><p class="muted">Loading the rules…</p></div>
       </div>
 
       <!-- The names module's own log: the testnet indexer's [names] lines only. -->
