@@ -6580,6 +6580,12 @@ async function loadNames() {
                 : s.registryVersion
                   ? `Registry v${s.registryVersion}${
                         s.manifestPriceCovenantId ? `, price covenant ${s.manifestPriceCovenantId.slice(0, 12)}…` : ', fixed prices'
+                    }.${
+                        // The node had pruned the start block, so the indexer rebuilt the
+                        // registry from the Kaspa REST API (kachat-indexer PRUNED_START.md §3).
+                        s.bootstrappedAt
+                            ? ` Rebuilt from the Kaspa REST API at DAA ${fmtNum(s.bootstrappedAt)}: offers made before then show up once they are accepted, declined or refunded.`
+                            : ''
                     }`
                   : '',
         );
