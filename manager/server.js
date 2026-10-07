@@ -3415,8 +3415,9 @@ route('PUT', /^\/api\/names\/config$/, async (req, res) => {
 
 // The published testnet-10 manifest ships with the panel (lib/names/): it is public
 // on-chain data, byte-identical to the copy the KaChat apps bundle, while kachat-domains
-// itself is private. One click writes it to conf/names and applies. It is registry v4
-// (2026-10-07: registry bff18554…0e2f, fixed prices, no price record); re-clicking replaces
+// itself is private. One click writes it to conf/names and applies. It is registry v4 on the
+// testnet day clock (2026-10-07: registry e6b72448…7f0d, 24 h periods, 6 h grace, 2 h renewal
+// window; fixed prices, no price record); re-clicking replaces
 // an older file of the same name, and the follower starts fresh tables when the registry id
 // changes. Apply it the same day a new genesis lands: the follower scans from the genesis
 // block, which a pruned node keeps for about a day (kachat-indexer
