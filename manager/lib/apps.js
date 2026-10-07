@@ -3,6 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { COMPOSE_FILE, CONF_DIR } from './paths.js';
 import { readJson, writeJson, updateEnvFile, readEnvFile, NETWORKS } from './store.js';
+import { docker } from './dockerctl.js';
 
 /**
  * The optional applications that ride along with the node: the KaChat indexer,
@@ -424,8 +425,29 @@ const randomSecret = (bytes = 24) => crypto.randomBytes(bytes).toString('base64u
 /**
  * Database passwords and shared secrets are generated once and then left alone
  * -- regenerating them would lock the apps out of their own existing volumes.
+ *
+ * Which secrets a data volume was initialised with (kachat-audits KQS-004). Postgres and
+ * MariaDB read their password only when they create the database, so a password generated
+ * after the volume exists can never match it: if the secret is missing but the volume is
+ * there, nothing is generated and the panel says what to restore instead.
  */
-export function ensureSecrets() {
+const SECRET_VOLUMES = {
+    KACHAT_DB_PASSWORD: ['kaspa-node-kachat-db-data', 'kaspa-node-kachat-db-testnet-data'],
+    NEXTCLOUD_DB_PASSWORD: ['kaspa-node-nextcloud-db-data'],
+    NEXTCLOUD_DB_ROOT_PASSWORD: ['kaspa-node-nextcloud-db-data'],
+    NEXTCLOUD_ADMIN_PASSWORD: ['kaspa-node-nextcloud-data'],
+};
+
+async function volumeExists(name) {
+    try {
+        await docker(['volume', 'inspect', name], { timeoutMs: 15_000 });
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+export async function ensureSecrets(log = () => {}) {
     const env = readEnvFile();
     const updates = {};
     const need = {
@@ -437,7 +459,18 @@ export function ensureSecrets() {
         NEXTCLOUD_ADMIN_PASSWORD: () => randomSecret(18),
     };
     for (const [key, make] of Object.entries(need)) {
-        if (!env[key]) updates[key] = make();
+        if (env[key]) continue;
+        const existing = [];
+        for (const volume of SECRET_VOLUMES[key] ?? []) if (await volumeExists(volume)) existing.push(volume);
+        if (existing.length) {
+            log(
+                `secrets: ${key} is missing from .env but ${existing.join(', ')} already exists and was created with ` +
+                    'the old value. Not generating a new one (it could never match). Restore the old line in .env ' +
+                    '(an .env backup, or the stack directory you reinstalled from), or remove the volume to start fresh.',
+            );
+            continue;
+        }
+        updates[key] = make();
     }
     if (Object.keys(updates).length) updateEnvFile(updates);
     return { ...env, ...updates };

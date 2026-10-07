@@ -2168,7 +2168,7 @@ async function applyAppConfig(name, cfg, onLine = () => {}) {
     const app = apps.APPS[name];
     const settings = cfg[name];
 
-    apps.ensureSecrets();
+    await apps.ensureSecrets((line) => onLine(line));
     apps.writeAppsEnv(cfg);
     apps.renderAppsPortsOverride(cfg);
 
@@ -3289,9 +3289,9 @@ route('POST', /^\/api\/services\/([a-z-]+)\/install$/, async (req, res, match) =
     sendJson(res, 202, { ok: true, jobId: job.id });
 });
 
-// ---- Testnet-10 indexer updates. It is the same image as mainnet's (kaspa-one-click/
-// kachat:<KACHAT_REF>), so an update rebuilds that from KaChat-Indexer and recreates
-// only the testnet indexer; the mainnet indexer keeps its running container.
+// ---- Testnet-10 indexer updates. It builds its own image (kaspa-one-click/
+// kachat-testnet:<KACHAT_REF>, kachat-audits KQS-008) from KaChat-Indexer and recreates
+// only the testnet indexer; mainnet's image and container are never touched.
 route('GET', /^\/api\/kachat-testnet\/update$/, async (req, res) => {
     const ref = readEnvFile().KACHAT_REF || 'main';
     const built = apps.readBuildRecord('kachat-testnet');
@@ -3991,7 +3991,7 @@ async function bootstrap() {
     bridge.writeBridgeFiles(bridge.loadBridgeConfig(), cfg);
 
     const appsCfg = apps.loadAppsConfig();
-    apps.ensureSecrets();
+    await apps.ensureSecrets(log);
     bot.ensureEnvFile();
     apps.writeAppsEnv(appsCfg);
     apps.renderAppsPortsOverride(appsCfg);
