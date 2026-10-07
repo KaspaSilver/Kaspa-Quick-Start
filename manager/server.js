@@ -3439,8 +3439,13 @@ function applyNamesManifest(file) {
         const state = await lifecycle.status('kachat-testnet').catch(() => null);
         if (state?.running) {
             onLine('Restarting the testnet indexer so it reads the manifest...');
-            await lifecycle.setRunning('kachat-testnet', true, onLine); // up -d re-reads .env
-            onLine('Done.');
+            // `up -d` applies a changed manifest *path* (it recreates the container), but a new
+            // manifest under the same file name -- the usual case, "Use the testnet-10 manifest"
+            // after a new genesis -- leaves the env as it was, so nothing restarts and the
+            // follower and API keep the one they read at start. Restart the processes too.
+            await lifecycle.setRunning('kachat-testnet', true, onLine);
+            await dockerctl.docker(['restart', 'kaspa-node-kachat-testnet'], { onLine, timeoutMs: 3 * 60_000 });
+            onLine('Done. The .kachat log shows the registry it now follows.');
         } else if (state?.installed) {
             onLine('The testnet indexer is stopped; the manifest applies next time it starts.');
         } else {
