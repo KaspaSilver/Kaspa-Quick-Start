@@ -147,10 +147,10 @@
       </div>
       <!-- .kachat names registry — testnet only (runs on the testnet indexer). -->
       <div class="nav-row">
-        <button class="nav-item" data-tab="names" data-testnet-only title=".kachat names">
+        <button class="nav-item" data-tab="names" data-testnet-only title=".kachat Domains">
           <span class="nav-dot none"></span>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/><circle cx="19" cy="17" r="2"/></svg>
-          <span class="label">.kachat</span>
+          <span class="label">.kachat Domains</span>
         </button>
       </div>
       <div class="nav-row">
@@ -1647,91 +1647,78 @@
       on mainnet) and stays dark until a genesis manifest is published.
     -->
     <section id="tab-names" class="tab">
-      <nav class="subnav" aria-label=".kachat names">
+      <nav class="subnav" aria-label=".kachat Domains">
         <button class="subtab-btn active" data-subtab="names-overview">Overview</button>
+        <button class="subtab-btn" data-subtab="names-updates">Updates</button>
         <button class="subtab-btn" data-subtab="names-rules">Rules</button>
+        <button class="subtab-btn" data-subtab="names-settings">Settings</button>
         <button class="subtab-btn" data-subtab="names-log">Log</button>
+        <button class="subtab-btn" data-subtab="names-uninstall">Uninstall</button>
       </nav>
 
+      <!-- Overview: what it is, whether it is installed, and what the indexer follows. -->
       <div id="sub-names-overview" class="subtab active">
-      <article class="card span2">
-        <div class="node-head">
-          <h3>.kachat names</h3>
-          <span id="names-state" class="tag">–</span>
+        <div class="grid">
+          <article class="card span2">
+            <div class="node-head">
+              <h3>.kachat Domains</h3>
+              <span id="kd-state" class="tag">–</span>
+            </div>
+            <p class="muted">
+              <code>.kachat</code> names are a registry of Kaspa covenant contracts (names, gaps and
+              marketplace offers). This app installs the registry's own tooling from
+              <code>KaspaSilver/kachat-domains</code>: it recompiles the contracts, refuses any
+              manifest that does not match them, and hands the verified manifest to the testnet
+              KaChat indexer, which then serves names to the KaChat apps.
+            </p>
+            <dl class="kv vertical" id="kd-facts"></dl>
+            <div class="row" id="kd-install-row">
+              <button type="button" id="kd-install" class="primary big">Install .kachat Domains</button>
+            </div>
+            <p class="hint" id="kd-note">Testnet-10 only for now. The first install compiles the tooling and can take 15 minutes or more.</p>
+          </article>
+
+          <article class="card span2">
+            <div class="node-head"><h3>What the indexer follows</h3>
+              <span id="names-state" class="tag">–</span>
+              <button type="button" id="names-refresh" class="ghost" style="margin-left:auto">Refresh</button>
+            </div>
+            <dl class="kv vertical" id="names-status">
+              <div><dt>Network</dt><dd id="names-network">–</dd></div>
+              <div><dt>Registry covenant id</dt><dd class="mono" id="names-covenant">–</dd></div>
+              <div><dt>Genesis tx</dt><dd class="mono" id="names-genesis">–</dd></div>
+              <div><dt>Indexed DAA</dt><dd id="names-daa">–</dd></div>
+              <div><dt>Synced</dt><dd id="names-synced">–</dd></div>
+            </dl>
+            <p class="hint" id="names-status-note">Waiting for the testnet indexer's names module.</p>
+          </article>
         </div>
-        <p class="muted">
-          <code>.kachat</code> names are a registry of Kaspa <strong>covenant</strong> contracts
-          (names, gaps and marketplace offers) plus address profiles. The testnet indexer follows
-          them on testnet-10; mainnet comes later, after an audit, with the same code. This panel
-          runs and watches that module.
-        </p>
-        <p class="hint">
-          Testnet-only for now. It needs the <strong>testnet KaChat Indexer</strong> running (enable
-          it from the Indexer row in this Testnet view) and a genesis manifest from the
-          <code>kachat-domains</code> CLI. The module stays off until a manifest is configured.
-        </p>
-      </article>
-
-      <div class="grid">
-        <article class="card">
-          <div class="node-head"><h3>Registry status</h3>
-            <button type="button" id="names-refresh" class="ghost" style="margin-left:auto">Refresh</button>
-          </div>
-          <dl class="kv vertical" id="names-status">
-            <div><dt>Network</dt><dd id="names-network">–</dd></div>
-            <div><dt>Registry covenant id</dt><dd class="mono" id="names-covenant">–</dd></div>
-            <div><dt>Genesis tx</dt><dd class="mono" id="names-genesis">–</dd></div>
-            <div><dt>Indexed DAA</dt><dd id="names-daa">–</dd></div>
-            <div><dt>Synced</dt><dd id="names-synced">–</dd></div>
-          </dl>
-          <p class="hint" id="names-status-note">Waiting for the testnet indexer's names module.</p>
-        </article>
-
-        <!-- .kachat domains: the registry's own verified manifest, installed like an app
-             (kachat-domains docs/KQS.md). Replaces shipping a manifest copy in the panel. -->
-        <article class="card span2" id="kd-card">
-          <div class="node-head">
-            <h3>.kachat domains</h3>
-            <span id="kd-state" class="tag">–</span>
-          </div>
-          <p class="muted">
-            Installs the registry's own tooling from <code>KaspaSilver/kachat-domains</code>. Each
-            install or update recompiles the contracts, refuses any manifest that does not match
-            them, and only then hands the verified manifest to the testnet indexer. The indexer is
-            restarted only when the registry itself changed.
-          </p>
-          <dl class="kv vertical" id="kd-facts"></dl>
-          <div class="row">
-            <button type="button" id="kd-install" class="primary">Install</button>
-            <button type="button" id="kd-check" class="ghost" hidden>Check for update</button>
-            <button type="button" id="kd-update" class="primary" hidden>Update</button>
-            <button type="button" id="kd-uninstall" class="ghost danger" hidden>Uninstall</button>
-          </div>
-          <p class="hint" id="kd-note">The first install compiles the tooling and can take 15 minutes or more.</p>
-        </article>
-
-        <article class="card">
-          <h3>Genesis manifest</h3>
-          <p class="muted">
-            Normally set by <strong>.kachat domains</strong> above. As a fallback, use the copy
-            this panel ships, or name your own file in the stack's conf/names folder.
-          </p>
-          <p class="row">
-            <button type="button" id="names-manifest-bundled" class="ghost">Use the bundled testnet-10 manifest</button>
-          </p>
-          <label class="stack">Manifest file name (in the stack's conf/names folder)
-            <span class="row">
-              <input id="names-manifest-path" placeholder="kachat-names-testnet-10.json" size="34">
-              <button type="button" id="names-manifest-save">Save &amp; apply</button>
-            </span>
-          </label>
-          <div id="names-manifest-result" class="verdict" hidden></div>
-          <p class="hint">
-            Saving restarts the testnet indexer so it picks up the manifest. With none set, the
-            module stays off and the registry endpoints answer 503.
-          </p>
-        </article>
       </div>
+
+      <!-- Updates: like Kaspad's, for the kachat-domains tooling. -->
+      <div id="sub-names-updates" class="subtab">
+        <div class="grid">
+          <article class="card span2">
+            <h3>.kachat Domains software</h3>
+            <p class="muted">
+              Checks <code>KaspaSilver/kachat-domains</code> for a newer commit, rebuilds the tooling,
+              verifies the manifest again and hands it to the testnet indexer. The indexer is only
+              restarted when the registry or its manifest actually changed, so an update that only
+              touches documentation never interrupts it. If verification fails, the current manifest
+              stays in use.
+            </p>
+            <dl class="kv vertical">
+              <div><dt>Source</dt><dd id="kd-source">–</dd></div>
+              <div><dt>Installed commit</dt><dd id="kd-installed">–</dd></div>
+              <div><dt>Latest on GitHub</dt><dd id="kd-latest">not checked yet</dd></div>
+            </dl>
+            <div id="kd-update-status" class="update-status">Not checked yet.</div>
+            <div class="row">
+              <button type="button" id="kd-check" class="ghost">Check for updates</button>
+              <button type="button" id="kd-update" class="primary" disabled>Update</button>
+            </div>
+          </article>
+        </div>
       </div>
 
       <!-- The rules of the contract that is running: fixed contract rules plus the live
@@ -1740,9 +1727,51 @@
         <div id="names-rules"><p class="muted">Loading the rules…</p></div>
       </div>
 
+      <!-- Settings: the manual manifest, for operators who pin their own. -->
+      <div id="sub-names-settings" class="subtab">
+        <div class="grid">
+          <article class="card span2">
+            <h3>Manifest</h3>
+            <p class="muted">
+              Normally set by installing or updating .kachat Domains. As a fallback, use the copy
+              this panel ships, or name your own file in the stack's <code>conf/names</code> folder.
+            </p>
+            <p class="row">
+              <button type="button" id="names-manifest-bundled" class="ghost">Use the bundled testnet-10 manifest</button>
+            </p>
+            <label class="stack">Manifest file name (in the stack's conf/names folder)
+              <span class="row">
+                <input id="names-manifest-path" placeholder="kachat-names-testnet-10.json" size="34">
+                <button type="button" id="names-manifest-save">Save &amp; apply</button>
+              </span>
+            </label>
+            <div id="names-manifest-result" class="verdict" hidden></div>
+            <p class="hint">
+              Saving restarts the testnet indexer so it picks up the manifest. With none set, the
+              registry endpoints answer 503.
+            </p>
+          </article>
+        </div>
+      </div>
+
       <!-- The names module's own log: the testnet indexer's [names] lines only. -->
       <div id="sub-names-log" class="subtab">
-        <div class="svclog" data-svclog="names" data-title=".kachat names log"></div>
+        <div class="svclog" data-svclog="names" data-title=".kachat Domains log"></div>
+      </div>
+
+      <div id="sub-names-uninstall" class="subtab">
+        <div class="grid">
+          <!-- Not .uninstall-card: those are rebuilt by the service uninstall renderer. -->
+          <article class="card span2" id="kd-uninstall-card">
+            <h3>Uninstall .kachat Domains</h3>
+            <p class="muted">
+              Removes the .kachat Domains tooling image. The verified manifest stays in
+              <code>conf/names</code>, so the testnet indexer keeps following the registry and the
+              apps keep working. Install again at any time to manage updates from here.
+            </p>
+            <div id="kd-uninstall-body"></div>
+          </article>
+        </div>
       </div>
     </section>
 

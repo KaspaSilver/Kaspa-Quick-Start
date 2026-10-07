@@ -78,7 +78,7 @@ export const STACK_CONTAINERS = [
 const PUSH_MATCH = /push/i;
 export const NAMES_LOG_SOURCE = {
     key: 'kachat-names',
-    label: '.kachat names',
+    label: '.kachat Domains',
     name: 'kaspa-node-kachat-testnet',
     match: '[names]',
 };
