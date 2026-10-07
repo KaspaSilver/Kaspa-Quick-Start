@@ -41,6 +41,7 @@ import * as emission from './lib/emission.js';
 import * as pruning from './lib/pruning.js';
 import * as kassigner from './lib/kassigner.js';
 import * as selfservice from './lib/selfservice.js';
+import * as kachatDomains from './lib/kachat-domains.js';
 import * as cpuminer from './lib/cpuminer.js';
 import * as publish from './lib/publish.js';
 import * as portcheck from './lib/portcheck.js';
@@ -3468,27 +3469,100 @@ route('POST', /^\/api\/names\/use-bundled$/, async (req, res) => {
     sendJson(res, 202, { ok: true, manifest: BUNDLED_NAMES_MANIFEST, jobId: applyNamesManifest(BUNDLED_NAMES_MANIFEST).id });
 });
 
-function applyNamesManifest(file) {
+/** Point the testnet indexer at a manifest in conf/names and make it re-read it. */
+async function useNamesManifest(file, onLine) {
     updateEnvFile({ KACHAT_NAMES_MANIFEST_TESTNET: file ? `/names/${file}` : '' });
-    return jobs.start('Apply .kachat names manifest', async (onLine) => {
-        onLine(file ? `Names manifest set to ${file}.` : 'Names manifest cleared (module off).');
-        const state = await lifecycle.status('kachat-testnet').catch(() => null);
-        if (state?.running) {
-            onLine('Restarting the testnet indexer so it reads the manifest...');
-            // `up -d` applies a changed manifest *path* (it recreates the container), but a new
-            // manifest under the same file name -- the usual case, "Use the testnet-10 manifest"
-            // after a new genesis -- leaves the env as it was, so nothing restarts and the
-            // follower and API keep the one they read at start. Restart the processes too.
-            await lifecycle.setRunning('kachat-testnet', true, onLine);
-            await dockerctl.docker(['restart', 'kaspa-node-kachat-testnet'], { onLine, timeoutMs: 3 * 60_000 });
-            onLine('Done. The .kachat log shows the registry it now follows.');
-        } else if (state?.installed) {
-            onLine('The testnet indexer is stopped; the manifest applies next time it starts.');
+    onLine(file ? `Names manifest set to ${file}.` : 'Names manifest cleared (module off).');
+    const state = await lifecycle.status('kachat-testnet').catch(() => null);
+    if (state?.running) {
+        onLine('Restarting the testnet indexer so it reads the manifest...');
+        // `up -d` applies a changed manifest *path* (it recreates the container), but a new
+        // manifest under the same file name -- the usual case after a new genesis -- leaves
+        // the env as it was, so nothing restarts and the follower and API keep the one they
+        // read at start. Restart the processes too.
+        await lifecycle.setRunning('kachat-testnet', true, onLine);
+        await dockerctl.docker(['restart', 'kaspa-node-kachat-testnet'], { onLine, timeoutMs: 3 * 60_000 });
+        onLine('Done. The .kachat log shows the registry it now follows.');
+    } else if (state?.installed) {
+        onLine('The testnet indexer is stopped; the manifest applies next time it starts.');
+    } else {
+        onLine('The testnet indexer is not installed yet; install it from the Indexer row.');
+    }
+}
+
+function applyNamesManifest(file) {
+    return jobs.start('Apply .kachat names manifest', (onLine) => useNamesManifest(file, onLine));
+}
+
+// ---- .kachat domains: the registry's own verified manifest (kachat-domains docs/KQS.md) ---
+//
+// Install and Update build KaspaSilver/kachat-domains, run its `publish` (which recompiles the
+// contracts and refuses a manifest that does not match them), and hand the verified manifest
+// to the testnet indexer -- restarting it only when the registry or manifest changed, so a
+// docs-only commit never interrupts it. A failed publish keeps the previous manifest.
+
+route('GET', /^\/api\/kachat-domains$/, async (req, res) => {
+    const [revision, indexer] = await Promise.all([
+        kachatDomains.installedRevision(),
+        lifecycle.status('kachat-testnet').catch(() => null),
+    ]);
+    const configured = (readEnvFile().KACHAT_NAMES_MANIFEST_TESTNET || '').trim();
+    sendJson(res, 200, {
+        repo: kachatDomains.REPO,
+        ref: kachatDomains.ref(),
+        installed: revision !== null,
+        revision,
+        summary: kachatDomains.summary(),
+        // Whether the indexer is following the manifest this tool publishes.
+        inUse: configured === `/names/${kachatDomains.MANIFEST_FILE}` && Boolean(kachatDomains.summary()),
+        indexerInstalled: Boolean(indexer?.installed),
+    });
+});
+
+route('GET', /^\/api\/kachat-domains\/check$/, async (req, res) => {
+    try {
+        const [latest, revision] = await Promise.all([
+            selfservice.latestCommit({ repo: kachatDomains.REPO, ref: kachatDomains.ref() }),
+            kachatDomains.installedRevision(),
+        ]);
+        sendJson(res, 200, { latest, revision, updateAvailable: revision !== null && revision !== latest.sha });
+    } catch (err) {
+        fail(res, 502, err.message);
+    }
+});
+
+route('POST', /^\/api\/kachat-domains\/(install|update)$/, async (req, res, match) => {
+    const indexer = await lifecycle.status('kachat-testnet').catch(() => null);
+    if (!indexer?.installed) {
+        return fail(res, 409, 'Install the testnet KaChat Indexer first: the .kachat registry only exists on testnet-10 so far.');
+    }
+    const verb = match[1];
+    const job = jobs.start(`${verb === 'install' ? 'Install' : 'Update'} .kachat domains`, async (onLine) => {
+        const latest = await selfservice.latestCommit({ repo: kachatDomains.REPO, ref: kachatDomains.ref() });
+        await kachatDomains.build(latest.sha, onLine);
+        const before = kachatDomains.summary();
+        const after = await kachatDomains.publish(onLine);
+        onLine(
+            `Verified: registry v${after.registryVersion} ${after.registryCovenantId} on ${after.network} ` +
+                `(manifest ${String(after.manifestSha256 || '').slice(0, 12)}…, commit ${String(after.commit || latest.sha).slice(0, 12)}).`,
+        );
+        const configured = (readEnvFile().KACHAT_NAMES_MANIFEST_TESTNET || '').trim();
+        if (kachatDomains.registryChanged(before, after) || configured !== `/names/${kachatDomains.MANIFEST_FILE}`) {
+            await useNamesManifest(kachatDomains.MANIFEST_FILE, onLine);
         } else {
-            onLine('The testnet indexer is not installed yet; install it from the Indexer row.');
+            onLine('Same registry and manifest as before, so the indexer was not restarted.');
         }
     });
-}
+    sendJson(res, 202, { ok: true, jobId: job.id });
+});
+
+route('POST', /^\/api\/kachat-domains\/uninstall$/, async (req, res) => {
+    const job = jobs.start('Uninstall .kachat domains', async (onLine) => {
+        await kachatDomains.removeImage(onLine);
+        onLine('The image is removed. The published manifest stays in conf/names, so the indexer keeps following it.');
+    });
+    sendJson(res, 202, { ok: true, jobId: job.id });
+});
 
 route('GET', /^\/api\/names\/status$/, async (req, res) => {
     // Proxy the testnet indexer's names status over the internal network, and treat

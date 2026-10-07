@@ -6531,6 +6531,89 @@ $('backup-restore')?.addEventListener('click', async () => {
 // KaChat indexer. Loaded on arrival, saved through /api/push.
 // --- .kachat names registry (testnet) ---
 
+// --- .kachat domains (installable registry tooling) ---
+
+async function loadKachatDomains(indexerStatus = null) {
+    const tag = $('kd-state');
+    if (!tag) return;
+    let d;
+    try {
+        d = await api('/api/kachat-domains');
+    } catch {
+        return;
+    }
+    const sm = d.summary;
+    tag.textContent = !d.installed ? 'not installed' : d.inUse ? 'in use' : 'installed';
+    tag.className = `tag ${!d.installed ? 'off' : d.inUse ? 'ok' : 'warn'}`;
+    $('kd-install').hidden = d.installed;
+    $('kd-check').hidden = !d.installed;
+    $('kd-uninstall').hidden = !d.installed;
+    $('kd-install').disabled = !d.indexerInstalled;
+    const short = (h) => (h ? `<code title="${escapeHtml(h)}">${escapeHtml(String(h).slice(0, 16))}…</code>` : '–');
+    const rows = [
+        ['Source', `${escapeHtml(d.repo)} @ ${escapeHtml(d.ref)}`],
+        ['Installed commit', d.installed ? short(d.revision) : 'not installed'],
+    ];
+    if (sm) {
+        rows.push(
+            ['Verified registry', `v${escapeHtml(String(sm.registryVersion))} ${short(sm.registryCovenantId)} (${escapeHtml(sm.network || '')})`],
+            ['Genesis', short(sm.genesisTxid)],
+            ['Manifest', short(sm.manifestSha256)],
+        );
+    }
+    $('kd-facts').innerHTML = rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('');
+    // The indexer should report the registry this tool verified; say so when it does not.
+    const note = $('kd-note');
+    const live = indexerStatus?.manifestRegistryCovenantId;
+    if (!d.indexerInstalled) {
+        note.textContent = 'Install the testnet KaChat Indexer first: the registry only exists on testnet-10 so far.';
+    } else if (sm && live && live.toLowerCase() !== String(sm.registryCovenantId).toLowerCase()) {
+        note.textContent = `Warning: the indexer follows registry ${live.slice(0, 12)}…, not the verified ${String(sm.registryCovenantId).slice(0, 12)}…. Update to hand it over.`;
+    } else if (!d.installed) {
+        note.textContent = 'The first install compiles the tooling and can take 15 minutes or more.';
+    } else {
+        note.textContent = 'Check for update compares the installed commit with GitHub.';
+    }
+}
+
+for (const [id, path, title] of [
+    ['kd-install', '/api/kachat-domains/install', 'Installing .kachat domains'],
+    ['kd-update', '/api/kachat-domains/update', 'Updating .kachat domains'],
+]) {
+    $(id)?.addEventListener('click', async () => {
+        await runAction({
+            key: 'kachat-domains',
+            title,
+            note: 'Builds the registry tooling, verifies the manifest against the contract source, and hands it to the testnet indexer.',
+            request: () => api(path, { method: 'POST' }),
+        });
+        $('kd-update').hidden = true;
+        loadNames().catch(() => {});
+    });
+}
+
+$('kd-check')?.addEventListener('click', async () => {
+    try {
+        const r = await api('/api/kachat-domains/check');
+        $('kd-update').hidden = !r.updateAvailable;
+        $('kd-note').textContent = r.updateAvailable
+            ? `Update available: ${r.latest.sha.slice(0, 12)} (${r.latest.message ? r.latest.message.split('\n')[0] : 'new commit'}).`
+            : 'Up to date with GitHub.';
+    } catch (e) {
+        toast(e.message, 'bad');
+    }
+});
+
+$('kd-uninstall')?.addEventListener('click', async () => {
+    if (!(await askConfirm('Uninstall .kachat domains?\n\nRemoves its image. The verified manifest stays, so the indexer keeps following it.'))) return;
+    await runAction({
+        key: 'kachat-domains',
+        title: 'Uninstalling .kachat domains',
+        request: () => api('/api/kachat-domains/uninstall', { method: 'POST' }),
+    });
+    loadNames().catch(() => {});
+});
+
 async function loadNames() {
     const setText = (id, v) => {
         const e = $(id);
@@ -6551,6 +6634,7 @@ async function loadNames() {
     };
     try {
         const s = await api('/api/names/status');
+        loadKachatDomains(s).catch(() => {});
         if (!s || s.available === false) {
             if (tag) {
                 tag.textContent = { off: 'no manifest', unreachable: 'indexer off' }[s?.reason] || 'not running';

@@ -1687,14 +1687,37 @@
           <p class="hint" id="names-status-note">Waiting for the testnet indexer's names module.</p>
         </article>
 
+        <!-- .kachat domains: the registry's own verified manifest, installed like an app
+             (kachat-domains docs/KQS.md). Replaces shipping a manifest copy in the panel. -->
+        <article class="card span2" id="kd-card">
+          <div class="node-head">
+            <h3>.kachat domains</h3>
+            <span id="kd-state" class="tag">–</span>
+          </div>
+          <p class="muted">
+            Installs the registry's own tooling from <code>KaspaSilver/kachat-domains</code>. Each
+            install or update recompiles the contracts, refuses any manifest that does not match
+            them, and only then hands the verified manifest to the testnet indexer. The indexer is
+            restarted only when the registry itself changed.
+          </p>
+          <dl class="kv vertical" id="kd-facts"></dl>
+          <div class="row">
+            <button type="button" id="kd-install" class="primary">Install</button>
+            <button type="button" id="kd-check" class="ghost" hidden>Check for update</button>
+            <button type="button" id="kd-update" class="primary" hidden>Update</button>
+            <button type="button" id="kd-uninstall" class="ghost danger" hidden>Uninstall</button>
+          </div>
+          <p class="hint" id="kd-note">The first install compiles the tooling and can take 15 minutes or more.</p>
+        </article>
+
         <article class="card">
           <h3>Genesis manifest</h3>
           <p class="muted">
-            The testnet-10 registry is live. Use the published manifest (the same file the
-            KaChat apps ship), or name your own file in the stack's conf/names folder.
+            Normally set by <strong>.kachat domains</strong> above. As a fallback, use the copy
+            this panel ships, or name your own file in the stack's conf/names folder.
           </p>
           <p class="row">
-            <button type="button" id="names-manifest-bundled" class="primary">Use the testnet-10 manifest</button>
+            <button type="button" id="names-manifest-bundled" class="ghost">Use the bundled testnet-10 manifest</button>
           </p>
           <label class="stack">Manifest file name (in the stack's conf/names folder)
             <span class="row">
