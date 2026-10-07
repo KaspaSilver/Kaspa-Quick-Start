@@ -5679,8 +5679,9 @@ function renderUninstallCards() {
         const state = serviceState[key];
         const installed = Boolean(state?.installed);
 
-        // Testnet units share mainnet's built images, so they never remove any.
-        const testnetUnit = TESTNET_UNIT_VALUES.has(key);
+        // The testnet node and miner share mainnet's images, so they never remove any; the
+        // testnet indexer has its own image (KQS-008) and removes it like any service.
+        const testnetUnit = TESTNET_UNIT_VALUES.has(key) && key !== 'kachat-testnet';
         const removes = testnetUnit
             ? 'Removes the testnet containers and, by default, their data. The images are shared with mainnet, so they are kept (Global settings → Clear cache frees them when nothing uses them).'
             : 'Removes the containers, the images built for it, and by default its data.';

@@ -582,7 +582,9 @@ services:
       options: { max-size: "10m", max-file: "3" }
 
   kachat-app-testnet:
-    image: kaspa-one-click/kachat:${KACHAT_REF:-main}
+    # Its own tag (kachat-audits KQS-008). Sharing mainnet's kaspa-one-click/kachat meant a
+    # testnet-only update re-tagged the image mainnet would start on at its next recreate.
+    image: kaspa-one-click/kachat-testnet:${KACHAT_REF:-main}
     build:
       context: ${KACHAT_REPO:-https://github.com/KaspaSilver/KaChat-Indexer.git}#${KACHAT_REF:-main}
       dockerfile: docker/kachat/Dockerfile.kachat-app

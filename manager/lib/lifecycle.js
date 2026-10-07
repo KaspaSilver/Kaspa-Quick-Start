@@ -151,9 +151,9 @@ export const UNITS = {
 
     // ---- Testnet-10 stack (runs alongside mainnet) --------------------------
     //
-    // A parallel node + indexer + mining on testnet-10. `images: []` on all three:
-    // they share mainnet's built images (kaspad/kachat/bridge), so uninstalling a
-    // testnet unit must never remove the image mainnet is still using. Each has a
+    // A parallel node + indexer + mining on testnet-10. The node and bridge share
+    // mainnet's built images (kaspad/bridge, keyed by version), so uninstalling those
+    // testnet units never removes an image; the indexer has its own (kachat-testnet). Each has a
     // `prepare` that writes its testnet config before create/start.
     'node-testnet': {
         label: 'Kaspad (testnet-10)',
@@ -182,7 +182,8 @@ export const UNITS = {
         containers: ['kaspa-node-kachat-testnet', 'kaspa-node-kachat-db-testnet'],
         primary: 'kaspa-node-kachat-testnet',
         volumes: ['kaspa-node-kachat-db-testnet-data', 'kaspa-node-kachat-app-testnet-data'],
-        images: [],
+        // Its own image since KQS-008, so uninstalling testnet can remove it safely.
+        images: ['kaspa-one-click/kachat-testnet'],
         buildable: ['kachat-app-testnet'],
         data: 'the testnet indexed chat history and its Postgres database',
     },
