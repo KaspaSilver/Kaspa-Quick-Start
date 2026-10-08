@@ -3392,83 +3392,36 @@ route('POST', /^\/api\/services\/([a-z-]+)\/uninstall$/, async (req, res, match)
 });
 
 // --------------------------------------------------------- .kachat names ----
-// The testnet names registry (KACHAT_NAMES_INDEXER.md). The module runs on the
-// TESTNET indexer and stays off until a genesis manifest is configured. These
-// routes manage that manifest and surface the module's status; the heavy
-// covenant-follower + /names/* API live in the indexer itself.
-
-route('GET', /^\/api\/names\/config$/, async (req, res) => {
-    const current = readEnvFile().KACHAT_NAMES_MANIFEST_TESTNET || '';
-    const manifest = current.startsWith('/names/') ? current.slice('/names/'.length) : current;
-    const state = await lifecycle.status('kachat-testnet').catch(() => null);
-    sendJson(res, 200, { manifest, running: Boolean(state?.running), installed: Boolean(state?.installed) });
-});
-
-route('PUT', /^\/api\/names\/config$/, async (req, res) => {
-    const body = await readBody(req);
-    const file = String(body.manifest ?? '').trim();
-    // Just a file name: it lives in conf/names, mounted read-only into the indexer.
-    if (file.includes('/') || file.includes('..')) {
-        return fail(res, 400, 'Enter just the file name; it lives in the conf/names folder.');
-    }
-    sendJson(res, 202, { ok: true, jobId: applyNamesManifest(file).id });
-});
-
-// The published testnet-10 manifest ships with the panel (lib/names/): it is public
-// on-chain data, byte-identical to the copy the KaChat apps bundle, while kachat-domains
-// itself is private. One click writes it to conf/names and applies. It is registry v4 on the
-// testnet day clock (2026-10-07: registry e6b72448…7f0d, 24 h periods, 6 h grace, 2 h renewal
-// window; fixed prices, no price record); re-clicking replaces
-// an older file of the same name, and the follower starts fresh tables when the registry id
-// changes. Apply it the same day a new genesis lands: the follower scans from the genesis
-// block, which a pruned node keeps for about a day (kachat-indexer
-// docs/KACHAT_NAMES_PRUNED_START.md).
-const BUNDLED_NAMES_MANIFEST = 'kachat-names-testnet-10.json';
+// The testnet names registry (KACHAT_NAMES_INDEXER.md). The module runs on the TESTNET
+// indexer. Its manifest comes from .kachat Domains alone (kachat-domains' verified `publish`,
+// below): there is no bundled copy and no hand-set file, so the indexer only ever follows a
+// manifest that was checked against the contract source.
 
 /**
- * The rules of the registry the testnet indexer runs: the manifest it was given
- * (KACHAT_NAMES_MANIFEST_TESTNET, a file in conf/names), else the bundled one. The .kachat
- * Rules tab renders the contract's rules with these live numbers, so it can never describe a
- * different deployment than the one being followed.
+ * The rules of the registry .kachat Domains published and verified (conf/names), so the
+ * Rules tab can never describe a different deployment than the one being followed.
  */
 route('GET', /^\/api\/names\/rules$/, async (req, res) => {
-    const configured = (readEnvFile().KACHAT_NAMES_MANIFEST_TESTNET || '').trim();
-    const file = configured.startsWith('/names/') ? path.basename(configured) : '';
-    const bundled = path.join(path.dirname(fileURLToPath(import.meta.url)), 'lib', 'names', BUNDLED_NAMES_MANIFEST);
-    const candidates = [file && { path: path.join(NAMES_DIR, file), source: 'active' }, { path: bundled, source: 'bundled' }].filter(Boolean);
-    for (const c of candidates) {
-        let m;
-        try {
-            m = JSON.parse(fs.readFileSync(c.path, 'utf8'));
-        } catch {
-            continue;
-        }
-        const hashes = Object.fromEntries(Object.entries(m.artifacts || {}).map(([k, a]) => [k, a?.templateHash ?? null]));
-        return sendJson(res, 200, {
-            source: c.source,
-            file: path.basename(c.path),
-            network: m.network ?? null,
-            status: m.status ?? null,
-            registryVersion: m.registryVersion ?? m.params?.registryVersion ?? 2,
-            registryCovenantId: m.registryCovenantId ?? null,
-            priceCovenantId: m.priceCovenantId ?? null,
-            genesis: { txid: m.genesis?.txid ?? null, scanFrom: m.genesis?.scanFrom ?? null },
-            params: m.params ?? {},
-            templateHashes: hashes,
-        });
+    let m;
+    try {
+        m = JSON.parse(fs.readFileSync(path.join(NAMES_DIR, kachatDomains.MANIFEST_FILE), 'utf8'));
+    } catch {
+        return fail(res, 404, 'Install .kachat Domains to see the rules of the registry it verifies.');
     }
-    fail(res, 404, 'No names manifest is configured or bundled.');
+    const hashes = Object.fromEntries(Object.entries(m.artifacts || {}).map(([k, a]) => [k, a?.templateHash ?? null]));
+    sendJson(res, 200, {
+        source: 'kachat-domains',
+        file: kachatDomains.MANIFEST_FILE,
+        network: m.network ?? null,
+        status: m.status ?? null,
+        registryVersion: m.registryVersion ?? m.params?.registryVersion ?? 2,
+        registryCovenantId: m.registryCovenantId ?? null,
+        priceCovenantId: m.priceCovenantId ?? null,
+        genesis: { txid: m.genesis?.txid ?? null, scanFrom: m.genesis?.scanFrom ?? null },
+        params: m.params ?? {},
+        templateHashes: hashes,
+    });
 });
-route('POST', /^\/api\/names\/use-bundled$/, async (req, res) => {
-    const src = path.join(path.dirname(fileURLToPath(import.meta.url)), 'lib', 'names', BUNDLED_NAMES_MANIFEST);
-    const text = fs.readFileSync(src, 'utf8');
-    const manifest = JSON.parse(text);
-    if (!manifest.registryCovenantId || !manifest.genesis?.txid) return fail(res, 500, 'The bundled manifest is incomplete.');
-    fs.mkdirSync(NAMES_DIR, { recursive: true });
-    fs.writeFileSync(path.join(NAMES_DIR, BUNDLED_NAMES_MANIFEST), text);
-    sendJson(res, 202, { ok: true, manifest: BUNDLED_NAMES_MANIFEST, jobId: applyNamesManifest(BUNDLED_NAMES_MANIFEST).id });
-});
-
 /** Point the testnet indexer at a manifest in conf/names and make it re-read it. */
 async function useNamesManifest(file, onLine) {
     updateEnvFile({ KACHAT_NAMES_MANIFEST_TESTNET: file ? `/names/${file}` : '' });
@@ -3488,10 +3441,6 @@ async function useNamesManifest(file, onLine) {
     } else {
         onLine('The testnet indexer is not installed yet; install it from the Indexer row.');
     }
-}
-
-function applyNamesManifest(file) {
-    return jobs.start('Apply .kachat names manifest', (onLine) => useNamesManifest(file, onLine));
 }
 
 // ---- .kachat domains: the registry's own verified manifest (kachat-domains docs/KQS.md) ---

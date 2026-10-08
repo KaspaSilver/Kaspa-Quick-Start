@@ -1655,7 +1655,6 @@
         <button class="subtab-btn active" data-subtab="names-overview">Overview</button>
         <button class="subtab-btn" data-subtab="names-updates">Updates</button>
         <button class="subtab-btn" data-subtab="names-rules">Rules</button>
-        <button class="subtab-btn" data-subtab="names-settings">Settings</button>
         <button class="subtab-btn" data-subtab="names-log">Log</button>
         <button class="subtab-btn" data-subtab="names-uninstall">Uninstall</button>
       </nav>
@@ -1726,33 +1725,6 @@
            numbers from the manifest the testnet indexer follows (/api/names/rules). -->
       <div id="sub-names-rules" class="subtab">
         <div id="names-rules"><p class="muted">Loading the rules…</p></div>
-      </div>
-
-      <!-- Settings: the manual manifest, for operators who pin their own. -->
-      <div id="sub-names-settings" class="subtab">
-        <div class="grid">
-          <article class="card span2">
-            <h3>Manifest</h3>
-            <p class="muted">
-              Normally set by installing or updating .kachat Domains. As a fallback, use the copy
-              this panel ships, or name your own file in the stack's <code>conf/names</code> folder.
-            </p>
-            <p class="row">
-              <button type="button" id="names-manifest-bundled" class="ghost">Use the bundled testnet-10 manifest</button>
-            </p>
-            <label class="stack">Manifest file name (in the stack's conf/names folder)
-              <span class="row">
-                <input id="names-manifest-path" placeholder="kachat-names-testnet-10.json" size="34">
-                <button type="button" id="names-manifest-save">Save &amp; apply</button>
-              </span>
-            </label>
-            <div id="names-manifest-result" class="verdict" hidden></div>
-            <p class="hint">
-              Saving restarts the testnet indexer so it picks up the manifest. With none set, the
-              registry endpoints answer 503.
-            </p>
-          </article>
-        </div>
       </div>
 
       <!-- The names module's own log: the testnet indexer's [names] lines only. -->

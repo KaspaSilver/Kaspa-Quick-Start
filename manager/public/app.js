@@ -6620,15 +6620,6 @@ async function loadNames() {
         const e = $(id);
         if (e) e.textContent = v;
     };
-    // Manifest config (don't clobber a half-typed filename).
-    try {
-        const cfg = await api('/api/names/config');
-        const box = $('names-manifest-path');
-        if (box && document.activeElement !== box) box.value = cfg.manifest || '';
-    } catch {
-        /* manager route missing (old build) — leave the field as-is */
-    }
-
     const tag = $('names-state');
     const blank = () => {
         for (const id of ['names-network', 'names-covenant', 'names-genesis', 'names-daa', 'names-synced']) setText(id, '–');
@@ -6686,33 +6677,6 @@ async function loadNames() {
 }
 
 $('names-refresh')?.addEventListener('click', () => loadNames().catch(() => {}));
-$('names-manifest-save')?.addEventListener('click', async () => {
-    const manifest = $('names-manifest-path').value.trim();
-    try {
-        await api('/api/names/config', { method: 'PUT', body: { manifest } });
-        kResult(
-            'names-manifest-result',
-            manifest
-                ? 'Saved. The testnet indexer is restarting to read the manifest.'
-                : 'Cleared. The names module is now off.',
-        );
-        setTimeout(() => loadNames().catch(() => {}), 1500);
-    } catch (e) {
-        kResult('names-manifest-result', e.message, true);
-    }
-});
-
-$('names-manifest-bundled')?.addEventListener('click', async () => {
-    try {
-        const r = await api('/api/names/use-bundled', { method: 'POST' });
-        $('names-manifest-path').value = r.manifest;
-        kResult('names-manifest-result', 'Manifest written and applied. The testnet indexer is restarting to read it.');
-        setTimeout(() => loadNames().catch(() => {}), 1500);
-    } catch (e) {
-        kResult('names-manifest-result', e.message, true);
-    }
-});
-
 async function loadPush() {
     let d;
     try {
@@ -8255,7 +8219,7 @@ async function loadNamesRules() {
         <p class="muted">
           These are the rules the .kachat contract enforces on chain. Nobody can change them, not even
           the deployer: a change means a new contract version and a new registry. The numbers below
-          come from the manifest this panel's testnet indexer follows${r.source === 'bundled' ? ' (none is loaded yet, so the bundled one is shown)' : ''}.
+          come from the manifest .kachat Domains verified against the contract source.
         </p>
         <dl class="kv vertical">
           <div><dt>Network</dt><dd>${esc(r.network || '–')}</dd></div>
