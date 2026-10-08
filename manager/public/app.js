@@ -1146,6 +1146,7 @@ const SERVICE_NAMES = {
     bot: 'the KaChat Bot',
     translate: 'the translation engine',
     proxy: 'the reverse proxy',
+    'kachat-domains': '.kachat Domains',
 };
 
 for (const input of document.querySelectorAll('[data-service]')) {
@@ -5525,6 +5526,7 @@ const UNINSTALL_COPY = {
     'mining-testnet': "the testnet bridge's share and block records. Mainnet mining is not touched",
     'cpuminer-testnet': 'only the miner container. Your testnet rewards stay on the chain at your address. Mainnet mining is not touched',
     'kachat-testnet': 'the testnet indexed history, the .kachat registry tables and their Postgres database. The mainnet indexer is not touched',
+    'kachat-domains': 'its tooling image and the verified registry manifest it published. The testnet indexer stops serving .kachat names until it is installed and switched on again',
 };
 
 async function loadServices() {
@@ -6551,8 +6553,6 @@ async function loadKachatDomains(indexerStatus = null) {
     // Overview
     tag.textContent = !d.installed ? 'not installed' : d.inUse ? 'installed · in use' : 'installed';
     tag.className = `tag ${!d.installed ? 'off' : d.inUse ? 'ok' : 'warn'}`;
-    $('kd-install-row').hidden = d.installed;
-    $('kd-install').disabled = !d.indexerInstalled;
     const rows = [];
     if (sm) {
         rows.push(
@@ -6571,8 +6571,10 @@ async function loadKachatDomains(indexerStatus = null) {
         note.textContent = `Warning: the indexer follows registry ${live.slice(0, 12)}…, not the verified ${String(sm.registryCovenantId).slice(0, 12)}…. Run Updates → Update to hand it over.`;
     } else if (!d.installed) {
         note.textContent = 'Testnet-10 only for now. The first install compiles the tooling and can take 15 minutes or more.';
+    } else if (!d.inUse) {
+        note.textContent = 'Installed and switched off: the testnet indexer is not serving this registry. Turn it on with its switch in the sidebar.';
     } else {
-        note.textContent = 'Updates are under the Updates tab.';
+        note.textContent = 'On: the testnet indexer serves this verified registry. Updates are under the Updates tab.';
     }
 
     // Updates
@@ -6584,26 +6586,7 @@ async function loadKachatDomains(indexerStatus = null) {
         $('kd-update-status').textContent = 'Install .kachat Domains first (Overview).';
     }
 
-    // Uninstall
-    $('kd-uninstall-body').innerHTML = d.installed
-        ? `<label class="stack">Type <code>kachat-domains</code> to confirm
-             <span class="row">
-               <input id="kd-uninstall-typed" placeholder="kachat-domains" size="20" autocomplete="off" spellcheck="false">
-               <button type="button" class="ghost danger" id="kd-uninstall" disabled>Uninstall</button>
-             </span>
-           </label>`
-        : `<div class="row"><button class="ghost danger" disabled>Not installed</button><span class="muted">There is nothing here to remove.</span></div>`;
 }
-
-$('kd-install')?.addEventListener('click', async () => {
-    await runAction({
-        key: 'kachat-domains',
-        title: 'Installing .kachat Domains',
-        note: 'Builds the registry tooling, verifies the manifest against the contract source, and hands it to the testnet indexer.',
-        request: () => api('/api/kachat-domains/install', { method: 'POST' }),
-    });
-    loadNames().catch(() => {});
-});
 
 $('kd-check')?.addEventListener('click', async () => {
     const status = $('kd-update-status');
@@ -6629,24 +6612,6 @@ $('kd-update')?.addEventListener('click', async () => {
     });
     $('kd-update').disabled = true;
     $('kd-update-status').textContent = 'Updated. Check again any time.';
-    loadNames().catch(() => {});
-});
-
-// The Uninstall button arms once the name is typed exactly (like every other app).
-document.addEventListener('input', (event) => {
-    if (event.target?.id !== 'kd-uninstall-typed') return;
-    const btn = $('kd-uninstall');
-    if (btn) btn.disabled = event.target.value.trim() !== 'kachat-domains';
-});
-document.addEventListener('click', async (event) => {
-    if (event.target?.id !== 'kd-uninstall') return;
-    if ($('kd-uninstall-typed')?.value.trim() !== 'kachat-domains') return;
-    await runAction({
-        key: 'kachat-domains',
-        title: 'Uninstalling .kachat Domains',
-        note: 'Removes the tooling image. The verified manifest stays, so the indexer keeps following the registry.',
-        request: () => api('/api/kachat-domains/uninstall', { method: 'POST' }),
-    });
     loadNames().catch(() => {});
 });
 

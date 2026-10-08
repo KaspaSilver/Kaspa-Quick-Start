@@ -258,6 +258,17 @@ UNITS.kassigner = {
 export const unitFor = (key) => UNITS[key] ?? null;
 
 /**
+ * A unit that is not a compose service but still installs, switches and uninstalls like one
+ * (.kachat Domains: a tool image plus "is the indexer following its manifest"). It brings its
+ * own `hooks` -- status(), install(onLine), setRunning(running, onLine), uninstall({keepData,
+ * onLine}) -- and every lifecycle call below defers to them, so the panel's install overlay,
+ * sidebar switch and uninstall card treat it exactly like any other app.
+ */
+export function registerUnit(key, unit) {
+    UNITS[key] = unit;
+}
+
+/**
  * Every `up` here names every container the service owns, so compose has
  * nothing left to work out -- and is told not to.
  *
@@ -273,6 +284,11 @@ const NO_DEPS = ['--no-deps'];
 export async function status(key) {
     const unit = unitFor(key);
     if (!unit) return null;
+
+    if (unit.hooks) {
+        const st = await unit.hooks.status();
+        return { key, label: unit.label, tab: unit.tab ?? key, runnable: true, status: st.running ? 'running' : st.installed ? 'stopped' : 'absent', ...st };
+    }
 
     // Something with no container is installed when its files are here.
     if (unit.runnable === false) {
@@ -319,6 +335,7 @@ export async function statusAll() {
 export async function install(key, onLine = () => {}) {
     const unit = unitFor(key);
     if (!unit) throw new Error(`No such service: ${key}`);
+    if (unit.hooks) return unit.hooks.install(onLine);
 
     // Some units generate config before their container is created (e.g. the
     // testnet node writes its --testnet args file).
@@ -340,6 +357,7 @@ export async function install(key, onLine = () => {}) {
 export async function setRunning(key, running, onLine = () => {}) {
     const unit = unitFor(key);
     if (!unit) throw new Error(`No such service: ${key}`);
+    if (unit.hooks) return unit.hooks.setRunning(running, onLine);
 
     if (running) {
         // Re-generate config on start too, so a settings change made while the
@@ -369,6 +387,7 @@ export async function setRunning(key, running, onLine = () => {}) {
 export async function uninstall(key, { keepData = false, onLine = () => {} } = {}) {
     const unit = unitFor(key);
     if (!unit) throw new Error(`No such service: ${key}`);
+    if (unit.hooks) return unit.hooks.uninstall({ keepData, onLine });
     // Something that owns files rather than containers removes its own.
     if (unit.uninstall) return unit.uninstall(onLine);
 

@@ -148,10 +148,14 @@
       <!-- .kachat names registry — testnet only (runs on the testnet indexer). -->
       <div class="nav-row">
         <button class="nav-item" data-tab="names" data-testnet-only title=".kachat Domains">
-          <span class="nav-dot none"></span>
+          <span class="nav-dot" data-health="names"></span>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/><circle cx="19" cy="17" r="2"/></svg>
           <span class="label">.kachat Domains</span>
         </button>
+        <label class="switch mini" title="Serve the .kachat registry from the testnet indexer, or stop serving it">
+          <input type="checkbox" data-service="kachat-domains" aria-label="Turn .kachat Domains on or off">
+          <span class="track"></span>
+        </label>
       </div>
       <div class="nav-row">
         <button class="nav-item" data-tab="desktop" title="Desktop">
@@ -1672,10 +1676,7 @@
               KaChat indexer, which then serves names to the KaChat apps.
             </p>
             <dl class="kv vertical" id="kd-facts"></dl>
-            <div class="row" id="kd-install-row">
-              <button type="button" id="kd-install" class="primary big">Install .kachat Domains</button>
-            </div>
-            <p class="hint" id="kd-note">Testnet-10 only for now. The first install compiles the tooling and can take 15 minutes or more.</p>
+            <p class="hint" id="kd-note">Testnet-10 only for now. Its switch in the sidebar hands the registry to the testnet indexer.</p>
           </article>
 
           <article class="card span2">
@@ -1761,16 +1762,7 @@
 
       <div id="sub-names-uninstall" class="subtab">
         <div class="grid">
-          <!-- Not .uninstall-card: those are rebuilt by the service uninstall renderer. -->
-          <article class="card span2" id="kd-uninstall-card">
-            <h3>Uninstall .kachat Domains</h3>
-            <p class="muted">
-              Removes the .kachat Domains tooling image. The verified manifest stays in
-              <code>conf/names</code>, so the testnet indexer keeps following the registry and the
-              apps keep working. Install again at any time to manage updates from here.
-            </p>
-            <div id="kd-uninstall-body"></div>
-          </article>
+          <article class="card span2 uninstall-card" data-uninstall="kachat-domains"></article>
         </div>
       </div>
     </section>

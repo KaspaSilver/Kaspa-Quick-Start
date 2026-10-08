@@ -3506,7 +3506,6 @@ route('GET', /^\/api\/kachat-domains$/, async (req, res) => {
         kachatDomains.installedRevision(),
         lifecycle.status('kachat-testnet').catch(() => null),
     ]);
-    const configured = (readEnvFile().KACHAT_NAMES_MANIFEST_TESTNET || '').trim();
     sendJson(res, 200, {
         repo: kachatDomains.REPO,
         ref: kachatDomains.ref(),
@@ -3514,7 +3513,7 @@ route('GET', /^\/api\/kachat-domains$/, async (req, res) => {
         revision,
         summary: kachatDomains.summary(),
         // Whether the indexer is following the manifest this tool publishes.
-        inUse: configured === `/names/${kachatDomains.MANIFEST_FILE}` && Boolean(kachatDomains.summary()),
+        inUse: kachatDomainsOn(),
         indexerInstalled: Boolean(indexer?.installed),
     });
 });
@@ -3531,35 +3530,80 @@ route('GET', /^\/api\/kachat-domains\/check$/, async (req, res) => {
     }
 });
 
-route('POST', /^\/api\/kachat-domains\/(install|update)$/, async (req, res, match) => {
-    const indexer = await lifecycle.status('kachat-testnet').catch(() => null);
-    if (!indexer?.installed) {
-        return fail(res, 409, 'Install the testnet KaChat Indexer first: the .kachat registry only exists on testnet-10 so far.');
-    }
-    const verb = match[1];
-    const job = jobs.start(`${verb === 'install' ? 'Install' : 'Update'} .kachat domains`, async (onLine) => {
+/** The tool is "on" when the testnet indexer follows the manifest it published. */
+const kachatDomainsOn = () =>
+    (readEnvFile().KACHAT_NAMES_MANIFEST_TESTNET || '').trim() === `/names/${kachatDomains.MANIFEST_FILE}` &&
+    Boolean(kachatDomains.summary());
+
+// .kachat Domains as a lifecycle unit: installs, switches and uninstalls like every other app
+// (install overlay over its tab, Install then a switch in the sidebar, the standard uninstall
+// card). Installing builds the tooling and publishes the verified manifest but leaves it off;
+// the switch hands that manifest to the testnet indexer (on) or turns the names module off.
+lifecycle.registerUnit('kachat-domains', {
+    label: '.kachat Domains',
+    tab: 'names',
+    data: 'the verified registry manifest it published (the testnet indexer stops serving names)',
+    hooks: {
+        async status() {
+            const revision = await kachatDomains.installedRevision();
+            return { installed: revision !== null, running: revision !== null && kachatDomainsOn() };
+        },
+        async install(onLine) {
+            const indexer = await lifecycle.status('kachat-testnet').catch(() => null);
+            if (!indexer?.installed) {
+                throw new Error('Install the testnet KaChat Indexer first: the .kachat registry only exists on testnet-10 so far.');
+            }
+            const latest = await selfservice.latestCommit({ repo: kachatDomains.REPO, ref: kachatDomains.ref() });
+            await kachatDomains.build(latest.sha, onLine);
+            const sm = await kachatDomains.publish(onLine);
+            onLine(`Verified: registry v${sm.registryVersion} ${sm.registryCovenantId} on ${sm.network}.`);
+            onLine('.kachat Domains is installed and switched off. Its switch in the sidebar hands the registry to the testnet indexer.');
+        },
+        async setRunning(running, onLine) {
+            if (running) {
+                if (!kachatDomains.summary()) await kachatDomains.publish(onLine);
+                await useNamesManifest(kachatDomains.MANIFEST_FILE, onLine);
+            } else {
+                onLine('Switching off: the testnet indexer stops serving .kachat names.');
+                await useNamesManifest('', onLine);
+            }
+        },
+        async uninstall({ keepData, onLine }) {
+            if (kachatDomainsOn()) {
+                onLine('Switching it off first.');
+                await useNamesManifest('', onLine);
+            }
+            await kachatDomains.removeImage(onLine);
+            if (!keepData) {
+                for (const f of [kachatDomains.MANIFEST_FILE, kachatDomains.SUMMARY_FILE]) {
+                    fs.rmSync(path.join(NAMES_DIR, f), { force: true });
+                }
+                onLine('Removed the published manifest and its summary.');
+            }
+            onLine('.kachat Domains removed. It can be installed again from its tab.');
+            return { containers: [], volumes: [], images: [kachatDomains.imageTag()] };
+        },
+    },
+});
+
+// Update: rebuild, verify and publish again; restart the indexer only when it is following
+// this manifest and the registry or manifest actually changed (a docs-only commit never
+// interrupts it). A failed publish keeps the previous manifest.
+route('POST', /^\/api\/kachat-domains\/update$/, async (req, res) => {
+    if ((await kachatDomains.installedRevision()) === null) return fail(res, 409, 'Install .kachat Domains first.');
+    const job = jobs.start('Update .kachat Domains', async (onLine) => {
         const latest = await selfservice.latestCommit({ repo: kachatDomains.REPO, ref: kachatDomains.ref() });
         await kachatDomains.build(latest.sha, onLine);
         const before = kachatDomains.summary();
         const after = await kachatDomains.publish(onLine);
-        onLine(
-            `Verified: registry v${after.registryVersion} ${after.registryCovenantId} on ${after.network} ` +
-                `(manifest ${String(after.manifestSha256 || '').slice(0, 12)}…, commit ${String(after.commit || latest.sha).slice(0, 12)}).`,
-        );
-        const configured = (readEnvFile().KACHAT_NAMES_MANIFEST_TESTNET || '').trim();
-        if (kachatDomains.registryChanged(before, after) || configured !== `/names/${kachatDomains.MANIFEST_FILE}`) {
+        onLine(`Verified: registry v${after.registryVersion} ${after.registryCovenantId} on ${after.network}.`);
+        if (!kachatDomainsOn()) {
+            onLine('.kachat Domains is switched off, so the indexer was not touched.');
+        } else if (kachatDomains.registryChanged(before, after)) {
             await useNamesManifest(kachatDomains.MANIFEST_FILE, onLine);
         } else {
             onLine('Same registry and manifest as before, so the indexer was not restarted.');
         }
-    });
-    sendJson(res, 202, { ok: true, jobId: job.id });
-});
-
-route('POST', /^\/api\/kachat-domains\/uninstall$/, async (req, res) => {
-    const job = jobs.start('Uninstall .kachat domains', async (onLine) => {
-        await kachatDomains.removeImage(onLine);
-        onLine('The image is removed. The published manifest stays in conf/names, so the indexer keeps following it.');
     });
     sendJson(res, 202, { ok: true, jobId: job.id });
 });
