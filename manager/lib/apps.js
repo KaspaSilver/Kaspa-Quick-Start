@@ -339,6 +339,23 @@ export function validateAppsConfig(input) {
     apns.environment = ['production', 'sandbox'].includes(a.environment) ? a.environment : 'production';
     cfg.kachat.apns = apns;
 
+    // Translation languages are edited on their own screen; a save from any other screen
+    // carries them through rather than resetting them to the defaults (KQS-006).
+    const langs = String(k.translate?.languages ?? DEFAULT_APPS_CONFIG.kachat.translate.languages).trim();
+    if (!/^[a-z]{2,3}(-[A-Za-z]{2,4})?(,[a-z]{2,3}(-[A-Za-z]{2,4})?)*$/.test(langs)) {
+        errors.push('Translation languages must be a comma-separated list of language codes.');
+    } else {
+        cfg.kachat.translate = { ...DEFAULT_APPS_CONFIG.kachat.translate, ...(k.translate ?? {}), languages: langs };
+    }
+
+    // --- KaChat Bot --- (its own screen; carried through, validated, never reset)
+    const b = input.bot ?? {};
+    cfg.bot.enabled = Boolean(b.enabled);
+    const bref = String(b.ref ?? 'main').trim();
+    if (!REF_RE.test(bref)) errors.push('KaChat Bot branch or tag contains invalid characters.');
+    else cfg.bot.ref = bref;
+    cfg.bot.network = ['mainnet', 'testnet-10'].includes(b.network) ? b.network : 'mainnet';
+
     // --- KaChat Desktop ---
     const d = input.desktop ?? {};
     cfg.desktop.enabled = Boolean(d.enabled);
@@ -805,8 +822,10 @@ export function summarizeError(error) {
 export const NEXTCLOUD_CONTAINER = APPS.nextcloud.container;
 
 /** Runs an `occ` command as the web user inside the Nextcloud container. */
+// Env vars are named on argv and valued from the docker client's environment (pass the same
+// object as the call's `env` option), so a password never shows in `ps` (KQS-011).
 function occArgs(args, { env = {} } = {}) {
-    const envFlags = Object.keys(env).flatMap((k) => ['-e', `${k}=${env[k]}`]);
+    const envFlags = Object.keys(env).flatMap((k) => ['-e', k]);
     return ['exec', '-u', 'www-data', ...envFlags, NEXTCLOUD_CONTAINER, 'php', 'occ', ...args];
 }
 
@@ -857,6 +876,7 @@ export async function setNextcloudAdminPassword(docker, password) {
     const { user } = nextcloudAdmin();
     await docker(occArgs(['user:resetpassword', '--password-from-env', user], { env: { OC_PASS: password } }), {
         timeoutMs: 120_000,
+        env: { OC_PASS: password },
     });
     updateEnvFile({ NEXTCLOUD_ADMIN_PASSWORD: password });
 }

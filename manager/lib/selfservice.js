@@ -298,20 +298,11 @@ ${compose} up -d --force-recreate manager || {
 
 // ----------------------------------------------------------------- teardown ---
 
-const CONTAINERS = [
-    'kaspa-node-kaspad',
-    'kaspa-node-proxy',
-    'kaspa-node-bridge',
-    'kaspa-node-kachat',
-    'kaspa-node-kachat-db',
-    'kaspa-node-kachat-desktop',
-    'kaspa-node-kachat-bot',
-    'kaspa-node-libretranslate',
-    'kaspa-node-nextcloud',
-    'kaspa-node-nextcloud-db',
-    'kaspa-node-nextcloud-redis',
-    'kaspa-node-nextcloud-imaginary',
-];
+// Swept by name prefix rather than listed (KQS-009): a hardcoded list missed every testnet-10
+// and .kachat Domains container and volume, and would miss the next service too. Everything
+// this stack creates is named kaspa-node-*, like uninstall.sh assumes.
+const PREFIX = 'kaspa-node-';
+const TEARDOWN_CONTAINER = 'kaspa-node-teardown';
 
 /**
  * The panel, removed on its own at the very end.
@@ -323,15 +314,6 @@ const CONTAINERS = [
  */
 const PANEL_CONTAINER = 'kaspa-node-manager';
 
-const VOLUMES = [
-    'kaspa-node-data',
-    'kaspa-node-bridge-data',
-    'kaspa-node-kachat-db-data',
-    'kaspa-node-kachat-app-data',
-    'kaspa-node-nextcloud-db-data',
-    'kaspa-node-nextcloud-data',
-    'kaspa-node-libretranslate-models',
-];
 
 // Pulled by the stack but not built by it, so they may well be shared with
 // something else on the machine. Docker refuses when they are, which is the
@@ -369,9 +351,9 @@ export async function teardown() {
     const script = `
 set -u
 echo "Removing containers"
-for c in ${CONTAINERS.join(' ')}; do
-  docker rm -f "$c" >/dev/null 2>&1 && echo "  removed $c" || true
-done
+docker ps -a --filter "name=^${PREFIX}" --format '{{.Names}}' 2>/dev/null \
+  | grep -v -x -e ${PANEL_CONTAINER} -e ${TEARDOWN_CONTAINER} \
+  | while read -r c; do docker rm -f "$c" >/dev/null 2>&1 && echo "  removed $c" || true; done
 
 echo "Removing images the stack built"
 docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null \\
@@ -385,9 +367,8 @@ for i in ${BASE_IMAGES.join(' ')}; do
 done
 
 echo "Removing volumes. This is the chain data and every app's files."
-for v in ${VOLUMES.join(' ')}; do
-  docker volume rm -f "$v" >/dev/null 2>&1 && echo "  removed $v" || true
-done
+docker volume ls -q --filter "name=^${PREFIX}" 2>/dev/null \
+  | while read -r v; do docker volume rm -f "$v" >/dev/null 2>&1 && echo "  removed $v" || true; done
 
 echo "Removing the control panel itself. This is where the log stops."
 sleep 2
@@ -418,7 +399,7 @@ echo "Done. Docker itself was left installed."
     // kaspa-one-click image including the one the panel runs from, and Docker
     // will not remove an image that a running container is using.
     const container = await detach({
-        name: 'kaspa-node-teardown',
+        name: TEARDOWN_CONTAINER,
         image: 'docker:cli',
         script,
         bind: { source: parent, target: '/host' },

@@ -15,6 +15,7 @@ import {
     loadNodeConfig,
     loadProxies,
     loadTestnetNodeConfig,
+    protectManagerConfig,
     readEnvFile,
     updateEnvFile,
     saveDomains,
@@ -60,6 +61,7 @@ import {
     passwordUnusable,
     isAuthenticated,
     issueSession,
+    revokeAllSessions,
     sessionCookie,
     verifyPassword,
     verifyPasswordAsync,
@@ -198,6 +200,8 @@ function nodeSiblings() {
         mining: bridge.loadBridgeConfig().enabled === true,
         indexer: Boolean(appsCfg.kachat?.enabled),
         bot: Boolean(appsCfg.bot?.enabled),
+        // The mainnet .kachat Domains server, from install to uninstall (KQS-016).
+        names: readEnvFile().KACHAT_NAMES_NEEDS_NODE === '1',
     };
 }
 
@@ -219,6 +223,11 @@ async function ensureNodeListeners(onLine = () => {}) {
 
 async function applyNodeConfig(cfg, onLine = () => {}) {
     const args = writeArgsFile(cfg, nodeSiblings());
+    // The mainnet .kachat Domains server dials the node's own Borsh port, whatever the
+    // indexer's settings say (KQS-016).
+    if (String(readEnvFile().KACHAT_NAMES_NODE_PORT ?? '') !== String(ports(cfg).borsh)) {
+        updateEnvFile({ KACHAT_NAMES_NODE_PORT: String(ports(cfg).borsh) });
+    }
     const mappings = renderPortsOverride(cfg);
     rpc.setUrl(`ws://${KASPAD_SERVICE}:${ports(cfg).json}`);
 
@@ -480,9 +489,10 @@ route(
         const ok = await withLoginSlot(() => verifyPasswordAsync(String(body.password ?? '')));
         if (ok === null) return fail(res, 429, 'Busy checking other sign-ins. Try again in a moment.');
         if (!ok) {
-            recordLoginFailure(key);
-            // Constant-ish delay so the endpoint is not a fast password oracle.
-            await new Promise((r) => setTimeout(r, 500));
+            // Held back so the endpoint is not a fast password oracle, longer while the panel
+            // as a whole is seeing a burst of wrong answers (KQS-017).
+            const hold = recordLoginFailure(key);
+            await new Promise((r) => setTimeout(r, hold));
             return fail(res, 401, 'Incorrect password.');
         }
         recordLoginSuccess(key);
@@ -495,6 +505,15 @@ route(
 
 route('POST', /^\/api\/logout$/, async (req, res) => sendJson(res, 200, { ok: true }, { 'Set-Cookie': clearCookie() }), {
     auth: false,
+});
+
+// Ends every session on every browser, then signs this one back in (KQS-018). Changing the
+// password does the same by itself: sessions are bound to the stored hash.
+route('POST', /^\/api\/auth\/signout-all$/, async (req, res) => {
+    revokeAllSessions();
+    const { token } = issueSession();
+    const secure = (req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
+    sendJson(res, 200, { ok: true }, { 'Set-Cookie': sessionCookie(token, { secure }) });
 });
 
 // The machine, not the node: disk, memory, and which containers are up. Kept
@@ -624,6 +643,7 @@ route('PUT', /^\/api\/kachat\/backup$/, async (req, res) => {
     if (dest && !dest.startsWith('/')) {
         return fail(res, 400, 'Destination must be an absolute host path, e.g. /media/you/drive/kachat-backups.');
     }
+    if (dest && backup.destProblem(dest)) return fail(res, 400, backup.destProblem(dest));
     backup.saveConfig({ enabled, dest, keep });
     backup.scheduleBackup(log);
     sendJson(res, 200, backup.status());
@@ -640,9 +660,7 @@ route('POST', /^\/api\/kachat\/backup\/run$/, async (req, res) => {
 route('POST', /^\/api\/kachat\/backup\/restore$/, async (req, res) => {
     const body = await readBody(req);
     const filePath = typeof body.path === 'string' ? body.path.trim() : '';
-    if (!filePath.startsWith('/')) {
-        return fail(res, 400, 'Give the absolute host path to a kachat-backup-*.tar.gz file.');
-    }
+    if (backup.fileProblem(filePath)) return fail(res, 400, backup.fileProblem(filePath));
     try {
         const result = await backup.restoreBackup(filePath, log);
         sendJson(res, 200, result);
@@ -2190,6 +2208,13 @@ async function applyAppConfig(name, cfg, onLine = () => {}) {
     // They come on automatically now that the app is enabled.
     if (name === 'kachat' || name === 'bot') await ensureNodeListeners(onLine);
 
+    // The commit to record is the one the build starts from, read *before* it: a push during a
+    // long build must leave the record behind (update available), never ahead (KQS-007).
+    const upstream = await apps.checkUpstream(name, cfg).catch((err) => {
+        onLine(`Could not read the upstream commit: ${err.message}`);
+        return null;
+    });
+
     onLine('Building images if needed...');
     await dockerctl.compose(['build', ...app.services.filter((sv) => BUILDABLE_SERVICES.has(sv))], {
         onLine,
@@ -2200,13 +2225,10 @@ async function applyAppConfig(name, cfg, onLine = () => {}) {
     onLine('Starting containers...');
     await dockerctl.compose(['up', '-d', ...app.services], { onLine, profile: app.profile, timeoutMs: 20 * 60_000 });
 
-    // Record what was actually built so "commits behind" can be answered later.
-    try {
-        const upstream = await apps.checkUpstream(name, cfg);
+    // Record what was built so "commits behind" can be answered later.
+    if (upstream) {
         apps.writeBuildRecord(name, { sha: upstream.latestSha, ref: settings.ref, builtAt: new Date().toISOString() });
         onLine(`Built from ${upstream.shortSha}.`);
-    } catch (err) {
-        onLine(`Could not record the upstream commit: ${err.message}`);
     }
 
     // The bot needs a wallet to pay for the notifications it sends. Rather than
@@ -2398,10 +2420,21 @@ route('GET', /^\/api\/apps\/(kachat|desktop|bot)\/refs$/, async (req, res, match
 // address is always exactly the one it will spend from.
 const botImageTag = () => `kaspa-one-click/kachat-bot:${(readEnvFile().BOT_REF || 'main').trim()}`;
 
+// A private key never goes on a command line (KQS-011): `docker run` names the variable and
+// takes its value from this process's environment, and inside the container gen_wallet.py
+// gets its --from-key through sys.argv set in-process, which no `ps` (host or container) sees.
+const GEN_WALLET_FROM_ENV =
+    "import os, runpy, sys; sys.argv = ['gen_wallet.py', '--network', os.environ['BOT_NET'], '--from-key', os.environ['BOT_FROM_KEY']]; runpy.run_path('gen_wallet.py', run_name='__main__')";
+
 async function botGenerateWallet(network, fromKey = null) {
-    const args = ['run', '--rm', '--entrypoint', 'python', botImageTag(), 'gen_wallet.py', '--network', network || 'mainnet'];
-    if (fromKey) args.push('--from-key', fromKey);
-    const { stdout } = await dockerctl.docker(args, { timeoutMs: 60_000 });
+    const net = network || 'mainnet';
+    const args = fromKey
+        ? ['run', '--rm', '-e', 'BOT_NET', '-e', 'BOT_FROM_KEY', '--entrypoint', 'python', botImageTag(), '-c', GEN_WALLET_FROM_ENV]
+        : ['run', '--rm', '--entrypoint', 'python', botImageTag(), 'gen_wallet.py', '--network', net];
+    const { stdout } = await dockerctl.docker(args, {
+        timeoutMs: 60_000,
+        env: fromKey ? { BOT_NET: net, BOT_FROM_KEY: fromKey } : undefined,
+    });
     const line = stdout.trim().split('\n').filter(Boolean).pop() || '';
     let parsed;
     try {
@@ -3023,6 +3056,8 @@ route('POST', /^\/api\/apps\/(kachat|desktop|nextcloud|bot)\/update$/, async (re
         // kaspad, from source.
         const buildable = lifecycle.unitFor(name)?.buildable ?? [];
         if (!buildable.length) throw new Error(`${app.label} has nothing to build.`);
+        // Read before the build, so a push while it runs shows up as an update (KQS-007).
+        const upstream = await apps.checkUpstream(name, cfg);
         // --no-cache: the build context is a git ref, and Docker would otherwise
         // reuse the layer it already has for that same ref string.
         //
@@ -3046,7 +3081,6 @@ route('POST', /^\/api\/apps\/(kachat|desktop|nextcloud|bot)\/update$/, async (re
         } else {
             onLine(`${app.label} is stopped, so it stays stopped. It runs the new build when you start it.`);
         }
-        const upstream = await apps.checkUpstream(name, cfg);
         apps.writeBuildRecord(name, { sha: upstream.latestSha, ref: cfg[name].ref, builtAt: new Date().toISOString() });
         onLine(`${app.label} is now running ${upstream.shortSha}.`);
     });
@@ -3457,6 +3491,20 @@ async function useNamesManifest(net, file, onLine, { restart = true } = {}) {
     }
 }
 
+/**
+ * The mainnet names server reads the node over wRPC Borsh, which is off by default: say it
+ * needs it (so the listener follows it like the indexer's and bot's), and point it at the
+ * node's own port rather than the indexer's (KQS-016). Testnet's node always has it on.
+ */
+async function namesNodeListener(onLine) {
+    const port = String(ports(loadNodeConfig()).borsh);
+    const env = readEnvFile();
+    if (env.KACHAT_NAMES_NEEDS_NODE !== '1' || env.KACHAT_NAMES_NODE_PORT !== port) {
+        updateEnvFile({ KACHAT_NAMES_NEEDS_NODE: '1', KACHAT_NAMES_NODE_PORT: port });
+    }
+    await ensureNodeListeners(onLine);
+}
+
 /** Name pushes go to this network's KaChat indexer push service when there is one. */
 async function namesPushTarget(net) {
     const N = kachatDomains.NETWORKS[net];
@@ -3466,12 +3514,39 @@ async function namesPushTarget(net) {
     return url;
 }
 
-/** Rewrite and reload the proxy, so the names paths follow what is installed. */
-async function refreshNamesRoutes(onLine) {
+/**
+ * Send (or stop sending) the names paths on this network's indexer name to its .kachat Domains
+ * server, rewriting and reloading the proxy only when that changes. On only while the server
+ * runs with a registry: a stopped server behind those paths is a 502 for every app (KQS-013).
+ */
+async function setNamesRoute(net, on, onLine = () => {}) {
+    const N = kachatDomains.NETWORKS[net];
+    if (kachatDomains.routed(net) === on) return;
+    updateEnvFile({ [N.marker]: on ? '1' : '0' });
     nginx.writeAll(loadProxies(), loadNodeConfig(), renderOptions());
     if ((await dockerctl.containerState(dockerctl.PROXY_CONTAINER)).running) {
         await nginx.reload().catch((e) => onLine(`The proxy did not reload: ${e.message}`));
-        onLine('Proxy updated: the names paths on the indexer name follow .kachat Domains.');
+    }
+    onLine(
+        on
+            ? `Proxy: /names, /market, /offers, /profiles and /identity on the ${N.label} indexer name now go to .kachat Domains.`
+            : `Proxy: the names paths on the ${N.label} indexer name are back on the indexer.`,
+    );
+}
+
+/**
+ * Keep the routing honest when the server stops or crashes outside the panel (docker stop, an
+ * OOM, a reboot before it comes back): checked at boot and every minute.
+ */
+async function reconcileNamesRoutes() {
+    for (const net of Object.keys(kachatDomains.NETWORKS)) {
+        const N = kachatDomains.NETWORKS[net];
+        const st = await dockerctl.containerState(N.container).catch(() => null);
+        if (!st) continue;
+        const should = st.running && kachatDomains.manifestSet(net);
+        if (kachatDomains.routed(net) !== should) {
+            await setNamesRoute(net, should, (line) => log('names route:', line)).catch((e) => log('names route', e));
+        }
     }
 }
 
@@ -3532,12 +3607,19 @@ route('GET', /^\/api\/kachat-domains\/check$/, async (req, res) => {
 });
 
 /** Build the names server image for one network, recording the KaChat-Indexer commit. */
-async function buildNamesServer(net, onLine) {
+async function buildNamesServer(net, onLine, { fresh = false } = {}) {
     const N = kachatDomains.NETWORKS[net];
     const env = readEnvFile();
+    // Read before the build, like every other build record (KQS-007).
     const latest = await selfservice.latestCommit({ repo: 'KaspaSilver/KaChat-Indexer', ref: env.KACHAT_REF || 'main' }).catch(() => null);
     onLine(`Building the ${N.label} .kachat Domains server from KaChat-Indexer${latest ? ` (${latest.sha.slice(0, 12)})` : ''}. Only the names parts are compiled.`);
-    await dockerctl.compose(['build', ...N.compose.buildable], { onLine, profile: N.compose.profile, timeoutMs: 120 * 60_000 });
+    // An update rebuilds without the cache: the context is a git ref, and the same ref string
+    // would otherwise reuse the layers of the commit it pointed at last time.
+    await dockerctl.compose(['build', ...(fresh ? ['--no-cache'] : []), ...N.compose.buildable], {
+        onLine,
+        profile: N.compose.profile,
+        timeoutMs: 120 * 60_000,
+    });
     if (latest) updateEnvFile({ KACHAT_NAMES_SERVER_COMMIT: latest.sha });
 }
 
@@ -3559,6 +3641,7 @@ for (const net of Object.keys(kachatDomains.NETWORKS)) {
                     throw new Error(`Install the ${N.label} Kaspad first: the .kachat Domains server reads the registry from that node.`);
                 }
                 await apps.ensureSecrets(onLine);
+                if (net === 'mainnet') await namesNodeListener(onLine);
                 if ((await kachatDomains.installedRevision()) === null) {
                     const latest = await selfservice.latestCommit({ repo: kachatDomains.REPO, ref: kachatDomains.ref() });
                     await kachatDomains.build(latest.sha, onLine);
@@ -3571,8 +3654,6 @@ for (const net of Object.keys(kachatDomains.NETWORKS)) {
                 await namesPushTarget(net);
                 await buildNamesServer(net, onLine);
                 await lifecycle.composeInstall({ ...N.compose, buildable: [] }, onLine);
-                updateEnvFile({ [N.marker]: '1' });
-                await refreshNamesRoutes(onLine);
                 onLine(
                     sm
                         ? `Verified: ${kachatDomains.describe(sm)}. Installed and switched off; its switch in the sidebar starts the server.`
@@ -3580,18 +3661,33 @@ for (const net of Object.keys(kachatDomains.NETWORKS)) {
                 );
             },
             async setRunning(running, onLine) {
-                if (!running) return lifecycle.composeSetRunning(N.compose, false, onLine);
-                if (!kachatDomains.summaryFor(net)) await kachatDomains.publish(onLine);
-                if (!kachatDomains.summaryFor(net)) {
-                    throw new Error(`There is no ${N.network} .kachat registry yet, so there is nothing for the server to follow. Updates → Update picks one up once kachat-domains publishes it.`);
+                // The names paths on the indexer's name go to this server only while it runs
+                // with a registry (KQS-013); otherwise they stay on the indexer.
+                if (!running) {
+                    await setNamesRoute(net, false, onLine);
+                    return lifecycle.composeSetRunning(N.compose, false, onLine);
                 }
-                await useNamesManifest(net, N.manifestFile, onLine, { restart: false });
-                await namesPushTarget(net);
-                await lifecycle.composeSetRunning(N.compose, true, onLine);
+                try {
+                    if (!kachatDomains.summaryFor(net)) await kachatDomains.publish(onLine);
+                    if (!kachatDomains.summaryFor(net)) {
+                        throw new Error(`There is no ${N.network} .kachat registry yet, so there is nothing for the server to follow. Updates → Update picks one up once kachat-domains publishes it.`);
+                    }
+                    await useNamesManifest(net, N.manifestFile, onLine, { restart: false });
+                    await namesPushTarget(net);
+                    if (net === 'mainnet') await namesNodeListener(onLine);
+                    await lifecycle.composeSetRunning(N.compose, true, onLine);
+                } catch (err) {
+                    await setNamesRoute(net, false, onLine);
+                    throw err;
+                }
+                await setNamesRoute(net, true, onLine);
             },
             async uninstall({ keepData, onLine }) {
-                updateEnvFile({ [N.marker]: '0' });
-                await refreshNamesRoutes(onLine);
+                await setNamesRoute(net, false, onLine);
+                if (net === 'mainnet' && readEnvFile().KACHAT_NAMES_NEEDS_NODE === '1') {
+                    updateEnvFile({ KACHAT_NAMES_NEEDS_NODE: '0' });
+                    await ensureNodeListeners(onLine);
+                }
                 const removed = await lifecycle.composeUninstall(N.compose, { keepData, onLine });
                 updateEnvFile({ [N.envManifest]: '' });
                 const otherKeeps = (await dockerctl.containerState(kachatDomains.NETWORKS[other].container)).exists;
@@ -3631,7 +3727,7 @@ route('POST', /^\/api\/kachat-domains\/update$/, async (req, res) => {
             const N = kachatDomains.NETWORKS[net];
             const after = kachatDomains.summaryFor(net);
             onLine(after ? `${N.label}: verified ${kachatDomains.describe(after)}.` : `${N.label}: no ${N.network} registry published yet.`);
-            await buildNamesServer(net, onLine);
+            await buildNamesServer(net, onLine, { fresh: true });
             await namesPushTarget(net);
             const running = (await dockerctl.containerState(N.container)).running;
             if (after && (kachatDomains.registryChanged(before[net], after) || !kachatDomains.manifestSet(net))) {
@@ -4070,8 +4166,32 @@ route('POST', /^\/api\/node\/public-check$/, async (req, res) => {
 
 // ------------------------------------------------------------------- server --
 
+/**
+ * One bad request must never take down the process holding the Docker socket (KQS-012): the
+ * listener is async, so anything thrown outside the route's own try became an unhandled
+ * rejection, and Node exits on those -- aborting every running job and resetting the login
+ * throttle. Everything is answered here instead.
+ */
 const server = http.createServer(async (req, res) => {
-    const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    try {
+        await handleRequest(req, res);
+    } catch (err) {
+        log('request failed', req.url, err);
+        if (!res.headersSent) fail(res, 400, 'Bad request');
+        else res.destroy();
+    }
+});
+
+// Last line of defence: log, never exit.
+process.on('unhandledRejection', (err) => log('unhandled rejection', err));
+
+async function handleRequest(req, res) {
+    let url;
+    try {
+        url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    } catch {
+        return fail(res, 400, 'Bad request');
+    }
 
     // The embedded KaChat dashboard. Behind the same auth as everything else,
     // since it can delete indexed content.
@@ -4119,7 +4239,7 @@ const server = http.createServer(async (req, res) => {
         log('request failed', url.pathname, err);
         if (!res.headersSent) fail(res, 500, err.message || 'Internal error');
     }
-});
+}
 
 // -------------------------------------------------------------------- boot ---
 
@@ -4164,6 +4284,7 @@ function migrateExposeModel(cfg) {
 
 async function bootstrap() {
     ensureDirs();
+    protectManagerConfig();
 
     if (!fs.existsSync(NODE_CONFIG_FILE)) saveNodeConfig(structuredClone(DEFAULT_NODE_CONFIG));
     if (!fs.existsSync(PROXIES_FILE)) saveProxies([]);
@@ -4253,6 +4374,10 @@ async function bootstrap() {
     startHashrateWatch();
     startLowBalanceWatch();
     startMiningStatsPersist();
+
+    // The names paths follow whether each .kachat Domains server is really running (KQS-013).
+    reconcileNamesRoutes().catch((e) => log('names route', e));
+    setInterval(() => reconcileNamesRoutes().catch(() => {}), 60_000).unref?.();
 
     // Certificates are valid for 90 days; a daily attempt is what certbot's own
     // packaging recommends and is a no-op until one is close to expiry.

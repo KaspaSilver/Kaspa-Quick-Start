@@ -2677,10 +2677,19 @@
             This panel drives the Docker daemon, which is root on this machine.
             A password is what makes it safe to reach from anywhere other than
             this computer, and it is required before the panel itself can go on
-            a domain. Saving restarts the panel, which takes a few seconds; the
-            node, the proxy and every app keep running throughout.
+            a domain. Saving it signs out every other browser.
           </p>
           <p class="hint" id="password-result" hidden></p>
+        </article>
+        <article class="card span2">
+          <h3>Sessions</h3>
+          <p class="muted">
+            Signs out every browser that is signed in to this panel, then signs this one back in.
+            Use it if you signed in on a computer you no longer trust. Changing the password
+            does the same by itself.
+          </p>
+          <div class="row"><button id="signout-all" class="ghost danger">Sign out everywhere</button></div>
+          <p class="hint" id="signout-all-result" hidden></p>
         </article>
         </div>
       </div>

@@ -1,6 +1,10 @@
 import crypto from 'node:crypto';
+import dns from 'node:dns/promises';
+import fs from 'node:fs';
+import path from 'node:path';
 
-import { readEnvFile } from './store.js';
+import { CONF_DIR } from './paths.js';
+import { readEnvFile, updateEnvFile } from './store.js';
 
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const COOKIE_NAME = 'kaspa_node_session';
@@ -79,14 +83,24 @@ export function verifyPassword(password) {
     return crypto.timingSafeEqual(expected, derived);
 }
 
-// Stateless sessions: "<expiry>.<random>.<hmac>". Nothing to persist, and a
-// manager restart simply invalidates everything, which is the safe direction.
+// Stateless sessions: "<expiry>.<random>.<hmac>". The HMAC also covers the session epoch:
+// the stored password hash plus SESSION_EPOCH from .env. Changing the password (here or with
+// the installer) or "Sign out everywhere" changes it, and every session issued before is
+// refused at once (KQS-018). Both are read live, like the hash itself.
+const sessionEpoch = () => `${String(readEnvFile().SESSION_EPOCH ?? '').trim()}:${currentHash().slice(0, 40)}`;
+const sign = (payload) =>
+    crypto.createHmac('sha256', SESSION_SECRET).update(`${payload}.${sessionEpoch()}`).digest('hex');
+
 export function issueSession() {
     const expires = Date.now() + SESSION_TTL_MS;
     const nonce = crypto.randomBytes(16).toString('hex');
     const payload = `${expires}.${nonce}`;
-    const sig = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('hex');
-    return { token: `${payload}.${sig}`, expires };
+    return { token: `${payload}.${sign(payload)}`, expires };
+}
+
+/** End every session, this one included (a new one is issued to the caller separately). */
+export function revokeAllSessions() {
+    updateEnvFile({ SESSION_EPOCH: crypto.randomBytes(8).toString('hex') });
 }
 
 export function validateSession(token) {
@@ -94,7 +108,8 @@ export function validateSession(token) {
     const parts = token.split('.');
     if (parts.length !== 3) return false;
     const [expires, nonce, sig] = parts;
-    const expected = crypto.createHmac('sha256', SESSION_SECRET).update(`${expires}.${nonce}`).digest('hex');
+    if (!/^[0-9a-f]+$/.test(sig)) return false;
+    const expected = sign(`${expires}.${nonce}`);
     const a = Buffer.from(sig, 'hex');
     const b = Buffer.from(expected, 'hex');
     if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return false;
@@ -106,7 +121,16 @@ export function parseCookies(header = '') {
     for (const part of header.split(';')) {
         const idx = part.indexOf('=');
         if (idx < 0) continue;
-        out[part.slice(0, idx).trim()] = decodeURIComponent(part.slice(idx + 1).trim());
+        const raw = part.slice(idx + 1).trim();
+        // A malformed escape (`x=%`) must not throw: it ran before any try and an
+        // unhandled rejection takes the whole panel down (KQS-012). Keep it raw.
+        let value = raw;
+        try {
+            value = decodeURIComponent(raw);
+        } catch {
+            /* not percent-encoded; use it as sent */
+        }
+        out[part.slice(0, idx).trim()] = value;
     }
     return out;
 }
@@ -157,52 +181,105 @@ export async function verifyPasswordAsync(password) {
     return crypto.timingSafeEqual(expected, derived);
 }
 
-// ---- login throttling (KQS-005) ----
+// ---- login throttling (KQS-005, KQS-017) ----
 //
-// Per client: 5 wrong passwords lock that client out for a minute. Behind the
-// panel's own nginx every request arrives from the proxy container, so the client
-// is the right-most X-Forwarded-For hop (the one nginx appended). A direct caller
-// can forge that header to look like many clients, so there is also a global
-// ceiling: 30 failures a minute from anyone pauses all logins for a minute, and
-// at most 2 password checks run at once.
+// Per client: 5 wrong passwords lock that client out for a minute. The client is the TCP peer,
+// except when the peer is this stack's own nginx (`proxy` on kaspa-node-net): then it is the
+// right-most X-Forwarded-For hop, the one nginx appended. A header from anyone else is ignored,
+// so a direct caller cannot pose as many clients.
+//
+// There is no global hard lock any more: it let anyone lock the owner out with 30 bad tries a
+// minute. Past that rate every *wrong* answer is slowed down instead (up to 5 s), so guessing
+// gets slower for everyone while the right password still signs in. Locks are written to
+// conf/ so a restart does not reset them.
 const PER_CLIENT_FAILS = 5;
-const GLOBAL_FAILS = 30;
+const GLOBAL_SLOW_AFTER = 30;
 const LOCK_MS = 60_000;
 const MAX_CONCURRENT = 2;
+const THROTTLE_FILE = path.join(CONF_DIR, 'login-throttle.json');
 const failures = new Map(); // client -> { count, first, lockedUntil }
-let globalFails = { count: 0, first: 0, lockedUntil: 0 };
+let globalFails = { count: 0, first: 0 };
 let inFlight = 0;
 
+// The proxy's address on the stack network, refreshed in the background.
+let proxyAddresses = new Set();
+async function refreshProxyAddress() {
+    try {
+        const found = await dns.lookup('proxy', { all: true });
+        proxyAddresses = new Set(found.map((a) => a.address));
+    } catch {
+        proxyAddresses = new Set();
+    }
+}
+refreshProxyAddress();
+setInterval(refreshProxyAddress, 60_000).unref?.();
+
+const bare = (ip) => String(ip || '').replace(/^::ffff:/, '');
+
 export function clientKey(req) {
+    const peer = bare(req.socket?.remoteAddress) || 'unknown';
+    if (!proxyAddresses.has(peer)) return peer;
     const xff = String(req.headers['x-forwarded-for'] || '')
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean);
-    return xff.length ? xff[xff.length - 1] : req.socket?.remoteAddress || 'unknown';
+    return xff.length ? xff[xff.length - 1] : peer;
+}
+
+function loadLocks() {
+    try {
+        const saved = JSON.parse(fs.readFileSync(THROTTLE_FILE, 'utf8'));
+        const now = Date.now();
+        for (const [k, until] of Object.entries(saved.locks ?? {})) {
+            if (Number(until) > now) failures.set(k, { count: 0, first: now, lockedUntil: Number(until) });
+        }
+    } catch {
+        /* none saved */
+    }
+}
+loadLocks();
+
+function saveLocks(now = Date.now()) {
+    const locks = {};
+    for (const [k, f] of failures) if (f.lockedUntil > now) locks[k] = f.lockedUntil;
+    try {
+        fs.writeFileSync(THROTTLE_FILE, `${JSON.stringify({ locks })}\n`, { mode: 0o600 });
+    } catch {
+        /* best effort */
+    }
 }
 
 /** Seconds to wait before this client may try again, or 0. */
 export function loginBlockedFor(key, now = Date.now()) {
-    const until = Math.max(failures.get(key)?.lockedUntil || 0, globalFails.lockedUntil);
+    const until = failures.get(key)?.lockedUntil || 0;
     return until > now ? Math.ceil((until - now) / 1000) : 0;
 }
 
+/** Records a wrong password; returns how long to hold the answer back (ms). */
 export function recordLoginFailure(key, now = Date.now()) {
-    const bump = (f, limit) => {
-        if (now - f.first > LOCK_MS) Object.assign(f, { count: 0, first: now });
-        f.count += 1;
-        if (f.count >= limit) Object.assign(f, { lockedUntil: now + LOCK_MS, count: 0, first: now });
-        return f;
-    };
-    failures.set(key, bump(failures.get(key) || { count: 0, first: now, lockedUntil: 0 }, PER_CLIENT_FAILS));
-    bump(globalFails, GLOBAL_FAILS);
+    const f = failures.get(key) || { count: 0, first: now, lockedUntil: 0 };
+    if (now - f.first > LOCK_MS) Object.assign(f, { count: 0, first: now });
+    f.count += 1;
+    let locked = false;
+    if (f.count >= PER_CLIENT_FAILS) {
+        Object.assign(f, { lockedUntil: now + LOCK_MS, count: 0, first: now });
+        locked = true;
+    }
+    failures.set(key, f);
+    if (now - globalFails.first > LOCK_MS) globalFails = { count: 0, first: now };
+    globalFails.count += 1;
     // Forget stale clients so the map cannot grow without bound.
     if (failures.size > 10_000) {
-        for (const [k, f] of failures) if (now - f.first > LOCK_MS && f.lockedUntil < now) failures.delete(k);
+        for (const [k, v] of failures) if (now - v.first > LOCK_MS && v.lockedUntil < now) failures.delete(k);
     }
+    if (locked) saveLocks(now);
+    const over = globalFails.count - GLOBAL_SLOW_AFTER;
+    return 500 + (over > 0 ? Math.min(4500, over * 250) : 0);
 }
 
-export const recordLoginSuccess = (key) => failures.delete(key);
+export const recordLoginSuccess = (key) => {
+    if (failures.delete(key)) saveLocks();
+};
 
 /** Runs `fn` if fewer than MAX_CONCURRENT checks are running; null when busy. */
 export async function withLoginSlot(fn) {

@@ -11,7 +11,7 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { CONF_DIR } from './paths.js';
-import { readJson, writeJson } from './store.js';
+import { readEnvFile, readJson, writeJson } from './store.js';
 
 const BACKUP_CONFIG = path.join(CONF_DIR, 'backup.json');
 const IMG = 'postgres:17-alpine';
@@ -20,6 +20,25 @@ const DB = 'kaspa-node-kachat-db';
 const CHAT_EXPORT_URL = 'http://kachat-app:8600/export';
 const CHAT_IMPORT_URL = 'http://kachat-app:8600/import-file';
 const DEFAULTS = { enabled: false, dest: '', keep: 14, last: null };
+
+// Host paths go into `-v` and file names into shell scripts, so both are checked first, and
+// every script takes them as positional arguments ("$1"), never pasted into its text (KQS-019).
+// A ':' in the destination would also change the bind mount's options.
+const DEST_RE = /^\/[A-Za-z0-9._\/ -]+$/;
+const FILE_RE = /^kachat-backup-[0-9-]+\.tar\.gz$/;
+export const destProblem = (dest) =>
+    !DEST_RE.test(dest) || dest.split('/').includes('..')
+        ? 'Destination must be an absolute host path made of letters, digits, spaces, ".", "_", "-" and "/".'
+        : null;
+export const fileProblem = (filePath) =>
+    !filePath.startsWith('/') || destProblem(path.dirname(filePath)) || !FILE_RE.test(path.basename(filePath))
+        ? 'Give the absolute host path to a kachat-backup-*.tar.gz file this panel wrote.'
+        : null;
+
+// The chat indexer's /export and /import-file need its internal secret (kachat-audits IDX-001).
+// Passed by name (`-e KACHAT_INTERNAL_SECRET`), valued from the spawn's environment, so it is
+// never on a command line.
+const secretEnv = () => ({ ...process.env, KACHAT_INTERNAL_SECRET: readEnvFile().KACHAT_PUSH_SECRET || '' });
 
 let running = false;
 let timer = null;
@@ -72,9 +91,9 @@ export function listDrives() {
 }
 
 /** Spawn a command, capturing stderr; resolve on exit 0, reject otherwise. */
-function spawnP(cmd, args) {
+function spawnP(cmd, args, { env } = {}) {
     return new Promise((resolve, reject) => {
-        const child = spawn(cmd, args);
+        const child = spawn(cmd, args, env ? { env } : {});
         let err = '';
         if (child.stderr) child.stderr.on('data', (d) => { if (err.length < 4000) err += d.toString(); });
         child.on('error', reject);
@@ -90,7 +109,7 @@ function spawnP(cmd, args) {
 function dumpDbToStage(mount, stage) {
     return new Promise((resolve, reject) => {
         const dump = spawn('docker', ['exec', DB, 'pg_dump', '-U', 'kachat', '-Fc', 'kachat']);
-        const write = spawn('docker', ['run', '--rm', '-i', '-v', mount, IMG, 'sh', '-c', `cat > "${stage}/kaposts.dump"`]);
+        const write = spawn('docker', ['run', '--rm', '-i', '-v', mount, IMG, 'sh', '-c', 'umask 077 && cat > "$1/kaposts.dump"', 'sh', stage]);
         let err = '';
         dump.stderr.on('data', (d) => (err += d));
         write.stderr.on('data', (d) => (err += d));
@@ -107,6 +126,8 @@ function dumpDbToStage(mount, stage) {
 export async function runBackup(log = () => {}) {
     const cfg = loadConfig();
     if (!cfg.dest) throw new Error('No backup destination configured.');
+    const bad = destProblem(cfg.dest);
+    if (bad) throw new Error(bad);
     if (running) throw new Error('A backup is already running.');
     running = true;
     const started = Date.now();
@@ -119,10 +140,17 @@ export async function runBackup(log = () => {}) {
         log(`[backup] starting → ${cfg.dest}/${name}`);
         // 1) chat store export → stage (streamed straight onto the destination, not the SSD)
         progress = { step: 1, of: 3, label: 'Exporting chat store…' };
-        await spawnP('docker', [
-            'run', '--rm', '--network', NET, '-v', mount, IMG, 'sh', '-c',
-            `rm -rf "${stage}" && mkdir -p "${stage}" && wget -q -O "${stage}/chat-store.export" "${CHAT_EXPORT_URL}"`,
-        ]);
+        // umask 077: the archive holds every chat and push token, so only its owner may read it.
+        await spawnP(
+            'docker',
+            [
+                'run', '--rm', '--network', NET, '-e', 'KACHAT_INTERNAL_SECRET', '-v', mount, IMG, 'sh', '-c',
+                'umask 077 && rm -rf "$1" && mkdir -p "$1" && ' +
+                    'wget -q --header="x-internal-secret: $KACHAT_INTERNAL_SECRET" -O "$1/chat-store.export" "$2"',
+                'sh', stage, CHAT_EXPORT_URL,
+            ],
+            { env: secretEnv() },
+        );
         // 2) KaPosts DB dump → stage
         progress = { step: 2, of: 3, label: 'Dumping KaPosts database…' };
         await dumpDbToStage(mount, stage);
@@ -130,15 +158,16 @@ export async function runBackup(log = () => {}) {
         progress = { step: 3, of: 3, label: 'Compressing into one file…' };
         await spawnP('docker', [
             'run', '--rm', '-v', mount, IMG, 'sh', '-c',
-            `tar -czf "/w/${name}" -C "${stage}" kaposts.dump chat-store.export && rm -rf "${stage}" && ` +
-                `ls -t /w/kachat-backup-*.tar.gz 2>/dev/null | tail -n +${keep + 1} | xargs -r rm -f`,
+            'umask 077 && tar -czf "/w/$1" -C "$2" kaposts.dump chat-store.export && chmod 600 "/w/$1" && rm -rf "$2" && ' +
+                'ls -t /w/kachat-backup-*.tar.gz 2>/dev/null | tail -n +"$3" | xargs -r rm -f',
+            'sh', name, stage, String(keep + 1),
         ]);
         const last = { ok: true, at: Date.now(), date: new Date().toISOString().slice(0, 10), file: name, ms: Date.now() - started };
         saveConfig({ last });
         log(`[backup] done: ${name} (${last.ms} ms)`);
         return last;
     } catch (e) {
-        await spawnP('docker', ['run', '--rm', '-v', mount, IMG, 'sh', '-c', `rm -rf "${stage}"`]).catch(() => {});
+        await spawnP('docker', ['run', '--rm', '-v', mount, IMG, 'sh', '-c', 'rm -rf "$1"', 'sh', stage]).catch(() => {});
         const last = { ok: false, at: Date.now(), date: new Date().toISOString().slice(0, 10), error: e.message, ms: Date.now() - started };
         saveConfig({ last });
         log(`[backup] FAILED: ${e.message}`);
@@ -152,6 +181,8 @@ export async function runBackup(log = () => {}) {
 /** Restore a combined backup file (host path) — pg_restore the DB and re-import the chat store. */
 export async function restoreBackup(filePath, log = () => {}) {
     if (!filePath) throw new Error('No backup file path given.');
+    const bad = fileProblem(filePath);
+    if (bad) throw new Error(bad);
     const dir = path.dirname(filePath);
     const file = path.basename(filePath);
     const mount = `${dir}:/w`;
@@ -160,7 +191,8 @@ export async function restoreBackup(filePath, log = () => {}) {
         log(`[restore] extracting ${file}`);
         await spawnP('docker', [
             'run', '--rm', '-v', mount, IMG, 'sh', '-c',
-            `rm -rf "${stage}" && mkdir -p "${stage}" && tar -xzf "/w/${file}" -C "${stage}"`,
+            'umask 077 && rm -rf "$2" && mkdir -p "$2" && tar -xzf "/w/$1" -C "$2"',
+            'sh', file, stage,
         ]);
         // DB: helper cats the dump → local pg_restore in the DB container (no password)
         log('[restore] restoring KaPosts database');
@@ -178,15 +210,21 @@ export async function restoreBackup(filePath, log = () => {}) {
         });
         // Chat store: POST the export back to the indexer's /import-file
         log('[restore] restoring chat store');
-        await spawnP('docker', [
-            'run', '--rm', '--network', NET, '-v', mount, IMG, 'sh', '-c',
-            `wget -q -O - --header="Content-Type: application/octet-stream" --post-file="${stage}/chat-store.export" "${CHAT_IMPORT_URL}" >/dev/null`,
-        ]);
-        await spawnP('docker', ['run', '--rm', '-v', mount, IMG, 'sh', '-c', `rm -rf "${stage}"`]).catch(() => {});
+        await spawnP(
+            'docker',
+            [
+                'run', '--rm', '--network', NET, '-e', 'KACHAT_INTERNAL_SECRET', '-v', mount, IMG, 'sh', '-c',
+                'wget -q -O - --header="Content-Type: application/octet-stream" ' +
+                    '--header="x-internal-secret: $KACHAT_INTERNAL_SECRET" --post-file="$1/chat-store.export" "$2" >/dev/null',
+                'sh', stage, CHAT_IMPORT_URL,
+            ],
+            { env: secretEnv() },
+        );
+        await spawnP('docker', ['run', '--rm', '-v', mount, IMG, 'sh', '-c', 'rm -rf "$1"', 'sh', stage]).catch(() => {});
         log(`[restore] done from ${file}`);
         return { ok: true, file };
     } catch (e) {
-        await spawnP('docker', ['run', '--rm', '-v', mount, IMG, 'sh', '-c', `rm -rf "${stage}"`]).catch(() => {});
+        await spawnP('docker', ['run', '--rm', '-v', mount, IMG, 'sh', '-c', 'rm -rf "$1"', 'sh', stage]).catch(() => {});
         throw e;
     }
 }

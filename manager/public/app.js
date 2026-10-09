@@ -7767,6 +7767,16 @@ function renderPasswordCard(isSet) {
  * done by a detached container a second or two after the request returns, so
  * "still answering" does not yet mean "finished".
  */
+$('signout-all')?.addEventListener('click', async () => {
+    if (!(await askConfirm('Sign out every browser that is signed in to this panel? This one stays signed in.'))) return;
+    try {
+        await api('/api/auth/signout-all', { method: 'POST' });
+        kResult('signout-all-result', 'Every other session is signed out.', false);
+    } catch (e) {
+        kResult('signout-all-result', e.message, true);
+    }
+});
+
 async function waitForPanelRestart(note, resultId = 'password-result') {
     const deadline = Date.now() + 120_000;
     let wentDown = false;

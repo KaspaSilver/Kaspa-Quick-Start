@@ -16,7 +16,10 @@ const path = require('node:path');
 
 const RAW = 'https://raw.githubusercontent.com/KaspaSilver/Kaspa-Quick-Start/main';
 
-const tmp = (name) => path.join(os.tmpdir(), name);
+// A private directory per run (0700, ours), never fixed names in the shared temp dir: another
+// local account could pre-create /tmp/<name>.done and fake a result, or plant a symlink the root
+// shell would write through (KQS-020).
+const runDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'kqs-'));
 const sh = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`; // single-quote for POSIX shells
 const osa = (s) => `"${String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`; // AppleScript string
 
@@ -37,7 +40,7 @@ function posixBootstrap(scriptFile, args, logFile, doneFile, { toLog = false } =
     `echo "[installer] starting, running as $(id -un)"; ` +
     `${runline}; code=$?; ` +
     `chown -R ${uid}:${gid} ${sh(dir)} 2>/dev/null || true; ` +
-    `printf '%s' "$code" > ${sh(doneFile)}; ` +
+    `printf '%s' "$code" > ${sh(`${doneFile}.tmp`)} && mv -f ${sh(`${doneFile}.tmp`)} ${sh(doneFile)}; ` +
     `echo "[installer] finished with code $code"`;
   // Two ways the app gets progress, one per elevation channel:
   //   - Linux (pkexec) streams the child's stdout/stderr live, so leave output on
@@ -142,8 +145,9 @@ function launch(base, posixArgs, winArgs, logFile, doneFile) {
 }
 
 function run(base, posixArgs, winArgs, { onLine = () => {}, onDone = () => {} } = {}) {
-  const logFile = tmp(`kaspa-quick-start-${base}.log`);
-  const doneFile = tmp(`kaspa-quick-start-${base}.done`);
+  const dir = runDir();
+  const logFile = path.join(dir, `kaspa-quick-start-${base}.log`);
+  const doneFile = path.join(dir, `kaspa-quick-start-${base}.done`);
   try { fs.writeFileSync(logFile, ''); } catch { /* best effort */ }
   try { fs.rmSync(doneFile, { force: true }); } catch { /* best effort */ }
 

@@ -683,7 +683,7 @@ services:
     restart: unless-stopped
     stop_grace_period: 30s
     environment:
-      KASPA_NODE_WBORSH_URL: ws://kaspad:${KACHAT_NODE_PORT:-17110}
+      KASPA_NODE_WBORSH_URL: ws://kaspad:${KACHAT_NAMES_NODE_PORT:-17110}
       NETWORK: mainnet
       # The verified manifest .kachat Domains published (empty = names follower idle).
       KACHAT_NAMES_MANIFEST: ${KACHAT_NAMES_MANIFEST_MAINNET:-}

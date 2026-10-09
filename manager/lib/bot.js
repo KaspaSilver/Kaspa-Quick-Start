@@ -149,6 +149,8 @@ export function validate(input, { existingKey = false } = {}) {
         problems.push('The receiver public key must be 64 hexadecimal characters (x-only, no 02/03 prefix).');
     }
 
+    if (input.ref) problems.push(...validateField('ref', String(input.ref)));
+
     const key = String(input.privateKeyHex ?? '').trim();
     if (key) {
         if (!HEX64_RE.test(key)) problems.push('The private key must be 64 hexadecimal characters.');
@@ -335,7 +337,9 @@ export function validateField(field, value) {
         case 'network':
             return ['mainnet', 'testnet-10'].includes(v) ? [] : ['Choose mainnet or testnet-10.'];
         case 'ref':
-            return v.trim() ? [] : ['Enter a branch, tag or commit.'];
+            // Interpolated into an image tag and a git build context (KQS-010).
+            if (!v.trim()) return ['Enter a branch, tag or commit.'];
+            return /^(?!.*\.\.)[A-Za-z0-9._\/-]{1,100}$/.test(v.trim()) ? [] : ['A branch, tag or commit may only contain letters, digits, ".", "_", "/" and "-".'];
         default:
             return ['Unknown field.'];
     }

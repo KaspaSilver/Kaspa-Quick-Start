@@ -107,9 +107,10 @@ export async function issue(domain, email, { staging = false, onLine, duckdns = 
         'run',
         '--rm',
         ...volumeArgs(),
-        // The token goes in the environment rather than on the command line, so
-        // it never appears in a process listing on this machine.
-        ...(duckdns ? ['-e', `DUCKDNS_SUBDOMAIN=${duckdns.subdomain}`, '-e', `DUCKDNS_TOKEN=${duckdns.token}`] : []),
+        // The token is passed by name only (`-e DUCKDNS_TOKEN`), its value coming from the
+        // docker client's own environment, so it never appears in a process listing on this
+        // machine (KQS-011).
+        ...(duckdns ? ['-e', `DUCKDNS_SUBDOMAIN=${duckdns.subdomain}`, '-e', 'DUCKDNS_TOKEN'] : []),
         IMAGE,
         'certonly',
         ...(duckdns
@@ -138,7 +139,7 @@ export async function issue(domain, email, { staging = false, onLine, duckdns = 
         ...(duckdns?.wildcard ? ['--cert-name', domain, '-d', duckdns.wildcard] : ['-d', domain]),
     ];
     if (staging) args.push('--staging');
-    return docker(args, { onLine, timeoutMs: 5 * 60_000 });
+    return docker(args, { onLine, timeoutMs: 5 * 60_000, env: tokenEnv(duckdns) });
 }
 
 /**
@@ -187,7 +188,7 @@ export async function renew({ onLine, duckdns = null } = {}) {
             'run',
             '--rm',
             ...volumeArgs(),
-            ...(duckdns ? ['-e', `DUCKDNS_SUBDOMAIN=${duckdns.subdomain}`, '-e', `DUCKDNS_TOKEN=${duckdns.token}`] : []),
+            ...(duckdns ? ['-e', `DUCKDNS_SUBDOMAIN=${duckdns.subdomain}`, '-e', 'DUCKDNS_TOKEN'] : []),
             IMAGE,
             'renew',
             // No --webroot here on purpose. Flags passed to `renew` override
@@ -198,9 +199,12 @@ export async function renew({ onLine, duckdns = null } = {}) {
             // already records its own, webroot ones included.
             '--non-interactive',
         ],
-        { onLine, timeoutMs: 10 * 60_000 },
+        { onLine, timeoutMs: 10 * 60_000, env: tokenEnv(duckdns) },
     );
 }
+
+/** The DuckDNS token for `-e DUCKDNS_TOKEN` to pick up, without it ever being on argv. */
+const tokenEnv = (duckdns) => (duckdns ? { DUCKDNS_TOKEN: duckdns.token } : undefined);
 
 export async function revokeAndDelete(domain, { onLine } = {}) {
     return docker(

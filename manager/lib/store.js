@@ -117,9 +117,11 @@ export function readJson(file, fallback) {
     }
 }
 
-export function writeJson(file, value) {
+export function writeJson(file, value, { mode } = {}) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+    fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, { encoding: 'utf8', ...(mode ? { mode } : {}) });
+    // `mode` only applies when the file is created; an existing one is tightened too.
+    if (mode) fs.chmodSync(file, mode);
 }
 
 // Recursive defaults fill so a config written by an older version keeps working
@@ -154,7 +156,17 @@ export const loadTestnetNodeConfig = () => readJson(NODE_TESTNET_CONFIG_FILE, DE
 export const saveTestnetNodeConfig = (cfg) => writeJson(NODE_TESTNET_CONFIG_FILE, cfg);
 
 export const loadManagerConfig = () => readJson(MANAGER_CONFIG_FILE, DEFAULT_MANAGER_CONFIG);
-export const saveManagerConfig = (cfg) => writeJson(MANAGER_CONFIG_FILE, cfg);
+// Holds the DuckDNS token, so only its owner may read it (KQS-011).
+export const saveManagerConfig = (cfg) => writeJson(MANAGER_CONFIG_FILE, cfg, { mode: 0o600 });
+
+/** Tighten a manager.json written by an older version (world-readable). */
+export function protectManagerConfig() {
+    try {
+        fs.chmodSync(MANAGER_CONFIG_FILE, 0o600);
+    } catch {
+        /* not written yet */
+    }
+}
 
 export const loadProxies = () => readJson(PROXIES_FILE, []);
 export const saveProxies = (list) => writeJson(PROXIES_FILE, list);
@@ -183,6 +195,11 @@ export function readEnvFile() {
 // Rewrites in place, preserving comments and key order. The file is a bind
 // mount of a single host file, so it must never be replaced via rename.
 export function updateEnvFile(updates) {
+    // One value per line, so a line break in a value would write keys of its own -- an
+    // ADMIN_PASSWORD_HASH= among them (KQS-010). Nothing legitimate contains one.
+    for (const [key, value] of Object.entries(updates)) {
+        if (/[\r\n\0]/.test(String(value))) throw new Error(`Refusing to write ${key}: the value contains a line break.`);
+    }
     let raw = '';
     try {
         raw = fs.readFileSync(ENV_FILE, 'utf8');
