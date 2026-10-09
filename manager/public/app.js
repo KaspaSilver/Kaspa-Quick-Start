@@ -6593,7 +6593,6 @@ async function loadKachatDomains(indexerStatus = null) {
         note.textContent = `Warning: the server follows registry ${live.slice(0, 12)}…, not the verified ${String(sm.registryCovenantId).slice(0, 12)}…. Run Updates → Update to hand it over.`;
     } else if (!d.installed) {
         note.textContent =
-            (where === 'mainnet' ? 'There is no mainnet .kachat registry yet: installing gets everything ready, and the switch works once kachat-domains publishes one. ' : '') +
             'Installing builds the registry tooling (once, shared by both networks) and the names server, which only compiles the names parts of KaChat-Indexer. It needs only the node.';
     } else if (!sm) {
         note.textContent = `Installed. There is no ${d.network} registry yet, so there is nothing to start. Updates → Update picks one up once kachat-domains publishes it.`;

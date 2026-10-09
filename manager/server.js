@@ -3453,7 +3453,7 @@ route('GET', /^\/api\/names\/rules$/, async (req, res, match, url) => {
             res,
             404,
             N.network === 'mainnet'
-                ? 'There is no mainnet .kachat registry yet. Its rules show here once kachat-domains publishes one.'
+                ? 'Install .kachat Domains in the Mainnet view to see the rules of the mainnet registry it verifies.'
                 : 'Install .kachat Domains to see the rules of the registry it verifies.',
         );
     }
