@@ -3625,6 +3625,20 @@ async function buildNamesServer(net, onLine, { fresh = false } = {}) {
     if (latest) updateEnvFile({ KACHAT_NAMES_SERVER_COMMIT: latest.sha });
 }
 
+/**
+ * The tooling image may come from the other network's install and predate this network's
+ * registry (mainnet went live after testnet's tooling was built): rebuild it at the latest
+ * commit once and publish again before giving up on it.
+ */
+async function refreshTooling(net, onLine) {
+    const N = kachatDomains.NETWORKS[net];
+    const latest = await selfservice.latestCommit({ repo: kachatDomains.REPO, ref: kachatDomains.ref() });
+    if (latest.sha === (await kachatDomains.installedRevision())) return;
+    onLine(`The registry tooling here has no ${N.network} registry; updating it to ${latest.sha.slice(0, 12)}.`);
+    await kachatDomains.build(latest.sha, onLine);
+    await kachatDomains.publish(onLine);
+}
+
 for (const net of Object.keys(kachatDomains.NETWORKS)) {
     const N = kachatDomains.NETWORKS[net];
     const other = net === 'mainnet' ? 'testnet' : 'mainnet';
@@ -3651,17 +3665,7 @@ for (const net of Object.keys(kachatDomains.NETWORKS)) {
                     onLine('The registry tooling is already here (shared by both networks); not rebuilding it.');
                 }
                 await kachatDomains.publish(onLine);
-                // The image may come from the other network's install and predate this network's
-                // registry (mainnet went live after testnet's tooling was built): rebuild it at
-                // the latest commit once and publish again before giving up on it.
-                if (!kachatDomains.summaryFor(net)) {
-                    const latest = await selfservice.latestCommit({ repo: kachatDomains.REPO, ref: kachatDomains.ref() });
-                    if (latest.sha !== (await kachatDomains.installedRevision())) {
-                        onLine(`The registry tooling here has no ${N.network} registry; updating it to ${latest.sha.slice(0, 12)}.`);
-                        await kachatDomains.build(latest.sha, onLine);
-                        await kachatDomains.publish(onLine);
-                    }
-                }
+                if (!kachatDomains.summaryFor(net)) await refreshTooling(net, onLine);
                 const sm = kachatDomains.summaryFor(net);
                 await useNamesManifest(net, sm ? N.manifestFile : '', onLine, { restart: false });
                 await namesPushTarget(net);
@@ -3682,6 +3686,7 @@ for (const net of Object.keys(kachatDomains.NETWORKS)) {
                 }
                 try {
                     if (!kachatDomains.summaryFor(net)) await kachatDomains.publish(onLine);
+                    if (!kachatDomains.summaryFor(net)) await refreshTooling(net, onLine);
                     if (!kachatDomains.summaryFor(net)) {
                         throw new Error(`There is no ${N.network} .kachat registry yet, so there is nothing for the server to follow. Updates → Update picks one up once kachat-domains publishes it.`);
                     }

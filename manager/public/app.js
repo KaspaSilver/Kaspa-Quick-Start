@@ -1145,6 +1145,8 @@ const SERVICE_ACTIONS = {
     // No sidebar row: its switch lives on the indexer's Translation tab.
     translate: start('translate'),
     proxy: start('proxy'),
+    // Mainnet's unit (the Testnet view maps the switch to kachat-domains-testnet).
+    'kachat-domains': start('kachat-domains'),
 };
 
 const SERVICE_NAMES = {
@@ -1196,8 +1198,9 @@ for (const input of document.querySelectorAll('[data-service]')) {
         // generic start/stop route; mainnet keeps its bespoke actions (the node's
         // start/stop is a dedicated endpoint, not /api/services/node).
         const unitKey = effectiveService(service);
-        const request =
-            unitKey === service ? SERVICE_ACTIONS[service] : (on) => start(unitKey)(on);
+        // Anything without a bespoke action goes through the generic route, so a new switch can
+        // never fail in the browser for want of an entry here.
+        const request = unitKey === service ? (SERVICE_ACTIONS[service] ?? start(service)) : (on) => start(unitKey)(on);
 
         const job = await runAction({
             key: unitKey,
