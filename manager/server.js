@@ -3701,6 +3701,7 @@ for (const net of Object.keys(kachatDomains.NETWORKS)) {
                 }
                 if (!keepData) {
                     fs.rmSync(path.join(NAMES_DIR, N.manifestFile), { force: true });
+                    fs.rmSync(path.join(NAMES_DIR, kachatDomains.summaryFile(net)), { force: true });
                     if (!otherKeeps) fs.rmSync(path.join(NAMES_DIR, kachatDomains.SUMMARY_FILE), { force: true });
                     onLine(`Removed the published ${N.label} manifest${otherKeeps ? '' : ' and its summary'}.`);
                 }

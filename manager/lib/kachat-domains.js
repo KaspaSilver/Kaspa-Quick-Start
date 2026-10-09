@@ -119,22 +119,28 @@ export function summary() {
     }
 }
 
+/** Each network's own verify summary, written by `publish` (kachat-domains docs/KQS.md §5). */
+export const summaryFile = (net) => `kachat-domains-${NETWORKS[net].network}.json`;
+
 /**
  * The verified summary for one network, or null when the tool has published nothing for it.
- * Today's summary covers one network (`network`); a later one may list several under
- * `networks` (an array or an object keyed by network), and both shapes are read.
+ * `publish` writes one per network (`kachat-domains-<network>.json`); images from before that
+ * wrote only `kachat-domains.json` (testnet-10), which is still read as the fallback. A summary
+ * counts only while the manifest it describes is there.
  */
 export function summaryFor(net) {
     const want = NETWORKS[net].network;
-    const s = summary();
-    if (!s) return null;
-    if (s.networks) {
-        const list = Array.isArray(s.networks) ? s.networks : Object.entries(s.networks).map(([k, v]) => ({ network: k, ...v }));
-        const hit = list.find((n) => n?.network === want);
-        return hit ? { ok: s.ok, commit: s.commit, ...hit } : null;
+    const hasManifest = fs.existsSync(path.join(NAMES_DIR, NETWORKS[net].manifestFile));
+    let own = null;
+    try {
+        own = JSON.parse(fs.readFileSync(path.join(NAMES_DIR, summaryFile(net)), 'utf8'));
+    } catch {
+        /* not written by this image, or not deployed on this network */
     }
-    if (s.network !== want) return null;
-    return fs.existsSync(path.join(NAMES_DIR, NETWORKS[net].manifestFile)) ? s : null;
+    if (own?.ok && own.network === want) return hasManifest ? own : null;
+    const s = summary();
+    if (!s || s.network !== want) return null;
+    return hasManifest ? s : null;
 }
 
 /**
@@ -165,14 +171,20 @@ export async function build(sha, onLine) {
  */
 export async function publish(onLine) {
     fs.mkdirSync(NAMES_DIR, { recursive: true });
-    onLine('Verifying the manifest against the contract source, then publishing it.');
-    await docker(['run', '--rm', '-v', `${hostPath('conf', 'names')}:/names`, imageTag(), 'publish', '/names'], {
-        onLine,
-        timeoutMs: 10 * 60_000,
-    });
-    const s = summary();
-    if (!s?.ok) throw new Error('publish finished but wrote no verified summary.');
-    return s;
+    onLine('Verifying each network\'s manifest against the contract source, then publishing it.');
+    try {
+        await docker(['run', '--rm', '-v', `${hostPath('conf', 'names')}:/names`, imageTag(), 'publish', '/names'], {
+            onLine,
+            timeoutMs: 10 * 60_000,
+        });
+    } catch (err) {
+        // `publish` verifies each network on its own: one that fails gets nothing written and
+        // keeps its previous verified manifest, while the others are still published, and
+        // the exit is 1 (docs/KQS.md §5). Only nothing verified anywhere is a failure here.
+        if (!Object.keys(NETWORKS).some((n) => summaryFor(n))) throw err;
+        onLine(`A network failed verification and keeps its previous manifest: ${err.message}`);
+    }
+    if (!Object.keys(NETWORKS).some((n) => summaryFor(n))) throw new Error('publish finished but wrote no verified summary.');
 }
 
 /** One line naming what a summary verified. */
