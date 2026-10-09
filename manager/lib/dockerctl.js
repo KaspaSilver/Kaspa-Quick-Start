@@ -302,6 +302,36 @@ export async function diskUsage(volume = 'kaspa-node-data') {
 }
 
 /**
+ * Answer from the last value at once and refresh in the background when it is older than
+ * `ttlMs` (one refresh at a time). The status poll must never wait on `docker system df -v`
+ * or a `du` walk: they take seconds to tens of seconds on a big stack, and nothing on the
+ * dashboard showed until they finished (docs/HANDOFF-PANEL-STATUS-SPEED.md). `null` until
+ * the first answer; the UI already shows a dash for that.
+ */
+function staleWhileRevalidate(fn, ttlMs) {
+    let value = null;
+    let at = 0;
+    let inFlight = null;
+    return () => {
+        if (!inFlight && Date.now() - at >= ttlMs) {
+            inFlight = fn()
+                .then((v) => {
+                    if (v != null) value = v;
+                    at = Date.now();
+                })
+                .catch(() => {})
+                .finally(() => {
+                    inFlight = null;
+                });
+        }
+        return value;
+    };
+}
+
+export const diskUsageCached = staleWhileRevalidate(() => diskUsage(), 60_000);
+export const dataBreakdownCached = staleWhileRevalidate(() => dataBreakdown(), 60_000);
+
+/**
  * Exact byte counts for the parts of the node's data directory.
  *
  * `docker system df` reports a volume as text like "19.58GB", which is four

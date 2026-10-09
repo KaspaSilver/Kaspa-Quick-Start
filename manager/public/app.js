@@ -13,6 +13,25 @@ const el = (sel, root = document) => root.querySelector(sel);
 
 // ------------------------------------------------------------------- api ---
 
+/**
+ * A poller that never stacks: while the previous call is still waiting, the next tick is
+ * skipped. A slow /api/status (a node restarting) used to start a new request every few
+ * seconds until the browser's six connections per origin were all taken, and every click
+ * queued behind them, so the panel looked frozen (docs/HANDOFF-PANEL-STATUS-SPEED.md).
+ */
+function noOverlap(fn) {
+    let running = false;
+    return async (...args) => {
+        if (running) return;
+        running = true;
+        try {
+            return await fn(...args);
+        } finally {
+            running = false;
+        }
+    };
+}
+
 async function api(path, { method = 'GET', body } = {}) {
     const res = await fetch(path, {
         method,
@@ -1269,7 +1288,7 @@ window.addEventListener('resize', () => {
 let pollTimer = null;
 const startPolling = () => {
     refreshStatus();
-    if (!pollTimer) pollTimer = setInterval(refreshStatus, 4000);
+    if (!pollTimer) pollTimer = setInterval(refreshStatusPoll, 4000);
 };
 const stopPolling = () => {
     clearInterval(pollTimer);
@@ -1310,6 +1329,8 @@ function reloadIfManagerRestarted(id) {
     location.reload();
     return true;
 }
+
+const refreshStatusPoll = noOverlap(() => refreshStatus());
 
 async function refreshStatus() {
     let s;
@@ -2781,7 +2802,7 @@ function setMiningPolling(active) {
     miningTimer = null;
     if (active) {
         refreshMiningStats();
-        miningTimer = setInterval(refreshMiningStats, 5000);
+        miningTimer = setInterval(noOverlap(refreshMiningStats), 5000);
     }
 }
 
@@ -2860,7 +2881,7 @@ function setHostPolling(active) {
     hostTimer = null;
     if (active) {
         refreshHost();
-        hostTimer = setInterval(refreshHost, 10_000);
+        hostTimer = setInterval(noOverlap(refreshHost), 10_000);
     }
 }
 
@@ -4608,7 +4629,7 @@ function setKachatPolling(active) {
     kachatTimer = null;
     if (active) {
         refreshKachatPanel();
-        kachatTimer = setInterval(refreshKachatPanel, 8000);
+        kachatTimer = setInterval(noOverlap(refreshKachatPanel), 8000);
     }
 }
 
@@ -7721,8 +7742,9 @@ function connectJobs() {
 // so how stale it is, is how stale they are.
 // Only while the panel itself is on screen: before sign-in (or before the first password is
 // set) every request answers 401, and polling would only bounce the auth screens around.
+const loadServicesPoll = noOverlap(() => loadServices());
 setInterval(() => {
-    if (!$('app').classList.contains('hidden')) loadServices().catch(() => {});
+    if (!$('app').classList.contains('hidden')) loadServicesPoll().catch(() => {});
 }, 10_000);
 
 api('/api/session')

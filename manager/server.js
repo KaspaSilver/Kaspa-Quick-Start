@@ -524,17 +524,39 @@ route('GET', /^\/api\/host$/, async (req, res) => {
     sendJson(res, 200, await host.snapshot());
 });
 
+/**
+ * The node's RPC snapshot for the status poll, without waiting out a node that cannot answer:
+ * a stopped container or one that started seconds ago answers "not reachable" at once, and a
+ * failed getInfo is remembered for 5 s instead of reconnecting on every poll (each try could
+ * hold the request for a 6 s connect plus an 8 s call while the node restarts).
+ */
+const snapshotDown = new Map(); // client -> { until, snap }
+const STARTUP_GRACE_MS = 10_000;
+async function statusSnapshot(state, client = rpc) {
+    const blank = (error) => ({ reachable: false, info: null, dag: null, sync: null, peers: null, error });
+    if (!state.running) return blank('The node is not running.');
+    const started = Date.parse(state.startedAt || '');
+    if (Number.isFinite(started) && Date.now() - started < STARTUP_GRACE_MS) return blank('The node is starting.');
+    const down = snapshotDown.get(client);
+    if (down && Date.now() < down.until) return down.snap;
+    const snap = await nodeSnapshot(client);
+    if (snap.reachable) snapshotDown.delete(client);
+    else snapshotDown.set(client, { until: Date.now() + 5000, snap });
+    return snap;
+}
+
 route('GET', /^\/api\/status$/, async (req, res) => {
     const cfg = loadNodeConfig();
-    const [state, snapshot, version, published, disk, breakdown] = await Promise.all([
-        dockerctl.containerState(dockerctl.KASPAD_CONTAINER),
-        nodeSnapshot(),
+    const state = await dockerctl.containerState(dockerctl.KASPAD_CONTAINER);
+    const [snapshot, version, published] = await Promise.all([
+        statusSnapshot(state),
         updater.runningVersion(),
         dockerctl.publishedPorts(dockerctl.KASPAD_CONTAINER),
-        dockerctl.diskUsage(),
-        // Exact bytes, split into the part pruning drops and the part it does not.
-        dockerctl.dataBreakdown(),
     ]);
+    // Both slow (seconds to tens of seconds); answered from the last value, refreshed behind.
+    const disk = dockerctl.diskUsageCached();
+    // Exact bytes, split into the part pruning drops and the part it does not.
+    const breakdown = dockerctl.dataBreakdownCached();
 
     const peers = Array.isArray(snapshot.peers?.peerInfo) ? snapshot.peers.peerInfo : [];
     const inbound = peers.filter((p) => p.isOutbound === false).length;
@@ -771,9 +793,9 @@ let testnetStartedAt = null;
 route('GET', /^\/api\/status-testnet$/, async (req, res) => {
     const cfg = loadTestnetNodeConfig();
     rpcTestnet.setUrl(testnetRpcUrl(cfg));
-    const [state, snapshot, published] = await Promise.all([
-        dockerctl.containerState(KASPAD_TESTNET_CONTAINER),
-        nodeSnapshot(rpcTestnet),
+    const state = await dockerctl.containerState(KASPAD_TESTNET_CONTAINER);
+    const [snapshot, published] = await Promise.all([
+        statusSnapshot(state, rpcTestnet),
         dockerctl.publishedPorts(KASPAD_TESTNET_CONTAINER).catch(() => []),
     ]);
     const synced = Boolean(snapshot.sync?.isSynced ?? snapshot.info?.isSynced ?? false);
@@ -886,7 +908,14 @@ route('POST', /^\/api\/node\/(start|stop|restart)$/, async (req, res, match) => 
             recordAppliedArgs();
             syncProgress.reset();
         } else if (action === 'stop') await dockerctl.compose(['stop', KASPAD_SERVICE], { onLine, timeoutMs: 5 * 60_000 });
-        else await dockerctl.compose(['restart', KASPAD_SERVICE], { onLine, timeoutMs: 5 * 60_000 });
+        else {
+            // Restart = stop + start, so it also records the applied args and starts a fresh
+            // sync estimate, exactly as Start does (docs/HANDOFF-PANEL-STATUS-SPEED.md).
+            await dockerctl.compose(['stop', KASPAD_SERVICE], { onLine, timeoutMs: 5 * 60_000 });
+            await dockerctl.compose(['up', '-d', KASPAD_SERVICE], { onLine });
+            recordAppliedArgs();
+            syncProgress.reset();
+        }
     });
     sendJson(res, 202, { ok: true, jobId: job.id });
 });
