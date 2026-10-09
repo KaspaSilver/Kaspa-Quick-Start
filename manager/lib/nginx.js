@@ -5,10 +5,17 @@ import { LETSENCRYPT_DIR, NGINX_CONF_D, NGINX_SNIPPETS } from './paths.js';
 import { docker, PROXY_CONTAINER } from './dockerctl.js';
 import { htpasswdLine } from './auth.js';
 import { ports } from './kaspad-args.js';
-import { APPS, KACHAT_TESTNET_PUBLISH } from './apps.js';
+import { APPS, KACHAT_TESTNET_PUBLISH, KACHAT_NAMES_PUBLISH, KACHAT_NAMES_TESTNET_PUBLISH, NAMES_ROUTES } from './apps.js';
 
 /** How a published app kind is served: its hostname, port, routes, blocks, CORS. */
-const publishOf = (kind) => (kind === 'kachat-testnet' ? KACHAT_TESTNET_PUBLISH : APPS[kind]?.publish);
+const OWN_PUBLISH = {
+    'kachat-testnet': KACHAT_TESTNET_PUBLISH,
+    'kachat-names': KACHAT_NAMES_PUBLISH,
+    'kachat-names-testnet': KACHAT_NAMES_TESTNET_PUBLISH,
+};
+const publishOf = (kind) => OWN_PUBLISH[kind] ?? APPS[kind]?.publish;
+/** The .kachat Domains server that takes the names paths on each indexer's name. */
+const NAMES_FOR_INDEXER = { kachat: KACHAT_NAMES_PUBLISH, 'kachat-testnet': KACHAT_NAMES_TESTNET_PUBLISH };
 import { DASHBOARD_PORT } from './bridge.js';
 
 const DOMAIN_RE = /^(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))*$/;
@@ -44,6 +51,8 @@ export const TARGET_KINDS = {
     bridge: { label: 'Stratum bridge dashboard', websocket: false, grpc: false },
     kachat: { label: 'KaChat indexer API', websocket: true, grpc: false },
     'kachat-testnet': { label: 'KaChat indexer API (testnet-10)', websocket: true, grpc: false },
+    'kachat-names': { label: '.kachat Domains API', websocket: false, grpc: false },
+    'kachat-names-testnet': { label: '.kachat Domains API (testnet-10)', websocket: false, grpc: false },
     desktop: { label: 'KaChat Desktop', websocket: true, grpc: false },
     nextcloud: { label: 'Nextcloud', websocket: false, grpc: false },
     custom: { label: 'Custom host:port', websocket: false, grpc: false },
@@ -147,6 +156,8 @@ export function upstreamFor(proxy, nodeConfig) {
             return { scheme: 'http', host: 'bridge', port: DASHBOARD_PORT, websocket: false, grpc: false };
         case 'kachat':
         case 'kachat-testnet':
+        case 'kachat-names':
+        case 'kachat-names-testnet':
         case 'desktop':
         case 'nextcloud': {
             const publish = publishOf(proxy.target.kind);
@@ -380,7 +391,7 @@ function locationBlock(up, proxy, indent = '        ', { strip = null, cors = nu
  * answer. Everything here comes from the app's own declaration in apps.js, so
  * the knowledge of which port serves what stays with the app.
  */
-function extraLocations(proxy, { hsts = false } = {}) {
+function extraLocations(proxy, { hsts = false, namesOn = {} } = {}) {
     const publish = publishOf(proxy.target?.kind);
     if (!publish) return [];
 
@@ -406,6 +417,18 @@ function extraLocations(proxy, { hsts = false } = {}) {
         lines.push('    }');
         lines.push('');
     }
+    // .kachat names run in their own server (.kachat Domains). On an indexer's name, its paths
+    // go there once that network has it installed, so the apps keep one indexer URL.
+    const names = NAMES_FOR_INDEXER[proxy.target?.kind];
+    if (names && namesOn[proxy.target.kind]) {
+        const up = { scheme: 'http', host: names.hostname, port: names.port, websocket: false, grpc: false, maxBodySize: null };
+        for (const location of NAMES_ROUTES) {
+            lines.push(`    location ^~ ${location} {`);
+            lines.push(locationBlock(up, proxy, '        ', { cors, hsts }));
+            lines.push('    }');
+            lines.push('');
+        }
+    }
     return lines;
 }
 
@@ -421,7 +444,7 @@ function extraLocations(proxy, { hsts = false } = {}) {
  * before the request reaches them, so the service behind it needs to know
  * nothing about being proxied.
  */
-export function renderDomain(domain, hosts, nodeConfig, { publicHttpsPort = 443 } = {}) {
+export function renderDomain(domain, hosts, nodeConfig, { publicHttpsPort = 443, namesOn = {} } = {}) {
     const live = hosts.filter((p) => p.enabled !== false);
     // Longest path first: nginx picks the longest matching prefix anyway, and
     // reading the file top to bottom should agree with what it does.
@@ -456,7 +479,7 @@ export function renderDomain(domain, hosts, nodeConfig, { publicHttpsPort = 443 
             const path = normalizePath(proxy.path);
             const cors = publishOf(proxy.target?.kind)?.cors ?? null;
             if (path === '/') {
-                lines.push(...extraLocations(proxy, { hsts: useTls }));
+                lines.push(...extraLocations(proxy, { hsts: useTls, namesOn }));
                 lines.push('    location / {');
                 lines.push(locationBlock(up, proxy, '        ', { cors, hsts: useTls }));
                 lines.push('    }');

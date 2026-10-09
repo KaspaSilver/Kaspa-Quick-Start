@@ -152,7 +152,7 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/><circle cx="19" cy="17" r="2"/></svg>
           <span class="label">.kachat Domains</span>
         </button>
-        <label class="switch mini" title="Serve the .kachat registry from this network's indexer, or stop serving it">
+        <label class="switch mini" title="Start or stop this network's .kachat Domains server">
           <input type="checkbox" data-service="kachat-domains" aria-label="Turn .kachat Domains on or off">
           <span class="track"></span>
         </label>
@@ -1645,10 +1645,9 @@
 </section>
 
     <!--
-      .kachat names registry. The registry is a set of Kaspa covenant contracts the
-      viewed network's indexer follows; see KACHAT_NAMES_INDEXER.md. This tab installs,
-      configures and watches that module, separately per network. Mainnet has no
-      registry yet, so its side installs but has nothing to switch on until one exists.
+      .kachat Domains: the names registry on its own server per network (KaChat-Indexer
+      docs/KACHAT_NAMES_STANDALONE.md). It needs the node and nothing else. Mainnet has no
+      registry yet, so its side installs but has nothing to start until one exists.
     -->
     <section id="tab-names" class="tab">
       <nav class="subnav" aria-label=".kachat Domains">
@@ -1669,18 +1668,21 @@
             </div>
             <p class="muted">
               <code>.kachat</code> names are a registry of Kaspa covenant contracts (names, gaps and
-              marketplace offers). This app installs the registry's own tooling from
-              <code>KaspaSilver/kachat-domains</code>: it recompiles the contracts, refuses any
-              manifest that does not match them, and hands the verified manifest to this network's
-              KaChat indexer, which then serves names to the KaChat apps. Mainnet and testnet
-              install and switch on separately; the tooling image is shared.
+              marketplace offers). This app is everything needed to serve them yourself, exactly as
+              the KaChat apps read them: the registry's own tooling from
+              <code>KaspaSilver/kachat-domains</code> (it recompiles the contracts and refuses any
+              manifest that does not match them), and a names server that follows the verified
+              registry from your node and answers <code>/names</code>, <code>/market</code>,
+              <code>/offers</code>, <code>/profiles</code> and <code>/identity</code>. It needs only
+              Kaspad, not the KaChat Indexer. When the indexer is published on a name here, those
+              paths on that name go to this server. Mainnet and testnet install separately.
             </p>
             <dl class="kv vertical" id="kd-facts"></dl>
-            <p class="hint" id="kd-note">Its switch in the sidebar hands the registry to this network's indexer.</p>
+            <p class="hint" id="kd-note">Its switch in the sidebar starts this network's names server.</p>
           </article>
 
           <article class="card span2">
-            <div class="node-head"><h3>What the indexer follows</h3>
+            <div class="node-head"><h3>What the server follows</h3>
               <span id="names-state" class="tag">–</span>
               <button type="button" id="names-refresh" class="ghost" style="margin-left:auto">Refresh</button>
             </div>
@@ -1691,7 +1693,7 @@
               <div><dt>Indexed DAA</dt><dd id="names-daa">–</dd></div>
               <div><dt>Synced</dt><dd id="names-synced">–</dd></div>
             </dl>
-            <p class="hint" id="names-status-note">Waiting for the indexer's names module.</p>
+            <p class="hint" id="names-status-note">Waiting for the .kachat Domains server.</p>
           </article>
         </div>
       </div>
@@ -1702,11 +1704,10 @@
           <article class="card span2">
             <h3>.kachat Domains software</h3>
             <p class="muted">
-              Checks <code>KaspaSilver/kachat-domains</code> for a newer commit, rebuilds the tooling,
-              verifies the manifest again and hands it to each network's indexer that has it on. An indexer is only
-              restarted when the registry or its manifest actually changed, so an update that only
-              touches documentation never interrupts it. If verification fails, the current manifest
-              stays in use.
+              Checks <code>KaspaSilver/kachat-domains</code> (the registry tooling) and
+              <code>KaspaSilver/KaChat-Indexer</code> (the names server) for newer commits, rebuilds
+              both, verifies the manifest again, and brings a running server back on the new build.
+              If verification fails, the current manifest stays in use.
             </p>
             <dl class="kv vertical">
               <div><dt>Source</dt><dd id="kd-source">–</dd></div>
@@ -1723,12 +1724,12 @@
       </div>
 
       <!-- The rules of the contract that is running: fixed contract rules plus the live
-           numbers from the manifest the viewed network's indexer follows (/api/names/rules?net=). -->
+           numbers from the manifest the viewed network's names server follows (/api/names/rules?net=). -->
       <div id="sub-names-rules" class="subtab">
         <div id="names-rules"><p class="muted">Loading the rules…</p></div>
       </div>
 
-      <!-- The names module's own log: the viewed network's indexer's [names] lines only. -->
+      <!-- The names server's log (names + profiles followers, API) and its database. -->
       <div id="sub-names-log" class="subtab">
         <div class="svclog" data-svclog="names" data-title=".kachat Domains log"></div>
       </div>

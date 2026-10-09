@@ -336,7 +336,11 @@ export async function install(key, onLine = () => {}) {
     const unit = unitFor(key);
     if (!unit) throw new Error(`No such service: ${key}`);
     if (unit.hooks) return unit.hooks.install(onLine);
+    return composeInstall(unit, onLine);
+}
 
+/** The compose half of install(), for a unit whose hooks also own compose services. */
+export async function composeInstall(unit, onLine = () => {}) {
     // Some units generate config before their container is created (e.g. the
     // testnet node writes its --testnet args file).
     await unit.prepare?.(onLine);
@@ -358,7 +362,11 @@ export async function setRunning(key, running, onLine = () => {}) {
     const unit = unitFor(key);
     if (!unit) throw new Error(`No such service: ${key}`);
     if (unit.hooks) return unit.hooks.setRunning(running, onLine);
+    return composeSetRunning(unit, running, onLine);
+}
 
+/** The compose half of setRunning(). */
+export async function composeSetRunning(unit, running, onLine = () => {}) {
     if (running) {
         // Re-generate config on start too, so a settings change made while the
         // service was stopped takes effect (same reason `up -d` is used below).
@@ -390,7 +398,11 @@ export async function uninstall(key, { keepData = false, onLine = () => {} } = {
     if (unit.hooks) return unit.hooks.uninstall({ keepData, onLine });
     // Something that owns files rather than containers removes its own.
     if (unit.uninstall) return unit.uninstall(onLine);
+    return composeUninstall(unit, { keepData, onLine });
+}
 
+/** The compose half of uninstall(). */
+export async function composeUninstall(unit, { keepData = false, onLine = () => {} } = {}) {
     const removed = { containers: [], volumes: [], images: [] };
 
     onLine(`Removing the ${unit.label} containers.`);

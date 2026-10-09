@@ -11,19 +11,26 @@ import { readEnvFile } from './store.js';
  * KaspaSilver/kachat-domains publishes a Docker image holding the registry's contracts, params,
  * compiled artifacts and deployed manifests, plus a `publish` command that recompiles the
  * contracts, refuses any manifest that does not match them, and only then writes the verified
- * manifest (and a summary, kachat-domains.json) into conf/names for the testnet indexer.
+ * manifest (and a summary, kachat-domains.json) into conf/names for the names servers.
  *
- * It is a tool, not a service: no long-running container and no port. Every action is a
- * `docker run --rm`. Updating it is how a redeployed registry reaches the indexer, with no
- * Kaspa Quick Start commit per deployment.
+ * The tool itself has no long-running container and no port: every action is a
+ * `docker run --rm`. Updating it is how a redeployed registry reaches the names servers, with
+ * no Kaspa Quick Start commit per deployment.
  */
 export const REPO = 'KaspaSilver/kachat-domains';
 export const SUMMARY_FILE = 'kachat-domains.json';
+const REVISION_LABEL = 'org.opencontainers.image.revision';
+
+export const ref = () => (readEnvFile().KACHAT_DOMAINS_REF || 'main').trim();
+export const imageTag = () => `kaspa-one-click/kachat-domains:${ref()}`;
 
 /**
- * One tool image serves both networks; each network installs and switches on its own.
- * `unit` is the lifecycle key, `marker` the .env flag that records the install (the image is
- * shared, so it cannot be the record), and the rest is that network's indexer.
+ * .kachat Domains on one network is two things: the shared tool image above (verifies and
+ * publishes the manifest), and that network's own names server -- a Postgres plus the
+ * KaChat-Indexer `kachat-names` image (names follower, profiles follower, names-only API;
+ * docs/KACHAT_NAMES_STANDALONE.md there). It needs the node and nothing else: no KaChat
+ * Indexer. `compose` is the lifecycle shape of that server, `marker` the .env flag the proxy
+ * reads to route the names paths on the indexer's name to it.
  *
  * Mainnet has no registry yet: `publish` only writes the testnet-10 manifest today. When
  * kachat-domains publishes `kachat-names-mainnet.json` (docs/KQS.md, "Network switch"), the
@@ -36,10 +43,24 @@ export const NETWORKS = {
         marker: 'KACHAT_DOMAINS_MAINNET',
         manifestFile: 'kachat-names-mainnet.json',
         envManifest: 'KACHAT_NAMES_MANIFEST_MAINNET',
+        envPush: 'KACHAT_NAMES_PUSH_URL_MAINNET',
+        nodeUnit: 'node',
         indexerUnit: 'kachat',
-        container: 'kaspa-node-kachat',
-        host: 'kachat-app',
+        indexerHost: 'kachat-app',
+        container: 'kaspa-node-kachat-names',
+        host: 'kachat-names',
         label: 'mainnet',
+        compose: {
+            label: '.kachat Domains server',
+            profile: 'kachat-names',
+            services: ['kachat-names-db', 'kachat-names'],
+            containers: ['kaspa-node-kachat-names', 'kaspa-node-kachat-names-db'],
+            primary: 'kaspa-node-kachat-names',
+            volumes: ['kaspa-node-kachat-names-db-data'],
+            images: ['kaspa-one-click/kachat-names'],
+            buildable: ['kachat-names'],
+            data: 'the indexed .kachat registry and its Postgres database',
+        },
     },
     testnet: {
         network: 'testnet-10',
@@ -47,31 +68,34 @@ export const NETWORKS = {
         marker: 'KACHAT_DOMAINS_TESTNET',
         manifestFile: 'kachat-names-testnet-10.json',
         envManifest: 'KACHAT_NAMES_MANIFEST_TESTNET',
+        envPush: 'KACHAT_NAMES_PUSH_URL_TESTNET',
+        nodeUnit: 'node-testnet',
         indexerUnit: 'kachat-testnet',
-        container: 'kaspa-node-kachat-testnet',
-        host: 'kachat-app-testnet',
+        indexerHost: 'kachat-app-testnet',
+        container: 'kaspa-node-kachat-names-testnet',
+        host: 'kachat-names-testnet',
         label: 'testnet',
+        compose: {
+            label: '.kachat Domains server (testnet-10)',
+            profile: 'testnet-kachat-names',
+            services: ['kachat-names-db-testnet', 'kachat-names-testnet'],
+            containers: ['kaspa-node-kachat-names-testnet', 'kaspa-node-kachat-names-db-testnet'],
+            primary: 'kaspa-node-kachat-names-testnet',
+            volumes: ['kaspa-node-kachat-names-db-testnet-data'],
+            images: ['kaspa-one-click/kachat-names-testnet'],
+            buildable: ['kachat-names-testnet'],
+            data: 'the indexed testnet .kachat registry and its Postgres database',
+        },
     },
 };
 export const netOf = (v) => (v === 'testnet' ? 'testnet' : 'mainnet');
 
-/**
- * Whether this network has .kachat Domains installed. The testnet install predates the
- * marker, so a testnet with the image and no marker at all counts as installed.
- */
-export function installedFor(net, revision) {
-    if (revision === null) return false;
-    const v = readEnvFile()[NETWORKS[net].marker];
-    return net === 'testnet' ? v !== '0' : v === '1';
-}
+/** Whether the proxy should send this network's names paths to its .kachat Domains server. */
+export const routed = (net) => readEnvFile()[NETWORKS[net].marker] === '1';
 
-/** The network's indexer follows the manifest this tool published for it. */
-export const onFor = (net) =>
+/** The network's server is set to follow the manifest this tool published for it. */
+export const manifestSet = (net) =>
     (readEnvFile()[NETWORKS[net].envManifest] || '').trim() === `/names/${NETWORKS[net].manifestFile}` && Boolean(summaryFor(net));
-const REVISION_LABEL = 'org.opencontainers.image.revision';
-
-export const ref = () => (readEnvFile().KACHAT_DOMAINS_REF || 'main').trim();
-export const imageTag = () => `kaspa-one-click/kachat-domains:${ref()}`;
 
 /** The commit the installed image was built from, or null when it is not installed. */
 export async function installedRevision() {

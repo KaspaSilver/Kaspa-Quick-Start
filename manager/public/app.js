@@ -349,7 +349,10 @@ const SVC_LOGS = {
         ],
         testnet: [['kachat-testnet', 'indexer'], ['kachat-profiles-testnet', 'profiles'], ['kachat-db-testnet', 'postgres']],
     },
-    names: { mainnet: [['kachat-names', '.kachat Domains']], testnet: [['kachat-names-testnet', '.kachat Domains']] },
+    names: {
+        mainnet: [['kachat-names', '.kachat Domains'], ['kachat-names-db', 'postgres']],
+        testnet: [['kachat-names-testnet', '.kachat Domains'], ['kachat-names-db-testnet', 'postgres']],
+    },
     desktop: { mainnet: [['kachat-desktop', 'kachat desktop']] },
     bot: { mainnet: [['kachat-bot', 'kachat bot']] },
     push: { mainnet: [['kachat-push', 'push service']], testnet: [['kachat-push-testnet', 'push service']] },
@@ -5533,11 +5536,11 @@ const UNINSTALL_COPY = {
     'node-testnet': 'the synced testnet-10 chain. The mainnet node is not touched',
     'mining-testnet': "the testnet bridge's share and block records. Mainnet mining is not touched",
     'cpuminer-testnet': 'only the miner container. Your testnet rewards stay on the chain at your address. Mainnet mining is not touched',
-    'kachat-testnet': 'the testnet indexed history, the .kachat registry tables and their Postgres database. The mainnet indexer is not touched',
+    'kachat-testnet': 'the testnet indexed history and its Postgres database. The mainnet indexer and .kachat Domains are not touched',
     'kachat-domains':
-        'the verified mainnet registry manifest it published, and its tooling image unless testnet still uses it. The mainnet indexer stops serving .kachat names until it is installed and switched on again. Testnet is not touched',
+        'the mainnet .kachat registry it indexed (its Postgres database) and the verified manifest it published. The registry tooling stays if testnet still uses it. .kachat names stop answering on mainnet until it is installed again. Testnet is not touched',
     'kachat-domains-testnet':
-        'the verified testnet-10 registry manifest it published, and its tooling image unless mainnet still uses it. The testnet indexer stops serving .kachat names until it is installed and switched on again. Mainnet is not touched',
+        'the testnet .kachat registry it indexed (its Postgres database) and the verified manifest it published. The registry tooling stays if mainnet still uses it. .kachat names stop answering on testnet until it is installed again. Mainnet is not touched',
 };
 
 async function loadServices() {
@@ -5697,7 +5700,7 @@ function renderUninstallCards() {
         // testnet indexer has its own image (KQS-008) and removes it like any service.
         const testnetUnit = TESTNET_UNIT_VALUES.has(key) && key !== 'kachat-testnet' && key !== 'kachat-domains-testnet';
         const removes = key.startsWith('kachat-domains')
-            ? `Removes it from ${networkView} only. It has no container: the tooling image is shared by both networks and is removed only when neither has it installed.`
+            ? `Removes the ${networkView} .kachat Domains server (its containers and image) and, by default, its database. The registry tooling is shared by both networks and goes only when neither has it installed.`
             : testnetUnit
               ? 'Removes the testnet containers and, by default, their data. The images are shared with mainnet, so they are kept (Global settings → Clear cache frees them when nothing uses them).'
               : 'Removes the containers, the images built for it, and by default its data.';
@@ -6564,8 +6567,8 @@ async function loadKachatDomains(indexerStatus = null) {
     const short = (h) => (h ? `<code title="${escapeHtml(h)}">${escapeHtml(String(h).slice(0, 16))}…</code>` : '–');
 
     // Overview
-    tag.textContent = !d.installed ? 'not installed' : d.inUse ? 'installed · in use' : 'installed';
-    tag.className = `tag ${!d.installed ? 'off' : d.inUse ? 'ok' : 'warn'}`;
+    tag.textContent = !d.installed ? 'not installed' : d.running ? 'running' : 'stopped';
+    tag.className = `tag ${!d.installed ? 'off' : d.running ? 'ok' : 'warn'}`;
     const rows = [];
     if (sm) {
         rows.push(
@@ -6574,31 +6577,39 @@ async function loadKachatDomains(indexerStatus = null) {
             ['Verified manifest', short(sm.manifestSha256)],
         );
     }
-    if (d.installed) rows.push(['Installed commit', short(d.revision)]);
+    if (d.revision) rows.push(['Registry tooling', short(d.revision)]);
+    if (d.serverBuilt) rows.push(['Server (KaChat-Indexer)', short(d.serverBuilt)]);
     $('kd-facts').innerHTML = rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('');
     const note = $('kd-note');
     const live = indexerStatus?.manifestRegistryCovenantId;
     const where = networkView === 'testnet' ? 'testnet' : 'mainnet';
     const view = networkView === 'testnet' ? 'Testnet' : 'Mainnet';
-    if (!d.indexerInstalled) {
-        note.textContent = `Install the ${where} KaChat Indexer first (Indexer, in this ${view} view): .kachat Domains hands its registry to that indexer.`;
+    const push = d.indexerInstalled
+        ? ` Name pushes go out through the ${where} KaChat Indexer's push service.`
+        : ' No KaChat Indexer here, so it sends no name pushes (nothing else is missing).';
+    if (!d.nodeInstalled) {
+        note.textContent = `Install the ${where} Kaspad first (Kaspad, in this ${view} view). That node is all .kachat Domains needs: it runs its own names server and database, with no KaChat Indexer.`;
     } else if (sm && live && live.toLowerCase() !== String(sm.registryCovenantId).toLowerCase()) {
-        note.textContent = `Warning: the indexer follows registry ${live.slice(0, 12)}…, not the verified ${String(sm.registryCovenantId).slice(0, 12)}…. Run Updates → Update to hand it over.`;
+        note.textContent = `Warning: the server follows registry ${live.slice(0, 12)}…, not the verified ${String(sm.registryCovenantId).slice(0, 12)}…. Run Updates → Update to hand it over.`;
     } else if (!d.installed) {
         note.textContent =
-            (where === 'mainnet' ? 'There is no mainnet .kachat registry yet: installing gets the tooling ready, and the switch works once kachat-domains publishes one. ' : '') +
-            'The first install compiles the tooling and can take 15 minutes or more (once: both networks share it).';
+            (where === 'mainnet' ? 'There is no mainnet .kachat registry yet: installing gets everything ready, and the switch works once kachat-domains publishes one. ' : '') +
+            'Installing builds the registry tooling (once, shared by both networks) and the names server, which only compiles the names parts of KaChat-Indexer. It needs only the node.';
     } else if (!sm) {
-        note.textContent = `Installed. There is no ${d.network} registry yet, so there is nothing to switch on. Updates → Update picks one up once kachat-domains publishes it.`;
-    } else if (!d.inUse) {
-        note.textContent = `Installed and switched off: the ${where} indexer is not serving this registry. Turn it on with its switch in the sidebar.`;
+        note.textContent = `Installed. There is no ${d.network} registry yet, so there is nothing to start. Updates → Update picks one up once kachat-domains publishes it.`;
+    } else if (!d.running) {
+        note.textContent = `Installed and stopped. Turn it on with its switch in the sidebar.${push}`;
+    } else if (!d.nodeRunning) {
+        note.textContent = `Running, but the ${where} Kaspad is stopped: the server waits for it.`;
     } else {
-        note.textContent = `On: the ${where} indexer serves this verified registry. Updates are under the Updates tab.`;
+        note.textContent = `On: this machine serves the .kachat names, profiles and identity API for ${d.network}.${push}`;
     }
 
     // Updates
     $('kd-source').textContent = `${d.repo} @ ${d.ref}`;
-    $('kd-installed').innerHTML = d.installed ? short(d.revision) : 'not installed';
+    $('kd-installed').innerHTML = d.installed
+        ? `tooling ${short(d.revision)}${d.serverBuilt ? ` · server ${short(d.serverBuilt)}` : ''}`
+        : 'not installed';
     $('kd-check').disabled = !d.installed;
     if (!d.installed) {
         $('kd-update').disabled = true;
@@ -6612,7 +6623,9 @@ $('kd-check')?.addEventListener('click', async () => {
     status.textContent = 'Checking GitHub…';
     try {
         const r = await api('/api/kachat-domains/check');
-        $('kd-latest').innerHTML = `<code>${escapeHtml(r.latest.sha.slice(0, 12))}</code> ${escapeHtml(r.latest.message || '')}`;
+        $('kd-latest').innerHTML =
+            `tooling <code>${escapeHtml(r.latest.sha.slice(0, 12))}</code> ${escapeHtml(r.latest.message || '')}` +
+            `<br>server <code>${escapeHtml(r.server.sha.slice(0, 12))}</code> ${escapeHtml(r.server.message || '')}`;
         $('kd-update').disabled = !r.updateAvailable;
         status.className = `update-status ${r.updateAvailable ? 'available' : 'current'}`;
         status.textContent = r.updateAvailable ? 'A newer version is available.' : 'Up to date.';
@@ -6626,7 +6639,7 @@ $('kd-update')?.addEventListener('click', async () => {
     await runAction({
         key: effectiveService('kachat-domains'),
         title: 'Updating .kachat Domains',
-        note: 'Rebuilds the shared tooling, verifies the manifests again, and restarts an indexer only if it has .kachat Domains on and its registry changed.',
+        note: 'Rebuilds the registry tooling and the names server, verifies the manifests again, and brings a running server back on the new build.',
         request: () => api('/api/kachat-domains/update', { method: 'POST' }),
     });
     $('kd-update').disabled = true;

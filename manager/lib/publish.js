@@ -51,9 +51,30 @@ export const SERVICES = [
         rootOnly: true,
         testnet: true,
         label: 'KaChat indexer (testnet-10)',
-        detail: 'The testnet indexer: KaPosts, chat, push and .kachat names, on a name of its own.',
+        detail: 'The testnet indexer: KaPosts, chat and push, plus .kachat names when .kachat Domains is installed, on a name of its own.',
         afterNote:
-            'Send https://{domain} to the KaChat app owner: it becomes the apps\' testnet indexer. Install and start the testnet Kaspad and Indexer from the Testnet view if they are not running, and set the .kachat manifest under .kachat so names answer here.',
+            'Send https://{domain} to the KaChat app owner: it becomes the apps\' testnet indexer. Install and start the testnet Kaspad and Indexer from the Testnet view if they are not running. Names answer here once .kachat Domains is installed and on (the proxy routes the names paths to it).',
+    },
+    {
+        // The .kachat Domains server on a name of its own: for a machine that runs it without
+        // a KaChat indexer. On an indexer's name its paths are routed there automatically.
+        key: 'kachat-names',
+        kind: 'kachat-names',
+        rootOnly: true,
+        label: '.kachat Domains',
+        detail: 'The .kachat names, profiles and identity API, for a server without the KaChat indexer.',
+        afterNote:
+            'https://{domain} now answers /names, /market, /offers, /profiles and /identity. If this machine also publishes the KaChat indexer, you do not need this: the indexer name already routes those paths to .kachat Domains.',
+    },
+    {
+        key: 'kachat-names-testnet',
+        kind: 'kachat-names-testnet',
+        rootOnly: true,
+        testnet: true,
+        label: '.kachat Domains (testnet-10)',
+        detail: 'The testnet .kachat names, profiles and identity API, for a server without the testnet indexer.',
+        afterNote:
+            'https://{domain} now answers the testnet /names, /market, /offers, /profiles and /identity. If the testnet indexer is published too, its name already routes those paths here.',
     },
     {
         key: 'desktop',
@@ -159,6 +180,16 @@ export function readiness({ nodeCfg = loadNodeConfig(), appsCfg = loadAppsConfig
         ready: true,
         reason: 'Answers once the testnet Kaspad and Indexer are installed and running (Testnet view).',
     };
+
+    for (const [key, where] of [
+        ['kachat-names', 'Mainnet'],
+        ['kachat-names-testnet', 'Testnet'],
+    ]) {
+        state[key] = {
+            ready: true,
+            reason: `Answers once .kachat Domains is installed and switched on (${where} view, .kachat Domains).`,
+        };
+    }
 
     // The panel is the one service where publishing is refused rather than
     // merely unready: without a password, a domain would hand the Docker daemon

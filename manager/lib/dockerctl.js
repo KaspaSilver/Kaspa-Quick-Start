@@ -45,6 +45,8 @@ export const STACK_CONTAINERS = [
     { key: 'bridge', label: 'stratum bridge', name: BRIDGE_CONTAINER },
     { key: 'kachat', label: 'kachat indexer', name: KACHAT_CONTAINER },
     { key: 'kachat-db', label: 'kachat postgres', name: 'kaspa-node-kachat-db' },
+    { key: 'kachat-names', label: '.kachat Domains', name: 'kaspa-node-kachat-names' },
+    { key: 'kachat-names-db', label: '.kachat Domains postgres', name: 'kaspa-node-kachat-names-db' },
     { key: 'libretranslate', label: 'libretranslate', name: 'kaspa-node-libretranslate' },
     { key: 'kachat-desktop', label: 'kachat desktop', name: 'kaspa-node-kachat-desktop' },
     { key: 'kachat-bot', label: 'kachat bot', name: 'kaspa-node-kachat-bot' },
@@ -60,6 +62,8 @@ export const STACK_CONTAINERS = [
     { key: 'cpuminer-testnet', label: 'cpu miner (testnet)', name: 'kaspa-node-cpuminer-testnet' },
     { key: 'kachat-testnet', label: 'kachat indexer (testnet)', name: 'kaspa-node-kachat-testnet' },
     { key: 'kachat-db-testnet', label: 'kachat postgres (testnet)', name: 'kaspa-node-kachat-db-testnet' },
+    { key: 'kachat-names-testnet', label: '.kachat Domains (testnet)', name: 'kaspa-node-kachat-names-testnet' },
+    { key: 'kachat-names-db-testnet', label: '.kachat Domains postgres (testnet)', name: 'kaspa-node-kachat-names-db-testnet' },
 ];
 
 /**
@@ -68,8 +72,6 @@ export const STACK_CONTAINERS = [
  * (`match`, a substring or a RegExp tested on the colour-free line); each is listed
  * right after the container it reads.
  *
- * - .kachat names: each indexer's `[names]` lines
- *   (docs/KACHAT_NAMES_PANEL_LOGS.md in KaChat-Indexer).
  * - Address profiles: the profiles follower's `[profiles]` lines (both networks;
  *   docs/KACHAT_PROFILES.md in KaChat-Indexer).
  * - Push service: the chat indexer's push lines (`[Push]`, `[PushRegistry]`,
@@ -79,14 +81,6 @@ const PUSH_MATCH = /push/i;
 export const FILTERED_LOG_SOURCES = [
     { key: 'kachat-push', label: 'push service', name: KACHAT_CONTAINER, match: PUSH_MATCH, after: 'kachat' },
     { key: 'kachat-profiles', label: 'address profiles', name: KACHAT_CONTAINER, match: '[profiles]', after: 'kachat' },
-    { key: 'kachat-names', label: '.kachat Domains', name: KACHAT_CONTAINER, match: '[names]', after: 'kachat' },
-    {
-        key: 'kachat-names-testnet',
-        label: '.kachat Domains (testnet)',
-        name: 'kaspa-node-kachat-testnet',
-        match: '[names]',
-        after: 'kachat-testnet',
-    },
     {
         key: 'kachat-profiles-testnet',
         label: 'address profiles (testnet)',

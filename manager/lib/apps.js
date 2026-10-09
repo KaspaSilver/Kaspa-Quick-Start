@@ -155,6 +155,16 @@ export const APPS = {
  */
 export const KACHAT_TESTNET_PUBLISH = { ...APPS.kachat.publish, hostname: 'kachat-app-testnet' };
 
+/**
+ * The .kachat Domains servers (names follower + names-only API, docs/KACHAT_NAMES_STANDALONE.md
+ * in KaChat-Indexer). Published on a name of their own, or riding on the indexer's name: the
+ * paths in NAMES_ROUTES are what the apps call for names, and the proxy sends them here
+ * whenever this network has .kachat Domains installed.
+ */
+export const KACHAT_NAMES_PUBLISH = { hostname: 'kachat-names', port: 3080, websocket: false };
+export const KACHAT_NAMES_TESTNET_PUBLISH = { ...KACHAT_NAMES_PUBLISH, hostname: 'kachat-names-testnet' };
+export const NAMES_ROUTES = ['/names', '/market', '/offers', '/profiles', '/identity'];
+
 export const DEFAULT_APPS_CONFIG = {
     kachat: {
         enabled: false,
@@ -433,6 +443,8 @@ const randomSecret = (bytes = 24) => crypto.randomBytes(bytes).toString('base64u
  */
 const SECRET_VOLUMES = {
     KACHAT_DB_PASSWORD: ['kaspa-node-kachat-db-data', 'kaspa-node-kachat-db-testnet-data'],
+    KACHAT_NAMES_DB_PASSWORD: ['kaspa-node-kachat-names-db-data'],
+    KACHAT_NAMES_DB_PASSWORD_TESTNET: ['kaspa-node-kachat-names-db-testnet-data'],
     NEXTCLOUD_DB_PASSWORD: ['kaspa-node-nextcloud-db-data'],
     NEXTCLOUD_DB_ROOT_PASSWORD: ['kaspa-node-nextcloud-db-data'],
     NEXTCLOUD_ADMIN_PASSWORD: ['kaspa-node-nextcloud-data'],
@@ -453,6 +465,8 @@ export async function ensureSecrets(log = () => {}) {
     const need = {
         KACHAT_DB_PASSWORD: () => randomSecret(24),
         KACHAT_PUSH_SECRET: () => randomSecret(32),
+        KACHAT_NAMES_DB_PASSWORD: () => randomSecret(24),
+        KACHAT_NAMES_DB_PASSWORD_TESTNET: () => randomSecret(24),
         NEXTCLOUD_DB_PASSWORD: () => randomSecret(24),
         NEXTCLOUD_DB_ROOT_PASSWORD: () => randomSecret(24),
         NEXTCLOUD_IMAGINARY_SECRET: () => randomSecret(24),

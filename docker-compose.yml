@@ -136,9 +136,6 @@ services:
       NETWORK_TYPE: ${KACHAT_NETWORK:-mainnet}
       # Address profiles follower's first-run start block (hex); empty = the node's pruning point.
       KACHAT_PROFILES_SCAN_FROM: ${KACHAT_PROFILES_SCAN_FROM:-}
-      # .kachat names module: off (idle) until .kachat Domains hands it a verified mainnet
-      # manifest. There is no mainnet registry yet, so this stays empty for now.
-      KACHAT_NAMES_MANIFEST: ${KACHAT_NAMES_MANIFEST_MAINNET:-}
       DB_USER: ${KACHAT_DB_USER:-kachat}
       DB_PASSWORD: ${KACHAT_DB_PASSWORD:-}
       DB_NAME: ${KACHAT_DB_NAME:-kachat}
@@ -167,8 +164,6 @@ services:
       RUST_LOG: info
     volumes:
       - kachat-app-data:/app/data
-      # .kachat names manifests (published by .kachat Domains), read-only.
-      - ${STACK_DIR}/conf/names:/names:ro
       # Mobile push credentials (Firebase service-account.json + Apple .p8),
       # written 0600 by the Push Service panel. Read-only to the indexer.
       - ${STACK_DIR}/conf/push:/push:ro
@@ -628,17 +623,14 @@ services:
       APNS_TEAM_ID: ${KACHAT_APNS_TEAM_ID:-}
       APNS_ENVIRONMENT: ${KACHAT_APNS_ENVIRONMENT:-production}
       APNS_KEY_PATH: /push/apns/AuthKey.p8
-      # .kachat names module (KACHAT_NAMES_INDEXER.md parts B-E): off until
-      # .kachat Domains hands it a verified manifest. Mounted read-only below.
-      KACHAT_NAMES_MANIFEST: ${KACHAT_NAMES_MANIFEST_TESTNET:-}
+      # No .kachat names here: the registry runs in .kachat Domains' own server
+      # (kachat-names-testnet below), which the proxy routes the names paths to.
       # Profiles follower start (hex); empty = the names manifest's scanFrom, else the pruning point.
       KACHAT_PROFILES_SCAN_FROM: ${KACHAT_PROFILES_SCAN_FROM_TESTNET:-}
       RUST_LOG: info
     volumes:
       - kachat-app-testnet-data:/app/data
       - ${STACK_DIR}/conf/push:/push:ro
-      # .kachat names manifests (published by .kachat Domains), read-only.
-      - ${STACK_DIR}/conf/names:/names:ro
       - ${STACK_DIR}/kachat/run-admin.sh:/app/run-admin.sh:ro
       - ${STACK_DIR}/kachat/run-webserver.sh:/app/run-webserver.sh:ro
       - ${STACK_DIR}/kachat/run-processor.sh:/app/run-processor.sh:ro
@@ -647,6 +639,138 @@ services:
       - kaspa
     depends_on:
       - kachat-db-testnet
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "3" }
+
+  # ---- .kachat Domains server (mainnet) ------------------------------------
+  # The names registry on its own (KaChat-Indexer docs/KACHAT_NAMES_STANDALONE.md): names
+  # follower + profiles follower + names-only API, with its own Postgres. Needs the node and
+  # nothing else. The proxy routes /names, /market, /offers, /profiles and /identity on the
+  # indexer's name here, and it can have a name of its own.
+  kachat-names-db:
+    image: postgres:17-alpine
+    container_name: kaspa-node-kachat-names-db
+    hostname: kachat-names-db
+    profiles: ["kachat-names"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kachat_names
+      POSTGRES_PASSWORD: ${KACHAT_NAMES_DB_PASSWORD:-}
+      POSTGRES_DB: kachat_names
+    volumes:
+      - kachat-names-db-data:/var/lib/postgresql/data
+    networks:
+      - kaspa
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kachat_names"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  kachat-names:
+    image: kaspa-one-click/kachat-names:${KACHAT_REF:-main}
+    build:
+      context: ${KACHAT_REPO:-https://github.com/KaspaSilver/KaChat-Indexer.git}#${KACHAT_REF:-main}
+      dockerfile: docker/kachat-names/Dockerfile
+    container_name: kaspa-node-kachat-names
+    hostname: kachat-names
+    profiles: ["kachat-names"]
+    restart: unless-stopped
+    stop_grace_period: 30s
+    environment:
+      KASPA_NODE_WBORSH_URL: ws://kaspad:${KACHAT_NODE_PORT:-17110}
+      NETWORK: mainnet
+      # The verified manifest .kachat Domains published (empty = names follower idle).
+      KACHAT_NAMES_MANIFEST: ${KACHAT_NAMES_MANIFEST_MAINNET:-}
+      KACHAT_PROFILES_SCAN_FROM: ${KACHAT_PROFILES_SCAN_FROM:-}
+      DB_HOST: kachat-names-db
+      DB_PORT: 5432
+      DB_NAME: kachat_names
+      DB_USER: kachat_names
+      DB_PASSWORD: ${KACHAT_NAMES_DB_PASSWORD:-}
+      WEBSERVER_PORT: 3080
+      # Name pushes go to the KaChat indexer's push service when the panel
+      # sets this (it does when that indexer is installed); empty = no pushes.
+      PUSH_INTERNAL_URL: ${KACHAT_NAMES_PUSH_URL_MAINNET:-}
+      INTERNAL_PUSH_SECRET: ${KACHAT_PUSH_SECRET:-}
+      RUST_LOG: info
+    volumes:
+      - ${STACK_DIR}/conf/names:/names:ro
+    networks:
+      - kaspa
+    depends_on:
+      - kachat-names-db
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "3" }
+
+  # ---- .kachat Domains server (testnet-10) ------------------------------------
+  # The names registry on its own (KaChat-Indexer docs/KACHAT_NAMES_STANDALONE.md): names
+  # follower + profiles follower + names-only API, with its own Postgres. Needs the node and
+  # nothing else. The proxy routes /names, /market, /offers, /profiles and /identity on the
+  # testnet indexer's name here, and it can have a name of its own.
+  kachat-names-db-testnet:
+    image: postgres:17-alpine
+    container_name: kaspa-node-kachat-names-db-testnet
+    hostname: kachat-names-db-testnet
+    profiles: ["testnet-kachat-names"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kachat_names
+      POSTGRES_PASSWORD: ${KACHAT_NAMES_DB_PASSWORD_TESTNET:-}
+      POSTGRES_DB: kachat_names
+    volumes:
+      - kachat-names-db-testnet-data:/var/lib/postgresql/data
+    networks:
+      - kaspa
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kachat_names"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  kachat-names-testnet:
+    image: kaspa-one-click/kachat-names-testnet:${KACHAT_REF:-main}
+    build:
+      context: ${KACHAT_REPO:-https://github.com/KaspaSilver/KaChat-Indexer.git}#${KACHAT_REF:-main}
+      dockerfile: docker/kachat-names/Dockerfile
+    container_name: kaspa-node-kachat-names-testnet
+    hostname: kachat-names-testnet
+    profiles: ["testnet-kachat-names"]
+    restart: unless-stopped
+    stop_grace_period: 30s
+    environment:
+      KASPA_NODE_WBORSH_URL: ws://kaspad-testnet:${KACHAT_TESTNET_NODE_PORT:-17210}
+      NETWORK: testnet-10
+      # The verified manifest .kachat Domains published (empty = names follower idle).
+      KACHAT_NAMES_MANIFEST: ${KACHAT_NAMES_MANIFEST_TESTNET:-}
+      KACHAT_PROFILES_SCAN_FROM: ${KACHAT_PROFILES_SCAN_FROM_TESTNET:-}
+      DB_HOST: kachat-names-db-testnet
+      DB_PORT: 5432
+      DB_NAME: kachat_names
+      DB_USER: kachat_names
+      DB_PASSWORD: ${KACHAT_NAMES_DB_PASSWORD_TESTNET:-}
+      WEBSERVER_PORT: 3080
+      # Name pushes go to the testnet KaChat indexer's push service when the panel
+      # sets this (it does when that indexer is installed); empty = no pushes.
+      PUSH_INTERNAL_URL: ${KACHAT_NAMES_PUSH_URL_TESTNET:-}
+      INTERNAL_PUSH_SECRET: ${KACHAT_PUSH_SECRET:-}
+      RUST_LOG: info
+    volumes:
+      - ${STACK_DIR}/conf/names:/names:ro
+    networks:
+      - kaspa
+    depends_on:
+      - kachat-names-db-testnet
     logging:
       driver: json-file
       options: { max-size: "20m", max-file: "3" }
@@ -679,3 +803,8 @@ volumes:
     name: kaspa-node-kachat-db-testnet-data
   kachat-app-testnet-data:
     name: kaspa-node-kachat-app-testnet-data
+  # .kachat Domains servers' own databases.
+  kachat-names-db-data:
+    name: kaspa-node-kachat-names-db-data
+  kachat-names-db-testnet-data:
+    name: kaspa-node-kachat-names-db-testnet-data
