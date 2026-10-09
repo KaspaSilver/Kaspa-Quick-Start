@@ -23,8 +23,13 @@
 # the indexer; here it is a container of its own on the stack network. Without
 # this the panel's Translation tab reports the engine as down while it is
 # running perfectly well.
+# The password comes from DB_PASSWORD in the environment (kachat-audits IDX-011), never this
+# command line -- unless the image predates that and its binary still needs the flag: then
+# pass it, so updating the panel before the indexer never breaks a restart.
+set --
+/app/kachat-admin --help 2>/dev/null | grep -q 'env: DB_PASSWORD' || set -- --db-password "${DB_PASSWORD}"
 exec /app/kachat-admin \
   --db-host "${DB_HOST}" --db-port "${DB_PORT}" --db-name "${DB_NAME}" \
-  --db-user "${DB_USER}" --db-password "${DB_PASSWORD}" \
+  --db-user "${DB_USER}" "$@" \
   --db-max-connections 4 --bind-address "0.0.0.0:${ADMIN_PORT}" \
   --libretranslate-url "${LIBRETRANSLATE_URL:-http://libretranslate:5000}"
