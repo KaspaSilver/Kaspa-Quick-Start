@@ -3467,6 +3467,8 @@ route('GET', /^\/api\/names\/rules$/, async (req, res, match, url) => {
         registryCovenantId: m.registryCovenantId ?? null,
         priceCovenantId: m.priceCovenantId ?? null,
         genesis: { txid: m.genesis?.txid ?? null, scanFrom: m.genesis?.scanFrom ?? null },
+        // Registry v5: the predecessor snapshot it imports (params.migration has the rest).
+        snapshot: m.snapshot ? { names: m.snapshot.names ?? null, atMs: m.snapshot.atMs ?? null } : null,
         params: m.params ?? {},
         templateHashes: hashes,
     });

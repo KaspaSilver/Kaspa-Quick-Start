@@ -8229,6 +8229,30 @@ function spanOf(ms) {
 const TIER_LABELS = ['1 character', '2 characters', '3 characters', '4 characters', '5 or more characters'];
 const TIER_KEYS = ['len1', 'len2', 'len3', 'len4', 'len5plus'];
 
+/**
+ * Registry v5 migrates its predecessor (kachat-domains docs/REGISTRY_V5.md): every name in the
+ * old registry's snapshot can be imported with its owner and paid period, and new registrations
+ * are refused until the import deadline.
+ */
+function migrationCard(r, p, short) {
+    const mig = p.migration;
+    if (!mig || !Number(mig.deadlineMs)) return '';
+    const opens = new Date(Number(mig.deadlineMs));
+    const open = Date.now() >= opens.getTime();
+    const names = r.snapshot?.names;
+    return `
+      <article class="card span2 rules">
+        <h3>Migration from the previous registry</h3>
+        <ul class="plain">
+          <li>This registry replaces registry ${short(mig.predecessorRegistryId)}. Contracts can't be upgraded, so a new
+            version is a new registry that imports a snapshot of the old one${names != null ? ` (${escapeHtml(String(names))} name${names === 1 ? '' : 's'})` : ''}.</li>
+          <li>An imported name keeps its owner and its paid period exactly as the snapshot recorded them. The contract checks
+            each import against the snapshot's root (${short(mig.root)}), and only the name's owner or the migration sponsor can submit it.</li>
+          <li>New registrations ${open ? 'opened' : 'open'} at <strong>${escapeHtml(opens.toLocaleString())}</strong>${open ? '' : '. Until then the contract refuses them, so every imported name is safe from being taken first'}.</li>
+        </ul>
+      </article>`;
+}
+
 async function loadNamesRules() {
     const box = $('names-rules');
     let r;
@@ -8283,6 +8307,7 @@ async function loadNamesRules() {
           <li>Each registered name holds a <strong>${kasOf(p.bond)}</strong> deposit, returned when it is released or reclaimed.</li>
         </ul>
       </article>
+${migrationCard(r, p, short)}
 
       <article class="card span2 rules">
         <h3>Prices (per ${esc(period)})</h3>
