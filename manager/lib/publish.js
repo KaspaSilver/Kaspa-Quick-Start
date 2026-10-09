@@ -269,7 +269,7 @@ export function setupPlan(key, { nodeCfg = loadNodeConfig(), appsCfg = loadAppsC
         steps.push({
             key: 'borsh',
             label: "Make the node's wRPC Borsh reachable",
-            detail: 'That is the endpoint being published. Set wRPC Borsh to Local under Kaspad, Ports, or enable the KaChat indexer — either turns the listener on. The node restarts to pick it up.',
+            detail: 'That is the endpoint being published. Set wRPC Borsh to Local under Kaspad, Ports, or enable the KaChat indexer. Either turns the listener on. The node restarts to pick it up.',
             done: borshReachable(nodeCfg, appsCfg),
         });
     }

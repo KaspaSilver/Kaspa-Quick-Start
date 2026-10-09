@@ -719,7 +719,7 @@ function scheduleExternalIpWatch(log = () => {}) {
         const was = cfg.peering.externalip || '(none)';
         cfg.peering.externalip = ip;
         saveNodeConfig(cfg);
-        jobs.start(`External IP changed (${was} → ${ip}) — updating the node`, (onLine) => applyNodeConfig(cfg, onLine));
+        jobs.start(`External IP changed (${was} → ${ip}): updating the node`, (onLine) => applyNodeConfig(cfg, onLine));
         log(`external-ip: ${was} -> ${ip}`);
     };
 
@@ -1418,6 +1418,21 @@ route('POST', /^\/api\/proxy\/renew$/, async (req, res) => {
  * auth, allowlists, custom snippets, certificates. This is the same data asked
  * a friendlier question.
  */
+/**
+ * Docker Desktop (macOS, Windows) hands every client to nginx from one gateway address, so a
+ * per-IP limit there is one bucket shared by everyone (kachat-audits KQS-021). On such a host
+ * the indexer and names servers get the old, shared-sized limit, and the panel says why a
+ * public indexer belongs on a Linux host. Read live at boot; applies when those containers are
+ * next (re)created, as every env setting does.
+ */
+let sharedClientAddress = false;
+async function applySharedClientLimits() {
+    const system = (await host.machine().catch(() => null))?.system || '';
+    sharedClientAddress = /docker desktop/i.test(system);
+    const want = sharedClientAddress ? '600000' : '6000';
+    if (readEnvFile().WEBSERVER_RATE_LIMIT !== want) updateEnvFile({ WEBSERVER_RATE_LIMIT: want });
+}
+
 route('GET', /^\/api\/publish$/, async (req, res) => {
     const proxies = loadProxies();
     sendJson(res, 200, {
@@ -1435,6 +1450,8 @@ route('GET', /^\/api\/publish$/, async (req, res) => {
             rootFree: !proxies.some((p) => p.domain === d.domain && (p.path ?? '/') === '/'),
         })),
         enabled: proxyEnabled(),
+        // Docker Desktop: every client looks like one address to nginx (KQS-021).
+        sharedClientAddress,
         publicPorts: {
             http: loadManagerConfig().proxy.publicHttpPort ?? 80,
             https: loadManagerConfig().proxy.publicHttpsPort ?? 443,
@@ -4330,6 +4347,12 @@ async function bootstrap() {
     writeArgsFile(cfg, nodeSiblings());
     renderPortsOverride(cfg);
     nginx.writeAll(loadProxies(), cfg, renderOptions());
+    // A panel update can change what the vhosts say (e.g. X-Real-IP, IDX-021): apply it now
+    // rather than at the next proxy change.
+    if ((await dockerctl.containerState(dockerctl.PROXY_CONTAINER).catch(() => null))?.running) {
+        await nginx.reload().catch((e) => log('proxy reload at boot failed:', e.message));
+    }
+    await applySharedClientLimits();
     bridge.writeBridgeFiles(bridge.loadBridgeConfig(), cfg);
 
     const appsCfg = apps.loadAppsConfig();

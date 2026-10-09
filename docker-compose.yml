@@ -128,6 +128,9 @@ services:
     # corrupts the LSM metadata partition (upstream docs/RECOVERY-chat-metadata).
     stop_grace_period: 90s
     environment:
+      # Per client IP per minute; the panel raises it on Docker Desktop, where every client
+      # shares one address (kachat-audits KQS-021).
+      WEBSERVER_RATE_LIMIT: ${WEBSERVER_RATE_LIMIT:-6000}
       # Our node, over the internal network. BORSH wRPC is what it wants.
       KASPA_NODE_ADDRESS: kaspad
       KASPA_NODE_PORT: ${KACHAT_NODE_PORT:-17110}
@@ -594,6 +597,9 @@ services:
     restart: unless-stopped
     stop_grace_period: 90s
     environment:
+      # Per client IP per minute; the panel raises it on Docker Desktop, where every client
+      # shares one address (kachat-audits KQS-021).
+      WEBSERVER_RATE_LIMIT: ${WEBSERVER_RATE_LIMIT:-6000}
       # The TESTNET node on this network, BORSH wRPC on the testnet port (17210).
       KASPA_NODE_ADDRESS: kaspad-testnet
       KASPA_NODE_PORT: ${KACHAT_TESTNET_NODE_PORT:-17210}
@@ -683,6 +689,9 @@ services:
     restart: unless-stopped
     stop_grace_period: 30s
     environment:
+      # Per client IP per minute; the panel raises it on Docker Desktop, where every client
+      # shares one address (kachat-audits KQS-021).
+      WEBSERVER_RATE_LIMIT: ${WEBSERVER_RATE_LIMIT:-6000}
       KASPA_NODE_WBORSH_URL: ws://kaspad:${KACHAT_NAMES_NODE_PORT:-17110}
       NETWORK: mainnet
       # The verified manifest .kachat Domains published (empty = names follower idle).
@@ -749,6 +758,9 @@ services:
     restart: unless-stopped
     stop_grace_period: 30s
     environment:
+      # Per client IP per minute; the panel raises it on Docker Desktop, where every client
+      # shares one address (kachat-audits KQS-021).
+      WEBSERVER_RATE_LIMIT: ${WEBSERVER_RATE_LIMIT:-6000}
       KASPA_NODE_WBORSH_URL: ws://kaspad-testnet:${KACHAT_TESTNET_NODE_PORT:-17210}
       NETWORK: testnet-10
       # The verified manifest .kachat Domains published (empty = names follower idle).

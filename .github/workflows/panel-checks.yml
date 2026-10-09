@@ -1,0 +1,21 @@
+name: Panel checks
+
+# Cheap checks on every push: the panel's JavaScript parses, and its user-facing text has no
+# em dashes (kachat-audits KQS-022).
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: JavaScript parses
+        run: for f in manager/server.js manager/lib/*.js manager/public/app.js; do node --check "$f"; done
+      - name: No em dashes in panel text
+        run: node scripts/check-no-em-dash.mjs

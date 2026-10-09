@@ -928,7 +928,7 @@ function finishAction(job) {
     pendingAction.finished = true;
     $('action-spinner').hidden = true;
     $('action-cancel').hidden = true;
-    $('action-title').textContent = `${pendingAction.title} — ${cancelled ? 'cancelled' : ok ? 'done' : 'failed'}`;
+    $('action-title').textContent = `${pendingAction.title}: ${cancelled ? 'cancelled' : ok ? 'done' : 'failed'}`;
 
     // Full either way: the bar tracks the job reaching its end, not the job
     // succeeding. Which of those happened is the colour, the title and the last
@@ -1698,7 +1698,7 @@ function renderPorts(s) {
                   : now === 'local'
                     ? { cls: 'warn', text: 'reachable from this machine only (127.0.0.1)' }
                     : live
-                      ? { cls: 'ok', text: 'public — reachable from the network (0.0.0.0)' }
+                      ? { cls: 'ok', text: 'public, reachable from the network (0.0.0.0)' }
                       : { cls: '', text: 'applying…' };
             // Local is the base switch; Public sits on top of it, so it only
             // opens once the port is at least local. Pinned ports are always
@@ -1820,7 +1820,7 @@ $('check-update').addEventListener('click', async () => {
             }
             setUpdateStatus(status, 'available', text);
         } else {
-            setUpdateStatus(status, 'current', `Up to date — running ${r.current || '?'}, the newest release.`);
+            setUpdateStatus(status, 'current', `Up to date: running ${r.current || '?'}, the newest release.`);
         }
         if (r.notes) {
             $('release-notes').hidden = false;
@@ -2265,7 +2265,7 @@ function renderWorkers(workers) {
             const title =
                 `${w.worker || 'worker'} is ${status}` +
                 (w.wallet ? `\nPaying ${w.wallet}` : '') +
-                (ip ? `\nMining from ${ip} — click the name for its dashboard` : '') +
+                (ip ? `\nMining from ${ip}. Click the name for its dashboard` : '') +
                 `\n${fmtNum(w.stale)} stale, ${fmtNum(w.invalid)} invalid`;
             const label = escapeHtml(w.worker || '–');
             // The name links to the miner's own web dashboard when its address is
@@ -2753,7 +2753,7 @@ $('mining-check').addEventListener('click', async () => {
                 `${r.latest} is available (the bridge runs ${r.current || 'the current node release'}). Update the node under Kaspad, Updates to move the bridge to it as well.`,
             );
         } else {
-            setUpdateStatus(el, 'current', `Up to date — the bridge ships with node ${r.current || 'the newest release'}.`);
+            setUpdateStatus(el, 'current', `Up to date: the bridge ships with node ${r.current || 'the newest release'}.`);
         }
     } catch (e) {
         setUpdateStatus(el, 'error', e.message);
@@ -2936,12 +2936,12 @@ function renderPublicCheck(r) {
     $('public-facts').hidden = false;
     // Masked until its eye button is pressed (screen-recording safe).
     $('public-node-ip').innerHTML = r.ip ? `${privateValue(r.ip)} ${revealButton()}` : '–';
-    $('public-port').textContent = r.exposed ? `${r.port}` : `${r.port} — not published to the host`;
+    $('public-port').textContent = r.exposed ? `${r.port}` : `${r.port} (not published to the host)`;
     $('public-probe').textContent =
         r.probe?.open === true
-            ? `yes — ${r.probe.detail}`
+            ? `yes: ${r.probe.detail}`
             : r.probe?.open === false
-              ? `no — ${r.probe.detail}`
+              ? `no: ${r.probe.detail}`
               : r.probe?.detail || 'could not test';
     $('public-inbound').textContent = `${r.peers?.inbound ?? 0} in, ${r.peers?.outbound ?? 0} out`;
 
@@ -2959,7 +2959,7 @@ function renderPublicCheck(r) {
         help.hidden = false;
         help.innerHTML = !r.exposed
             ? `Your P2P port is not published to the host. Turn it on under <strong>Ports</strong>, then forward TCP port ${r.port} on your router to this machine.`
-            : `The port is published here, so the next step is your router: forward TCP port ${r.port} to this machine. Some home routers also refuse to connect back to your own address, which makes this test read worse than it is — an inbound peer above is the real proof.`;
+            : `The port is published here, so the next step is your router: forward TCP port ${r.port} to this machine. Some home routers also refuse to connect back to your own address, which makes this test read worse than it is. An inbound peer above is the real proof.`;
     }
 
     lastPublicGeo = r.geo ?? null;
@@ -4828,12 +4828,12 @@ $('tab-kachat').addEventListener('click', async (event) => {
 
     try {
         if (d.kachatDelContent) {
-            if (!await askConfirm('Delete this KaPosts item from the index?\n\nThis removes the indexer\'s stored copy only — it is still on chain, and a re-index would bring it back. This cannot be undone here.')) return;
+            if (!await askConfirm('Delete this KaPosts item from the index?\n\nThis removes the indexer\'s stored copy only. It is still on chain, and a re-index would bring it back. This cannot be undone here.')) return;
             await kachat('kaposts/delete', { method: 'POST', body: { tx_id: d.kachatDelContent } });
             toast('Deleted.');
             loadKachatKaposts();
         } else if (d.kachatDelBcast) {
-            if (!await askConfirm('Delete this public chat from the index?\n\nThis removes the indexer\'s stored copy only — it is still on chain, and a re-index would bring it back. This cannot be undone here.')) return;
+            if (!await askConfirm('Delete this public chat from the index?\n\nThis removes the indexer\'s stored copy only. It is still on chain, and a re-index would bring it back. This cannot be undone here.')) return;
             await kachat('broadcasts/delete', { method: 'POST', body: { tx_id: d.kachatDelBcast } });
             toast('Deleted.');
             loadKachatBroadcasts();
@@ -5132,6 +5132,7 @@ async function loadProxies() {
 async function loadPublish() {
     try {
         publishState = await api('/api/publish');
+        if ($('shared-client-notice')) $('shared-client-notice').hidden = !publishState.sharedClientAddress;
         if (publishState.publicPorts) {
             const p = publishState.publicPorts;
             $('ports-http').value = p.http;
@@ -5851,7 +5852,7 @@ async function loadBot() {
     $('bot-shows-alias').textContent = config.receiverAlias ? `@${config.receiverAlias}` : 'not set';
     $('bot-shows-min').textContent = config.minRewardKas > 0 ? `${config.minRewardKas} KAS` : 'every reward';
     $('bot-shows-key').textContent = config.hasKey ? 'stored' : 'not set';
-    $('bot-shows-network').textContent = app.network + (node.network === app.network ? '' : ` — the node is on ${node.network}`);
+    $('bot-shows-network').textContent = app.network + (node.network === app.network ? '' : ` (the node is on ${node.network})`);
 
     // Anything that stops it working, said once, at the top.
     const notice = $('bot-notice');
@@ -6463,9 +6464,9 @@ function renderBackupStatus(s) {
     if (s && s.running)
         msg = s.progress ? `${s.progress.label} (step ${s.progress.step} of ${s.progress.of})` : 'Backup running…';
     else if (s && s.last && s.last.ok)
-        msg = `Last backup ✓ ${new Date(s.last.at).toLocaleString()} — ${s.last.file}`;
+        msg = `Last backup ✓ ${new Date(s.last.at).toLocaleString()}: ${s.last.file}`;
     else if (s && s.last)
-        msg = `Last backup ✗ ${new Date(s.last.at).toLocaleString()} — ${s.last.error || 'failed'}`;
+        msg = `Last backup ✗ ${new Date(s.last.at).toLocaleString()}: ${s.last.error || 'failed'}`;
     else msg = 'No backup has run yet.';
     el.textContent = msg;
     el.hidden = false;
@@ -6493,16 +6494,16 @@ $('backup-detect')?.addEventListener('click', async () => {
     try {
         const { drives } = await api('/api/kachat/backup/drives');
         if (!drives.length) {
-            sel.innerHTML = '<option value="">no external drives found — type a path below</option>';
+            sel.innerHTML = '<option value="">no external drives found, type a path below</option>';
             return;
         }
         sel.innerHTML =
-            '<option value="">— pick a detected drive —</option>' +
+            '<option value="">Pick a detected drive</option>' +
             drives
-                .map((d) => `<option value="${escapeHtml(d.path)}">${escapeHtml(d.label)} — ${escapeHtml(d.path)}</option>`)
+                .map((d) => `<option value="${escapeHtml(d.path)}">${escapeHtml(d.label)} (${escapeHtml(d.path)})</option>`)
                 .join('');
     } catch (e) {
-        sel.innerHTML = '<option value="">detection failed — type a path below</option>';
+        sel.innerHTML = '<option value="">detection failed, type a path below</option>';
     }
 });
 $('backup-drive')?.addEventListener('change', () => {
@@ -6873,13 +6874,13 @@ function renderDomainChoices() {
                 if (acct) {
                     rows.push(`<label class="domain-choice">
         <input type="radio" name="setup-domain" value="" data-newkind="prefix" checked>
-        <span><strong>Give it a name of its own</strong><small>use <code>${escapeHtml(acct)}.duckdns.org</code> with a name in front — like <code>kqs.${escapeHtml(acct)}.duckdns.org</code>. Nothing to add at duckdns.org.</small></span>
+        <span><strong>Give it a name of its own</strong><small>use <code>${escapeHtml(acct)}.duckdns.org</code> with a name in front, like <code>kqs.${escapeHtml(acct)}.duckdns.org</code>. Nothing to add at duckdns.org.</small></span>
       </label>`);
                 }
                 rows.push(`<label class="domain-choice">
         <input type="radio" name="setup-domain" value="" data-newkind="fresh"${acct ? '' : ' checked'}>
         <span><strong>${acct ? 'Add a fresh DuckDNS name' : 'Create a free DuckDNS name'}</strong><small>${
-            acct ? 'a brand-new name for something else — like <code>othername.duckdns.org</code>' : 'free, and kept pointed here for you'
+            acct ? 'a brand-new name for something else, like <code>othername.duckdns.org</code>' : 'free, and kept pointed here for you'
         }</small></span>
       </label>`);
                 return rows.join('');
@@ -6949,7 +6950,7 @@ function renderSetupStep() {
         $('setup-subdomain').placeholder = prefix ? 'kqs' : 'yournode';
         $('setup-suffix').textContent = prefix ? `.${acct}.duckdns.org` : '.duckdns.org';
         $('setup-step1-intro').innerHTML = prefix
-            ? `Put a name in front of <code>${escapeHtml(acct)}.duckdns.org</code>. Type only the part that goes in front — <code>kqs</code> publishes on <code>kqs.${escapeHtml(acct)}.duckdns.org</code>. There is nothing to create at duckdns.org: <code>${escapeHtml(acct)}</code> is the account, and it is already kept pointed here. The certificate is issued over port 80.`
+            ? `Put a name in front of <code>${escapeHtml(acct)}.duckdns.org</code>. Type only the part that goes in front: <code>kqs</code> publishes on <code>kqs.${escapeHtml(acct)}.duckdns.org</code>. There is nothing to create at duckdns.org: <code>${escapeHtml(acct)}</code> is the account, and it is already kept pointed here. The certificate is issued over port 80.`
             : 'DuckDNS gives you a name like <code>yournode.duckdns.org</code> and keeps it pointed at this machine even when your home connection changes address. It is free and needs no card.';
     }
 
@@ -7957,10 +7958,10 @@ $('global-check-btn').addEventListener('click', async () => {
         const r = await api(`/api/system/panel-latest?${q}`);
         const when = r.latest.date ? new Date(r.latest.date).toLocaleString() : 'unknown date';
         if (r.upToDate === true) {
-            setUpdateStatus(el, 'current', `Up to date — ${ref} is at ${r.latest.shortSha}, ${when}.`);
+            setUpdateStatus(el, 'current', `Up to date: ${ref} is at ${r.latest.shortSha}, ${when}.`);
         } else if (r.upToDate === false) {
             const behind = r.compare?.behind ? `, ${r.compare.behind} commit${r.compare.behind === 1 ? '' : 's'} ahead of yours` : '';
-            setUpdateStatus(el, 'available', `Update available — ${r.latest.shortSha}${behind}. ${r.latest.message}`);
+            setUpdateStatus(el, 'available', `Update available: ${r.latest.shortSha}${behind}. ${r.latest.message}`);
         } else {
             // No recorded sha, which is every install that has not used this
             // button yet. Saying "up to date" here would be a guess.

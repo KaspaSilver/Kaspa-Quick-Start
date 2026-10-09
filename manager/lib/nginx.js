@@ -358,6 +358,11 @@ function locationBlock(up, proxy, indent = '        ', { strip = null, cors = nu
     // itself. Nothing this header was carrying is lost.
     lines.push(`${i}proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`);
     lines.push(`${i}proxy_set_header X-Forwarded-Proto $scheme;`);
+    // Everything but Nextcloud gets X-Real-IP set to the real peer (kachat-audits IDX-021).
+    // Unset, nginx passes along whatever X-Real-IP the client sent, and the indexer, which
+    // trusts this proxy, took that as the client: a random value per request walked past
+    // every per-IP limit. Nextcloud keeps the reasoning above.
+    if (up.host !== 'nextcloud') lines.push(`${i}proxy_set_header X-Real-IP $remote_addr;`);
     // An app that stores files wants no limit of its own here; nginx's 1m
     // default rejects anything worth uploading.
     if (up.maxBodySize != null) lines.push(`${i}client_max_body_size ${up.maxBodySize};`);

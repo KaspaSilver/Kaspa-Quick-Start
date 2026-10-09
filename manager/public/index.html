@@ -105,7 +105,7 @@
         <button type="button" class="net-tab active" data-net="mainnet" role="tab" aria-selected="true">Mainnet</button>
         <button type="button" class="net-tab" data-net="testnet" role="tab" aria-selected="false">Testnet</button>
       </div>
-      <p class="net-note" id="net-note" hidden>Testnet-10 runs as its own stack beside mainnet — install each service here.</p>
+      <p class="net-note" id="net-note" hidden>Testnet-10 runs as its own stack beside mainnet: install each service here.</p>
 
       <p class="nav-group-title">Node</p>
       <div class="nav-row">
@@ -494,7 +494,7 @@
                 <button type="button" class="ghost mini" id="cfg-externalip-detect" title="Fill in this connection's current public address">Use current IP</button>
               </span>
             </label>
-            <label class="check" title="Rechecks this connection's public address every 15 minutes and, if it has changed, updates the External IP and restarts the node — so a node on a changing home IP keeps advertising the right address to peers.">
+            <label class="check" title="Rechecks this connection's public address every 15 minutes and, if it has changed, updates the External IP and restarts the node, so a node on a changing home IP keeps advertising the right address to peers.">
               <input type="checkbox" id="cfg-externalip-auto"> Keep it in step with my connection (restart the node when my IP changes)
             </label>
             <label>User agent comment <input id="cfg-uacomment" placeholder="optional"></label>
@@ -653,7 +653,7 @@
             </p>
             <p class="hint" id="public-privacy">
               Running the test tells check-host.net this connection's public address
-              so it can try to reach it — the same address every node you talk to
+              so it can try to reach it: the same address every node you talk to
               already sees. It only runs when you press the button.
             </p>
 
@@ -746,7 +746,7 @@
             <div class="stat"><span id="m-hashrate">–</span><small>pool hashrate</small></div>
             <div class="stat"><span id="m-workers">–</span><small>active workers</small></div>
             <div class="stat"><span id="m-blocks">–</span><small>blocks found</small></div>
-            <div class="stat"><span id="m-rejected">–</span><small title="Blocks you solved that the node turned down — stale (a beat too late) or invalid. Counted from the bridge's log while the panel is watching.">blocks rejected</small></div>
+            <div class="stat"><span id="m-rejected">–</span><small title="Blocks you solved that the node turned down: stale (a beat too late) or invalid. Counted from the bridge's log while the panel is watching.">blocks rejected</small></div>
             <div class="stat"><span id="m-shares">–</span><small>shares accepted</small></div>
             </div>
             <dl class="kv">
@@ -1440,8 +1440,8 @@
           <h3>Automatic backup</h3>
           <p class="muted">
             Every night at 12&nbsp;AM (server time) this writes <strong>one</strong> combined,
-            restorable <code>.tar.gz</code> — the KaPosts database <em>and</em> the full chat store
-            (1:1 chats, groups, handshakes, push registrations) — to a folder on this machine, e.g.
+            restorable <code>.tar.gz</code> (the KaPosts database <em>and</em> the full chat store,
+            1:1 chats, groups, handshakes, push registrations) to a folder on this machine, e.g.
             an external drive. Restore brings back everything from a single file.
           </p>
           <label class="row" style="gap:8px; align-items:center">
@@ -1449,7 +1449,7 @@
           </label>
           <div class="row">
             <button type="button" id="backup-detect" class="ghost">Detect drives</button>
-            <select id="backup-drive"><option value="">— pick a detected drive —</option></select>
+            <select id="backup-drive"><option value="">Pick a detected drive</option></select>
           </div>
           <div class="row">
             <input id="backup-dest" placeholder="/mnt/backups/kachat-backups" size="46">
@@ -1945,7 +1945,7 @@
             <h3>Source and updates</h3>
             <p class="muted">
               This is the official <code>nextcloud:stable</code> image with ffmpeg
-              added for video thumbnails — nothing here is a fork. A tag is not a
+              added for video thumbnails. Nothing here is a fork. A tag is not a
               version: <code>stable</code> means a different image every few
               weeks, so checking asks Docker Hub what it points at now and
               compares that with what this one was built from. Your files and
@@ -2121,7 +2121,7 @@
               <div id="bot-wallet-have" class="bot-wallet-row" hidden>
                 <div class="bot-wallet-qr" id="bot-wallet-qr"></div>
                 <div class="bot-wallet-meta">
-                  <label class="stack">Address — fund this
+                  <label class="stack">Address: fund this
                     <span class="field-with-btn">
                       <input id="bot-wallet-address" readonly spellcheck="false">
                       <button type="button" class="ghost mini" id="bot-wallet-copy">Copy</button>
@@ -2269,22 +2269,22 @@
         <article class="card span2">
           <div class="toggle-row">
             <div class="toggle-text"><strong>Push Service</strong>
-              <span class="muted">Mobile push notifications for the KaChat indexer — Android via Firebase, iPhone via Apple.</span>
+              <span class="muted">Mobile push notifications for the KaChat indexer: Android via Firebase, iPhone via Apple.</span>
             </div>
             <span id="push-state" class="tag off">not set</span>
           </div>
           <div class="notice">
             <p><strong>This is only for people who run the KaChat mobile apps.</strong> Every value below
-            belongs to <em>your own</em> Firebase project (Android) and Apple developer account (iOS) — the
+            belongs to <em>your own</em> Firebase project (Android) and Apple developer account (iOS), the
             same accounts your App Store and Play Store listings are published under. If you just run a node
             or indexer, leave this blank: the indexer works fine without it, it simply won't send push.</p>
           </div>
           <p class="hint">Keys are stored on this machine only, owner-readable (0600), and never leave the box.
-          The panel never shows a saved key back — an empty key box means “keep the one already saved”.</p>
+          The panel never shows a saved key back: an empty key box means “keep the one already saved”.</p>
         </article>
 
         <article class="card span2">
-          <h3>Android — Firebase Cloud Messaging</h3>
+          <h3>Android: Firebase Cloud Messaging</h3>
           <div class="row">
             <label class="inline">Project ID <input id="push-fcm-project" size="24" autocomplete="off" spellcheck="false" placeholder="my-firebase-project"></label>
             <span id="push-fcm-status" class="pill">no key</span>
@@ -2295,7 +2295,7 @@
         </article>
 
         <article class="card span2">
-          <h3>iPhone — Apple Push Notification service</h3>
+          <h3>iPhone: Apple Push Notification service</h3>
           <div class="row">
             <label class="inline">Team ID <input id="push-apns-team" size="12" maxlength="10" autocomplete="off" spellcheck="false" placeholder="RP4Z22SFSD"></label>
             <label class="inline">Key ID <input id="push-apns-keyid" size="12" maxlength="10" autocomplete="off" spellcheck="false" placeholder="from the key you made"></label>
@@ -2336,6 +2336,13 @@
       </nav>
 
       <div id="sub-proxy-overview" class="subtab active">
+      <div class="notice" id="shared-client-notice" hidden>
+        <p><strong>This machine runs Docker Desktop.</strong> Docker Desktop hands every visitor to the
+        proxy from one internal address, so the indexer cannot tell users apart: its per-user limits
+        become one limit shared by everyone, and this panel sets them high to match. That is fine at
+        home. A public KaChat indexer or .kachat Domains server belongs on a Linux host, where each
+        user is counted on their own.</p>
+      </div>
       <!--
         One card: what it is, and the switch that starts it. Three stacked cards
         for a single switch read as three separate things, and left most of the
@@ -2447,7 +2454,7 @@
             <h3>Proxy hosts</h3>
             <p class="muted">
               Every name this machine answers for, and what it forwards each one
-              to. The ones Public addresses set up appear here too — this is the
+              to. The ones Public addresses set up appear here too. This is the
               same list, with the details it does not ask about.
             </p>
             <table class="proxies">
@@ -2466,7 +2473,7 @@
                 be the machine running the service. Choose
                 <strong>Custom host:port</strong> and give this proxy the other
                 machine's address on your network, and it will forward that name
-                to it — certificate and all, handled here.
+                to it, certificate and all, handled here.
               </p>
               <p>
                 So a second machine running something else needs no proxy, no
@@ -2486,12 +2493,12 @@
             <p class="muted">
               Rewrites the nginx configuration for every domain from your saved
               settings and reloads it. Use this after a panel update so the new
-              settings actually take effect on your live domains — otherwise a
+              settings actually take effect on your live domains. Otherwise a
               domain keeps serving the configuration it was last saved with.
             </p>
             <p class="muted">
               It is safe to run any time: your domains, certificates and settings
-              are untouched, and there is no downtime — nginx reloads in place.
+              are untouched, and there is no downtime: nginx reloads in place.
             </p>
             <p class="error" id="proxy-restart-error" hidden></p>
             <div class="row">
