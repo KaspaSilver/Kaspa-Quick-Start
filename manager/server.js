@@ -3651,6 +3651,17 @@ for (const net of Object.keys(kachatDomains.NETWORKS)) {
                     onLine('The registry tooling is already here (shared by both networks); not rebuilding it.');
                 }
                 await kachatDomains.publish(onLine);
+                // The image may come from the other network's install and predate this network's
+                // registry (mainnet went live after testnet's tooling was built): rebuild it at
+                // the latest commit once and publish again before giving up on it.
+                if (!kachatDomains.summaryFor(net)) {
+                    const latest = await selfservice.latestCommit({ repo: kachatDomains.REPO, ref: kachatDomains.ref() });
+                    if (latest.sha !== (await kachatDomains.installedRevision())) {
+                        onLine(`The registry tooling here has no ${N.network} registry; updating it to ${latest.sha.slice(0, 12)}.`);
+                        await kachatDomains.build(latest.sha, onLine);
+                        await kachatDomains.publish(onLine);
+                    }
+                }
                 const sm = kachatDomains.summaryFor(net);
                 await useNamesManifest(net, sm ? N.manifestFile : '', onLine, { restart: false });
                 await namesPushTarget(net);
