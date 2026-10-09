@@ -18,8 +18,56 @@ import { readEnvFile } from './store.js';
  * Kaspa Quick Start commit per deployment.
  */
 export const REPO = 'KaspaSilver/kachat-domains';
-export const MANIFEST_FILE = 'kachat-names-testnet-10.json';
 export const SUMMARY_FILE = 'kachat-domains.json';
+
+/**
+ * One tool image serves both networks; each network installs and switches on its own.
+ * `unit` is the lifecycle key, `marker` the .env flag that records the install (the image is
+ * shared, so it cannot be the record), and the rest is that network's indexer.
+ *
+ * Mainnet has no registry yet: `publish` only writes the testnet-10 manifest today. When
+ * kachat-domains publishes `kachat-names-mainnet.json` (docs/KQS.md, "Network switch"), the
+ * mainnet switch starts working with no change here.
+ */
+export const NETWORKS = {
+    mainnet: {
+        network: 'mainnet',
+        unit: 'kachat-domains',
+        marker: 'KACHAT_DOMAINS_MAINNET',
+        manifestFile: 'kachat-names-mainnet.json',
+        envManifest: 'KACHAT_NAMES_MANIFEST_MAINNET',
+        indexerUnit: 'kachat',
+        container: 'kaspa-node-kachat',
+        host: 'kachat-app',
+        label: 'mainnet',
+    },
+    testnet: {
+        network: 'testnet-10',
+        unit: 'kachat-domains-testnet',
+        marker: 'KACHAT_DOMAINS_TESTNET',
+        manifestFile: 'kachat-names-testnet-10.json',
+        envManifest: 'KACHAT_NAMES_MANIFEST_TESTNET',
+        indexerUnit: 'kachat-testnet',
+        container: 'kaspa-node-kachat-testnet',
+        host: 'kachat-app-testnet',
+        label: 'testnet',
+    },
+};
+export const netOf = (v) => (v === 'testnet' ? 'testnet' : 'mainnet');
+
+/**
+ * Whether this network has .kachat Domains installed. The testnet install predates the
+ * marker, so a testnet with the image and no marker at all counts as installed.
+ */
+export function installedFor(net, revision) {
+    if (revision === null) return false;
+    const v = readEnvFile()[NETWORKS[net].marker];
+    return net === 'testnet' ? v !== '0' : v === '1';
+}
+
+/** The network's indexer follows the manifest this tool published for it. */
+export const onFor = (net) =>
+    (readEnvFile()[NETWORKS[net].envManifest] || '').trim() === `/names/${NETWORKS[net].manifestFile}` && Boolean(summaryFor(net));
 const REVISION_LABEL = 'org.opencontainers.image.revision';
 
 export const ref = () => (readEnvFile().KACHAT_DOMAINS_REF || 'main').trim();
@@ -45,6 +93,24 @@ export function summary() {
     } catch {
         return null;
     }
+}
+
+/**
+ * The verified summary for one network, or null when the tool has published nothing for it.
+ * Today's summary covers one network (`network`); a later one may list several under
+ * `networks` (an array or an object keyed by network), and both shapes are read.
+ */
+export function summaryFor(net) {
+    const want = NETWORKS[net].network;
+    const s = summary();
+    if (!s) return null;
+    if (s.networks) {
+        const list = Array.isArray(s.networks) ? s.networks : Object.entries(s.networks).map(([k, v]) => ({ network: k, ...v }));
+        const hit = list.find((n) => n?.network === want);
+        return hit ? { ok: s.ok, commit: s.commit, ...hit } : null;
+    }
+    if (s.network !== want) return null;
+    return fs.existsSync(path.join(NAMES_DIR, NETWORKS[net].manifestFile)) ? s : null;
 }
 
 /**
@@ -84,6 +150,9 @@ export async function publish(onLine) {
     if (!s?.ok) throw new Error('publish finished but wrote no verified summary.');
     return s;
 }
+
+/** One line naming what a summary verified. */
+export const describe = (s) => `registry v${s.registryVersion} ${s.registryCovenantId} on ${s.network}`;
 
 /** Whether a new summary changes what the indexer follows (only then restart it). */
 export const registryChanged = (before, after) =>

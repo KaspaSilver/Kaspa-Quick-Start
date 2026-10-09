@@ -145,14 +145,14 @@
           <span class="track"></span>
         </label>
       </div>
-      <!-- .kachat names registry — testnet only (runs on the testnet indexer). -->
+      <!-- .kachat names registry: runs on the viewed network's indexer (mainnet has no registry yet). -->
       <div class="nav-row">
-        <button class="nav-item" data-tab="names" data-testnet-only title=".kachat Domains">
+        <button class="nav-item" data-tab="names" title=".kachat Domains">
           <span class="nav-dot" data-health="names"></span>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/><circle cx="19" cy="17" r="2"/></svg>
           <span class="label">.kachat Domains</span>
         </button>
-        <label class="switch mini" title="Serve the .kachat registry from the testnet indexer, or stop serving it">
+        <label class="switch mini" title="Serve the .kachat registry from this network's indexer, or stop serving it">
           <input type="checkbox" data-service="kachat-domains" aria-label="Turn .kachat Domains on or off">
           <span class="track"></span>
         </label>
@@ -1645,10 +1645,10 @@
 </section>
 
     <!--
-      .kachat names registry (testnet). The registry is a set of Kaspa covenant
-      contracts the testnet indexer follows; see KACHAT_NAMES_INDEXER.md. This tab
-      configures and watches that module. It is testnet-only (the nav item is hidden
-      on mainnet) and stays dark until a genesis manifest is published.
+      .kachat names registry. The registry is a set of Kaspa covenant contracts the
+      viewed network's indexer follows; see KACHAT_NAMES_INDEXER.md. This tab installs,
+      configures and watches that module, separately per network. Mainnet has no
+      registry yet, so its side installs but has nothing to switch on until one exists.
     -->
     <section id="tab-names" class="tab">
       <nav class="subnav" aria-label=".kachat Domains">
@@ -1671,11 +1671,12 @@
               <code>.kachat</code> names are a registry of Kaspa covenant contracts (names, gaps and
               marketplace offers). This app installs the registry's own tooling from
               <code>KaspaSilver/kachat-domains</code>: it recompiles the contracts, refuses any
-              manifest that does not match them, and hands the verified manifest to the testnet
-              KaChat indexer, which then serves names to the KaChat apps.
+              manifest that does not match them, and hands the verified manifest to this network's
+              KaChat indexer, which then serves names to the KaChat apps. Mainnet and testnet
+              install and switch on separately; the tooling image is shared.
             </p>
             <dl class="kv vertical" id="kd-facts"></dl>
-            <p class="hint" id="kd-note">Testnet-10 only for now. Its switch in the sidebar hands the registry to the testnet indexer.</p>
+            <p class="hint" id="kd-note">Its switch in the sidebar hands the registry to this network's indexer.</p>
           </article>
 
           <article class="card span2">
@@ -1690,7 +1691,7 @@
               <div><dt>Indexed DAA</dt><dd id="names-daa">–</dd></div>
               <div><dt>Synced</dt><dd id="names-synced">–</dd></div>
             </dl>
-            <p class="hint" id="names-status-note">Waiting for the testnet indexer's names module.</p>
+            <p class="hint" id="names-status-note">Waiting for the indexer's names module.</p>
           </article>
         </div>
       </div>
@@ -1702,7 +1703,7 @@
             <h3>.kachat Domains software</h3>
             <p class="muted">
               Checks <code>KaspaSilver/kachat-domains</code> for a newer commit, rebuilds the tooling,
-              verifies the manifest again and hands it to the testnet indexer. The indexer is only
+              verifies the manifest again and hands it to each network's indexer that has it on. An indexer is only
               restarted when the registry or its manifest actually changed, so an update that only
               touches documentation never interrupts it. If verification fails, the current manifest
               stays in use.
@@ -1722,12 +1723,12 @@
       </div>
 
       <!-- The rules of the contract that is running: fixed contract rules plus the live
-           numbers from the manifest the testnet indexer follows (/api/names/rules). -->
+           numbers from the manifest the viewed network's indexer follows (/api/names/rules?net=). -->
       <div id="sub-names-rules" class="subtab">
         <div id="names-rules"><p class="muted">Loading the rules…</p></div>
       </div>
 
-      <!-- The names module's own log: the testnet indexer's [names] lines only. -->
+      <!-- The names module's own log: the viewed network's indexer's [names] lines only. -->
       <div id="sub-names-log" class="subtab">
         <div class="svclog" data-svclog="names" data-title=".kachat Domains log"></div>
       </div>

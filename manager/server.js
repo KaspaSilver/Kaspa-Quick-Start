@@ -3392,26 +3392,37 @@ route('POST', /^\/api\/services\/([a-z-]+)\/uninstall$/, async (req, res, match)
 });
 
 // --------------------------------------------------------- .kachat names ----
-// The testnet names registry (KACHAT_NAMES_INDEXER.md). The module runs on the TESTNET
-// indexer. Its manifest comes from .kachat Domains alone (kachat-domains' verified `publish`,
-// below): there is no bundled copy and no hand-set file, so the indexer only ever follows a
-// manifest that was checked against the contract source.
+// The .kachat names registry (KACHAT_NAMES_INDEXER.md) runs inside each network's indexer.
+// Its manifest comes from .kachat Domains alone (kachat-domains' verified `publish`, below):
+// there is no bundled copy and no hand-set file, so an indexer only ever follows a manifest
+// that was checked against the contract source. Every route takes ?net=mainnet|testnet.
+// Mainnet has no registry yet, so its side installs but has nothing to switch on until
+// kachat-domains publishes one.
+
+const namesNet = (url) => kachatDomains.netOf(url.searchParams.get('net'));
 
 /**
  * The rules of the registry .kachat Domains published and verified (conf/names), so the
  * Rules tab can never describe a different deployment than the one being followed.
  */
-route('GET', /^\/api\/names\/rules$/, async (req, res) => {
+route('GET', /^\/api\/names\/rules$/, async (req, res, match, url) => {
+    const N = kachatDomains.NETWORKS[namesNet(url)];
     let m;
     try {
-        m = JSON.parse(fs.readFileSync(path.join(NAMES_DIR, kachatDomains.MANIFEST_FILE), 'utf8'));
+        m = JSON.parse(fs.readFileSync(path.join(NAMES_DIR, N.manifestFile), 'utf8'));
     } catch {
-        return fail(res, 404, 'Install .kachat Domains to see the rules of the registry it verifies.');
+        return fail(
+            res,
+            404,
+            N.network === 'mainnet'
+                ? 'There is no mainnet .kachat registry yet. Its rules show here once kachat-domains publishes one.'
+                : 'Install .kachat Domains to see the rules of the registry it verifies.',
+        );
     }
     const hashes = Object.fromEntries(Object.entries(m.artifacts || {}).map(([k, a]) => [k, a?.templateHash ?? null]));
     sendJson(res, 200, {
         source: 'kachat-domains',
-        file: kachatDomains.MANIFEST_FILE,
+        file: N.manifestFile,
         network: m.network ?? null,
         status: m.status ?? null,
         registryVersion: m.registryVersion ?? m.params?.registryVersion ?? 2,
@@ -3422,24 +3433,26 @@ route('GET', /^\/api\/names\/rules$/, async (req, res) => {
         templateHashes: hashes,
     });
 });
-/** Point the testnet indexer at a manifest in conf/names and make it re-read it. */
-async function useNamesManifest(file, onLine) {
-    updateEnvFile({ KACHAT_NAMES_MANIFEST_TESTNET: file ? `/names/${file}` : '' });
-    onLine(file ? `Names manifest set to ${file}.` : 'Names manifest cleared (module off).');
-    const state = await lifecycle.status('kachat-testnet').catch(() => null);
+
+/** Point one network's indexer at a manifest in conf/names and make it re-read it. */
+async function useNamesManifest(net, file, onLine) {
+    const N = kachatDomains.NETWORKS[net];
+    updateEnvFile({ [N.envManifest]: file ? `/names/${file}` : '' });
+    onLine(file ? `Names manifest (${N.label}) set to ${file}.` : `Names manifest (${N.label}) cleared (module off).`);
+    const state = await lifecycle.status(N.indexerUnit).catch(() => null);
     if (state?.running) {
-        onLine('Restarting the testnet indexer so it reads the manifest...');
+        onLine(`Restarting the ${N.label} indexer so it reads the manifest...`);
         // `up -d` applies a changed manifest *path* (it recreates the container), but a new
         // manifest under the same file name -- the usual case after a new genesis -- leaves
         // the env as it was, so nothing restarts and the follower and API keep the one they
         // read at start. Restart the processes too.
-        await lifecycle.setRunning('kachat-testnet', true, onLine);
-        await dockerctl.docker(['restart', 'kaspa-node-kachat-testnet'], { onLine, timeoutMs: 3 * 60_000 });
-        onLine('Done. The .kachat log shows the registry it now follows.');
+        await lifecycle.setRunning(N.indexerUnit, true, onLine);
+        await dockerctl.docker(['restart', N.container], { onLine, timeoutMs: 3 * 60_000 });
+        onLine('Done. The .kachat Domains log shows the registry it now follows.');
     } else if (state?.installed) {
-        onLine('The testnet indexer is stopped; the manifest applies next time it starts.');
+        onLine(`The ${N.label} indexer is stopped; the manifest applies next time it starts.`);
     } else {
-        onLine('The testnet indexer is not installed yet; install it from the Indexer row.');
+        onLine(`The ${N.label} indexer is not installed yet; install it from the Indexer row.`);
     }
 }
 
@@ -3447,22 +3460,27 @@ async function useNamesManifest(file, onLine) {
 //
 // Install and Update build KaspaSilver/kachat-domains, run its `publish` (which recompiles the
 // contracts and refuses a manifest that does not match them), and hand the verified manifest
-// to the testnet indexer -- restarting it only when the registry or manifest changed, so a
-// docs-only commit never interrupts it. A failed publish keeps the previous manifest.
+// to the indexer -- restarting it only when the registry or manifest changed, so a docs-only
+// commit never interrupts it. A failed publish keeps the previous manifest. The tool image is
+// shared; each network installs, switches and uninstalls on its own.
 
-route('GET', /^\/api\/kachat-domains$/, async (req, res) => {
+route('GET', /^\/api\/kachat-domains$/, async (req, res, match, url) => {
+    const net = namesNet(url);
+    const N = kachatDomains.NETWORKS[net];
     const [revision, indexer] = await Promise.all([
         kachatDomains.installedRevision(),
-        lifecycle.status('kachat-testnet').catch(() => null),
+        lifecycle.status(N.indexerUnit).catch(() => null),
     ]);
     sendJson(res, 200, {
+        net,
+        network: N.network,
         repo: kachatDomains.REPO,
         ref: kachatDomains.ref(),
-        installed: revision !== null,
+        installed: kachatDomains.installedFor(net, revision),
         revision,
-        summary: kachatDomains.summary(),
-        // Whether the indexer is following the manifest this tool publishes.
-        inUse: kachatDomainsOn(),
+        summary: kachatDomains.summaryFor(net),
+        // Whether this network's indexer is following the manifest this tool publishes.
+        inUse: kachatDomains.onFor(net),
         indexerInstalled: Boolean(indexer?.installed),
     });
 });
@@ -3479,96 +3497,138 @@ route('GET', /^\/api\/kachat-domains\/check$/, async (req, res) => {
     }
 });
 
-/** The tool is "on" when the testnet indexer follows the manifest it published. */
-const kachatDomainsOn = () =>
-    (readEnvFile().KACHAT_NAMES_MANIFEST_TESTNET || '').trim() === `/names/${kachatDomains.MANIFEST_FILE}` &&
-    Boolean(kachatDomains.summary());
-
-// .kachat Domains as a lifecycle unit: installs, switches and uninstalls like every other app
-// (install overlay over its tab, Install then a switch in the sidebar, the standard uninstall
-// card). Installing builds the tooling and publishes the verified manifest but leaves it off;
-// the switch hands that manifest to the testnet indexer (on) or turns the names module off.
-lifecycle.registerUnit('kachat-domains', {
-    label: '.kachat Domains',
-    tab: 'names',
-    data: 'the verified registry manifest it published (the testnet indexer stops serving names)',
-    hooks: {
-        async status() {
-            const revision = await kachatDomains.installedRevision();
-            return { installed: revision !== null, running: revision !== null && kachatDomainsOn() };
-        },
-        async install(onLine) {
-            const indexer = await lifecycle.status('kachat-testnet').catch(() => null);
-            if (!indexer?.installed) {
-                throw new Error('Install the testnet KaChat Indexer first: the .kachat registry only exists on testnet-10 so far.');
-            }
-            const latest = await selfservice.latestCommit({ repo: kachatDomains.REPO, ref: kachatDomains.ref() });
-            await kachatDomains.build(latest.sha, onLine);
-            const sm = await kachatDomains.publish(onLine);
-            onLine(`Verified: registry v${sm.registryVersion} ${sm.registryCovenantId} on ${sm.network}.`);
-            onLine('.kachat Domains is installed and switched off. Its switch in the sidebar hands the registry to the testnet indexer.');
-        },
-        async setRunning(running, onLine) {
-            if (running) {
-                if (!kachatDomains.summary()) await kachatDomains.publish(onLine);
-                await useNamesManifest(kachatDomains.MANIFEST_FILE, onLine);
-            } else {
-                onLine('Switching off: the testnet indexer stops serving .kachat names.');
-                await useNamesManifest('', onLine);
-            }
-        },
-        async uninstall({ keepData, onLine }) {
-            if (kachatDomainsOn()) {
-                onLine('Switching it off first.');
-                await useNamesManifest('', onLine);
-            }
-            await kachatDomains.removeImage(onLine);
-            if (!keepData) {
-                for (const f of [kachatDomains.MANIFEST_FILE, kachatDomains.SUMMARY_FILE]) {
-                    fs.rmSync(path.join(NAMES_DIR, f), { force: true });
+// .kachat Domains as a lifecycle unit per network: installs, switches and uninstalls like
+// every other app (install overlay over its tab, Install then a switch in the sidebar, the
+// standard uninstall card). Installing builds the tooling (once, shared) and publishes the
+// verified manifest but leaves it off; the switch hands that manifest to the network's
+// indexer (on) or turns its names module off.
+for (const net of Object.keys(kachatDomains.NETWORKS)) {
+    const N = kachatDomains.NETWORKS[net];
+    const other = net === 'mainnet' ? 'testnet' : 'mainnet';
+    lifecycle.registerUnit(N.unit, {
+        label: '.kachat Domains',
+        tab: 'names',
+        data: `the verified registry manifest it published (the ${N.label} indexer stops serving names)`,
+        hooks: {
+            async status() {
+                const revision = await kachatDomains.installedRevision();
+                const installed = kachatDomains.installedFor(net, revision);
+                return { installed, running: installed && kachatDomains.onFor(net) };
+            },
+            async install(onLine) {
+                const indexer = await lifecycle.status(N.indexerUnit).catch(() => null);
+                if (!indexer?.installed) {
+                    throw new Error(`Install the ${N.label} KaChat Indexer first: .kachat Domains hands its registry to that indexer.`);
                 }
-                onLine('Removed the published manifest and its summary.');
-            }
-            onLine('.kachat Domains removed. It can be installed again from its tab.');
-            return { containers: [], volumes: [], images: [kachatDomains.imageTag()] };
+                // Pin the other network's install state before the image appears: a testnet
+                // install from before per-network markers has none, and a new image must not
+                // make it look installed.
+                const before = await kachatDomains.installedRevision();
+                const N2 = kachatDomains.NETWORKS[other];
+                if (readEnvFile()[N2.marker] === undefined) {
+                    updateEnvFile({ [N2.marker]: kachatDomains.installedFor(other, before) ? '1' : '0' });
+                }
+                if (before === null) {
+                    const latest = await selfservice.latestCommit({ repo: kachatDomains.REPO, ref: kachatDomains.ref() });
+                    await kachatDomains.build(latest.sha, onLine);
+                } else {
+                    onLine(`The tooling image is already here (shared with ${other}); not rebuilding it.`);
+                }
+                await kachatDomains.publish(onLine);
+                updateEnvFile({ [N.marker]: '1' });
+                const sm = kachatDomains.summaryFor(net);
+                if (sm) {
+                    onLine(`Verified: ${kachatDomains.describe(sm)}.`);
+                    onLine(`.kachat Domains is installed and switched off. Its switch in the sidebar hands the registry to the ${N.label} indexer.`);
+                } else {
+                    onLine(`.kachat Domains is installed. There is no ${N.network} registry yet, so there is nothing to switch on; Updates → Update picks one up once kachat-domains publishes it.`);
+                }
+            },
+            async setRunning(running, onLine) {
+                if (running) {
+                    if (!kachatDomains.summaryFor(net)) await kachatDomains.publish(onLine);
+                    if (!kachatDomains.summaryFor(net)) {
+                        throw new Error(`There is no ${N.network} .kachat registry yet, so there is nothing to hand the ${N.label} indexer. Updates → Update picks one up once kachat-domains publishes it.`);
+                    }
+                    await useNamesManifest(net, N.manifestFile, onLine);
+                } else {
+                    onLine(`Switching off: the ${N.label} indexer stops serving .kachat names.`);
+                    await useNamesManifest(net, '', onLine);
+                }
+            },
+            async uninstall({ keepData, onLine }) {
+                if (kachatDomains.onFor(net)) {
+                    onLine('Switching it off first.');
+                    await useNamesManifest(net, '', onLine);
+                }
+                updateEnvFile({ [N.marker]: '0' });
+                const revision = await kachatDomains.installedRevision();
+                const otherKeeps = kachatDomains.installedFor(other, revision);
+                if (otherKeeps) {
+                    onLine(`The tooling image is kept: .kachat Domains is still installed on ${other}.`);
+                } else {
+                    await kachatDomains.removeImage(onLine);
+                }
+                if (!keepData) {
+                    fs.rmSync(path.join(NAMES_DIR, N.manifestFile), { force: true });
+                    if (!otherKeeps) fs.rmSync(path.join(NAMES_DIR, kachatDomains.SUMMARY_FILE), { force: true });
+                    onLine(`Removed the published ${N.label} manifest${otherKeeps ? '' : ' and its summary'}.`);
+                }
+                onLine(`.kachat Domains removed from ${N.label}. It can be installed again from its tab.`);
+                return { containers: [], volumes: [], images: otherKeeps ? [] : [kachatDomains.imageTag()] };
+            },
         },
-    },
-});
+    });
+}
 
-// Update: rebuild, verify and publish again; restart the indexer only when it is following
-// this manifest and the registry or manifest actually changed (a docs-only commit never
-// interrupts it). A failed publish keeps the previous manifest.
+// Update: rebuild, verify and publish again, then for each network that has it switched on,
+// restart its indexer only when the registry or manifest actually changed (a docs-only commit
+// never interrupts it). A failed publish keeps the previous manifests.
 route('POST', /^\/api\/kachat-domains\/update$/, async (req, res) => {
-    if ((await kachatDomains.installedRevision()) === null) return fail(res, 409, 'Install .kachat Domains first.');
+    const revision = await kachatDomains.installedRevision();
+    const nets = Object.keys(kachatDomains.NETWORKS).filter((n) => kachatDomains.installedFor(n, revision));
+    if (!nets.length) return fail(res, 409, 'Install .kachat Domains first.');
     const job = jobs.start('Update .kachat Domains', async (onLine) => {
         const latest = await selfservice.latestCommit({ repo: kachatDomains.REPO, ref: kachatDomains.ref() });
         await kachatDomains.build(latest.sha, onLine);
-        const before = kachatDomains.summary();
-        const after = await kachatDomains.publish(onLine);
-        onLine(`Verified: registry v${after.registryVersion} ${after.registryCovenantId} on ${after.network}.`);
-        if (!kachatDomainsOn()) {
-            onLine('.kachat Domains is switched off, so the indexer was not touched.');
-        } else if (kachatDomains.registryChanged(before, after)) {
-            await useNamesManifest(kachatDomains.MANIFEST_FILE, onLine);
-        } else {
-            onLine('Same registry and manifest as before, so the indexer was not restarted.');
+        const before = Object.fromEntries(nets.map((n) => [n, kachatDomains.summaryFor(n)]));
+        await kachatDomains.publish(onLine);
+        for (const net of nets) {
+            const N = kachatDomains.NETWORKS[net];
+            const after = kachatDomains.summaryFor(net);
+            if (!after) {
+                onLine(`${N.label}: no ${N.network} registry published yet.`);
+                continue;
+            }
+            onLine(`${N.label}: verified ${kachatDomains.describe(after)}.`);
+            if (!kachatDomains.onFor(net)) {
+                onLine(`${N.label}: .kachat Domains is switched off, so the indexer was not touched.`);
+            } else if (kachatDomains.registryChanged(before[net], after)) {
+                await useNamesManifest(net, N.manifestFile, onLine);
+            } else {
+                onLine(`${N.label}: same registry and manifest as before, so the indexer was not restarted.`);
+            }
         }
     });
     sendJson(res, 202, { ok: true, jobId: job.id });
 });
 
-route('GET', /^\/api\/names\/status$/, async (req, res) => {
-    // Proxy the testnet indexer's names status over the internal network, and treat
+route('GET', /^\/api\/names\/status$/, async (req, res, match, url) => {
+    // Proxy the network's indexer's names status over the internal network, and treat
     // its absence as "not available yet" rather than an error.
+    const N = kachatDomains.NETWORKS[namesNet(url)];
     try {
-        const r = await fetch('http://kachat-app-testnet:3080/names/status', {
+        const r = await fetch(`http://${N.host}:3080/names/status`, {
             signal: AbortSignal.timeout(4000),
         });
         if (r.status === 404) {
             return sendJson(res, 200, {
                 available: false,
                 reason: 'off',
-                message: 'The names module is off — set a genesis manifest, or this indexer build predates it.',
+                message:
+                    N.network === 'mainnet'
+                        ? 'The names module is off: there is no mainnet .kachat registry to follow yet.'
+                        : 'The names module is off: install .kachat Domains and switch it on, or this indexer build predates it.',
             });
         }
         if (!r.ok) {
@@ -3579,7 +3639,7 @@ route('GET', /^\/api\/names\/status$/, async (req, res) => {
         sendJson(res, 200, {
             available: false,
             reason: 'unreachable',
-            message: 'The testnet indexer is not reachable — enable it from the Indexer row in the Testnet view.',
+            message: `The ${N.label} indexer is not reachable. Turn it on from the Indexer row in the ${N.label === 'mainnet' ? 'Mainnet' : 'Testnet'} view.`,
         });
     }
 });

@@ -136,6 +136,9 @@ services:
       NETWORK_TYPE: ${KACHAT_NETWORK:-mainnet}
       # Address profiles follower's first-run start block (hex); empty = the node's pruning point.
       KACHAT_PROFILES_SCAN_FROM: ${KACHAT_PROFILES_SCAN_FROM:-}
+      # .kachat names module: off (idle) until .kachat Domains hands it a verified mainnet
+      # manifest. There is no mainnet registry yet, so this stays empty for now.
+      KACHAT_NAMES_MANIFEST: ${KACHAT_NAMES_MANIFEST_MAINNET:-}
       DB_USER: ${KACHAT_DB_USER:-kachat}
       DB_PASSWORD: ${KACHAT_DB_PASSWORD:-}
       DB_NAME: ${KACHAT_DB_NAME:-kachat}
@@ -164,6 +167,8 @@ services:
       RUST_LOG: info
     volumes:
       - kachat-app-data:/app/data
+      # .kachat names manifests (published by .kachat Domains), read-only.
+      - ${STACK_DIR}/conf/names:/names:ro
       # Mobile push credentials (Firebase service-account.json + Apple .p8),
       # written 0600 by the Push Service panel. Read-only to the indexer.
       - ${STACK_DIR}/conf/push:/push:ro
@@ -623,8 +628,8 @@ services:
       APNS_TEAM_ID: ${KACHAT_APNS_TEAM_ID:-}
       APNS_ENVIRONMENT: ${KACHAT_APNS_ENVIRONMENT:-production}
       APNS_KEY_PATH: /push/apns/AuthKey.p8
-      # .kachat names module (KACHAT_NAMES_INDEXER.md parts B-E): off until a
-      # testnet genesis manifest is configured. Mounted read-only below.
+      # .kachat names module (KACHAT_NAMES_INDEXER.md parts B-E): off until
+      # .kachat Domains hands it a verified manifest. Mounted read-only below.
       KACHAT_NAMES_MANIFEST: ${KACHAT_NAMES_MANIFEST_TESTNET:-}
       # Profiles follower start (hex); empty = the names manifest's scanFrom, else the pruning point.
       KACHAT_PROFILES_SCAN_FROM: ${KACHAT_PROFILES_SCAN_FROM_TESTNET:-}
@@ -632,7 +637,7 @@ services:
     volumes:
       - kachat-app-testnet-data:/app/data
       - ${STACK_DIR}/conf/push:/push:ro
-      # .kachat names manifests (testnet genesis output), read-only.
+      # .kachat names manifests (published by .kachat Domains), read-only.
       - ${STACK_DIR}/conf/names:/names:ro
       - ${STACK_DIR}/kachat/run-admin.sh:/app/run-admin.sh:ro
       - ${STACK_DIR}/kachat/run-webserver.sh:/app/run-webserver.sh:ro

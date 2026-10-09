@@ -68,7 +68,7 @@ export const STACK_CONTAINERS = [
  * (`match`, a substring or a RegExp tested on the colour-free line); each is listed
  * right after the container it reads.
  *
- * - .kachat names: the testnet indexer's `[names]` lines
+ * - .kachat names: each indexer's `[names]` lines
  *   (docs/KACHAT_NAMES_PANEL_LOGS.md in KaChat-Indexer).
  * - Address profiles: the profiles follower's `[profiles]` lines (both networks;
  *   docs/KACHAT_PROFILES.md in KaChat-Indexer).
@@ -76,16 +76,17 @@ export const STACK_CONTAINERS = [
  *   "Push register …") plus the processor's KaPosts push sends.
  */
 const PUSH_MATCH = /push/i;
-export const NAMES_LOG_SOURCE = {
-    key: 'kachat-names',
-    label: '.kachat Domains',
-    name: 'kaspa-node-kachat-testnet',
-    match: '[names]',
-};
 export const FILTERED_LOG_SOURCES = [
     { key: 'kachat-push', label: 'push service', name: KACHAT_CONTAINER, match: PUSH_MATCH, after: 'kachat' },
     { key: 'kachat-profiles', label: 'address profiles', name: KACHAT_CONTAINER, match: '[profiles]', after: 'kachat' },
-    { ...NAMES_LOG_SOURCE, after: 'kachat-testnet' },
+    { key: 'kachat-names', label: '.kachat Domains', name: KACHAT_CONTAINER, match: '[names]', after: 'kachat' },
+    {
+        key: 'kachat-names-testnet',
+        label: '.kachat Domains (testnet)',
+        name: 'kaspa-node-kachat-testnet',
+        match: '[names]',
+        after: 'kachat-testnet',
+    },
     {
         key: 'kachat-profiles-testnet',
         label: 'address profiles (testnet)',

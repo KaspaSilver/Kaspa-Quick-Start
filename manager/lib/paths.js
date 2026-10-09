@@ -34,8 +34,8 @@ export const DOMAINS_FILE = path.join(CONF_DIR, 'domains.json');
 export const KASPAD_ARGS_FILE = path.join(CONF_DIR, 'kaspad.args');
 export const KASPAD_TESTNET_ARGS_FILE = path.join(CONF_DIR, 'kaspad-testnet.args');
 export const PORTS_TESTNET_OVERRIDE = path.join(CONF_DIR, 'ports-testnet.yml');
-// Where the .kachat names genesis manifest(s) live, mounted read-only into the
-// testnet indexer at /names (see docker-compose.yml, KACHAT_NAMES_MANIFEST).
+// Where the .kachat names manifests .kachat Domains publishes live, mounted read-only
+// into both indexers at /names (see docker-compose.yml, KACHAT_NAMES_MANIFEST).
 export const NAMES_DIR = path.join(CONF_DIR, 'names');
 
 // The host-side equivalents, for `docker run -v` and compose `-f`.

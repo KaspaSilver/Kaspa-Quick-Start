@@ -349,7 +349,7 @@ const SVC_LOGS = {
         ],
         testnet: [['kachat-testnet', 'indexer'], ['kachat-profiles-testnet', 'profiles'], ['kachat-db-testnet', 'postgres']],
     },
-    names: { mainnet: [['kachat-names', '.kachat Domains']], testnet: [['kachat-names', '.kachat Domains']] },
+    names: { mainnet: [['kachat-names', '.kachat Domains']], testnet: [['kachat-names-testnet', '.kachat Domains']] },
     desktop: { mainnet: [['kachat-desktop', 'kachat desktop']] },
     bot: { mainnet: [['kachat-bot', 'kachat bot']] },
     push: { mainnet: [['kachat-push', 'push service']], testnet: [['kachat-push-testnet', 'push service']] },
@@ -473,7 +473,12 @@ const TESTNET_TABS = new Set(['overview', 'kaspad', 'mining', 'kachat', 'names',
 let publishState = { services: [], domains: [] };
 // Which lifecycle unit each shared nav switch drives in the testnet view.
 // Testnet mining is the CPU miner (kaspanet/cpuminer), not the ASIC stratum bridge.
-const TESTNET_UNIT = { node: 'node-testnet', mining: 'cpuminer-testnet', kachat: 'kachat-testnet' };
+const TESTNET_UNIT = {
+    node: 'node-testnet',
+    mining: 'cpuminer-testnet',
+    kachat: 'kachat-testnet',
+    'kachat-domains': 'kachat-domains-testnet',
+};
 const TESTNET_UNIT_VALUES = new Set(Object.values(TESTNET_UNIT));
 // The current view. Read by the service renderers + switch handler so one set of
 // controls drives mainnet or testnet depending on it.
@@ -557,6 +562,9 @@ function refreshKaspadForView() {
     if (activeSubtab('kachat') === 'kachat-chess') loadChess().catch(() => {});
     if (activeSubtab('kachat') === 'kachat-profiles') loadProfiles().catch(() => {});
     if (activeSubtab('kachat') === 'kachat-updates') loadTestnetIndexerUpdate().catch(() => {});
+    // .kachat Domains installs and follows a registry per network.
+    if (document.querySelector('.nav-item.active')?.dataset.tab === 'names') loadNames().catch(() => {});
+    if (activeSubtab('names') === 'names-rules') loadNamesRules().catch(() => {});
     loadMining().catch(() => {});
     if (appsState) renderAppState('kachat', appsState.apps?.kachat ?? {});
     // A version check belongs to one node; drop it so Update cannot act on the other's.
@@ -5526,7 +5534,10 @@ const UNINSTALL_COPY = {
     'mining-testnet': "the testnet bridge's share and block records. Mainnet mining is not touched",
     'cpuminer-testnet': 'only the miner container. Your testnet rewards stay on the chain at your address. Mainnet mining is not touched',
     'kachat-testnet': 'the testnet indexed history, the .kachat registry tables and their Postgres database. The mainnet indexer is not touched',
-    'kachat-domains': 'its tooling image and the verified registry manifest it published. The testnet indexer stops serving .kachat names until it is installed and switched on again',
+    'kachat-domains':
+        'the verified mainnet registry manifest it published, and its tooling image unless testnet still uses it. The mainnet indexer stops serving .kachat names until it is installed and switched on again. Testnet is not touched',
+    'kachat-domains-testnet':
+        'the verified testnet-10 registry manifest it published, and its tooling image unless mainnet still uses it. The testnet indexer stops serving .kachat names until it is installed and switched on again. Mainnet is not touched',
 };
 
 async function loadServices() {
@@ -5684,10 +5695,12 @@ function renderUninstallCards() {
 
         // The testnet node and miner share mainnet's images, so they never remove any; the
         // testnet indexer has its own image (KQS-008) and removes it like any service.
-        const testnetUnit = TESTNET_UNIT_VALUES.has(key) && key !== 'kachat-testnet';
-        const removes = testnetUnit
-            ? 'Removes the testnet containers and, by default, their data. The images are shared with mainnet, so they are kept (Global settings → Clear cache frees them when nothing uses them).'
-            : 'Removes the containers, the images built for it, and by default its data.';
+        const testnetUnit = TESTNET_UNIT_VALUES.has(key) && key !== 'kachat-testnet' && key !== 'kachat-domains-testnet';
+        const removes = key.startsWith('kachat-domains')
+            ? `Removes it from ${networkView} only. It has no container: the tooling image is shared by both networks and is removed only when neither has it installed.`
+            : testnetUnit
+              ? 'Removes the testnet containers and, by default, their data. The images are shared with mainnet, so they are kept (Global settings → Clear cache frees them when nothing uses them).'
+              : 'Removes the containers, the images built for it, and by default its data.';
         // One nginx serves both networks: there is no testnet-only proxy to remove.
         const sharedProxy =
             key === 'proxy' && networkView === 'testnet'
@@ -6542,7 +6555,7 @@ async function loadKachatDomains(indexerStatus = null) {
     if (!tag) return;
     let d;
     try {
-        d = await api('/api/kachat-domains');
+        d = await api(`/api/kachat-domains?net=${networkView}`);
     } catch {
         return;
     }
@@ -6565,16 +6578,22 @@ async function loadKachatDomains(indexerStatus = null) {
     $('kd-facts').innerHTML = rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('');
     const note = $('kd-note');
     const live = indexerStatus?.manifestRegistryCovenantId;
+    const where = networkView === 'testnet' ? 'testnet' : 'mainnet';
+    const view = networkView === 'testnet' ? 'Testnet' : 'Mainnet';
     if (!d.indexerInstalled) {
-        note.textContent = 'Install the testnet KaChat Indexer first (Indexer, in this Testnet view): the registry only exists on testnet-10 so far.';
+        note.textContent = `Install the ${where} KaChat Indexer first (Indexer, in this ${view} view): .kachat Domains hands its registry to that indexer.`;
     } else if (sm && live && live.toLowerCase() !== String(sm.registryCovenantId).toLowerCase()) {
         note.textContent = `Warning: the indexer follows registry ${live.slice(0, 12)}…, not the verified ${String(sm.registryCovenantId).slice(0, 12)}…. Run Updates → Update to hand it over.`;
     } else if (!d.installed) {
-        note.textContent = 'Testnet-10 only for now. The first install compiles the tooling and can take 15 minutes or more.';
+        note.textContent =
+            (where === 'mainnet' ? 'There is no mainnet .kachat registry yet: installing gets the tooling ready, and the switch works once kachat-domains publishes one. ' : '') +
+            'The first install compiles the tooling and can take 15 minutes or more (once: both networks share it).';
+    } else if (!sm) {
+        note.textContent = `Installed. There is no ${d.network} registry yet, so there is nothing to switch on. Updates → Update picks one up once kachat-domains publishes it.`;
     } else if (!d.inUse) {
-        note.textContent = 'Installed and switched off: the testnet indexer is not serving this registry. Turn it on with its switch in the sidebar.';
+        note.textContent = `Installed and switched off: the ${where} indexer is not serving this registry. Turn it on with its switch in the sidebar.`;
     } else {
-        note.textContent = 'On: the testnet indexer serves this verified registry. Updates are under the Updates tab.';
+        note.textContent = `On: the ${where} indexer serves this verified registry. Updates are under the Updates tab.`;
     }
 
     // Updates
@@ -6605,9 +6624,9 @@ $('kd-check')?.addEventListener('click', async () => {
 
 $('kd-update')?.addEventListener('click', async () => {
     await runAction({
-        key: 'kachat-domains',
+        key: effectiveService('kachat-domains'),
         title: 'Updating .kachat Domains',
-        note: 'Rebuilds the tooling, verifies the manifest again, and restarts the testnet indexer only if the registry changed.',
+        note: 'Rebuilds the shared tooling, verifies the manifests again, and restarts an indexer only if it has .kachat Domains on and its registry changed.',
         request: () => api('/api/kachat-domains/update', { method: 'POST' }),
     });
     $('kd-update').disabled = true;
@@ -6625,7 +6644,7 @@ async function loadNames() {
         for (const id of ['names-network', 'names-covenant', 'names-genesis', 'names-daa', 'names-synced']) setText(id, '–');
     };
     try {
-        const s = await api('/api/names/status');
+        const s = await api(`/api/names/status?net=${networkView}`);
         loadKachatDomains(s).catch(() => {});
         if (!s || s.available === false) {
             if (tag) {
@@ -6633,7 +6652,7 @@ async function loadNames() {
                 tag.className = 'tag off';
             }
             blank();
-            setText('names-status-note', s?.message || 'The testnet names module is not available yet.');
+            setText('names-status-note', s?.message || 'The names module is not available yet.');
             return;
         }
         // A start block the node has pruned never comes back by itself
@@ -6643,7 +6662,7 @@ async function loadNames() {
             tag.textContent = pruned ? 'stuck' : s.synced ? 'synced' : 'syncing';
             tag.className = `tag ${pruned ? 'bad' : s.synced ? 'ok' : 'warn'}`;
         }
-        setText('names-network', s.network || 'testnet-10');
+        setText('names-network', s.network || (networkView === 'testnet' ? 'testnet-10' : 'mainnet'));
         // The indexer withholds registryCovenantId until synced (it is the apps'
         // switch to use it); the manifest's id comes through separately.
         setText('names-covenant', s.manifestRegistryCovenantId || s.registryCovenantId || '–');
@@ -6672,7 +6691,7 @@ async function loadNames() {
             tag.className = 'tag off';
         }
         blank();
-        setText('names-status-note', 'The testnet names module is not available yet.');
+        setText('names-status-note', 'The names module is not available yet.');
     }
 }
 
@@ -8155,7 +8174,7 @@ async function loadLanIp() {
 // --- .kachat → Rules: the rules of the registry contract that is running ---
 //
 // Fixed rules come from the contracts themselves (kachat-domains contracts/*.sil and
-// docs/REGISTRY_V4.md); every number comes from the manifest the testnet indexer follows
+// docs/REGISTRY_V4.md); every number comes from the manifest the viewed network's indexer follows
 // (/api/names/rules), so a redeployment changes this page by itself.
 
 const kasOf = (sompi) => {
@@ -8191,7 +8210,7 @@ async function loadNamesRules() {
     const box = $('names-rules');
     let r;
     try {
-        r = await api('/api/names/rules');
+        r = await api(`/api/names/rules?net=${networkView}`);
     } catch (e) {
         box.innerHTML = `<p class="error">${escapeHtml(e.message)}</p>`;
         return;
