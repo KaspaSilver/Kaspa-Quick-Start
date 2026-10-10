@@ -3326,7 +3326,7 @@ route('GET', /^\/api\/services$/, async (req, res) => {
     sendJson(res, 200, { services: await lifecycle.statusAll() });
 });
 
-route('POST', /^\/api\/services\/([a-z-]+)\/install$/, async (req, res, match) => {
+route('POST', /^\/api\/services\/([a-z0-9-]+)\/install$/, async (req, res, match) => {
     const unit = lifecycle.unitFor(match[1]);
     if (!unit) return fail(res, 404, 'No such service.');
 
@@ -3425,7 +3425,7 @@ route('POST', /^\/api\/kachat-testnet\/update$/, async (req, res) => {
     sendJson(res, 202, { ok: true, jobId: job.id });
 });
 
-route('POST', /^\/api\/services\/([a-z-]+)\/(start|stop)$/, async (req, res, match) => {
+route('POST', /^\/api\/services\/([a-z0-9-]+)\/(start|stop)$/, async (req, res, match) => {
     const unit = lifecycle.unitFor(match[1]);
     if (!unit) return fail(res, 404, 'No such service.');
 
@@ -3439,7 +3439,7 @@ route('POST', /^\/api\/services\/([a-z-]+)\/(start|stop)$/, async (req, res, mat
     sendJson(res, 202, { ok: true, jobId: job.id });
 });
 
-route('POST', /^\/api\/services\/([a-z-]+)\/uninstall$/, async (req, res, match) => {
+route('POST', /^\/api\/services\/([a-z0-9-]+)\/uninstall$/, async (req, res, match) => {
     const unit = lifecycle.unitFor(match[1]);
     if (!unit) return fail(res, 404, 'No such service.');
     const body = await readBody(req);
