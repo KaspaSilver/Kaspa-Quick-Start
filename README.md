@@ -55,6 +55,25 @@ It is what wallets and explorers ask a node for, and building it later costs
 more than having it from the beginning, so it is a checkbox you can clear rather
 than a default you have to find.
 
+### Experimental apps, and getting back to main
+
+New apps are tested on their own branch before they reach everyone. **System, Experimental**
+lists them; **Try it** rebuilds the panel from that branch (the regular panel plus the app),
+and the sidebar badge shows the branch while you are on it. Your node, apps and data keep
+running either way. To return to the regular panel:
+
+1. **System, Experimental, Back to main.** It offers to uninstall the apps only that branch
+   can run, then rebuilds the panel from `main`.
+2. Or **Global settings, Update panel** with the branch set to `main`.
+3. If the panel itself will not open, re-run the installer. It rebuilds the panel from `main`
+   and keeps your settings, `.env` and data:
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/KaspaSilver/Kaspa-Quick-Start/main/install.sh | bash
+   ```
+   On Windows, the `irm ... | iex` line above does the same.
+
+A branch that fails to build changes nothing: the panel you had keeps running.
+
 ### Uninstall
 
 Same two dialects as the install above: Linux and macOS run shell scripts,

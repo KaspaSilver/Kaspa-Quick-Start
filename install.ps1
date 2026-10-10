@@ -376,6 +376,13 @@ function Get-Stack {
         if (Test-Path $to) { Remove-Item $to -Recurse -Force }
         Copy-Item $from $to -Recurse -Force
     }
+    # Whatever branch the panel was on (System > Experimental), it now runs the one installed
+    # here: forget an experimental branch's description and record this ref as the panel's.
+    $exp = Join-Path $StackDir 'EXPERIMENTAL.json'
+    if (Test-Path $exp) { Remove-Item $exp -Force }
+    if (Test-Path (Join-Path $src 'EXPERIMENTAL.json')) { Copy-Item (Join-Path $src 'EXPERIMENTAL.json') $exp -Force }
+    New-Item -ItemType Directory -Force -Path (Join-Path $StackDir 'conf') | Out-Null
+    Set-Content -Path (Join-Path $StackDir 'conf\panel-ref') -Value $StackRef -NoNewline -Encoding ascii
 
     foreach ($sub in @('conf', 'proxy\conf.d', 'proxy\snippets', 'proxy\letsencrypt', 'proxy\webroot')) {
         New-Item -ItemType Directory -Path (Join-Path $StackDir $sub) -Force | Out-Null
