@@ -1,0 +1,6 @@
+{
+  "title": "x4kas, the Kaspa terminal",
+  "summary": "x4kas (github.com/smartgoo/x4kas, beta) as an app: install it, switch it on, and the x4kas tab shows the live desktop app (BlockDAG view, explorer, address index, queries) streamed from this machine and reading this node. Uses about half a CPU core while running, adjustable.",
+  "apps": ["x4kas"],
+  "items": ["x4kas"]
+}

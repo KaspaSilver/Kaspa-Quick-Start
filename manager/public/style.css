@@ -2509,3 +2509,7 @@ body:not(.testnet-view) [data-testnet-only]:not(.nav-item):not(.nav-row) { displ
 .x4kas-frame-wrap { position: relative; }
 #x4kas-frame { display: block; width: 100%; height: calc(100vh - 190px); min-height: 420px; border: 1px solid var(--line); border-radius: 10px; background: #000; }
 #x4kas-frame[hidden] { display: none; }
+/* System > Experimental */
+.exp-item { padding: 12px 0; border-top: 1px solid var(--line); }
+.exp-item:first-child { border-top: 0; }
+.exp-item h4 { margin: 0; }

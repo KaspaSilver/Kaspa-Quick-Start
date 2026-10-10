@@ -276,6 +276,7 @@ function selectTab(name) {
     // x4kas streams only while its tab is open (it costs bandwidth); leaving unloads it.
     if (name === 'x4kas') loadX4kas().catch(() => {});
     syncX4kasFrame();
+    if (name === 'experimental') loadExperimental().catch(() => {});
     // The machine's LAN address sits beside the title on Proxy & domains.
     $('topbar-lan').hidden = name !== 'proxy';
     if (name === 'proxy') loadLanIp().catch(() => {});
@@ -492,7 +493,7 @@ document.addEventListener('click', (event) => {
 // parallel *-testnet units, so both networks run side by side from one panel. The
 // choice is remembered across reloads.
 const NET_VIEW_KEY = 'kqs-network-view';
-const TESTNET_TABS = new Set(['overview', 'kaspad', 'mining', 'kachat', 'names', 'proxy', 'logs', 'global', 'support']);
+const TESTNET_TABS = new Set(['overview', 'kaspad', 'mining', 'kachat', 'names', 'proxy', 'logs', 'global', 'experimental', 'support']);
 
 // Proxy & domains state (filled by loadPublish). Declared up here because
 // applyNetworkView runs at load and re-renders it.
@@ -7957,6 +7958,9 @@ $('panel-lan')?.addEventListener('change', async (event) => {
 async function loadGlobal() {
     const r = await api('/api/system');
     $('global-panel-version').textContent = r.panelVersion || '–';
+    // Update panel keeps you on the branch you are on (System > Experimental changes it).
+    if (r.panelRef && $('global-ref') && !$('global-ref').dataset.touched) $('global-ref').value = r.panelRef;
+    showPanelBranch(r.panelRef);
     $('global-stack-dir').textContent = r.stackDir || '–';
 
     const last = r.lastUpdate;
@@ -8502,3 +8506,133 @@ $('x4kas-cpus-save')?.addEventListener('click', async () => {
 });
 
 for (const b of document.querySelectorAll('#tab-x4kas .subtab-btn')) b.addEventListener('click', () => syncX4kasFrame());
+// --- System > Experimental: apps still being tested, each on its own branch ---
+
+/** The sidebar badge says when this panel runs an experimental branch, not main. */
+function showPanelBranch(ref) {
+    const badge = $('version-badge');
+    if (!badge || !ref) return;
+    const base = badge.textContent.split(' · ')[0];
+    badge.textContent = ref === 'main' ? base : `${base} · ${ref}`;
+    badge.classList.toggle('warn', ref !== 'main');
+    badge.title = ref === 'main' ? '' : `This panel runs the experimental branch "${ref}" (System > Experimental).`;
+}
+
+$('global-ref')?.addEventListener('input', () => {
+    $('global-ref').dataset.touched = '1';
+});
+
+let expState = null;
+
+async function loadExperimental(force = false) {
+    const list = $('exp-list');
+    let r;
+    try {
+        r = await api(`/api/system/experimental${force ? '?force=1' : ''}`);
+    } catch (e) {
+        list.innerHTML = `<p class="error">${escapeHtml(e.message)}</p>`;
+        return;
+    }
+    expState = r;
+    showPanelBranch(r.current);
+
+    // This panel
+    $('exp-current-text').innerHTML = r.experimental
+        ? `This panel runs the experimental branch <code>${escapeHtml(r.current)}</code>${
+              r.title ? ` (${escapeHtml(r.title)})` : ''
+          }. Update panel (Global settings) keeps it on this branch.`
+        : 'This panel runs <code>main</code>, the regular release everyone gets.';
+    $('exp-leave').hidden = !r.experimental;
+    const installed = r.apps.filter((a) => a.installed);
+    $('exp-leave-apps').hidden = !installed.length;
+    $('exp-leave-remove-row').hidden = !installed.length;
+    $('exp-leave-keep-row').hidden = !installed.length;
+    if (installed.length) {
+        $('exp-leave-apps').innerHTML = `<p><strong>Only this branch can run ${installed
+            .map((a) => escapeHtml(a.label))
+            .join(', ')}.</strong> On main, ${installed.length === 1 ? 'it' : 'they'} would keep running with nothing in the panel to switch ${
+            installed.length === 1 ? 'it' : 'them'
+        } off or remove ${installed.length === 1 ? 'it' : 'them'}.</p>`;
+    }
+
+    // The branches
+    if (r.error && !r.branches.length) {
+        list.innerHTML = `<p class="error">${escapeHtml(r.error)}</p>`;
+        return;
+    }
+    if (!r.branches.length) {
+        list.innerHTML = '<p class="muted">Nothing is being tested right now.</p>';
+        return;
+    }
+    list.innerHTML = r.branches
+        .map((b) => {
+            const here = b.branch === r.current;
+            const fresh =
+                b.behind == null
+                    ? ''
+                    : b.behind === 0
+                      ? 'Up to date with main.'
+                      : `${b.behind} change${b.behind === 1 ? '' : 's'} on main ${b.behind === 1 ? 'is' : 'are'} not in it yet.`;
+            return `
+          <div class="exp-item">
+            <div class="node-head"><h4>${escapeHtml(b.title)}</h4>
+              <span class="tag ${here ? 'ok' : ''}">${here ? 'running here' : escapeHtml(b.branch)}</span></div>
+            <p class="muted">${escapeHtml(b.summary)}</p>
+            <p class="hint">Branch <code>${escapeHtml(b.branch)}</code>${b.updatedAt ? `, updated ${escapeHtml(new Date(b.updatedAt).toLocaleString())}` : ''}. ${fresh}</p>
+            ${here ? '' : `<div class="row"><button type="button" class="ghost" data-exp-try="${escapeHtml(b.branch)}">Try it</button></div>`}
+          </div>`;
+        })
+        .join('');
+}
+
+$('exp-refresh')?.addEventListener('click', () => loadExperimental(true).catch(() => {}));
+
+/** Rebuild the panel from a branch, with the same overlay as Update panel. */
+async function switchPanelTo(ref) {
+    const repo = 'KaspaSilver/Kaspa-Quick-Start';
+    const baseAt = await api('/api/system').then((s) => s.lastUpdate?.at ?? null).catch(() => null);
+    await api('/api/system/panel-update', { method: 'POST', body: { repo, ref } });
+    showPanelUpdateOverlay(repo, ref, baseAt);
+}
+
+$('exp-list')?.addEventListener('click', async (ev) => {
+    const ref = ev.target.closest('[data-exp-try]')?.dataset.expTry;
+    if (!ref) return;
+    const b = expState?.branches.find((x) => x.branch === ref);
+    const ok = await askConfirm(
+        `Try "${b?.title ?? ref}"?\n\nThis rebuilds the panel from the branch ${ref}: the regular panel plus what is being tested. ` +
+            'It is offline for a minute or two; the node and every app keep running. System > Experimental brings you back to main.',
+    );
+    if (!ok) return;
+    try {
+        await switchPanelTo(ref);
+    } catch (e) {
+        await askConfirm(`Could not start the update: ${e.message}`);
+    }
+});
+
+$('exp-leave-btn')?.addEventListener('click', async () => {
+    const r = expState;
+    if (!r) return;
+    const remove = !$('exp-leave-remove-row').hidden && $('exp-leave-remove').checked;
+    const keepData = $('exp-leave-keep').checked;
+    const apps = remove ? r.apps.filter((a) => a.installed) : [];
+    const ok = await askConfirm(
+        `Go back to main?${apps.length ? `\n\nFirst uninstall: ${apps.map((a) => a.label).join(', ')}${keepData ? ' (keeping their data)' : ''}.` : ''}\n\n` +
+            'Then the panel rebuilds from main. It is offline for a minute or two; the node and every app keep running.',
+    );
+    if (!ok) return;
+    for (const a of apps) {
+        await runAction({
+            key: a.key,
+            title: `Uninstalling ${a.label}`,
+            note: 'Before going back to main, whose panel cannot run it.',
+            request: () => api(`/api/services/${a.key}/uninstall`, { method: 'POST', body: { keepData, confirm: a.key } }),
+        });
+    }
+    try {
+        await switchPanelTo('main');
+    } catch (e) {
+        await askConfirm(`Could not start the update: ${e.message}`);
+    }
+});

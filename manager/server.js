@@ -4044,6 +4044,36 @@ route('GET', /^\/api\/system$/, async (req, res) => {
         panelVersion: PANEL_VERSION,
         stackDir: STACK_HOST,
         lastUpdate: selfservice.lastUpdate(),
+        // The branch the panel runs: 'main', or an experimental one (System > Experimental).
+        panelRef: selfservice.panelRef(),
+    });
+});
+
+// System > Experimental: which branch this panel runs, and the experimental branches to try.
+route('GET', /^\/api\/system\/experimental$/, async (req, res, match, url) => {
+    const current = selfservice.panelRef();
+    const local = selfservice.localExperiment();
+    let branches = [];
+    let error = null;
+    try {
+        branches = await selfservice.listExperiments({ force: url.searchParams.get('force') === '1' });
+    } catch (err) {
+        error = err.message;
+    }
+    // Apps only this branch knows how to run, and whether each is installed (to offer
+    // removing them before going back to main, whose panel cannot).
+    const apps = [];
+    for (const key of Array.isArray(local?.apps) ? local.apps : []) {
+        const st = await lifecycle.status(key).catch(() => null);
+        if (st) apps.push({ key, label: st.label ?? key, installed: Boolean(st.installed), running: Boolean(st.running) });
+    }
+    sendJson(res, 200, {
+        current,
+        experimental: current !== 'main',
+        title: local?.title ?? null,
+        apps,
+        branches,
+        error,
     });
 });
 
