@@ -2504,3 +2504,8 @@ body:not(.testnet-view) [data-testnet-only]:not(.nav-item):not(.nav-row) { displ
 .rules ul.plain { margin: 0; padding-left: 18px; }
 .rules ul.plain li { margin: 6px 0; line-height: 1.5; }
 .rules table.blocks { margin-bottom: 10px; }
+
+/* x4kas: the streamed app fills the tab below the sub-tabs. */
+.x4kas-frame-wrap { position: relative; }
+#x4kas-frame { display: block; width: 100%; height: calc(100vh - 190px); min-height: 420px; border: 1px solid var(--line); border-radius: 10px; background: #000; }
+#x4kas-frame[hidden] { display: none; }

@@ -649,6 +649,43 @@ services:
       driver: json-file
       options: { max-size: "20m", max-file: "3" }
 
+  # ---- x4kas ------------------------------------------------------------------
+  # The Kaspa terminal app (github.com/smartgoo/x4kas) on a virtual screen, streamed with
+  # KasmVNC into the panel's x4kas tab. No published port: the panel proxies it under /x4kas/
+  # for signed-in sessions only, and KasmVNC's own password (X4KAS_PASSWORD) is sent by that
+  # proxy alone. x4kas redraws its live BlockDAG continuously in software, so it is held to
+  # X4KAS_CPUS cores (Settings); its index and settings live in the volume.
+  x4kas:
+    image: kaspa-one-click/x4kas:${X4KAS_VERSION:-latest}
+    build:
+      context: ./x4kas
+      args:
+        X4KAS_VERSION: ${X4KAS_VERSION:-v0.1.0}
+    container_name: kaspa-node-x4kas
+    hostname: x4kas
+    profiles: ["x4kas"]
+    restart: unless-stopped
+    shm_size: "1gb"
+    cpus: ${X4KAS_CPUS:-0.5}
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: ${TZ:-Etc/UTC}
+      SUBFOLDER: /x4kas/
+      CUSTOM_USER: kqs
+      PASSWORD: ${X4KAS_PASSWORD:-}
+      LP_NUM_THREADS: "1"
+      # First start only: point x4kas at this stack's node (it remembers later choices).
+      X4KAS_NODE_URL: ws://kaspad:${X4KAS_NODE_PORT:-17110}
+      X4KAS_NETWORK: ${X4KAS_NETWORK:-mainnet}
+    volumes:
+      - x4kas-data:/config
+    networks:
+      - kaspa
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
   # ---- .kachat Domains server (mainnet) ------------------------------------
   # The names registry on its own (KaChat-Indexer docs/KACHAT_NAMES_STANDALONE.md): names
   # follower + profiles follower + names-only API, with its own Postgres. Needs the node and
@@ -820,3 +857,5 @@ volumes:
     name: kaspa-node-kachat-names-db-data
   kachat-names-db-testnet-data:
     name: kaspa-node-kachat-names-db-testnet-data
+  x4kas-data:
+    name: kaspa-node-x4kas-data

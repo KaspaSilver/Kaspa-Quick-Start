@@ -43,6 +43,7 @@ import * as pruning from './lib/pruning.js';
 import * as kassigner from './lib/kassigner.js';
 import * as selfservice from './lib/selfservice.js';
 import * as kachatDomains from './lib/kachat-domains.js';
+import * as x4kas from './lib/x4kas.js';
 import * as cpuminer from './lib/cpuminer.js';
 import * as publish from './lib/publish.js';
 import * as portcheck from './lib/portcheck.js';
@@ -202,6 +203,8 @@ function nodeSiblings() {
         bot: Boolean(appsCfg.bot?.enabled),
         // The mainnet .kachat Domains server, from install to uninstall (KQS-016).
         names: readEnvFile().KACHAT_NAMES_NEEDS_NODE === '1',
+        // x4kas reads the node over wRPC Borsh too, from install to uninstall.
+        x4kas: readEnvFile().X4KAS_NEEDS_NODE === '1',
     };
 }
 
@@ -3808,6 +3811,123 @@ route('POST', /^\/api\/kachat-domains\/update$/, async (req, res) => {
     sendJson(res, 202, { ok: true, jobId: job.id });
 });
 
+// ---- x4kas: the Kaspa terminal app, streamed into the panel (lib/x4kas.js) ----------------
+//
+// Install builds the image for the newest x4kas release (its official Linux binary, checked
+// against the release's SHA256SUMS) and creates the container; the switch starts it; the tab
+// shows it. It needs the node's wRPC Borsh listener, which it turns on like the indexer does.
+const X4KAS_UNIT = {
+    label: 'x4kas',
+    profile: 'x4kas',
+    services: ['x4kas'],
+    containers: [x4kas.CONTAINER],
+    primary: x4kas.CONTAINER,
+    volumes: ['kaspa-node-x4kas-data'],
+    images: ['kaspa-one-click/x4kas'],
+    buildable: ['x4kas'],
+    data: 'its address index, labels, watchlist and saved queries',
+};
+
+/** Borsh on, and x4kas pointed at this node's own port and network. */
+async function x4kasNode(onLine) {
+    const cfg = loadNodeConfig();
+    const want = { X4KAS_NEEDS_NODE: '1', X4KAS_NODE_PORT: String(ports(cfg).borsh), X4KAS_NETWORK: cfg.network || 'mainnet' };
+    const env = readEnvFile();
+    if (Object.entries(want).some(([k, v]) => env[k] !== v)) updateEnvFile(want);
+    await ensureNodeListeners(onLine);
+}
+
+async function buildX4kas(tag, onLine, { fresh = false } = {}) {
+    updateEnvFile({ X4KAS_VERSION: tag });
+    onLine(`Building x4kas ${tag} (the official release, checked against its SHA256SUMS).`);
+    await dockerctl.compose(['build', ...(fresh ? ['--pull'] : []), 'x4kas'], { onLine, profile: 'x4kas', timeoutMs: 60 * 60_000 });
+}
+
+lifecycle.registerUnit('x4kas', {
+    label: 'x4kas',
+    tab: 'x4kas',
+    data: X4KAS_UNIT.data,
+    hooks: {
+        async status() {
+            const st = await dockerctl.containerState(x4kas.CONTAINER);
+            return { installed: st.exists, running: st.running, health: st.health, startedAt: st.startedAt };
+        },
+        async install(onLine) {
+            const node = await lifecycle.status('node').catch(() => null);
+            if (!node?.installed) throw new Error('Install Kaspad first: x4kas reads the chain from this node.');
+            await apps.ensureSecrets(onLine);
+            await x4kasNode(onLine);
+            const latest = await x4kas.latestRelease();
+            await buildX4kas(latest.tag, onLine);
+            await lifecycle.composeInstall({ ...X4KAS_UNIT, buildable: [] }, onLine);
+            onLine(`x4kas ${latest.tag} is installed and switched off. Its switch in the sidebar starts it.`);
+        },
+        async setRunning(running, onLine) {
+            if (running) await x4kasNode(onLine);
+            return lifecycle.composeSetRunning(X4KAS_UNIT, running, onLine);
+        },
+        async uninstall({ keepData, onLine }) {
+            const removed = await lifecycle.composeUninstall(X4KAS_UNIT, { keepData, onLine });
+            if (readEnvFile().X4KAS_NEEDS_NODE === '1') {
+                updateEnvFile({ X4KAS_NEEDS_NODE: '0' });
+                await ensureNodeListeners(onLine);
+            }
+            return removed;
+        },
+    },
+});
+
+route('GET', /^\/api\/x4kas$/, async (req, res) => {
+    const [st, installed] = await Promise.all([dockerctl.containerState(x4kas.CONTAINER), x4kas.installedVersion()]);
+    sendJson(res, 200, {
+        repo: x4kas.REPO,
+        installed: st.exists,
+        running: st.running,
+        version: installed,
+        cpus: x4kas.cpus(),
+        mount: `${x4kas.MOUNT}/`,
+    });
+});
+
+route('GET', /^\/api\/x4kas\/check$/, async (req, res) => {
+    try {
+        const [latest, installed] = await Promise.all([x4kas.latestRelease(), x4kas.installedVersion()]);
+        sendJson(res, 200, { latest, installed, updateAvailable: Boolean(installed) && installed !== latest.tag });
+    } catch (err) {
+        fail(res, 502, err.message);
+    }
+});
+
+route('POST', /^\/api\/x4kas\/update$/, async (req, res) => {
+    if (!(await dockerctl.containerState(x4kas.CONTAINER)).exists) return fail(res, 409, 'Install x4kas first.');
+    const job = jobs.start('Update x4kas', async (onLine) => {
+        const latest = await x4kas.latestRelease();
+        await buildX4kas(latest.tag, onLine, { fresh: true });
+        if ((await dockerctl.containerState(x4kas.CONTAINER)).running) {
+            await dockerctl.compose(['up', '-d', '--no-deps', '--force-recreate', 'x4kas'], { onLine, profile: 'x4kas', timeoutMs: 10 * 60_000 });
+            onLine(`x4kas ${latest.tag} is running. Reload its tab.`);
+        } else {
+            await lifecycle.composeInstall({ ...X4KAS_UNIT, buildable: [] }, onLine);
+            onLine(`x4kas ${latest.tag} is installed and stays switched off.`);
+        }
+    });
+    sendJson(res, 202, { ok: true, jobId: job.id });
+});
+
+route('PUT', /^\/api\/x4kas\/settings$/, async (req, res) => {
+    const body = await readBody(req);
+    const n = Number(body.cpus);
+    if (!Number.isFinite(n) || n < 0.25 || n > 4) return fail(res, 400, 'CPU limit must be between 0.25 and 4 cores.');
+    updateEnvFile({ X4KAS_CPUS: String(Math.round(n * 100) / 100) });
+    const job = jobs.start('Apply x4kas settings', async (onLine) => {
+        if ((await dockerctl.containerState(x4kas.CONTAINER)).running) {
+            await dockerctl.compose(['up', '-d', '--no-deps', 'x4kas'], { onLine, profile: 'x4kas', timeoutMs: 5 * 60_000 });
+            onLine(`x4kas now runs with at most ${x4kas.cpus()} core(s).`);
+        } else onLine(`Saved: x4kas gets at most ${x4kas.cpus()} core(s) the next time it starts.`);
+    });
+    sendJson(res, 202, { ok: true, jobId: job.id });
+});
+
 route('GET', /^\/api\/names\/status$/, async (req, res, match, url) => {
     // Proxy the network's indexer's names status over the internal network, and treat
     // its absence as "not available yet" rather than an error.
@@ -4250,6 +4370,19 @@ const server = http.createServer(async (req, res) => {
 // Last line of defence: log, never exit.
 process.on('unhandledRejection', (err) => log('unhandled rejection', err));
 
+// WebSockets: only x4kas's screen, only for a signed-in session, only from this panel's own
+// pages (a cross-site page cannot open it with the session cookie: SameSite plus this check).
+server.on('upgrade', (req, socket, head) => {
+    try {
+        const path = String(req.url || '');
+        const sameOrigin = !req.headers.origin || new URL(req.headers.origin).host === req.headers.host;
+        if (path.startsWith(`${x4kas.MOUNT}/`) && sameOrigin && isAuthenticated(req)) return x4kas.upgrade(req, socket, head);
+    } catch {
+        /* a malformed request: refused below */
+    }
+    socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
+});
+
 async function handleRequest(req, res) {
     let url;
     try {
@@ -4263,6 +4396,15 @@ async function handleRequest(req, res) {
     if (url.pathname === kachatProxy.MOUNT || url.pathname.startsWith(`${kachatProxy.MOUNT}/`)) {
         if (authRequired() && !isAuthenticated(req)) return fail(res, 401, 'Not signed in.');
         return kachatProxy.handle(req, res, url);
+    }
+    // x4kas: its streamed screen, for signed-in sessions only.
+    if (url.pathname === x4kas.MOUNT || url.pathname.startsWith(`${x4kas.MOUNT}/`)) {
+        if (!isAuthenticated(req)) return fail(res, 401, 'Not signed in.');
+        if (url.pathname === x4kas.MOUNT) {
+            res.writeHead(302, { Location: `${x4kas.MOUNT}/` });
+            return res.end();
+        }
+        return x4kas.handle(req, res);
     }
     // The testnet-10 indexer's admin API (the Testnet view's Indexer tab).
     if (url.pathname === kachatProxy.TESTNET_MOUNT || url.pathname.startsWith(`${kachatProxy.TESTNET_MOUNT}/`)) {

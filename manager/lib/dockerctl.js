@@ -49,6 +49,7 @@ export const STACK_CONTAINERS = [
     { key: 'kachat-names-db', label: '.kachat Domains postgres', name: 'kaspa-node-kachat-names-db' },
     { key: 'libretranslate', label: 'libretranslate', name: 'kaspa-node-libretranslate' },
     { key: 'kachat-desktop', label: 'kachat desktop', name: 'kaspa-node-kachat-desktop' },
+    { key: 'x4kas', label: 'x4kas', name: 'kaspa-node-x4kas' },
     { key: 'kachat-bot', label: 'kachat bot', name: 'kaspa-node-kachat-bot' },
     { key: 'nextcloud', label: 'nextcloud', name: NEXTCLOUD_CONTAINER },
     { key: 'nextcloud-db', label: 'nextcloud mariadb', name: 'kaspa-node-nextcloud-db' },

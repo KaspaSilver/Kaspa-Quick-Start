@@ -211,6 +211,18 @@
         </label>
       </div>
 
+      <div class="nav-row">
+        <button class="nav-item" data-tab="x4kas" title="x4kas">
+          <span class="nav-dot" data-health="x4kas"></span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="4" width="19" height="16" rx="2"/><path d="M6 15l3-4 3 2 4-6 2 3"/></svg>
+          <span class="label">x4kas</span>
+        </button>
+        <label class="switch mini" title="Start or stop x4kas">
+          <input type="checkbox" data-service="x4kas" aria-label="Start or stop x4kas">
+          <span class="track"></span>
+        </label>
+      </div>
+
       <p class="nav-group-title">Network</p>
       <div class="nav-row">
         <button class="nav-item" data-tab="proxy" title="Proxy &amp; domains">
@@ -1742,6 +1754,86 @@
     </section>
 
     <!-- ------------------------------------------------------- nextcloud -->
+    <!--
+      x4kas (github.com/smartgoo/x4kas): the Kaspa terminal desktop app, run in its own container
+      and streamed (KasmVNC) into the App sub-tab, so it looks exactly like the downloaded app.
+    -->
+    <section id="tab-x4kas" class="tab">
+      <div class="subtabs">
+        <button class="subtab-btn active" data-subtab="x4kas-app">App</button>
+        <button class="subtab-btn" data-subtab="x4kas-updates">Updates</button>
+        <button class="subtab-btn" data-subtab="x4kas-settings">Settings</button>
+        <button class="subtab-btn" data-subtab="x4kas-log">Log</button>
+        <button class="subtab-btn" data-subtab="x4kas-uninstall">Uninstall</button>
+      </div>
+
+      <div id="sub-x4kas-app" class="subtab active">
+        <div class="x4kas-frame-wrap">
+          <iframe id="x4kas-frame" title="x4kas" allow="clipboard-read; clipboard-write; fullscreen" hidden></iframe>
+          <div id="x4kas-off" class="notice">
+            <p><strong>x4kas is switched off.</strong> Turn it on with its switch in the sidebar; the app
+            appears here a few seconds after it starts.</p>
+          </div>
+        </div>
+        <p class="hint">
+          This is the x4kas desktop app running on this machine and drawn here. It reads the chain
+          from this node. It is one shared screen: anyone signed in to this panel sees and controls
+          the same window. <a id="x4kas-popout" href="/x4kas/" target="_blank" rel="noopener">Open it in its own window</a>.
+        </p>
+      </div>
+
+      <div id="sub-x4kas-updates" class="subtab">
+        <div class="grid">
+          <article class="card span2">
+            <h3>x4kas software</h3>
+            <p class="muted">
+              Checks <code>smartgoo/x4kas</code> for a newer release, rebuilds the image on its official
+              Linux build (checked against the release's SHA256SUMS) and restarts the app if it is
+              running. The index and settings are kept. x4kas is beta upstream.
+            </p>
+            <dl class="kv vertical">
+              <div><dt>Source</dt><dd><a href="https://github.com/smartgoo/x4kas" target="_blank" rel="noopener">smartgoo/x4kas</a></dd></div>
+              <div><dt>Installed</dt><dd id="x4kas-installed">-</dd></div>
+              <div><dt>Latest release</dt><dd id="x4kas-latest">not checked yet</dd></div>
+            </dl>
+            <div id="x4kas-update-status" class="update-status">Not checked yet.</div>
+            <div class="row">
+              <button type="button" id="x4kas-check" class="ghost">Check for updates</button>
+              <button type="button" id="x4kas-update" class="primary" disabled>Update</button>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <div id="sub-x4kas-settings" class="subtab">
+        <div class="grid">
+          <article class="card span2">
+            <h3>CPU limit</h3>
+            <p class="muted">
+              x4kas redraws its live BlockDAG view all the time, in software on this server, whether or
+              not anyone is watching. This caps how much of the machine it may take, so the node always
+              comes first. Lower means a choppier animation, nothing else.
+            </p>
+            <label class="inline">Cores
+              <input type="number" id="x4kas-cpus" min="0.25" max="4" step="0.25" value="0.5" size="5">
+              <button type="button" id="x4kas-cpus-save" class="ghost mini">Apply</button>
+            </label>
+            <p class="hint" id="x4kas-cpus-note"></p>
+          </article>
+        </div>
+      </div>
+
+      <div id="sub-x4kas-log" class="subtab">
+        <div class="svclog" data-svclog="x4kas" data-title="x4kas log"></div>
+      </div>
+
+      <div id="sub-x4kas-uninstall" class="subtab">
+        <div class="grid">
+          <article class="card span2 uninstall-card" data-uninstall="x4kas"></article>
+        </div>
+      </div>
+    </section>
+
     <section id="tab-desktop" class="tab">
       <div class="subtabs">
         <button class="subtab-btn active" data-subtab="desktop-overview">Overview</button>

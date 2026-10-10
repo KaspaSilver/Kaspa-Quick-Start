@@ -484,6 +484,9 @@ export async function ensureSecrets(log = () => {}) {
         KACHAT_PUSH_SECRET: () => randomSecret(32),
         KACHAT_NAMES_DB_PASSWORD: () => randomSecret(24),
         KACHAT_NAMES_DB_PASSWORD_TESTNET: () => randomSecret(24),
+        // KasmVNC's own login in front of x4kas; only the panel's proxy ever sends it. Read at
+        // every container start, so it is not tied to the volume.
+        X4KAS_PASSWORD: () => randomSecret(24),
         NEXTCLOUD_DB_PASSWORD: () => randomSecret(24),
         NEXTCLOUD_DB_ROOT_PASSWORD: () => randomSecret(24),
         NEXTCLOUD_IMAGINARY_SECRET: () => randomSecret(24),

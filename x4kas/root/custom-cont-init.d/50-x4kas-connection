@@ -1,0 +1,9 @@
+#!/bin/sh
+# Point x4kas at this stack's node the first time (it keeps whatever is chosen in the app after).
+# X4KAS_NODE_URL / X4KAS_NETWORK come from Kaspa Quick Start's compose file.
+dir=/config/.x4kas
+mkdir -p "$dir"
+if [ ! -f "$dir/connection.toml" ] && [ -n "${X4KAS_NODE_URL:-}" ]; then
+  printf 'kind = "url"\nurl = "%s"\nnetwork = "%s"\n' "$X4KAS_NODE_URL" "${X4KAS_NETWORK:-mainnet}" > "$dir/connection.toml"
+fi
+chown -R abc:abc "$dir"
