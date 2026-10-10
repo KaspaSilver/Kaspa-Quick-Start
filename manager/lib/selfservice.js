@@ -28,6 +28,66 @@ import { COMPOSE_FILE, CONF_DIR, PORTS_OVERRIDE, STACK_HOST, STACK_LOCAL } from 
 const STATUS_LOCAL = path.join(STACK_LOCAL, 'conf', 'last-update.txt');
 
 /** Reads back what the detached updater recorded, once the panel is up again. */
+/**
+ * The branch this panel was last updated from (System > Experimental). Written by a panel
+ * update once it has built; an install that never updated runs main.
+ */
+export function panelRef() {
+    try {
+        return fs.readFileSync(path.join(STACK_LOCAL, 'conf', 'panel-ref'), 'utf8').trim() || 'main';
+    } catch {
+        return 'main';
+    }
+}
+
+/** The running branch's own description (EXPERIMENTAL.json at the stack root), or null on main. */
+export function localExperiment() {
+    try {
+        return JSON.parse(fs.readFileSync(path.join(STACK_LOCAL, 'EXPERIMENTAL.json'), 'utf8'));
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * The experimental branches on GitHub: every branch that carries an EXPERIMENTAL.json
+ * ({title, summary, apps: [unit keys]}), with how far it is ahead of and behind main.
+ * A branch without that file is not offered. Cached for 5 minutes (GitHub's API limit).
+ */
+let experimentsCache = { at: 0, repo: null, value: null };
+export async function listExperiments({ repo = 'KaspaSilver/Kaspa-Quick-Start', force = false } = {}) {
+    if (!REPO_RE.test(repo)) throw new Error(`"${repo}" is not a valid owner/repo.`);
+    if (!force && experimentsCache.repo === repo && experimentsCache.value && Date.now() - experimentsCache.at < 5 * 60_000) {
+        return experimentsCache.value;
+    }
+    const res = await ghFetch(`https://api.github.com/repos/${repo}/branches?per_page=100`);
+    if (!res.ok) throw new Error(`GitHub returned ${res.status} for ${repo} branches${res.status === 403 ? ' (rate limit - try again shortly)' : ''}.`);
+    const names = (await res.json()).map((b) => b.name).filter((n) => n !== 'main' && n !== 'master' && REF_RE.test(n));
+    const out = [];
+    for (const name of names.slice(0, 20)) {
+        const meta = await fetch(`https://raw.githubusercontent.com/${repo}/${encodeURIComponent(name)}/EXPERIMENTAL.json`, {
+            signal: AbortSignal.timeout(10_000),
+        })
+            .then((r) => (r.ok ? r.json() : null))
+            .catch(() => null);
+        if (!meta || typeof meta !== 'object') continue;
+        const cmp = await ghFetch(`https://api.github.com/repos/${repo}/compare/main...${encodeURIComponent(name)}`)
+            .then((r) => (r.ok ? r.json() : null))
+            .catch(() => null);
+        out.push({
+            branch: name,
+            title: String(meta.title || name).slice(0, 80),
+            summary: String(meta.summary || '').slice(0, 600),
+            apps: Array.isArray(meta.apps) ? meta.apps.filter((a) => /^[a-z][a-z0-9-]{0,40}$/.test(a)) : [],
+            ahead: cmp?.ahead_by ?? null,
+            behind: cmp?.behind_by ?? null,
+            updatedAt: cmp?.commits?.at(-1)?.commit?.committer?.date ?? null,
+        });
+    }
+    experimentsCache = { at: Date.now(), repo, value: out };
+    return out;
+}
+
 export function lastUpdate() {
     let raw;
     try {
@@ -126,6 +186,7 @@ const CODE_ITEMS = [
     'kassigner',
     'nextcloud',
     'uninstall.sh',
+    'EXPERIMENTAL.json',
     'uninstall.ps1',
     'README.md',
 ];
@@ -266,15 +327,28 @@ tar -xzf "$arc" -C "$tmp" --strip-components=1 || fail "The downloaded archive c
 [ -f "$tmp/docker-compose.yml" ] || fail "That archive does not look like the stack."
 
 step "Replacing the panel files"
+# An experimental branch describes itself here; main has none, so leaving one removes it.
+rm -f "${STACK_LOCAL}/EXPERIMENTAL.json"
 for item in ${CODE_ITEMS.join(' ')}; do
   [ -e "$tmp/$item" ] || continue
   rm -rf "${STACK_LOCAL}/$item"
   cp -a "$tmp/$item" "${STACK_LOCAL}/" || fail "Could not write $item."
 done
+# An experimental branch can bring folders this panel's list does not know yet (a new app's
+# build context): EXPERIMENTAL.json "items". Plain top-level names only, never state.
+if [ -f "$tmp/EXPERIMENTAL.json" ]; then
+  for item in $(node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));for(const i of m.items||[])if(/^[a-z0-9][a-z0-9._-]{0,60}$/.test(i)&&!["conf","proxy","data",".env"].includes(i))console.log(i)' "$tmp/EXPERIMENTAL.json"); do
+    [ -e "$tmp/$item" ] || continue
+    rm -rf "${STACK_LOCAL}/$item"
+    cp -a "$tmp/$item" "${STACK_LOCAL}/" || fail "Could not write $item."
+  done
+fi
 rm -rf "$tmp"
 
 step "Rebuilding the panel image"
 ${compose} build manager || fail "The panel image did not build. The old panel is still running."
+# The branch the panel now runs (System > Experimental), recorded only once it has built.
+mkdir -p "${STACK_LOCAL}/conf" && printf '%s\n' "${ref}" > "${STACK_LOCAL}/conf/panel-ref"
 
 step "Restarting the panel"
 echo "result=ok" >> "$S"

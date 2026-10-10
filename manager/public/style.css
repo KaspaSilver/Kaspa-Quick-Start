@@ -2504,3 +2504,8 @@ body:not(.testnet-view) [data-testnet-only]:not(.nav-item):not(.nav-row) { displ
 .rules ul.plain { margin: 0; padding-left: 18px; }
 .rules ul.plain li { margin: 6px 0; line-height: 1.5; }
 .rules table.blocks { margin-bottom: 10px; }
+
+/* System > Experimental */
+.exp-item { padding: 12px 0; border-top: 1px solid var(--line); }
+.exp-item:first-child { border-top: 0; }
+.exp-item h4 { margin: 0; }

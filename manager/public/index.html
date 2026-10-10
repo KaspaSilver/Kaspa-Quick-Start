@@ -233,6 +233,12 @@
         </button>
       </div>
       <div class="nav-row">
+        <button class="nav-item" data-tab="experimental" title="Experimental">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6M10 3v6l-5 9a2 2 0 001.8 3h10.4a2 2 0 001.8-3l-5-9V3"/><path d="M7.5 15h9"/></svg>
+          <span class="label">Experimental</span>
+        </button>
+      </div>
+      <div class="nav-row">
         <button class="nav-item" data-tab="global" title="Global settings">
           <span class="nav-dot" data-health="global"></span>
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5v.2a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.6 1.7 1.7 0 00-1.9.4l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1A1.7 1.7 0 004.7 9a1.7 1.7 0 00-.4-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>
@@ -1742,6 +1748,39 @@
     </section>
 
     <!-- ------------------------------------------------------- nextcloud -->
+    <!--
+      System > Experimental: try apps that are still being tested on their own branch of
+      Kaspa-Quick-Start. Trying one updates this panel from that branch (main plus the app);
+      Back to main updates it from main again. Each branch describes itself in EXPERIMENTAL.json.
+    -->
+    <section id="tab-experimental" class="tab">
+      <div class="grid">
+        <article class="card span2" id="exp-current">
+          <h3>This panel</h3>
+          <p class="muted" id="exp-current-text">-</p>
+          <div id="exp-leave" hidden>
+            <div class="notice" id="exp-leave-apps" hidden></div>
+            <label class="check" id="exp-leave-remove-row" hidden><input type="checkbox" id="exp-leave-remove" checked>
+              Uninstall those apps first (main's panel cannot run or remove them)</label>
+            <label class="check" id="exp-leave-keep-row" hidden><input type="checkbox" id="exp-leave-keep">
+              Keep their data, in case you come back</label>
+            <div class="row"><button type="button" id="exp-leave-btn" class="primary">Back to main</button></div>
+          </div>
+        </article>
+        <article class="card span2">
+          <div class="node-head"><h3>Experimental apps</h3>
+            <button type="button" id="exp-refresh" class="ghost" style="margin-left:auto">Refresh</button>
+          </div>
+          <p class="muted">
+            New apps are tested on their own branch before they reach everyone. Trying one rebuilds
+            this panel from that branch, which is the regular panel plus the app. Your node, apps and
+            data keep running. Back to main returns to the regular panel at any time.
+          </p>
+          <div id="exp-list"><p class="muted">Loading...</p></div>
+        </article>
+      </div>
+    </section>
+
     <section id="tab-desktop" class="tab">
       <div class="subtabs">
         <button class="subtab-btn active" data-subtab="desktop-overview">Overview</button>
