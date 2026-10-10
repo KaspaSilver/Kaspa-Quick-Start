@@ -273,9 +273,7 @@ function selectTab(name) {
     if (name === 'bot') loadBot().catch(() => {});
     if (name === 'push') loadPush().catch(() => {});
     if (name === 'names') loadNames().catch(() => {});
-    // x4kas streams only while its tab is open (it costs bandwidth); leaving unloads it.
     if (name === 'x4kas') loadX4kas().catch(() => {});
-    syncX4kasFrame();
     if (name === 'experimental') loadExperimental().catch(() => {});
     // The machine's LAN address sits beside the title on Proxy & domains.
     $('topbar-lan').hidden = name !== 'proxy';
@@ -377,7 +375,6 @@ const SVC_LOGS = {
         testnet: [['kachat-names-testnet', '.kachat Domains'], ['kachat-names-db-testnet', 'postgres']],
     },
     desktop: { mainnet: [['kachat-desktop', 'kachat desktop']] },
-    x4kas: { mainnet: [['x4kas', 'x4kas']] },
     bot: { mainnet: [['kachat-bot', 'kachat bot']] },
     push: { mainnet: [['kachat-push', 'push service']], testnet: [['kachat-push-testnet', 'push service']] },
     nextcloud: {
@@ -1184,7 +1181,6 @@ const SERVICE_NAMES = {
     translate: 'the translation engine',
     proxy: 'the reverse proxy',
     'kachat-domains': '.kachat Domains',
-    x4kas: 'x4kas',
 };
 
 for (const input of document.querySelectorAll('[data-service]')) {
@@ -5563,7 +5559,6 @@ const UNINSTALL_COPY = {
     kassigner: 'the downloaded firmware and the record of what was verified. A device you have already flashed is unaffected',
     mining: "the bridge's own share and block records",
     proxy: 'nothing. Your domains and certificates live in the stack directory and are kept',
-    x4kas: 'its address index, labels, watchlist and saved queries (they are rebuilt from the node after a reinstall)',
     translate: 'the downloaded language models, which are several gigabytes and have to be fetched again',
     'node-testnet': 'the synced testnet-10 chain. The mainnet node is not touched',
     'mining-testnet': "the testnet bridge's share and block records. Mainnet mining is not touched",
@@ -5593,7 +5588,6 @@ async function loadServices() {
     }
     // The one service with no sidebar row, so renderServiceRow leaves it alone.
     renderTranslateRow(serviceState.translate);
-    syncX4kasFrame();
     renderUninstallCards();
 }
 
@@ -8422,90 +8416,6 @@ ${migrationCard(r, p, short)}
       </article>`;
 }
 
-// --- x4kas (the streamed desktop app; Updates / Settings / Log / Uninstall) ---
-
-/**
- * Show the app only while its tab is open and the container runs. Setting the frame's src
- * opens the stream; clearing it closes the stream, so a panel left on another tab costs no
- * bandwidth. The frame is only reloaded when that state changes, never on a poll.
- */
-function syncX4kasFrame() {
-    const frame = $('x4kas-frame');
-    if (!frame) return;
-    // Plain DOM reads: selectTab can run before the helpers further down are declared.
-    const onTab =
-        document.querySelector('.nav-item.active')?.dataset.tab === 'x4kas' &&
-        document.querySelector('#tab-x4kas .subtab-btn.active')?.dataset.subtab === 'x4kas-app';
-    let running = false;
-    try {
-        running = Boolean(serviceState?.x4kas?.running);
-    } catch {
-        /* not loaded yet */
-    }
-    const want = onTab && running ? '/x4kas/' : '';
-    if ((frame.getAttribute('src') || '') !== want) {
-        if (want) frame.setAttribute('src', want);
-        else frame.removeAttribute('src');
-    }
-    frame.hidden = !want;
-    $('x4kas-off').hidden = Boolean(want) || !onTab || running;
-}
-
-async function loadX4kas() {
-    let d;
-    try {
-        d = await api('/api/x4kas');
-    } catch {
-        return;
-    }
-    $('x4kas-installed').textContent = d.version || (d.installed ? 'installed' : 'not installed');
-    $('x4kas-cpus').value = d.cpus;
-    $('x4kas-cpus-note').textContent = `Now: at most ${d.cpus} core${d.cpus === 1 ? '' : 's'}.`;
-    $('x4kas-check').disabled = !d.installed;
-    if (!d.installed) $('x4kas-update').disabled = true;
-    syncX4kasFrame();
-}
-
-$('x4kas-check')?.addEventListener('click', async () => {
-    const status = $('x4kas-update-status');
-    status.className = 'update-status';
-    status.textContent = 'Checking GitHub...';
-    try {
-        const r = await api('/api/x4kas/check');
-        $('x4kas-latest').innerHTML = `<a href="${escapeHtml(r.latest.url)}" target="_blank" rel="noopener">${escapeHtml(r.latest.tag)}</a>${
-            r.latest.prerelease ? ' (pre-release)' : ''
-        }`;
-        $('x4kas-update').disabled = !r.updateAvailable;
-        status.className = `update-status ${r.updateAvailable ? 'available' : 'current'}`;
-        status.textContent = r.updateAvailable ? `Update available: ${r.installed} to ${r.latest.tag}.` : `Up to date: ${r.installed}.`;
-    } catch (e) {
-        status.className = 'update-status error';
-        status.textContent = e.message;
-    }
-});
-
-$('x4kas-update')?.addEventListener('click', async () => {
-    await runAction({
-        key: 'x4kas',
-        title: 'Updating x4kas',
-        note: 'Rebuilds the image on the newest x4kas release and restarts the app if it is running. The index and settings are kept.',
-        request: () => api('/api/x4kas/update', { method: 'POST' }),
-    });
-    $('x4kas-update').disabled = true;
-    loadX4kas().catch(() => {});
-});
-
-$('x4kas-cpus-save')?.addEventListener('click', async () => {
-    await runAction({
-        key: 'x4kas',
-        title: 'Applying the x4kas CPU limit',
-        note: 'A running x4kas is recreated with the new limit; its index and settings are kept.',
-        request: () => api('/api/x4kas/settings', { method: 'PUT', body: { cpus: Number($('x4kas-cpus').value) } }),
-    });
-    loadX4kas().catch(() => {});
-});
-
-for (const b of document.querySelectorAll('#tab-x4kas .subtab-btn')) b.addEventListener('click', () => syncX4kasFrame());
 // --- System > Experimental: apps still being tested, each on its own branch ---
 
 /** The sidebar badge says when this panel runs an experimental branch, not main. */
@@ -8636,3 +8546,101 @@ $('exp-leave-btn')?.addEventListener('click', async () => {
         await askConfirm(`Could not start the update: ${e.message}`);
     }
 });
+
+// --- x4kas: download it, and connect it to this node ---
+
+function x4kasPlatform() {
+    const ua = navigator.userAgent || '';
+    const mac = /Macintosh|Mac OS X/.test(ua);
+    if (mac) return 'macos-arm64'; // Intel Macs are listed too; Apple silicon is what ships now.
+    if (/Windows/.test(ua)) return 'windows-x64';
+    if (/Linux/.test(ua) && !/Android/.test(ua)) return /aarch64|arm64/i.test(ua) ? 'linux-arm64' : 'linux-x64';
+    return null;
+}
+
+const x4kasCopyRow = (address) => `
+    <div class="row x4kas-copy">
+      <code>${escapeHtml(address)}</code>
+      <button type="button" class="ghost mini" data-copy="${escapeHtml(address)}">Copy</button>
+    </div>`;
+
+async function loadX4kas() {
+    let d;
+    try {
+        d = await api('/api/x4kas');
+    } catch (e) {
+        $('x4kas-downloads').innerHTML = `<p class="error">${escapeHtml(e.message)}</p>`;
+        return;
+    }
+    const mine = x4kasPlatform();
+
+    // 1. Download
+    const r = d.release;
+    if (!r || r.error) {
+        $('x4kas-downloads').innerHTML = `<p class="error">${escapeHtml(r?.error || 'No release found.')}</p>
+            <p><a href="https://github.com/${escapeHtml(d.repo)}/releases" target="_blank" rel="noopener">Releases on GitHub</a></p>`;
+    } else {
+        const sorted = [...r.downloads].sort((a, b) => (b.key === mine) - (a.key === mine));
+        $('x4kas-downloads').innerHTML = `
+          <p class="muted">Release <a href="${escapeHtml(r.url)}" target="_blank" rel="noopener">${escapeHtml(r.tag)}</a>${
+              r.publishedAt ? `, ${escapeHtml(new Date(r.publishedAt).toLocaleDateString())}` : ''
+          }. Each archive holds the app (x4kas) and its command-line tool (x4kas-cli).</p>
+          <div class="x4kas-dls">${sorted
+              .map(
+                  (a) => `<a class="${a.key === mine ? 'primary' : 'ghost'} button" href="${escapeHtml(a.url)}" rel="noopener">${escapeHtml(a.label)}${
+                      a.key === mine ? ' (this computer)' : ''
+                  }<small>${escapeHtml(a.name)}${a.size ? `, ${(a.size / 1e6).toFixed(0)} MB` : ''}</small></a>`,
+              )
+              .join('')}</div>
+          ${r.checksums ? `<p class="hint">Checksums: <a href="${escapeHtml(r.checksums)}" rel="noopener">SHA256SUMS</a>.</p>` : ''}`;
+    }
+    $('x4kas-dl-hint').innerHTML =
+        mine?.startsWith('macos')
+            ? 'macOS: unpack it and drag <code>x4kas.app</code> to Applications. It is not notarized yet, so the first time, open it and then allow it under System Settings, Privacy &amp; Security, Open Anyway.'
+            : mine?.startsWith('linux')
+              ? 'Linux: needs X11 or Wayland, libxkbcommon and OpenSSL 3 (Ubuntu 22.04 or newer).'
+              : mine === 'windows-x64'
+                ? 'Windows: unzip it and run <code>x4kas.exe</code>. SmartScreen may ask first, because it is new.'
+                : '';
+
+    // 2. Connect
+    $('x4kas-network').textContent = d.network;
+    const lanAddr = d.lan ? `ws://${d.lan}:${d.borsh.port}` : null;
+    if (d.borsh.exposure === 'public' && lanAddr) {
+        $('x4kas-lan').innerHTML = x4kasCopyRow(lanAddr);
+    } else {
+        $('x4kas-lan').innerHTML = `
+          <p class="muted">${
+              d.borsh.exposure === 'local'
+                  ? 'The node answers wRPC Borsh on this machine only, so other computers cannot reach it yet.'
+                  : 'The node does not publish its wRPC Borsh port yet, so other computers cannot reach it.'
+          } Publishing it on the network makes <code>${escapeHtml(lanAddr || `ws://<this machine's IP>:${d.borsh.port}`)}</code> work from any
+          computer on your network. It is not reachable from the internet unless your router forwards that port.</p>
+          <div class="row"><button type="button" class="ghost" id="x4kas-open-borsh">Publish wRPC Borsh on the network</button></div>`;
+        $('x4kas-open-borsh')?.addEventListener('click', async () => {
+            const ok = await askConfirm(
+                `Publish the node's wRPC Borsh port (${d.borsh.port}) on this machine's network address?\n\n` +
+                    'Wallets and apps on your network can then connect to the node. The node restarts to pick it up (a few seconds).',
+            );
+            if (!ok) return;
+            await runAction({
+                key: 'node',
+                title: 'Publishing wRPC Borsh',
+                note: 'The node restarts with the port published on the network.',
+                request: () => api('/api/ports/borsh', { method: 'POST', body: { public: true } }),
+            });
+            loadX4kas().catch(() => {});
+        });
+    }
+    if (d.remote) {
+        $('x4kas-remote').innerHTML =
+            x4kasCopyRow(d.remote) +
+            (d.remoteTls ? '' : '<p class="hint">This name has no certificate yet, so the connection is not encrypted. Get one under Proxy &amp; domains.</p>');
+    } else {
+        $('x4kas-remote').innerHTML = `
+          <p class="muted">Put the Kaspa node on a domain (a free DuckDNS name works) and x4kas can connect from
+          anywhere, encrypted (<code>wss://</code>). Proxy &amp; domains does it in a few steps.</p>
+          <div class="row"><button type="button" class="ghost" id="x4kas-go-proxy">Open Proxy &amp; domains</button></div>`;
+        $('x4kas-go-proxy')?.addEventListener('click', () => selectTab('proxy'));
+    }
+}

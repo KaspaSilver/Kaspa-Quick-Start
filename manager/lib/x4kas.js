@@ -1,50 +1,29 @@
-import http from 'node:http';
-import net from 'node:net';
-
 import { docker } from './dockerctl.js';
-import { readEnvFile } from './store.js';
 
 /**
- * x4kas (github.com/smartgoo/x4kas): the Kaspa terminal desktop app, run in its own container
- * on a virtual screen and streamed with KasmVNC, so the panel's x4kas tab shows exactly what
- * the downloaded app shows.
- *
- * The stream is never published on a port of its own. The panel proxies it under /x4kas/
- * (plain HTTP for the page, a WebSocket for the screen) and only for a signed-in session.
- * KasmVNC also asks for a password (X4KAS_PASSWORD, generated, never shown), which only this
- * proxy sends, so nothing else on the stack network can open the app either: x4kas has a
- * built-in terminal, which is a shell in its container.
+ * x4kas (github.com/smartgoo/x4kas, MIT): the Kaspa terminal desktop app. It runs natively on
+ * your own computer; this panel gives you the download for it and this node's address to
+ * connect it to, and makes the node reachable for it. Nothing of x4kas runs on the server.
  */
 export const REPO = 'smartgoo/x4kas';
-export const MOUNT = '/x4kas';
-export const CONTAINER = 'kaspa-node-x4kas';
-const IMAGE = 'kaspa-one-click/x4kas';
-const VERSION_LABEL = 'org.opencontainers.image.version';
-// Overridable for development (a panel running outside the stack network).
-const ORIGIN = new URL(process.env.X4KAS_ORIGIN || 'http://x4kas:3000');
 
-export const version = () => (readEnvFile().X4KAS_VERSION || '').trim() || null;
-export const imageTag = (v = version()) => `${IMAGE}:${v || 'latest'}`;
-export const cpus = () => {
-    const n = Number(readEnvFile().X4KAS_CPUS);
-    return Number.isFinite(n) && n > 0 ? n : 0.5;
-};
+/** Which platform a release asset is for, from its name (x4kas-<ver>-<target>.<ext>). */
+const PLATFORMS = [
+    { key: 'macos-arm64', label: 'macOS (Apple silicon)', match: /aarch64-apple-darwin/ },
+    { key: 'macos-x64', label: 'macOS (Intel)', match: /x86_64-apple-darwin/ },
+    { key: 'windows-x64', label: 'Windows (64-bit)', match: /x86_64-pc-windows/ },
+    { key: 'linux-x64', label: 'Linux (x86_64)', match: /x86_64-unknown-linux/ },
+    { key: 'linux-arm64', label: 'Linux (ARM64)', match: /aarch64-unknown-linux/ },
+];
 
-/** The release the installed image was built from, or null when it is not built. */
-export async function installedVersion() {
-    try {
-        const { stdout } = await docker(['image', 'inspect', '-f', `{{index .Config.Labels "${VERSION_LABEL}"}}`, imageTag()], {
-            timeoutMs: 15_000,
-        });
-        const v = stdout.trim();
-        return v && v !== '<no value>' ? v : null;
-    } catch {
-        return null;
-    }
-}
+let releaseCache = { at: 0, value: null };
 
-/** The newest x4kas release on GitHub: { tag, name, url, publishedAt, prerelease, notes }. */
-export async function latestRelease() {
+/**
+ * The newest x4kas release with a download per platform, cached for 10 minutes (GitHub's API
+ * limit is per IP and shared with the rest of the panel).
+ */
+export async function latestRelease({ force = false } = {}) {
+    if (!force && releaseCache.value && Date.now() - releaseCache.at < 10 * 60_000) return releaseCache.value;
     const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
         headers: { accept: 'application/vnd.github+json', 'user-agent': 'kaspa-quick-start' },
         signal: AbortSignal.timeout(15_000),
@@ -54,79 +33,38 @@ export async function latestRelease() {
         throw new Error(`GitHub returned ${res.status} for ${REPO} releases${hint}`);
     }
     const r = await res.json();
-    if (!/^v?\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$/.test(String(r.tag_name || ''))) {
-        throw new Error(`Unexpected x4kas release tag "${r.tag_name}".`);
-    }
-    return {
-        tag: r.tag_name,
-        name: r.name || r.tag_name,
+    const assets = Array.isArray(r.assets) ? r.assets : [];
+    const value = {
+        tag: String(r.tag_name || ''),
         url: r.html_url,
         publishedAt: r.published_at,
         prerelease: Boolean(r.prerelease),
-        notes: String(r.body || '').slice(0, 4000),
+        downloads: PLATFORMS.flatMap((p) => {
+            const a = assets.find((x) => p.match.test(x.name));
+            return a ? [{ key: p.key, label: p.label, name: a.name, url: a.browser_download_url, size: a.size }] : [];
+        }),
+        checksums: assets.find((x) => x.name === 'SHA256SUMS')?.browser_download_url ?? null,
     };
+    releaseCache = { at: Date.now(), value };
+    return value;
 }
 
-// --- the stream, proxied ---------------------------------------------------------------
-
-const auth = () => `Basic ${Buffer.from(`kqs:${readEnvFile().X4KAS_PASSWORD || ''}`).toString('base64')}`;
-
-/** Request headers to forward: no cookies (the panel's session stays here), our own auth. */
-function upstreamHeaders(req) {
-    const out = {};
-    for (const [k, v] of Object.entries(req.headers)) {
-        const key = k.toLowerCase();
-        if (['cookie', 'authorization', 'host', 'origin', 'referer'].includes(key)) continue;
-        out[key] = v;
-    }
-    out.host = ORIGIN.host;
-    // KasmVNC checks a WebSocket's Origin against its own host; the browser's is the panel's.
-    if (req.headers.origin) out.origin = ORIGIN.origin;
-    out.authorization = auth();
-    return out;
-}
-
-/** The page, its assets and KasmVNC's HTTP calls, under /x4kas/. */
-export function handle(req, res) {
-    const upstream = http.request(
-        { host: ORIGIN.hostname, port: ORIGIN.port || 80, method: req.method, path: req.url, headers: upstreamHeaders(req) },
-        (up) => {
-            const headers = { ...up.headers };
-            // Never let KasmVNC's own login prompt reach the browser: the panel is the login.
-            delete headers['www-authenticate'];
-            delete headers['set-cookie'];
-            res.writeHead(up.statusCode === 401 ? 502 : up.statusCode, headers);
-            up.pipe(res);
-        },
+/**
+ * The streamed x4kas (an earlier version of this branch ran it on the server and drew it into
+ * the panel) is gone: remove its container, image and index volume if they are still here.
+ */
+export async function removeStreamedApp(log = () => {}) {
+    const exists = await docker(['container', 'inspect', 'kaspa-node-x4kas'], { timeoutMs: 15_000 })
+        .then(() => true)
+        .catch(() => false);
+    if (!exists) return;
+    log('x4kas: removing the streamed app from the server (x4kas now runs natively on your computer).');
+    await docker(['rm', '-f', 'kaspa-node-x4kas'], { timeoutMs: 60_000 }).catch(() => {});
+    const { stdout } = await docker(['images', '--format', '{{.Repository}}:{{.Tag}}', 'kaspa-one-click/x4kas'], { timeoutMs: 30_000 }).catch(
+        () => ({ stdout: '' }),
     );
-    upstream.on('error', () => {
-        if (!res.headersSent) {
-            res.writeHead(502, { 'Content-Type': 'text/html; charset=utf-8' });
-            res.end('<p style="font-family:sans-serif">x4kas is not running. Turn it on with its switch in the sidebar.</p>');
-        } else res.destroy();
-    });
-    req.pipe(upstream);
-}
-
-/** The screen itself: a WebSocket, spliced through after the same checks. */
-export function upgrade(req, socket, head) {
-    const up = net.connect(Number(ORIGIN.port || 80), ORIGIN.hostname, () => {
-        const headers = upstreamHeaders(req);
-        const lines = [`${req.method} ${req.url} HTTP/1.1`];
-        for (const [k, v] of Object.entries(headers)) {
-            for (const value of Array.isArray(v) ? v : [v]) lines.push(`${k}: ${value}`);
-        }
-        up.write(`${lines.join('\r\n')}\r\n\r\n`);
-        if (head?.length) up.write(head);
-        up.pipe(socket);
-        socket.pipe(up);
-    });
-    const close = () => {
-        up.destroy();
-        socket.destroy();
-    };
-    up.on('error', close);
-    socket.on('error', close);
-    up.on('close', () => socket.destroy());
-    socket.on('close', () => up.destroy());
+    for (const tag of stdout.split('\n').map((t) => t.trim()).filter(Boolean)) {
+        await docker(['image', 'rm', tag], { timeoutMs: 120_000 }).catch(() => {});
+    }
+    await docker(['volume', 'rm', 'kaspa-node-x4kas-data'], { timeoutMs: 60_000 }).catch(() => {});
 }

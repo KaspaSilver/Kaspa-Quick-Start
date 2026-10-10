@@ -185,7 +185,6 @@ const CODE_ITEMS = [
     'kachat',
     'kassigner',
     'nextcloud',
-    'x4kas',
     'uninstall.sh',
     'EXPERIMENTAL.json',
     'uninstall.ps1',

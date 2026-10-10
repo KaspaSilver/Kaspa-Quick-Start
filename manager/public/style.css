@@ -2505,11 +2505,20 @@ body:not(.testnet-view) [data-testnet-only]:not(.nav-item):not(.nav-row) { displ
 .rules ul.plain li { margin: 6px 0; line-height: 1.5; }
 .rules table.blocks { margin-bottom: 10px; }
 
-/* x4kas: the streamed app fills the tab below the sub-tabs. */
-.x4kas-frame-wrap { position: relative; }
-#x4kas-frame { display: block; width: 100%; height: calc(100vh - 190px); min-height: 420px; border: 1px solid var(--line); border-radius: 10px; background: #000; }
-#x4kas-frame[hidden] { display: none; }
 /* System > Experimental */
 .exp-item { padding: 12px 0; border-top: 1px solid var(--line); }
 .exp-item:first-child { border-top: 0; }
 .exp-item h4 { margin: 0; }
+
+/* x4kas: download buttons and the copyable addresses */
+.x4kas-dls { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.x4kas-dls .button {
+    display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; text-decoration: none;
+    padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: transparent; color: var(--text);
+}
+.x4kas-dls .button:hover { border-color: var(--accent-dim); }
+.x4kas-dls .button.primary { background: var(--accent); border-color: var(--accent); color: #04120f; font-weight: 600; }
+.x4kas-dls .button small { font-size: 11px; opacity: 0.7; }
+.x4kas-addr { margin-top: 12px; }
+.x4kas-addr h4 { margin: 0 0 6px; }
+.x4kas-copy code { word-break: break-all; }
