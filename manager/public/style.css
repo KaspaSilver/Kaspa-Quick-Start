@@ -2522,3 +2522,4 @@ body:not(.testnet-view) [data-testnet-only]:not(.nav-item):not(.nav-row) { displ
 .x4kas-addr { margin-top: 12px; }
 .x4kas-addr h4 { margin: 0 0 6px; }
 .x4kas-copy code { word-break: break-all; }
+.x4kas-notes { white-space: pre-wrap; font-size: 13px; max-height: 420px; overflow: auto; margin: 0; }

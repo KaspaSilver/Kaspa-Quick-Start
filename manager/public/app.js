@@ -8564,10 +8564,12 @@ const x4kasCopyRow = (address) => `
       <button type="button" class="ghost mini" data-copy="${escapeHtml(address)}">Copy</button>
     </div>`;
 
-async function loadX4kas() {
+let x4kasState = null;
+
+async function loadX4kas(force = false) {
     let d;
     try {
-        d = await api('/api/x4kas');
+        d = await api(`/api/x4kas${force ? '?force=1' : ''}`);
     } catch (e) {
         $('x4kas-downloads').innerHTML = `<p class="error">${escapeHtml(e.message)}</p>`;
         return;
@@ -8587,7 +8589,7 @@ async function loadX4kas() {
           }. Each archive holds the app (x4kas) and its command-line tool (x4kas-cli).</p>
           <div class="x4kas-dls">${sorted
               .map(
-                  (a) => `<a class="${a.key === mine ? 'primary' : 'ghost'} button" href="${escapeHtml(a.url)}" rel="noopener">${escapeHtml(a.label)}${
+                  (a) => `<a class="${a.key === mine ? 'primary' : 'ghost'} button" data-platform="${escapeHtml(a.key)}" href="${escapeHtml(a.url)}" rel="noopener">${escapeHtml(a.label)}${
                       a.key === mine ? ' (this computer)' : ''
                   }<small>${escapeHtml(a.name)}${a.size ? `, ${(a.size / 1e6).toFixed(0)} MB` : ''}</small></a>`,
               )
@@ -8602,6 +8604,9 @@ async function loadX4kas() {
               : mine === 'windows-x64'
                 ? 'Windows: unzip it and run <code>x4kas.exe</code>. SmartScreen may ask first, because it is new.'
                 : '';
+
+    x4kasState = d;
+    renderX4kasUpdates(d);
 
     // 2. Connect
     $('x4kas-network').textContent = d.network;
@@ -8644,3 +8649,50 @@ async function loadX4kas() {
         $('x4kas-go-proxy')?.addEventListener('click', () => selectTab('proxy'));
     }
 }
+
+/** Updates: what was downloaded here, what is out, and the release notes. */
+function renderX4kasUpdates(d) {
+    const r = d.release && !d.release.error ? d.release : null;
+    const last = d.lastDownload;
+    $('x4kas-have').textContent = last ? `${last.tag}, on ${new Date(last.at).toLocaleDateString()}` : 'nothing from this panel yet';
+    $('x4kas-latest').innerHTML = r
+        ? `<a href="${escapeHtml(r.url)}" target="_blank" rel="noopener">${escapeHtml(r.tag)}</a>${
+              r.publishedAt ? `, released ${escapeHtml(new Date(r.publishedAt).toLocaleDateString())}` : ''
+          }${r.prerelease ? ' (pre-release)' : ''}`
+        : escapeHtml(d.release?.error || '-');
+    const status = $('x4kas-update-status');
+    if (!r) {
+        status.className = 'update-status error';
+        status.textContent = d.release?.error || 'Could not read the releases.';
+    } else if (!last) {
+        status.className = 'update-status';
+        status.textContent = `The latest is ${r.tag}. Download it under Get x4kas; this panel then tells you when a newer one is out.`;
+    } else if (d.updateAvailable) {
+        status.className = 'update-status available';
+        status.textContent = `A newer x4kas is out: ${r.tag} (you have ${last.tag}).`;
+    } else {
+        status.className = 'update-status current';
+        status.textContent = `Up to date: ${r.tag} is the latest release.`;
+    }
+    $('x4kas-get-latest').hidden = !(r && d.updateAvailable);
+    $('x4kas-notes').textContent = r?.notes?.trim() || 'No release notes.';
+    const btn = document.querySelector('#tab-x4kas [data-subtab="x4kas-updates"]');
+    if (btn) btn.textContent = d.updateAvailable ? 'Updates (1)' : 'Updates';
+}
+
+$('x4kas-check')?.addEventListener('click', () => loadX4kas(true).catch(() => {}));
+$('x4kas-get-latest')?.addEventListener('click', () => selectSubtab($('tab-x4kas'), 'x4kas-get'));
+
+// A download link remembers the release, so Updates can say when a newer one is out.
+$('x4kas-downloads')?.addEventListener('click', (ev) => {
+    const a = ev.target.closest('a.button');
+    const r = x4kasState?.release;
+    if (!a || !r?.tag) return;
+    api('/api/x4kas/downloaded', { method: 'POST', body: { tag: r.tag, platform: a.dataset.platform || '' } })
+        .then((res) => {
+            x4kasState.lastDownload = res.lastDownload;
+            x4kasState.updateAvailable = false;
+            renderX4kasUpdates(x4kasState);
+        })
+        .catch(() => {});
+});

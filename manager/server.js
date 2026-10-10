@@ -2004,15 +2004,25 @@ route('GET', /^\/api\/x4kas$/, async (req, res, match, url) => {
     ]);
     const kaspad = publish.overview({ panelHasPassword: authConfigured() }).find((s) => s.key === 'kaspad');
     const remote = kaspad?.url ? kaspad.url.replace(/^http/, 'ws') : null;
+    const last = x4kas.lastDownload();
     sendJson(res, 200, {
         repo: x4kas.REPO,
         release,
+        lastDownload: last,
+        updateAvailable: Boolean(last?.tag && release?.tag && last.tag !== release.tag),
         network: cfg.network || 'mainnet',
         borsh: { port: borsh?.port ?? ports(cfg).borsh, exposure: borsh?.exposure ?? 'off' },
         lan: lan?.ip ?? null,
         remote,
         remoteTls: Boolean(remote?.startsWith('wss://')),
     });
+});
+
+// A download link was clicked: remember the release, so Updates can say when a newer one is out.
+route('POST', /^\/api\/x4kas\/downloaded$/, async (req, res) => {
+    const body = await readBody(req);
+    if (!/^v?\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$/.test(String(body.tag || ''))) return fail(res, 400, 'Unknown release.');
+    sendJson(res, 200, { ok: true, lastDownload: x4kas.recordDownload(body) });
 });
 
 route('GET', /^\/api\/network\/lan$/, async (req, res) => {

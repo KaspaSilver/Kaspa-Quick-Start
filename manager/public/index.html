@@ -1795,6 +1795,12 @@
       computer and connected to this node. Nothing of it runs on the server.
     -->
     <section id="tab-x4kas" class="tab">
+      <div class="subtabs">
+        <button class="subtab-btn active" data-subtab="x4kas-get">Get x4kas</button>
+        <button class="subtab-btn" data-subtab="x4kas-updates">Updates</button>
+      </div>
+
+      <div id="sub-x4kas-get" class="subtab active">
       <div class="grid">
         <article class="card span2">
           <div class="node-head"><h3>x4kas, the Kaspa terminal</h3><span class="tag warn">beta</span></div>
@@ -1828,6 +1834,34 @@
             <div id="x4kas-remote"></div>
           </div>
         </article>
+      </div>
+      </div>
+
+      <div id="sub-x4kas-updates" class="subtab">
+        <div class="grid">
+          <article class="card span2">
+            <h3>Updates</h3>
+            <p class="muted">
+              x4kas runs on your computer, so this panel cannot update it or see which version you
+              have. It remembers the release you last downloaded here and tells you when a newer one
+              is out. To update, download the new one and replace the old app; your index, labels and
+              settings are kept (they live in <code>~/.x4kas</code>).
+            </p>
+            <dl class="kv vertical">
+              <div><dt>You downloaded</dt><dd id="x4kas-have">nothing from this panel yet</dd></div>
+              <div><dt>Latest release</dt><dd id="x4kas-latest">-</dd></div>
+            </dl>
+            <div id="x4kas-update-status" class="update-status">Not checked yet.</div>
+            <div class="row">
+              <button type="button" id="x4kas-check" class="ghost">Check for updates</button>
+              <button type="button" id="x4kas-get-latest" class="primary" hidden>Download the new version</button>
+            </div>
+          </article>
+          <article class="card span2">
+            <h3>What's new</h3>
+            <pre class="x4kas-notes" id="x4kas-notes">-</pre>
+          </article>
+        </div>
       </div>
     </section>
 

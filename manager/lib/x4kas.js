@@ -1,4 +1,8 @@
+import path from 'node:path';
+
 import { docker } from './dockerctl.js';
+import { CONF_DIR } from './paths.js';
+import { readJson, writeJson } from './store.js';
 
 /**
  * x4kas (github.com/smartgoo/x4kas, MIT): the Kaspa terminal desktop app. It runs natively on
@@ -39,6 +43,8 @@ export async function latestRelease({ force = false } = {}) {
         url: r.html_url,
         publishedAt: r.published_at,
         prerelease: Boolean(r.prerelease),
+        // The release notes, for the Updates tab (GitHub markdown, shown as plain text).
+        notes: String(r.body || '').slice(0, 6000),
         downloads: PLATFORMS.flatMap((p) => {
             const a = assets.find((x) => p.match.test(x.name));
             return a ? [{ key: p.key, label: p.label, name: a.name, url: a.browser_download_url, size: a.size }] : [];
@@ -47,6 +53,18 @@ export async function latestRelease({ force = false } = {}) {
     };
     releaseCache = { at: Date.now(), value };
     return value;
+}
+
+/**
+ * The panel cannot see the x4kas on your computer, so it remembers the release you last
+ * downloaded from it (conf/x4kas.json), which is how the Updates tab knows a newer one is out.
+ */
+const STATE_FILE = path.join(CONF_DIR, 'x4kas.json');
+export const lastDownload = () => readJson(STATE_FILE, {}).lastDownload ?? null;
+export function recordDownload({ tag, platform }) {
+    const entry = { tag: String(tag).slice(0, 40), platform: String(platform || '').slice(0, 40), at: new Date().toISOString() };
+    writeJson(STATE_FILE, { ...readJson(STATE_FILE, {}), lastDownload: entry });
+    return entry;
 }
 
 /**
