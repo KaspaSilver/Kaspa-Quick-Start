@@ -549,6 +549,12 @@ fetch_stack() {
         rm -rf "$STACK_DIR/${item:?}"
         cp -R "$src_dir/$item" "$STACK_DIR/$item"
     done
+    # Whatever branch the panel was on (System > Experimental), it now runs the one installed
+    # here: forget an experimental branch's description and record this ref as the panel's.
+    rm -f "$STACK_DIR/EXPERIMENTAL.json"
+    [ -f "$src_dir/EXPERIMENTAL.json" ] && cp "$src_dir/EXPERIMENTAL.json" "$STACK_DIR/EXPERIMENTAL.json"
+    mkdir -p "$STACK_DIR/conf"
+    printf '%s\n' "$STACK_REF" > "$STACK_DIR/conf/panel-ref"
     # The Nextcloud hook is skipped silently by that image's entrypoint if it is
     # not executable, so it is not left to whatever the copy preserved.
     chmod +x "$STACK_DIR/kaspad/entrypoint.sh" "$STACK_DIR/kachat/run-admin.sh" "$STACK_DIR/uninstall.sh" \
