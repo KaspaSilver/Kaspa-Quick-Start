@@ -2493,10 +2493,20 @@ async function botGenerateWallet(network, fromKey = null) {
     return parsed;
 }
 
-/** Has the bot deliver one arbitrary KaChat message (used for alerts). */
+/**
+ * Has a bot deliver one KaChat message to its owner (the panel's hashrate and low-balance
+ * alerts). KaChat Bot v2 sends through a paired bot: the Mining notifier when there is one,
+ * else any paired bot. `botd.py --send` hands it to the running daemon (its outbox) so it
+ * never races the daemon's own sends from the same wallet.
+ */
 async function botSendMessage(text) {
+    const paired = bots
+        .readBots()
+        .bots.filter((b) => b.enabled !== false && bots.status(b.id)?.owner)
+        .sort((a, b) => (b.type === 'mining') - (a.type === 'mining'));
+    if (!paired.length) throw new Error('No bot is paired with you yet, so there is nobody to send the alert to.');
     return dockerctl.compose(
-        ['run', '--rm', '-T', '--no-deps', '--entrypoint', 'python', 'kachat-bot', 'watcher.py', '--send', text],
+        ['run', '--rm', '-T', '--no-deps', '--entrypoint', 'python', 'kachat-bot', 'botd.py', '--send', paired[0].id, text],
         { profile: 'bot', timeoutMs: 3 * 60_000 },
     );
 }
