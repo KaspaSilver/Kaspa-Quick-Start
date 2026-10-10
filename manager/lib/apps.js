@@ -105,7 +105,7 @@ export const APPS = {
     },
     bot: {
         label: 'KaChat Bot',
-        repo: 'KaspaSilver/Kaspa-Block-Notifier',
+        repo: 'KaspaSilver/KaChat-Bot',
         profile: 'bot',
         services: ['kachat-bot'],
         // It subscribes to the node's UTXO changes, so it wants a node that is
@@ -526,8 +526,14 @@ export function writeAppsEnv(cfg) {
         // Both the image tag and the build arg, so switching refs actually
         // rebuilds rather than re-tagging the layers already cached.
         KACHAT_DESKTOP_REF: cfg.desktop?.ref || 'main',
-        BOT_REF: cfg.bot?.ref || 'main',
+        // The bots branch of this panel runs KaChat Bot v2, which lives on the bot repo's own
+        // `bots` branch until it is merged: a stored 'main' builds that instead. (Drop this when
+        // both branches reach main.)
+        BOT_REF: !cfg.bot?.ref || cfg.bot.ref === 'main' ? 'bots' : cfg.bot.ref,
         BOT_NETWORK: cfg.bot?.network || 'mainnet',
+        // Optional gap-filling for incoming messages after downtime: the chat API of the KaChat
+        // indexer on the same network, when there is one (the bot copes without it).
+        BOT_INDEXER_URL: cfg.bot?.network === 'testnet-10' ? 'http://kachat-app-testnet:8600' : 'http://kachat-app:8600',
         // The node's ports move with its network, and the bot dials both.
         BOT_NODE_GRPC_PORT: cfg.bot?.network === 'testnet-10' ? 16210 : 16110,
         BOT_NODE_BORSH_PORT: cfg.bot?.network === 'testnet-10' ? 17210 : 17110,

@@ -5831,138 +5831,6 @@ document.addEventListener('click', async (event) => {
  * time somebody sees whether their message works should not be the first time
  * this node finds a block.
  */
-const BOT_SAMPLE = {
-    reward: '112.50000000',
-    balance: '1043.21000000',
-    txid: '1943b508e4d1c0f9a7b6e5d4c3b2a1908f7e6d5c4b3a29180f1e2d3c4b5a6978',
-    address: 'kaspa:qrxmpl…',
-    network: 'mainnet',
-    time: '2026-09-04 14:22:07',
-};
-
-function renderBotPreview() {
-    const text = $('bot-message').value;
-    $('bot-message-preview').textContent = text.replace(/\{([^{}]*)\}/g, (whole, name) =>
-        Object.hasOwn(BOT_SAMPLE, name) ? BOT_SAMPLE[name] : whole,
-    );
-}
-
-$('bot-message').addEventListener('input', renderBotPreview);
-$('bot-message-reset').addEventListener('click', () => {
-    $('bot-message').value = 'Reward: {reward} KAS\nBalance: {balance} KAS';
-    renderBotPreview();
-});
-
-let botState = null;
-
-async function loadBot() {
-    try {
-        botState = await api('/api/bot');
-    } catch {
-        return;
-    }
-    const { config, app, container, blockers, node } = botState;
-
-    // lifecycle.status says `installed` where a container state says `exists`;
-    // the badge vocabulary is shared with every other service either way.
-    const asContainer = { exists: container?.installed, running: container?.running, status: container?.status };
-    $('bot-state').textContent = containerWord(asContainer);
-    $('bot-state').className = `tag ${!container?.installed ? 'off' : container.running ? 'ok' : ''}`;
-    setNavHealth('bot', !container?.installed ? 'absent' : container.running ? 'ok' : 'bad');
-
-    $('bot-shows-mining').textContent = config.miningAddress || 'not set';
-    $('bot-shows-alias').textContent = config.receiverAlias ? `@${config.receiverAlias}` : 'not set';
-    $('bot-shows-min').textContent = config.minRewardKas > 0 ? `${config.minRewardKas} KAS` : 'every reward';
-    $('bot-shows-key').textContent = config.hasKey ? 'stored' : 'not set';
-    $('bot-shows-network').textContent = app.network + (node.network === app.network ? '' : ` (the node is on ${node.network})`);
-
-    // Anything that stops it working, said once, at the top.
-    const notice = $('bot-notice');
-    const missing = !config.complete ? 'It is not set up yet: fill in the Setup tab and save.' : null;
-    const problems = [...(blockers ?? []), missing].filter(Boolean);
-    notice.hidden = !problems.length;
-    notice.className = 'verdict bad';
-    notice.textContent = problems.join(' ');
-
-    // Only filled from the server when the field is not being typed into, so a
-    // poll landing mid-edit does not take the text out from under somebody.
-    const fill = (id, value) => {
-        const box = $(id);
-        if (document.activeElement !== box) box.value = value;
-    };
-    fill('bot-mining', config.miningAddress);
-    fill('bot-alias', config.receiverAlias);
-    fill('bot-pubkey', config.receiverPubkeyX);
-    fill('bot-min', String(config.minRewardKas ?? 0));
-    fill('bot-message', config.message ?? '');
-    if (document.activeElement !== $('bot-hr-alert')) $('bot-hr-alert').checked = Boolean(config.hashrateAlert);
-    fill('bot-hr-pct', String(config.hashrateDropPct ?? 25));
-    if (document.activeElement !== $('bot-lowbal-alert')) $('bot-lowbal-alert').checked = Boolean(config.lowBalanceAlert);
-    fill('bot-lowbal-kas', String(config.lowBalanceKas ?? 0.5));
-    renderBotPreview();
-    fill('bot-ref', app.ref);
-    if (document.activeElement !== $('bot-network')) $('bot-network').value = app.network;
-
-    // The key box stays empty always: an empty one means "keep the stored one".
-    $('bot-key-hint').textContent = config.hasKey
-        ? 'A key is stored. Leave this empty to keep it, or paste a new one to replace it.'
-        : 'The wallet that pays the fee for each notification. Use a wallet kept for this, not one holding anything you would miss.';
-
-    $('bot-build').textContent = botState.build?.sha
-        ? `Built from ${String(botState.build.sha).slice(0, 7)} on ${new Date(botState.build.builtAt).toLocaleString()}`
-        : 'Not built yet.';
-
-    renderBotHistory(botState.history, app.network);
-
-    loadBotWallet(Boolean(container?.installed)).catch(() => {});
-}
-
-/**
- * The list of what the bot has actually sent, newest first, from the history
- * file the watcher appends to. A block notification shows its reward and the
- * hashrate at the time; a one-off message (a hashrate-drop alert, a test) shows
- * its text on hover. Each transaction links to the explorer for the network the
- * bot is on.
- */
-function renderBotHistory(history, network) {
-    const items = Array.isArray(history) ? history : [];
-    const wrap = $('bot-history-wrap');
-    const empty = $('bot-history-empty');
-    if (!items.length) {
-        wrap.hidden = true;
-        empty.hidden = false;
-        $('bot-history-body').innerHTML = '';
-        return;
-    }
-    empty.hidden = true;
-    wrap.hidden = false;
-    const host = network === 'testnet-10' ? 'explorer-tn10.kaspa.org' : 'explorer.kaspa.org';
-    $('bot-history-body').innerHTML = items
-        .map((h) => {
-            const when = h.ts ? new Date(h.ts * 1000).toLocaleString() : '–';
-            const isBlock = h.kind !== 'message';
-            const reward = isBlock && h.kas != null ? `${trimKas(Number(h.kas))} KAS` : '–';
-            const hash = isBlock && h.hashrate ? escapeHtml(h.hashrate) : '–';
-            const what = isBlock
-                ? 'Block found'
-                : `<span title="${escapeHtml(h.text || '')}">Message</span>`;
-            const txid = String(h.txid || '');
-            const tx = txid
-                ? `<a class="trunc" href="https://${host}/txs/${encodeURIComponent(txid)}" target="_blank" rel="noopener" title="${escapeHtml(txid)}">${escapeHtml(txid)}</a>`
-                : '–';
-            return `<tr>
-      <td class="name">${escapeHtml(when)}</td>
-      <td class="name">${what}</td>
-      <td>${reward}</td>
-      <td>${hash}</td>
-      <td>${tx}</td>
-    </tr>`;
-        })
-        .join('');
-}
-
-// --- bot sending wallet ----------------------------------------------------
-
 function renderQr(el, text) {
     el.textContent = '';
     if (!text || typeof window.qrcode !== 'function') return;
@@ -5976,189 +5844,172 @@ function renderQr(el, text) {
     }
 }
 
-async function loadBotWallet(installed) {
-    let w;
+// --- KaChat bots: one square per kind (lib/bots.js on the server) ---
+
+let botsState = null;
+const botShort = (a) => (a && a.length > 26 ? `${a.slice(0, 16)}…${a.slice(-6)}` : a || '');
+const STAGE_TEXT = {
+    awaiting_pairing: 'Waiting for you to message it the pairing code',
+    setup: 'Setting up in your KaChat chat',
+    active: 'Running',
+    paused: 'Paused',
+    disabled: 'Paused',
+};
+
+async function loadBot() {
+    let app;
     try {
-        w = await api('/api/bot/wallet');
+        [app, botsState] = await Promise.all([api('/api/bot'), api('/api/bots')]);
     } catch {
         return;
     }
-    const has = w.hasKey && w.address;
-    $('bot-wallet-none').hidden = has;
-    $('bot-wallet-have').hidden = !has;
-    // Cannot create one until the image exists to generate it from.
-    $('bot-wallet-create').disabled = !installed;
-    $('bot-wallet-create-note').textContent = installed
-        ? 'The panel creates it for you using the bot\'s own Kaspa library.'
-        : 'Install the KaChat Bot first; the wallet is created from its own Kaspa library.';
+    const container = app.container;
+    const asContainer = { exists: container?.installed, running: container?.running, status: container?.status };
+    $('bot-state').textContent = containerWord(asContainer);
+    $('bot-state').className = `tag ${!container?.installed ? 'off' : container.running ? 'ok' : ''}`;
+    setNavHealth('bot', !container?.installed ? 'absent' : container.running ? 'ok' : 'bad');
+    if (document.activeElement !== $('bot-network')) $('bot-network').value = app.app.network;
+    if (document.activeElement !== $('bot-ref')) $('bot-ref').value = app.app.ref;
+    $('bot-build').textContent = app.build?.sha
+        ? `Built from ${String(app.build.sha).slice(0, 7)} on ${new Date(app.build.builtAt).toLocaleString()}`
+        : 'Not built yet.';
 
-    if (has) {
-        $('bot-wallet-address').value = w.address;
-        renderQr($('bot-wallet-qr'), w.address);
-        $('bot-wallet-balance').textContent =
-            w.balanceKas === null || w.balanceKas === undefined ? 'unknown (is the node running?)' : `${fmtKas(w.balanceKas)} KAS`;
-        $('bot-wallet-key').hidden = true;
-    }
+    const notice = $('bot-notice');
+    const problems = [...(app.blockers ?? [])];
+    if (container?.installed && !container.running && botsState.bots.length) problems.push('The bot is switched off, so your bots are not listening. Turn it on with its switch in the sidebar.');
+    notice.hidden = !problems.length;
+    notice.className = 'verdict bad';
+    notice.textContent = problems.join(' ');
+    renderBotGrid();
 }
 
-$('bot-wallet-create').addEventListener('click', async () => {
-    $('bot-wallet-create').disabled = true;
-    try {
-        await api('/api/bot/wallet', { method: 'POST' });
-        toast('Wallet created. Fund the address shown.');
-        // Refresh only the wallet card, never the whole form: anything typed in
-        // the fields above but not yet saved must not be wiped by this.
-        $('bot-shows-key').textContent = 'stored';
-        await loadBotWallet(true);
-    } catch (e) {
-        toast(e.message, 'bad');
-        $('bot-wallet-create').disabled = false;
-    }
-});
+function renderBotGrid() {
+    const d = botsState;
+    const grid = $('bot-grid');
+    if (!d) return;
+    grid.innerHTML = d.catalog
+        .map((kind) => {
+            const mine = d.bots.filter((b) => b.type === kind.type);
+            const body = mine.length
+                ? mine.map((b) => botCard(b, d)).join('')
+                : `<p class="muted">${escapeHtml(kind.description)}</p>
+                   <div class="row"><button type="button" class="primary" data-bot-setup="${escapeHtml(kind.type)}" ${d.installed ? '' : 'disabled'}>Set up</button></div>
+                   ${d.installed ? '' : '<p class="hint">Install the KaChat Bot first (sidebar).</p>'}`;
+            return `<article class="card bot-square"><h3>${escapeHtml(kind.title)}</h3>${body}</article>`;
+        })
+        .join('');
+    for (const el of grid.querySelectorAll('.bot-qr')) renderQr(el, el.dataset.address);
+}
 
-$('bot-wallet-regen').addEventListener('click', async () => {
-    if (
-        !await askConfirm(
-            'Replace the sending wallet?\n\nThis creates a NEW key and address. Any KAS on the current wallet stays with the OLD key, which you lose access to here unless you have revealed and saved it. Reveal and back it up first if it holds anything.',
-        )
-    ) {
-        return;
-    }
-    try {
-        await api('/api/bot/wallet', { method: 'POST', body: { force: true } });
-        toast('New wallet created.');
-        // Only the wallet card, not the form above it.
-        $('bot-shows-key').textContent = 'stored';
-        await loadBotWallet(true);
-    } catch (e) {
-        toast(e.message, 'bad');
-    }
-});
+function botCard(b, d) {
+    const st = b.status;
+    const bal = b.balanceKas;
+    const funded = st ? st.funded : bal != null && bal > 0.01;
+    const stage = b.enabled === false ? 'paused' : st?.stage || 'awaiting_pairing';
+    const low = bal != null && bal < 1;
+    const step = (done, text) => `<li class="${done ? 'done' : ''}">${done ? '&#10003;' : '&#9675;'} ${text}</li>`;
+    return `
+      <div class="bot-card" data-bot="${escapeHtml(b.id)}">
+        <div class="node-head"><span class="tag ${stage === 'active' ? 'ok' : stage === 'paused' ? '' : 'warn'}">${escapeHtml(STAGE_TEXT[stage] || stage)}</span></div>
+        ${st?.summary ? `<p><strong>${escapeHtml(st.summary)}</strong></p>` : ''}
+        <ol class="plain bot-steps">
+          ${step(funded, `Fund its address with about 10 KAS${bal != null ? ` (balance ${bal.toFixed(2)} KAS)` : ''}`)}
+          ${step(Boolean(st?.owner), st?.owner ? `Paired with ${escapeHtml(botShort(st.owner))}` : `In KaChat, start a chat with its address and send <code>${escapeHtml(b.pairingCode)}</code>`)}
+          ${step(stage === 'active', 'Answer its questions in the chat')}
+        </ol>
+        <div class="bot-wallet-row">
+          <div class="bot-wallet-qr bot-qr" data-address="${escapeHtml(b.address)}"></div>
+          <div>
+            <div class="row x4kas-copy"><code>${escapeHtml(b.address)}</code>
+              <button type="button" class="ghost mini" data-copy="${escapeHtml(b.address)}">Copy</button></div>
+            ${!st?.owner ? `<p>Pairing code: <code class="bot-code">${escapeHtml(b.pairingCode)}</code> <button type="button" class="ghost mini" data-copy="${escapeHtml(b.pairingCode)}">Copy</button></p>` : ''}
+            ${low ? '<p class="hint bad">Its balance is low: send it a few KAS so it can keep messaging you.</p>' : ''}
+            ${st?.error ? `<p class="error">${escapeHtml(st.error)}</p>` : ''}
+          </div>
+        </div>
+        <details class="bot-more"><summary>Messages and options</summary>
+          <div class="bot-history" data-history="${escapeHtml(b.id)}"><p class="muted">Loading...</p></div>
+          <div class="row">
+            <button type="button" class="ghost mini" data-bot-act="${b.enabled === false ? 'resume' : 'pause'}">${b.enabled === false ? 'Resume' : 'Pause'}</button>
+            <button type="button" class="ghost mini" data-bot-act="reset">Pair with someone else</button>
+            <button type="button" class="ghost mini" data-bot-act="reveal">Reveal wallet key</button>
+            <button type="button" class="ghost mini danger" data-bot-act="remove">Remove bot</button>
+          </div>
+          <div class="verdict" data-bot-key hidden></div>
+        </details>
+      </div>`;
+}
 
-$('bot-wallet-refresh').addEventListener('click', () => loadBotWallet(true).catch(() => {}));
-
-$('bot-wallet-copy').addEventListener('click', async () => {
-    try {
-        await navigator.clipboard.writeText($('bot-wallet-address').value);
-        toast('Address copied.');
-    } catch {
-        toast('Could not copy. Select the address and copy it by hand.', 'bad');
-    }
-});
-
-$('bot-wallet-reveal').addEventListener('click', async () => {
-    const box = $('bot-wallet-key');
-    if (!box.hidden) {
-        box.hidden = true;
-        return;
-    }
-    try {
-        const r = await api('/api/bot/wallet/reveal', { method: 'POST' });
-        box.hidden = false;
-        box.className = 'verdict';
-        box.textContent = `Private key (keep it secret): ${r.privateKeyHex}`;
-    } catch (e) {
-        toast(e.message, 'bad');
-    }
-});
-
-$('bot-save').addEventListener('click', async () => {
-    const error = $('bot-setup-error');
-    error.hidden = true;
-
-    const body = {
-        miningAddress: $('bot-mining').value.trim(),
-        receiverAlias: $('bot-alias').value.trim(),
-        receiverPubkeyX: $('bot-pubkey').value.trim(),
-        privateKeyHex: $('bot-key').value.trim(),
-        minRewardKas: Number($('bot-min').value || 0),
-        message: $('bot-message').value,
-        network: $('bot-network').value,
-        ref: $('bot-ref').value.trim() || 'main',
-        // The alert toggles and thresholds save on their own too, but include
-        // them here so one "Save settings" captures the current state and never
-        // wipes them.
-        hashrateAlert: $('bot-hr-alert').checked,
-        hashrateDropPct: Number($('bot-hr-pct').value || 25),
-        lowBalanceAlert: $('bot-lowbal-alert').checked,
-        lowBalanceKas: Number($('bot-lowbal-kas').value || 0.5),
-    };
-
-    const button = $('bot-save');
-    button.disabled = true;
-    try {
-        const r = await api('/api/bot', { method: 'PUT', body });
-        // Out of the DOM the moment it is accepted. It is not needed again, and
-        // a form left holding a wallet key is one browser autofill away from
-        // being somewhere else.
-        $('bot-key').value = '';
-        $('bot-save-note').textContent = r.restarted
-            ? 'Saved. The bot is restarting to read it.'
-            : 'Saved. It takes effect when the bot starts.';
-    } catch (e) {
-        error.hidden = false;
-        error.textContent = e.message;
-    } finally {
-        button.disabled = false;
-        setTimeout(() => loadBot().catch(() => {}), 1200);
-    }
-});
-
-// Each field has its own Save button (data-bot-field names the field, data-bot-
-// input the box). Saving one locks it in on its own, so a value survives the
-// next refresh and setup does not have to be finished in a single go.
-for (const button of document.querySelectorAll('[data-bot-field]')) {
-    button.addEventListener('click', async () => {
-        const field = button.dataset.botField;
-        const value = $(button.dataset.botInput).value;
-        const original = button.textContent;
-        button.disabled = true;
+$('bot-grid')?.addEventListener('click', async (ev) => {
+    const setup = ev.target.closest('[data-bot-setup]')?.dataset.botSetup;
+    if (setup) {
+        ev.target.disabled = true;
         try {
-            await api('/api/bot/field', { method: 'POST', body: { field, value } });
-            button.textContent = 'Saved ✓';
-            setTimeout(() => {
-                button.textContent = original;
-                button.disabled = false;
-            }, 1400);
+            await api('/api/bots', { method: 'POST', body: { type: setup } });
         } catch (e) {
-            toast(e.message, 'bad');
-            button.disabled = false;
+            await askConfirm(`Could not set it up: ${e.message}`);
         }
-    });
-}
-
-// The hashrate-drop toggle saves itself on flip (a checkbox has no text value
-// for the per-field Save button to send).
-$('bot-hr-alert').addEventListener('change', async (e) => {
-    try {
-        await api('/api/bot/field', { method: 'POST', body: { field: 'hashrateAlert', value: e.target.checked } });
-        toast(e.target.checked ? 'Hashrate-drop alerts on.' : 'Hashrate-drop alerts off.');
-    } catch (err) {
-        toast(err.message, 'bad');
-        e.target.checked = !e.target.checked;
+        return loadBot().catch(() => {});
     }
+    const act = ev.target.closest('[data-bot-act]')?.dataset.botAct;
+    const card = ev.target.closest('[data-bot]');
+    if (!act || !card) return;
+    const id = card.dataset.bot;
+    if (act === 'reveal') {
+        const r = await api(`/api/bots/${id}/reveal`, { method: 'POST' });
+        const box = card.querySelector('[data-bot-key]');
+        box.hidden = false;
+        box.innerHTML = `Wallet key: <code>${escapeHtml(r.privateKeyHex)}</code> <button type="button" class="ghost mini" data-copy="${escapeHtml(r.privateKeyHex)}">Copy</button><br><span class="hint">Import it into any Kaspa wallet to move what is left. Anyone with it can spend this bot's KAS.</span>`;
+        return;
+    }
+    if (act === 'remove') {
+        const ok = await askConfirm('Remove this bot?\n\nIts wallet key is deleted with it. If it still holds KAS, reveal the key first and import it into a wallet, or the KAS is lost.');
+        if (!ok) return;
+        await api(`/api/bots/${id}`, { method: 'DELETE', body: { confirm: id } });
+        return loadBot().catch(() => {});
+    }
+    if (act === 'reset' && !(await askConfirm('Pair it with someone else?\n\nIt forgets its owner, settings and chat, and gets a new pairing code.'))) return;
+    await api(`/api/bots/${id}/${act}`, { method: 'POST' });
+    loadBot().catch(() => {});
 });
 
-$('bot-lowbal-alert').addEventListener('change', async (e) => {
-    try {
-        await api('/api/bot/field', { method: 'POST', body: { field: 'lowBalanceAlert', value: e.target.checked } });
-        toast(e.target.checked ? 'Low-wallet alerts on.' : 'Low-wallet alerts off.');
-    } catch (err) {
-        toast(err.message, 'bad');
-        e.target.checked = !e.target.checked;
-    }
-});
+// A bot's messages load when its details open.
+$('bot-grid')?.addEventListener(
+    'toggle',
+    async (ev) => {
+        const det = ev.target;
+        if (!det.matches?.('details.bot-more') || !det.open) return;
+        const box = det.querySelector('[data-history]');
+        try {
+            const r = await api(`/api/bots/${box.dataset.history}/history`);
+            box.innerHTML = r.messages.length
+                ? `<ul class="plain bot-msgs">${r.messages
+                      .map(
+                          (m) => `<li class="${m.dir}"><span class="muted">${m.ts ? escapeHtml(new Date(m.ts * 1000).toLocaleString()) : ''} ${
+                              m.dir === 'in' ? 'You' : 'Bot'
+                          }:</span> ${escapeHtml(m.text)}</li>`,
+                      )
+                      .join('')}</ul>`
+                : '<p class="muted">No messages yet.</p>';
+        } catch (e) {
+            box.innerHTML = `<p class="error">${escapeHtml(e.message)}</p>`;
+        }
+    },
+    true,
+);
 
-// A test notification proves the setup end to end: one real KaChat message now,
-// streamed in the overlay so the result (sent, or "fund the wallet first") is
-// visible. key null so closing the overlay does not reload and wipe the form.
-$('bot-test').addEventListener('click', async () => {
-    await runAction({
-        key: null,
-        title: 'Sending a test notification',
-        note: 'One real KaChat message now, with sample figures. It costs a small fee from the sending wallet.',
-        request: () => api('/api/bot/test', { method: 'POST' }),
-    });
+$('bot-network')?.addEventListener('change', async () => {
+    const value = $('bot-network').value;
+    const ok = await askConfirm(
+        `Run the bots on ${value}?\n\nEach bot's wallet belongs to one network, so bots set up on the other network stop working until you switch back.`,
+    );
+    if (!ok) return loadBot().catch(() => {});
+    try {
+        await api('/api/bot/field', { method: 'POST', body: { field: 'network', value } });
+    } catch (e) {
+        await askConfirm(e.message);
+    }
+    loadBot().catch(() => {});
 });
 
 $('bot-check').addEventListener('click', async () => {

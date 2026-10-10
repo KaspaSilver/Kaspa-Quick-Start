@@ -50,6 +50,7 @@ import * as push from './lib/push.js';
 import * as lifecycle from './lib/lifecycle.js';
 import * as host from './lib/host.js';
 import * as bot from './lib/bot.js';
+import * as bots from './lib/bots.js';
 import * as backup from './lib/backup.js';
 import { nodeSnapshot, rpc, rpcTestnet } from './lib/rpc.js';
 import { jobs } from './lib/jobs.js';
@@ -2824,6 +2825,105 @@ route('POST', /^\/api\/bot\/wallet\/reveal$/, async (req, res) => {
     sendJson(res, 200, { privateKeyHex: key });
 });
 
+// -------------------------------------------------------------- bots (v2) --
+// The Bot tab's squares (lib/bots.js): each bot has its own wallet and is set up in KaChat by
+// talking to it. These routes only write which bots exist and read what they report.
+
+async function botBalanceKas(address) {
+    try {
+        const r = await rpc.call('getBalanceByAddress', { address }, 6000);
+        return Number(r?.balance ?? 0) / 1e8;
+    } catch {
+        return null;
+    }
+}
+
+route('GET', /^\/api\/bots$/, async (req, res) => {
+    const state = await lifecycle.status('bot');
+    const list = bots.readBots().bots.map(bots.view);
+    // The node answers balances even before the bot has run and reported its own.
+    await Promise.all(
+        list.map(async (b) => {
+            if (b.status?.balanceSompi == null) b.balanceKas = await botBalanceKas(b.address);
+            else b.balanceKas = Number(b.status.balanceSompi) / 1e8;
+        }),
+    );
+    sendJson(res, 200, {
+        installed: Boolean(state?.installed),
+        running: Boolean(state?.running),
+        network: apps.loadAppsConfig().bot.network,
+        catalog: bots.CATALOG,
+        bots: list,
+    });
+});
+
+/** Set up a square: a fresh wallet and pairing code for that kind of bot. */
+route('POST', /^\/api\/bots$/, async (req, res) => {
+    const body = await readBody(req);
+    const kind = bots.catalogType(String(body.type || ''));
+    if (!kind) return fail(res, 400, 'Unknown kind of bot.');
+    if (!(await lifecycle.status('bot'))?.installed) {
+        return fail(res, 409, 'Install the KaChat Bot first: its wallets are created with its own Kaspa library.');
+    }
+    try {
+        const wallet = await botGenerateWallet(apps.loadAppsConfig().bot.network);
+        const doc = bots.readBots();
+        const entry = {
+            id: bots.newId(kind.type),
+            type: kind.type,
+            enabled: true,
+            privateKeyHex: wallet.privateKeyHex,
+            address: wallet.address,
+            pairingCode: bots.newPairingCode(),
+        };
+        doc.bots.push(entry);
+        bots.writeBots(doc);
+        sendJson(res, 200, { ok: true, bot: bots.view(entry) });
+    } catch (err) {
+        fail(res, 502, err.message);
+    }
+});
+
+route('POST', /^\/api\/bots\/([a-z0-9-]+)\/(pause|resume|reset)$/, async (req, res, match) => {
+    const [, id, action] = match;
+    const doc = bots.readBots();
+    const b = doc.bots.find((x) => x.id === id);
+    if (!b) return fail(res, 404, 'No such bot.');
+    if (action === 'pause') b.enabled = false;
+    if (action === 'resume') b.enabled = true;
+    if (action === 'reset') {
+        // Forget the owner, settings and conversation; a new code pairs it again.
+        b.resetOwner = crypto.randomBytes(6).toString('hex');
+        b.pairingCode = bots.newPairingCode();
+    }
+    bots.writeBots(doc);
+    sendJson(res, 200, { ok: true, bot: bots.view(b) });
+});
+
+route('GET', /^\/api\/bots\/([a-z0-9-]+)\/history$/, async (req, res, match) => {
+    if (!bots.findBot(match[1])) return fail(res, 404, 'No such bot.');
+    sendJson(res, 200, { messages: bots.history(match[1], 50) });
+});
+
+/** The bot's own key, to move what is left in its wallet with any Kaspa wallet. */
+route('POST', /^\/api\/bots\/([a-z0-9-]+)\/reveal$/, async (req, res, match) => {
+    const b = bots.findBot(match[1]);
+    if (!b) return fail(res, 404, 'No such bot.');
+    sendJson(res, 200, { privateKeyHex: b.privateKeyHex, address: b.address });
+});
+
+/** Removes a bot. Its wallet key goes with it, so the panel asks for the key to be saved first. */
+route('DELETE', /^\/api\/bots\/([a-z0-9-]+)$/, async (req, res, match) => {
+    const body = await readBody(req);
+    if (String(body.confirm || '') !== match[1]) return fail(res, 400, 'The request did not confirm which bot it meant.');
+    const doc = bots.readBots();
+    const before = doc.bots.length;
+    doc.bots = doc.bots.filter((x) => x.id !== match[1]);
+    if (doc.bots.length === before) return fail(res, 404, 'No such bot.');
+    bots.writeBots(doc);
+    sendJson(res, 200, { ok: true });
+});
+
 // ------------------------------------------------------------- translation --
 
 /**
@@ -4417,6 +4517,7 @@ async function bootstrap() {
     const appsCfg = apps.loadAppsConfig();
     await apps.ensureSecrets(log);
     bot.ensureEnvFile();
+    bots.ensureBotsFile();
     apps.writeAppsEnv(appsCfg);
     apps.renderAppsPortsOverride(appsCfg);
 
