@@ -369,7 +369,7 @@ function Get-Stack {
     # Only these are replaced wholesale on a re-install. conf\ holds generated
     # state (node.json, proxies.json) and proxy\ holds issued certificates and
     # generated vhosts - wiping either would cost the user real work.
-    foreach ($item in @('docker-compose.yml', 'kaspad', 'manager', 'bridge', 'kachat', 'kassigner', 'nextcloud', 'uninstall.sh', 'uninstall.ps1', 'README.md')) {
+    foreach ($item in @('docker-compose.yml', 'kaspad', 'manager', 'bridge', 'kachat', 'kassigner', 'nextcloud', 'x4kas', 'uninstall.sh', 'uninstall.ps1', 'README.md')) {
         $from = Join-Path $src $item
         if (-not (Test-Path $from)) { continue }
         $to = Join-Path $StackDir $item

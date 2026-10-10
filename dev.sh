@@ -55,7 +55,7 @@ dc() {
 # Files the running stack reads from the install directory, not from the mount.
 # The manager's own code can be mounted over the image; a compose file cannot,
 # because it is the docker CLI inside the container that reads it, from /stack.
-STACK_ITEMS="docker-compose.yml kaspad manager bridge kachat kassigner nextcloud uninstall.sh uninstall.ps1 README.md"
+STACK_ITEMS="docker-compose.yml kaspad manager bridge kachat kassigner nextcloud x4kas uninstall.sh uninstall.ps1 README.md"
 
 copy_stack_items() {
     for item in $STACK_ITEMS; do
