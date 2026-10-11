@@ -507,6 +507,13 @@ export async function ensureSecrets(log = () => {}) {
     return { ...env, ...updates };
 }
 
+/**
+ * The bot branch this panel builds. The bots branch of this panel runs KaChat Bot v2, which
+ * lives on the bot repo's own `bots` branch until it is merged, so a stored 'main' (the
+ * default) means `bots` here. (Drop this when both branches reach main.)
+ */
+export const botRef = (cfg) => (!cfg.bot?.ref || cfg.bot.ref === 'main' ? 'bots' : cfg.bot.ref);
+
 /** Writes the non-secret settings the compose file reads for these services. */
 export function writeAppsEnv(cfg) {
     updateEnvFile({
@@ -529,7 +536,7 @@ export function writeAppsEnv(cfg) {
         // The bots branch of this panel runs KaChat Bot v2, which lives on the bot repo's own
         // `bots` branch until it is merged: a stored 'main' builds that instead. (Drop this when
         // both branches reach main.)
-        BOT_REF: !cfg.bot?.ref || cfg.bot.ref === 'main' ? 'bots' : cfg.bot.ref,
+        BOT_REF: botRef(cfg),
         BOT_NETWORK: cfg.bot?.network || 'mainnet',
         // Optional gap-filling for incoming messages after downtime: the chat API of the KaChat
         // indexer on the same network, when there is one (the bot copes without it).
@@ -725,7 +732,7 @@ export async function checkUpstream(name, cfg) {
     const app = APPS[name];
     if (!app) throw new Error(`Unknown app "${name}".`);
     if (app.image) return checkImageUpstream(app);
-    const ref = cfg[name].ref;
+    const ref = name === 'bot' ? botRef(cfg) : cfg[name].ref;
 
     const res = await fetch(`https://api.github.com/repos/${app.repo}/commits/${encodeURIComponent(ref)}`, {
         headers: ghHeaders,

@@ -2669,7 +2669,7 @@ route('GET', /^\/api\/bot$/, async (req, res) => {
     const cfg = apps.loadAppsConfig();
     sendJson(res, 200, {
         config: bot.readConfig(),
-        app: { ref: cfg.bot.ref, network: cfg.bot.network },
+        app: { ref: apps.botRef(cfg), network: cfg.bot.network },
         container: await lifecycle.status('bot'),
         blockers: apps.appBlockers('bot', cfg, loadNodeConfig()),
         node: { network: loadNodeConfig().network },
@@ -3251,7 +3251,7 @@ route('POST', /^\/api\/apps\/(kachat|desktop|nextcloud|bot)\/update$/, async (re
         } else {
             onLine(`${app.label} is stopped, so it stays stopped. It runs the new build when you start it.`);
         }
-        apps.writeBuildRecord(name, { sha: upstream.latestSha, ref: cfg[name].ref, builtAt: new Date().toISOString() });
+        apps.writeBuildRecord(name, { sha: upstream.latestSha, ref: upstream.ref, builtAt: new Date().toISOString() });
         onLine(`${app.label} is now running ${upstream.shortSha}.`);
     });
     sendJson(res, 202, { ok: true, jobId: job.id });

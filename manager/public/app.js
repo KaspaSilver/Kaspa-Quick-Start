@@ -5876,6 +5876,8 @@ async function loadBot() {
 
     const notice = $('bot-notice');
     const problems = [...(app.blockers ?? [])];
+    // The new bot program is not built yet: Rebuild is the next step, so it is always open.
+    if (botsState.needsRebuild) $('bot-update').disabled = false;
     if (botsState.needsRebuild) problems.push('One step first: open Updates and click Rebuild. The new bots need the new bot program, which is not built on this machine yet.');
     if (container?.installed && !container.running && botsState.bots.length) problems.push('The bot is switched off, so your bots are not listening. Turn it on with its switch in the sidebar.');
     notice.hidden = !problems.length;
@@ -5998,6 +6000,18 @@ $('bot-grid')?.addEventListener(
     },
     true,
 );
+
+// The branch the bot is built from, saved as soon as it changes (Updates, Check, Rebuild).
+$('bot-ref')?.addEventListener('change', async () => {
+    try {
+        await api('/api/bot/field', { method: 'POST', body: { field: 'ref', value: $('bot-ref').value.trim() || 'main' } });
+        $('bot-update-status').className = 'update-status';
+        $('bot-update-status').textContent = 'Branch saved. Check for updates, then Rebuild.';
+    } catch (e) {
+        await askConfirm(e.message);
+    }
+    loadBot().catch(() => {});
+});
 
 $('bot-network')?.addEventListener('change', async () => {
     const value = $('bot-network').value;
