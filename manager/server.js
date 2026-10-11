@@ -2908,6 +2908,58 @@ route('POST', /^\/api\/bots$/, async (req, res) => {
     }
 });
 
+// Wallet sub-tab: the payout address "Send to wallet" uses.
+route('GET', /^\/api\/bots\/payout$/, async (req, res) => {
+    sendJson(res, 200, { address: bots.readPayout(), network: apps.loadAppsConfig().bot.network });
+});
+
+route('PUT', /^\/api\/bots\/payout$/, async (req, res) => {
+    const body = await readBody(req);
+    const address = String(body.address || '').trim();
+    const problem = bots.payoutProblem(address, apps.loadAppsConfig().bot.network);
+    if (problem) return fail(res, 400, problem);
+    bots.writePayout(address);
+    sendJson(res, 200, { ok: true, address });
+});
+
+/**
+ * "Send to wallet": the bot sends everything in its wallet to the payout address, in one go,
+ * minus the network fee (botd.py --sweep, handed to the running bot so it never races its
+ * own messages from the same wallet).
+ */
+route('POST', /^\/api\/bots\/([a-z0-9-]+)\/sweep$/, async (req, res, match) => {
+    const id = match[1];
+    const body = await readBody(req);
+    if (String(body.confirm || '') !== id) return fail(res, 400, 'The request did not confirm which bot it meant.');
+    const b = bots.findBot(id);
+    if (!b) return fail(res, 404, 'No such bot.');
+    const to = bots.readPayout();
+    if (!to) return fail(res, 409, 'Set your wallet address under Bot, Wallet first.');
+    const problem = bots.payoutProblem(to, apps.loadAppsConfig().bot.network);
+    if (problem) return fail(res, 409, problem);
+    if (!(await botImageBuilt())) return fail(res, 409, 'Rebuild the KaChat Bot first (Bot, Updates, Rebuild).');
+    const job = jobs.start(`Send ${b.type} bot funds to your wallet`, async (onLine) => {
+        onLine(`Sending everything in ${b.address} to ${to}.`);
+        const { stdout } = await dockerctl.compose(
+            ['run', '--rm', '-T', '--no-deps', '--entrypoint', 'python', 'kachat-bot', 'botd.py', '--sweep', id, to],
+            { profile: 'bot', timeoutMs: 4 * 60_000 },
+        ).catch((err) => ({ stdout: err.stdout || '', failed: err }));
+        let r = null;
+        for (const line of String(stdout).trim().split('\n').reverse()) {
+            try {
+                r = JSON.parse(line);
+                break;
+            } catch {
+                /* a log line */
+            }
+        }
+        if (!r?.ok) throw new Error(r?.error || 'The bot could not send the funds. Its log says why.');
+        onLine(`Sent ${(Number(r.amountSompi) / 1e8).toFixed(8)} KAS (fee ${(Number(r.feeSompi || 0) / 1e8).toFixed(8)} KAS).`);
+        for (const t of r.txids?.length ? r.txids : [r.txid]) onLine(`Transaction: ${t}`);
+    });
+    sendJson(res, 202, { ok: true, jobId: job.id });
+});
+
 route('POST', /^\/api\/bots\/([a-z0-9-]+)\/(pause|resume|reset)$/, async (req, res, match) => {
     const [, id, action] = match;
     const doc = bots.readBots();

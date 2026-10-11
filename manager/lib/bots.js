@@ -58,6 +58,41 @@ export function writeBots(doc) {
     fs.chmodSync(BOTS_FILE, 0o600);
 }
 
+/**
+ * The payout address: where "Send to wallet" sends a bot's funds. The panel's own setting
+ * (the bot never needs it), kept beside bots.json.
+ */
+const PAYOUT_FILE = path.join(BOT_DIR, 'payout.json');
+const BECH32 = '[qpzry9x8gf2tvdw0s3jn54khce6mua7l]';
+const ADDRESS_RE = { mainnet: new RegExp(`^kaspa:${BECH32}{61,63}$`), 'testnet-10': new RegExp(`^kaspatest:${BECH32}{61,63}$`) };
+
+export function readPayout() {
+    try {
+        return JSON.parse(fs.readFileSync(PAYOUT_FILE, 'utf8')).address || '';
+    } catch {
+        return '';
+    }
+}
+
+/** The shape of a Kaspa address on this network (the bot checks the checksum before sending). */
+export function payoutProblem(address, network) {
+    const a = String(address || '').trim();
+    if (!a) return null; // clearing it is allowed
+    const re = ADDRESS_RE[network] ?? ADDRESS_RE.mainnet;
+    if (!re.test(a)) {
+        return network === 'testnet-10'
+            ? 'That is not a testnet-10 address (it should start with kaspatest:).'
+            : 'That is not a Kaspa mainnet address (it should start with kaspa:).';
+    }
+    if (readBots().bots.some((b) => b.address === a)) return 'That is one of the bots\' own addresses; use your own wallet.';
+    return null;
+}
+
+export function writePayout(address) {
+    fs.mkdirSync(BOT_DIR, { recursive: true });
+    fs.writeFileSync(PAYOUT_FILE, `${JSON.stringify({ address: String(address || '').trim() })}\n`, { mode: 0o600 });
+}
+
 export function ensureBotsFile() {
     if (!fs.existsSync(BOTS_FILE)) writeBots({ bots: [] });
     fs.mkdirSync(STATE_DIR, { recursive: true });

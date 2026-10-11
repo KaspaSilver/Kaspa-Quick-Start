@@ -5864,11 +5864,18 @@ const STAGE_TEXT = {
 
 async function loadBot() {
     let app;
+    let payout;
     try {
-        [app, botsState] = await Promise.all([api('/api/bot'), api('/api/bots')]);
+        [app, botsState, payout] = await Promise.all([api('/api/bot'), api('/api/bots'), api('/api/bots/payout')]);
     } catch {
         return;
     }
+    botsState.payout = payout.address;
+    $('bot-payout-net').textContent = payout.network;
+    if (document.activeElement !== $('bot-payout')) $('bot-payout').value = payout.address;
+    $('bot-payout-note').textContent = payout.address
+        ? 'Saved. Send to wallet on any bot sends its funds here.'
+        : 'Not set yet.';
     const container = app.container;
     const asContainer = { exists: container?.installed, running: container?.running, status: container?.status };
     $('bot-state').textContent = containerWord(asContainer);
@@ -5942,6 +5949,7 @@ function botCard(b, d) {
           <div class="row">
             <button type="button" class="ghost mini" data-bot-act="${b.enabled === false ? 'resume' : 'pause'}">${b.enabled === false ? 'Resume' : 'Pause'}</button>
             <button type="button" class="ghost mini" data-bot-act="reset">Pair with someone else</button>
+            <button type="button" class="ghost mini" data-bot-act="sweep">Send to wallet</button>
             <button type="button" class="ghost mini" data-bot-act="reveal">Reveal wallet key</button>
             <button type="button" class="ghost mini danger" data-bot-act="remove">Remove bot</button>
           </div>
@@ -5971,6 +5979,26 @@ $('bot-grid')?.addEventListener('click', async (ev) => {
         box.hidden = false;
         box.innerHTML = `Wallet key: <code>${escapeHtml(r.privateKeyHex)}</code> <button type="button" class="ghost mini" data-copy="${escapeHtml(r.privateKeyHex)}">Copy</button><br><span class="hint">Import it into any Kaspa wallet to move what is left. Anyone with it can spend this bot's KAS.</span>`;
         return;
+    }
+    if (act === 'sweep') {
+        const to = botsState?.payout;
+        if (!to) {
+            await askConfirm('Set your wallet address first: Bot, Wallet.');
+            return selectSubtab($('tab-bot'), 'bot-wallet');
+        }
+        const b = botsState.bots.find((x) => x.id === id);
+        const amount = b?.balanceKas != null ? `${b.balanceKas.toFixed(8)} KAS` : 'everything';
+        const ok = await askConfirm(
+            `Send ${amount} from this bot to your wallet?\n\n${to}\n\nThe network fee comes out of it. The bot cannot message you again until you fund it again.`,
+        );
+        if (!ok) return;
+        await runAction({
+            key: null,
+            title: 'Sending the bot\'s funds to your wallet',
+            note: 'The bot sends everything in its wallet to your address. It takes a few seconds once it starts.',
+            request: () => api(`/api/bots/${id}/sweep`, { method: 'POST', body: { confirm: id } }),
+        });
+        return loadBot().catch(() => {});
     }
     if (act === 'remove') {
         const ok = await askConfirm('Remove this bot?\n\nIts wallet key is deleted with it. If it still holds KAS, reveal the key first and import it into a wallet, or the KAS is lost.');
@@ -6007,6 +6035,18 @@ $('bot-grid')?.addEventListener(
     },
     true,
 );
+
+$('bot-payout-save')?.addEventListener('click', async () => {
+    const note = $('bot-payout-note');
+    try {
+        await api('/api/bots/payout', { method: 'PUT', body: { address: $('bot-payout').value.trim() } });
+        note.className = 'hint';
+        note.textContent = 'Saved. Send to wallet on any bot sends its funds here.';
+    } catch (e) {
+        note.className = 'hint bad';
+        note.textContent = e.message;
+    }
+});
 
 // The branch the bot is built from, saved as soon as it changes (Updates, Check, Rebuild).
 $('bot-ref')?.addEventListener('change', async () => {

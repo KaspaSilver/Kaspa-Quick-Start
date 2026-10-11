@@ -2027,6 +2027,7 @@
     <section id="tab-bot" class="tab">
       <nav class="subnav" aria-label="KaChat Bot">
         <button class="subtab-btn active" data-subtab="bot-bots">Bots</button>
+        <button class="subtab-btn" data-subtab="bot-wallet">Wallet</button>
         <button class="subtab-btn" data-subtab="bot-updates">Updates</button>
         <button class="subtab-btn" data-subtab="bot-log">Log</button>
         <button class="subtab-btn" data-subtab="bot-uninstall">Uninstall</button>
@@ -2058,6 +2059,27 @@
             </label>
           </article>
           <div class="bot-grid span2" id="bot-grid"><p class="muted">Loading...</p></div>
+        </div>
+      </div>
+
+      <!-- Wallet: where "Send to wallet" sends a bot's funds. -->
+      <div id="sub-bot-wallet" class="subtab">
+        <div class="grid">
+          <article class="card span2">
+            <h3>Your wallet</h3>
+            <p class="muted">
+              Each bot has its own small wallet. <strong>Send to wallet</strong> (on each bot, under
+              Messages and options) sends everything in that bot's wallet to this address in one go,
+              minus the network fee: to take back what you funded it with, or before removing it.
+            </p>
+            <label class="stack">Your Kaspa address (<span id="bot-payout-net">mainnet</span>)
+              <span class="row">
+                <input id="bot-payout" placeholder="kaspa:q..." size="70" autocomplete="off" spellcheck="false">
+                <button type="button" class="primary" id="bot-payout-save">Save</button>
+              </span>
+            </label>
+            <p class="hint" id="bot-payout-note"></p>
+          </article>
         </div>
       </div>
 
