@@ -2523,3 +2523,32 @@ body:not(.testnet-view) [data-testnet-only]:not(.nav-item):not(.nav-row) { displ
 .x4kas-addr h4 { margin: 0 0 6px; }
 .x4kas-copy code { word-break: break-all; }
 .x4kas-notes { white-space: pre-wrap; font-size: 13px; max-height: 420px; overflow: auto; margin: 0; }
+
+/* KaChat bots: one square per kind */
+.bot-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+.bot-square h3 { margin-top: 0; }
+.bot-card + .bot-card { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 12px; }
+.bot-steps { margin: 8px 0; padding: 0; list-style: none; }
+.bot-steps li { padding: 3px 0; color: var(--muted, #8aa); }
+.bot-steps li.done { color: var(--text); }
+.bot-wallet-qr.bot-qr { width: 128px; height: 128px; padding: 6px; }
+.bot-code { font-size: 18px; letter-spacing: 2px; }
+.bot-more { margin-top: 10px; }
+.bot-more summary { cursor: pointer; color: var(--accent); }
+.bot-msgs { max-height: 260px; overflow: auto; font-size: 13px; }
+.bot-msgs li { padding: 3px 0; white-space: pre-wrap; }
+.bot-msgs li.in { color: var(--text); }
+.hint.bad { color: var(--danger); }
+.bot-card .bot-wallet-row > div:last-child { flex: 1; min-width: 0; }
+.bot-card code { word-break: break-all; }
+.bot-grid > .card { min-width: 0; }
+
+/* Bot squares: each keeps its own height, codes never break mid-number. */
+.bot-grid { align-items: start; }
+.bot-card .nowrap, .bot-steps .nowrap { white-space: nowrap; word-break: normal; }
+.bot-pair { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.bot-wallet-qr img { width: 100%; height: 100%; display: block; }
+
+.bot-card .node-head { justify-content: space-between; }
+.bot-reset-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 0; border-top: 1px solid var(--line); }
+.bot-reset-row:first-child { border-top: 0; }

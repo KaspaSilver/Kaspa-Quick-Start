@@ -329,7 +329,7 @@ services:
   kachat-bot:
     image: kaspa-one-click/kachat-bot:${BOT_REF:-main}
     build:
-      context: ${BOT_REPO:-https://github.com/KaspaSilver/Kaspa-Block-Notifier.git}#${BOT_REF:-main}
+      context: ${BOT_REPO:-https://github.com/KaspaSilver/KaChat-Bot.git}#${BOT_REF:-main}
     container_name: kaspa-node-kachat-bot
     hostname: kachat-bot
     profiles: ["bot"]
@@ -340,6 +340,9 @@ services:
       NODE_GRPC: kaspad:${BOT_NODE_GRPC_PORT:-16110}
       NODE_WRPC: ws://kaspad:${BOT_NODE_BORSH_PORT:-17110}
       KASPA_NETWORK: ${BOT_NETWORK:-mainnet}
+      # KaChat Bot v2: the chat indexer fills gaps after downtime when it is there (optional).
+      KACHAT_INDEXER_URL: ${BOT_INDEXER_URL:-}
+      BRIDGE_STATS_URL: http://bridge:3030/api/stats
       PYTHONUNBUFFERED: "1"
     # Everything that identifies a wallet lives here, written by the panel and
     # readable only by its owner. `required: false` so a stack that has never
@@ -354,6 +357,10 @@ services:
     # save. A daemon-resolved host path, so ${STACK_DIR}, not a relative path.
     volumes:
       - ${STACK_DIR}/conf/bot/state:/state
+      # KaChat Bot v2: which bots exist (/conf/bots.json, written by the panel, keys inside,
+      # 0600). The folder, not the file: the panel replaces the file atomically (rename), and a
+      # single-file bind mount would keep showing the old one.
+      - ${STACK_DIR}/conf/bot:/conf:ro
     networks:
       - kaspa
     logging:

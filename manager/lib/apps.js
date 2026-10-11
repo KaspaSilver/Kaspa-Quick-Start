@@ -105,7 +105,7 @@ export const APPS = {
     },
     bot: {
         label: 'KaChat Bot',
-        repo: 'KaspaSilver/Kaspa-Block-Notifier',
+        repo: 'KaspaSilver/KaChat-Bot',
         profile: 'bot',
         services: ['kachat-bot'],
         // It subscribes to the node's UTXO changes, so it wants a node that is
@@ -507,6 +507,12 @@ export async function ensureSecrets(log = () => {}) {
     return { ...env, ...updates };
 }
 
+/**
+ * The bot branch this panel builds. KaChat Bot v2 is on the bot repo's main now; a ref left
+ * at its old experimental `bots` branch builds main too, so that branch can go.
+ */
+export const botRef = (cfg) => (!cfg.bot?.ref || cfg.bot.ref === 'bots' ? 'main' : cfg.bot.ref);
+
 /** Writes the non-secret settings the compose file reads for these services. */
 export function writeAppsEnv(cfg) {
     updateEnvFile({
@@ -526,8 +532,11 @@ export function writeAppsEnv(cfg) {
         // Both the image tag and the build arg, so switching refs actually
         // rebuilds rather than re-tagging the layers already cached.
         KACHAT_DESKTOP_REF: cfg.desktop?.ref || 'main',
-        BOT_REF: cfg.bot?.ref || 'main',
+        BOT_REF: botRef(cfg),
         BOT_NETWORK: cfg.bot?.network || 'mainnet',
+        // Optional gap-filling for incoming messages after downtime: the chat API of the KaChat
+        // indexer on the same network, when there is one (the bot copes without it).
+        BOT_INDEXER_URL: cfg.bot?.network === 'testnet-10' ? 'http://kachat-app-testnet:8600' : 'http://kachat-app:8600',
         // The node's ports move with its network, and the bot dials both.
         BOT_NODE_GRPC_PORT: cfg.bot?.network === 'testnet-10' ? 16210 : 16110,
         BOT_NODE_BORSH_PORT: cfg.bot?.network === 'testnet-10' ? 17210 : 17110,
@@ -719,7 +728,7 @@ export async function checkUpstream(name, cfg) {
     const app = APPS[name];
     if (!app) throw new Error(`Unknown app "${name}".`);
     if (app.image) return checkImageUpstream(app);
-    const ref = cfg[name].ref;
+    const ref = name === 'bot' ? botRef(cfg) : cfg[name].ref;
 
     const res = await fetch(`https://api.github.com/repos/${app.repo}/commits/${encodeURIComponent(ref)}`, {
         headers: ghHeaders,

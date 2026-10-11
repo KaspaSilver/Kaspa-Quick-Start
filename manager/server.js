@@ -51,6 +51,7 @@ import * as push from './lib/push.js';
 import * as lifecycle from './lib/lifecycle.js';
 import * as host from './lib/host.js';
 import * as bot from './lib/bot.js';
+import * as bots from './lib/bots.js';
 import * as backup from './lib/backup.js';
 import { nodeSnapshot, rpc, rpcTestnet } from './lib/rpc.js';
 import { jobs } from './lib/jobs.js';
@@ -2526,10 +2527,20 @@ async function botGenerateWallet(network, fromKey = null) {
     return parsed;
 }
 
-/** Has the bot deliver one arbitrary KaChat message (used for alerts). */
+/**
+ * Has a bot deliver one KaChat message to its owner (the panel's hashrate and low-balance
+ * alerts). KaChat Bot v2 sends through a paired bot: the Mining notifier when there is one,
+ * else any paired bot. `botd.py --send` hands it to the running daemon (its outbox) so it
+ * never races the daemon's own sends from the same wallet.
+ */
 async function botSendMessage(text) {
+    const paired = bots
+        .readBots()
+        .bots.filter((b) => b.enabled !== false && bots.status(b.id)?.owner)
+        .sort((a, b) => (b.type === 'mining') - (a.type === 'mining'));
+    if (!paired.length) throw new Error('No bot is paired with you yet, so there is nobody to send the alert to.');
     return dockerctl.compose(
-        ['run', '--rm', '-T', '--no-deps', '--entrypoint', 'python', 'kachat-bot', 'watcher.py', '--send', text],
+        ['run', '--rm', '-T', '--no-deps', '--entrypoint', 'python', 'kachat-bot', 'botd.py', '--send', paired[0].id, text],
         { profile: 'bot', timeoutMs: 3 * 60_000 },
     );
 }
@@ -2692,7 +2703,7 @@ route('GET', /^\/api\/bot$/, async (req, res) => {
     const cfg = apps.loadAppsConfig();
     sendJson(res, 200, {
         config: bot.readConfig(),
-        app: { ref: cfg.bot.ref, network: cfg.bot.network },
+        app: { ref: apps.botRef(cfg), network: cfg.bot.network },
         container: await lifecycle.status('bot'),
         blockers: apps.appBlockers('bot', cfg, loadNodeConfig()),
         node: { network: loadNodeConfig().network },
@@ -2856,6 +2867,178 @@ route('POST', /^\/api\/bot\/wallet\/reveal$/, async (req, res) => {
     const key = bot.walletKey();
     if (!key) return fail(res, 404, 'No wallet key is stored.');
     sendJson(res, 200, { privateKeyHex: key });
+});
+
+// -------------------------------------------------------------- bots (v2) --
+// The Bot tab's squares (lib/bots.js): each bot has its own wallet and is set up in KaChat by
+// talking to it. These routes only write which bots exist and read what they report.
+
+async function botBalanceKas(address) {
+    try {
+        const r = await rpc.call('getBalanceByAddress', { address }, 6000);
+        return Number(r?.balance ?? 0) / 1e8;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Whether the bot image (BOT_REF) is built and is v2: an image from before v2 reached main
+ * carries the same tag but runs watcher.py, so the new bots need Updates, Rebuild first.
+ */
+async function botImageBuilt() {
+    return dockerctl
+        .docker(['image', 'inspect', '--format', '{{json .Config.Cmd}}', botImageTag()], { timeoutMs: 15_000 })
+        .then(({ stdout }) => stdout.includes('botd.py'))
+        .catch(() => false);
+}
+
+route('GET', /^\/api\/bots$/, async (req, res) => {
+    const state = await lifecycle.status('bot');
+    const imageBuilt = Boolean(state?.installed) && (await botImageBuilt());
+    const list = bots.readBots().bots.map(bots.view);
+    // The node answers balances even before the bot has run and reported its own.
+    await Promise.all(
+        list.map(async (b) => {
+            if (b.status?.balanceSompi == null) b.balanceKas = await botBalanceKas(b.address);
+            else b.balanceKas = Number(b.status.balanceSompi) / 1e8;
+        }),
+    );
+    sendJson(res, 200, {
+        installed: Boolean(state?.installed),
+        running: Boolean(state?.running),
+        // Installed, but its image is not the new bot yet: Updates, Rebuild first.
+        needsRebuild: Boolean(state?.installed) && !imageBuilt,
+        network: apps.loadAppsConfig().bot.network,
+        catalog: bots.CATALOG,
+        bots: list,
+    });
+});
+
+/** Set up a square: a fresh wallet and pairing code for that kind of bot. */
+route('POST', /^\/api\/bots$/, async (req, res) => {
+    const body = await readBody(req);
+    const kind = bots.catalogType(String(body.type || ''));
+    if (!kind) return fail(res, 400, 'Unknown kind of bot.');
+    if (!(await lifecycle.status('bot'))?.installed) {
+        return fail(res, 409, 'Install the KaChat Bot first: its wallets are created with its own Kaspa library.');
+    }
+    if (!(await botImageBuilt())) {
+        return fail(res, 409, 'Rebuild the KaChat Bot first (Bot, Updates, Rebuild): the new bots need the new bot program, which is not built on this machine yet.');
+    }
+    try {
+        const wallet = await botGenerateWallet(apps.loadAppsConfig().bot.network);
+        const doc = bots.readBots();
+        const entry = {
+            id: bots.newId(kind.type),
+            type: kind.type,
+            enabled: true,
+            privateKeyHex: wallet.privateKeyHex,
+            address: wallet.address,
+            pairingCode: bots.newPairingCode(),
+        };
+        doc.bots.push(entry);
+        bots.writeBots(doc);
+        sendJson(res, 200, { ok: true, bot: bots.view(entry) });
+    } catch (err) {
+        fail(res, 502, err.message);
+    }
+});
+
+// Wallet sub-tab: the payout address "Send to wallet" uses.
+route('GET', /^\/api\/bots\/payout$/, async (req, res) => {
+    sendJson(res, 200, { address: bots.readPayout(), network: apps.loadAppsConfig().bot.network });
+});
+
+route('PUT', /^\/api\/bots\/payout$/, async (req, res) => {
+    const body = await readBody(req);
+    const address = String(body.address || '').trim();
+    const problem = bots.payoutProblem(address, apps.loadAppsConfig().bot.network);
+    if (problem) return fail(res, 400, problem);
+    bots.writePayout(address);
+    sendJson(res, 200, { ok: true, address });
+});
+
+/**
+ * "Send to wallet": the bot sends everything in its wallet to the payout address, in one go,
+ * minus the network fee (botd.py --sweep, handed to the running bot so it never races its
+ * own messages from the same wallet).
+ */
+route('POST', /^\/api\/bots\/([a-z0-9-]+)\/sweep$/, async (req, res, match) => {
+    const id = match[1];
+    const body = await readBody(req);
+    if (String(body.confirm || '') !== id) return fail(res, 400, 'The request did not confirm which bot it meant.');
+    const b = bots.findBot(id);
+    if (!b) return fail(res, 404, 'No such bot.');
+    const to = bots.readPayout();
+    if (!to) return fail(res, 409, 'Set your wallet address under Bot, Wallet first.');
+    const problem = bots.payoutProblem(to, apps.loadAppsConfig().bot.network);
+    if (problem) return fail(res, 409, problem);
+    if (!(await botImageBuilt())) return fail(res, 409, 'Rebuild the KaChat Bot first (Bot, Updates, Rebuild).');
+    const job = jobs.start(`Send ${b.type} bot funds to your wallet`, async (onLine) => {
+        onLine(`Sending everything in ${b.address} to ${to}.`);
+        const { stdout } = await dockerctl.compose(
+            ['run', '--rm', '-T', '--no-deps', '--entrypoint', 'python', 'kachat-bot', 'botd.py', '--sweep', id, to],
+            { profile: 'bot', timeoutMs: 4 * 60_000 },
+        ).catch((err) => ({ stdout: err.stdout || '', failed: err }));
+        let r = null;
+        for (const line of String(stdout).trim().split('\n').reverse()) {
+            try {
+                r = JSON.parse(line);
+                break;
+            } catch {
+                /* a log line */
+            }
+        }
+        if (!r?.ok) throw new Error(r?.error || 'The bot could not send the funds. Its log says why.');
+        onLine(`Sent ${(Number(r.amountSompi) / 1e8).toFixed(8)} KAS (fee ${(Number(r.feeSompi || 0) / 1e8).toFixed(8)} KAS).`);
+        for (const t of r.txids?.length ? r.txids : [r.txid]) onLine(`Transaction: ${t}`);
+    });
+    sendJson(res, 202, { ok: true, jobId: job.id });
+});
+
+route('POST', /^\/api\/bots\/([a-z0-9-]+)\/(pause|resume|reset|reset-settings)$/, async (req, res, match) => {
+    const [, id, action] = match;
+    const doc = bots.readBots();
+    const b = doc.bots.find((x) => x.id === id);
+    if (!b) return fail(res, 404, 'No such bot.');
+    if (action === 'pause') b.enabled = false;
+    if (action === 'resume') b.enabled = true;
+    // Reset: forget only the answers; the bot greets its owner with the setup questions again.
+    if (action === 'reset-settings') b.resetSettings = crypto.randomBytes(6).toString('hex');
+    if (action === 'reset') {
+        // Forget the owner, settings and conversation; a new code pairs it again.
+        b.resetOwner = crypto.randomBytes(6).toString('hex');
+        b.pairingCode = bots.newPairingCode();
+    }
+    bots.writeBots(doc);
+    sendJson(res, 200, { ok: true, bot: bots.view(b) });
+});
+
+route('GET', /^\/api\/bots\/([a-z0-9-]+)\/history$/, async (req, res, match) => {
+    if (!bots.findBot(match[1])) return fail(res, 404, 'No such bot.');
+    sendJson(res, 200, { messages: bots.history(match[1], 50) });
+});
+
+/** The bot's own key, to move what is left in its wallet with any Kaspa wallet. */
+route('POST', /^\/api\/bots\/([a-z0-9-]+)\/reveal$/, async (req, res, match) => {
+    const b = bots.findBot(match[1]);
+    if (!b) return fail(res, 404, 'No such bot.');
+    sendJson(res, 200, { privateKeyHex: b.privateKeyHex, address: b.address });
+});
+
+/** Removes a bot. Its wallet key goes with it, so the panel asks for the key to be saved first. */
+route('DELETE', /^\/api\/bots\/([a-z0-9-]+)$/, async (req, res, match) => {
+    const body = await readBody(req);
+    if (String(body.confirm || '') !== match[1]) return fail(res, 400, 'The request did not confirm which bot it meant.');
+    const doc = bots.readBots();
+    const before = doc.bots.length;
+    doc.bots = doc.bots.filter((x) => x.id !== match[1]);
+    if (doc.bots.length === before) return fail(res, 404, 'No such bot.');
+    bots.writeBots(doc);
+    // Reset means wiped: what it reported and its own working state go too.
+    bots.wipeState(match[1]);
+    sendJson(res, 200, { ok: true });
 });
 
 // ------------------------------------------------------------- translation --
@@ -3161,7 +3344,7 @@ route('POST', /^\/api\/apps\/(kachat|desktop|nextcloud|bot)\/update$/, async (re
         } else {
             onLine(`${app.label} is stopped, so it stays stopped. It runs the new build when you start it.`);
         }
-        apps.writeBuildRecord(name, { sha: upstream.latestSha, ref: cfg[name].ref, builtAt: new Date().toISOString() });
+        apps.writeBuildRecord(name, { sha: upstream.latestSha, ref: upstream.ref, builtAt: new Date().toISOString() });
         onLine(`${app.label} is now running ${upstream.shortSha}.`);
     });
     sendJson(res, 202, { ok: true, jobId: job.id });
@@ -4451,6 +4634,7 @@ async function bootstrap() {
     const appsCfg = apps.loadAppsConfig();
     await apps.ensureSecrets(log);
     bot.ensureEnvFile();
+    bots.ensureBotsFile();
     apps.writeAppsEnv(appsCfg);
     apps.renderAppsPortsOverride(appsCfg);
 
