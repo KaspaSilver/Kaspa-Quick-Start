@@ -37,8 +37,8 @@ export const CATALOG = [
     {
         type: 'faq',
         title: 'Kaspa answers',
-        description: 'Answers common Kaspa questions for anyone who messages it in KaChat: supply, mining, wallets, fees and more, from a fixed list of checked answers. Each answer costs it a tiny fee, so it caps how many each person gets per day.',
-        asks: 'how many answers one person may get per day',
+        description: 'Public: no pairing code and no owner. Once funded it answers common Kaspa questions for anyone who messages it in KaChat (supply, mining, wallets, fees and more) from a fixed list of checked answers, up to 30 a day per person.',
+        asks: 'nothing: it has no setup',
     },
 ];
 export const catalogType = (type) => CATALOG.find((c) => c.type === type) ?? null;
