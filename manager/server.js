@@ -2848,11 +2848,14 @@ async function botBalanceKas(address) {
     }
 }
 
-/** Whether the bot image this branch runs (BOT_REF) is built: v2 needs a rebuild after switching. */
+/**
+ * Whether the bot image (BOT_REF) is built and is v2: an image from before v2 reached main
+ * carries the same tag but runs watcher.py, so the new bots need Updates, Rebuild first.
+ */
 async function botImageBuilt() {
     return dockerctl
-        .docker(['image', 'inspect', botImageTag()], { timeoutMs: 15_000 })
-        .then(() => true)
+        .docker(['image', 'inspect', '--format', '{{json .Config.Cmd}}', botImageTag()], { timeoutMs: 15_000 })
+        .then(({ stdout }) => stdout.includes('botd.py'))
         .catch(() => false);
 }
 
