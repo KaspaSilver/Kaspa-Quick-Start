@@ -2848,8 +2848,17 @@ async function botBalanceKas(address) {
     }
 }
 
+/** Whether the bot image this branch runs (BOT_REF) is built: v2 needs a rebuild after switching. */
+async function botImageBuilt() {
+    return dockerctl
+        .docker(['image', 'inspect', botImageTag()], { timeoutMs: 15_000 })
+        .then(() => true)
+        .catch(() => false);
+}
+
 route('GET', /^\/api\/bots$/, async (req, res) => {
     const state = await lifecycle.status('bot');
+    const imageBuilt = Boolean(state?.installed) && (await botImageBuilt());
     const list = bots.readBots().bots.map(bots.view);
     // The node answers balances even before the bot has run and reported its own.
     await Promise.all(
@@ -2861,6 +2870,8 @@ route('GET', /^\/api\/bots$/, async (req, res) => {
     sendJson(res, 200, {
         installed: Boolean(state?.installed),
         running: Boolean(state?.running),
+        // Installed, but its image is not the new bot yet: Updates, Rebuild first.
+        needsRebuild: Boolean(state?.installed) && !imageBuilt,
         network: apps.loadAppsConfig().bot.network,
         catalog: bots.CATALOG,
         bots: list,
@@ -2874,6 +2885,9 @@ route('POST', /^\/api\/bots$/, async (req, res) => {
     if (!kind) return fail(res, 400, 'Unknown kind of bot.');
     if (!(await lifecycle.status('bot'))?.installed) {
         return fail(res, 409, 'Install the KaChat Bot first: its wallets are created with its own Kaspa library.');
+    }
+    if (!(await botImageBuilt())) {
+        return fail(res, 409, 'Rebuild the KaChat Bot first (Bot, Updates, Rebuild): the new bots need the new bot program, which is not built on this machine yet.');
     }
     try {
         const wallet = await botGenerateWallet(apps.loadAppsConfig().bot.network);

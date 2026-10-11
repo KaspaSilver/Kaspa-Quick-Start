@@ -5876,6 +5876,7 @@ async function loadBot() {
 
     const notice = $('bot-notice');
     const problems = [...(app.blockers ?? [])];
+    if (botsState.needsRebuild) problems.push('One step first: open Updates and click Rebuild. The new bots need the new bot program, which is not built on this machine yet.');
     if (container?.installed && !container.running && botsState.bots.length) problems.push('The bot is switched off, so your bots are not listening. Turn it on with its switch in the sidebar.');
     notice.hidden = !problems.length;
     notice.className = 'verdict bad';
@@ -5893,8 +5894,8 @@ function renderBotGrid() {
             const body = mine.length
                 ? mine.map((b) => botCard(b, d)).join('')
                 : `<p class="muted">${escapeHtml(kind.description)}</p>
-                   <div class="row"><button type="button" class="primary" data-bot-setup="${escapeHtml(kind.type)}" ${d.installed ? '' : 'disabled'}>Set up</button></div>
-                   ${d.installed ? '' : '<p class="hint">Install the KaChat Bot first (sidebar).</p>'}`;
+                   <div class="row"><button type="button" class="primary" data-bot-setup="${escapeHtml(kind.type)}" ${d.installed && !d.needsRebuild ? '' : 'disabled'}>Set up</button></div>
+                   ${!d.installed ? '<p class="hint">Install the KaChat Bot first (sidebar).</p>' : d.needsRebuild ? '<p class="hint">Rebuild it first (Updates, Rebuild).</p>' : ''}`;
             return `<article class="card bot-square"><h3>${escapeHtml(kind.title)}</h3>${body}</article>`;
         })
         .join('');
