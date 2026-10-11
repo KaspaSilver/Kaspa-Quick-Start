@@ -34,6 +34,12 @@ export const CATALOG = [
         description: 'Tells you when an address you care about receives or sends KAS, with the amount and the transaction.',
         asks: 'which addresses to watch',
     },
+    {
+        type: 'faq',
+        title: 'Kaspa answers',
+        description: 'Answers common Kaspa questions for anyone who messages it in KaChat: supply, mining, wallets, fees and more, from a fixed list of checked answers. Each answer costs it a tiny fee, so it caps how many each person gets per day.',
+        asks: 'how many answers one person may get per day',
+    },
 ];
 export const catalogType = (type) => CATALOG.find((c) => c.type === type) ?? null;
 
