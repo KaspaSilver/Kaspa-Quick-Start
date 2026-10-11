@@ -2960,13 +2960,15 @@ route('POST', /^\/api\/bots\/([a-z0-9-]+)\/sweep$/, async (req, res, match) => {
     sendJson(res, 202, { ok: true, jobId: job.id });
 });
 
-route('POST', /^\/api\/bots\/([a-z0-9-]+)\/(pause|resume|reset)$/, async (req, res, match) => {
+route('POST', /^\/api\/bots\/([a-z0-9-]+)\/(pause|resume|reset|reset-settings)$/, async (req, res, match) => {
     const [, id, action] = match;
     const doc = bots.readBots();
     const b = doc.bots.find((x) => x.id === id);
     if (!b) return fail(res, 404, 'No such bot.');
     if (action === 'pause') b.enabled = false;
     if (action === 'resume') b.enabled = true;
+    // Reset: forget only the answers; the bot greets its owner with the setup questions again.
+    if (action === 'reset-settings') b.resetSettings = crypto.randomBytes(6).toString('hex');
     if (action === 'reset') {
         // Forget the owner, settings and conversation; a new code pairs it again.
         b.resetOwner = crypto.randomBytes(6).toString('hex');

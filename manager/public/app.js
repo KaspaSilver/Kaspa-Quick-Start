@@ -5936,8 +5936,9 @@ function renderBotReset() {
               b.balanceKas != null ? `, holds ${b.balanceKas.toFixed(8)} KAS` : ''
           }${b.status?.owner ? `, paired with ${escapeHtml(botShort(b.status.owner))}` : ''}</div></div>
         <div class="row">
+          <button type="button" class="ghost mini" data-bot-resetsettings>Reset</button>
           <button type="button" class="ghost mini" data-bot-newowner>New owner</button>
-          <button type="button" class="ghost mini danger" data-bot-wipe>Reset</button>
+          <button type="button" class="ghost mini danger" data-bot-wipe>Remove</button>
         </div>
       </div>`,
         )
@@ -5949,10 +5950,23 @@ $('bot-reset-list')?.addEventListener('click', async (ev) => {
     if (!row) return;
     const id = row.dataset.bot;
     const b = botsState?.bots.find((x) => x.id === id);
+    if (ev.target.closest('[data-bot-resetsettings]')) {
+        const ok = await askConfirm(
+            `Reset ${b?.title ?? 'this bot'}?\n\nIt forgets the answers you gave it and messages you its setup questions again in KaChat. ` +
+                'Its wallet, its KAS, its pairing code and you as its owner all stay.',
+        );
+        if (!ok) return;
+        try {
+            await api(`/api/bots/${id}/reset-settings`, { method: 'POST' });
+        } catch (e) {
+            await askConfirm(e.message);
+        }
+        return loadBot().catch(() => {});
+    }
     if (ev.target.closest('[data-bot-wipe]')) {
         const holds = b?.balanceKas > 0 ? ` It still holds ${b.balanceKas.toFixed(8)} KAS.` : '';
         const ok = await askConfirm(
-            `Reset ${b?.title ?? 'this bot'}?\n\nEverything is wiped: its wallet key, pairing, settings and messages.${holds}\n\n` +
+            `Remove ${b?.title ?? 'this bot'}?\n\nEverything is wiped: its wallet key, pairing, settings and messages.${holds}\n\n` +
                 'Any KAS left in its wallet is lost for good unless you have used Send to wallet or saved its wallet key first.',
         );
         if (!ok) return;
