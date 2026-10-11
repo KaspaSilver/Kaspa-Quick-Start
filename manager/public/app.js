@@ -5838,7 +5838,13 @@ function renderQr(el, text) {
         const qr = window.qrcode(0, 'M'); // type 0 = auto-size, medium correction
         qr.addData(text);
         qr.make();
-        el.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+        // An image, not inline SVG: night modes recolour inline SVG (white turns dark grey and
+        // the code stops scanning) but leave images alone.
+        const svg = qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+        const img = document.createElement('img');
+        img.alt = 'QR code';
+        img.src = `data:image/svg+xml;base64,${btoa(svg)}`;
+        el.replaceChildren(img);
     } catch {
         /* an address too long for a QR is not worth a broken tab */
     }
@@ -5909,7 +5915,8 @@ function botCard(b, d) {
     const bal = b.balanceKas;
     const funded = st ? st.funded : bal != null && bal > 0.01;
     const stage = b.enabled === false ? 'paused' : st?.stage || 'awaiting_pairing';
-    const low = bal != null && bal < 1;
+    // Only once it has been funded: before that, step 1 already says to fund it.
+    const low = funded && bal != null && bal < 1;
     const step = (done, text) => `<li class="${done ? 'done' : ''}">${done ? '&#10003;' : '&#9675;'} ${text}</li>`;
     return `
       <div class="bot-card" data-bot="${escapeHtml(b.id)}">
@@ -5917,7 +5924,7 @@ function botCard(b, d) {
         ${st?.summary ? `<p><strong>${escapeHtml(st.summary)}</strong></p>` : ''}
         <ol class="plain bot-steps">
           ${step(funded, `Fund its address with about 10 KAS${bal != null ? ` (balance ${bal.toFixed(2)} KAS)` : ''}`)}
-          ${step(Boolean(st?.owner), st?.owner ? `Paired with ${escapeHtml(botShort(st.owner))}` : `In KaChat, start a chat with its address and send <code>${escapeHtml(b.pairingCode)}</code>`)}
+          ${step(Boolean(st?.owner), st?.owner ? `Paired with ${escapeHtml(botShort(st.owner))}` : `In KaChat, start a chat with its address and send <code class="nowrap">${escapeHtml(b.pairingCode)}</code>`)}
           ${step(stage === 'active', 'Answer its questions in the chat')}
         </ol>
         <div class="bot-wallet-row">
@@ -5925,7 +5932,7 @@ function botCard(b, d) {
           <div>
             <div class="row x4kas-copy"><code>${escapeHtml(b.address)}</code>
               <button type="button" class="ghost mini" data-copy="${escapeHtml(b.address)}">Copy</button></div>
-            ${!st?.owner ? `<p>Pairing code: <code class="bot-code">${escapeHtml(b.pairingCode)}</code> <button type="button" class="ghost mini" data-copy="${escapeHtml(b.pairingCode)}">Copy</button></p>` : ''}
+            ${!st?.owner ? `<p class="bot-pair">Pairing code: <code class="bot-code nowrap">${escapeHtml(b.pairingCode)}</code> <button type="button" class="ghost mini" data-copy="${escapeHtml(b.pairingCode)}">Copy</button></p>` : ''}
             ${low ? '<p class="hint bad">Its balance is low: send it a few KAS so it can keep messaging you.</p>' : ''}
             ${st?.error ? `<p class="error">${escapeHtml(st.error)}</p>` : ''}
           </div>
