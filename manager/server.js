@@ -2997,6 +2997,8 @@ route('DELETE', /^\/api\/bots\/([a-z0-9-]+)$/, async (req, res, match) => {
     doc.bots = doc.bots.filter((x) => x.id !== match[1]);
     if (doc.bots.length === before) return fail(res, 404, 'No such bot.');
     bots.writeBots(doc);
+    // Reset means wiped: what it reported and its own working state go too.
+    bots.wipeState(match[1]);
     sendJson(res, 200, { ok: true });
 });
 

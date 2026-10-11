@@ -5855,6 +5855,7 @@ function renderQr(el, text) {
 let botsState = null;
 const botShort = (a) => (a && a.length > 26 ? `${a.slice(0, 16)}…${a.slice(-6)}` : a || '');
 const STAGE_TEXT = {
+    off: 'Off',
     awaiting_pairing: 'Waiting for you to message it the pairing code',
     setup: 'Setting up in your KaChat chat',
     active: 'Running',
@@ -5915,22 +5916,80 @@ function renderBotGrid() {
         })
         .join('');
     for (const el of grid.querySelectorAll('.bot-qr')) renderQr(el, el.dataset.address);
+    renderBotReset();
 }
+
+/** Reset sub-tab: every bot, with Reset (wipe it) and New owner (keep its wallet). */
+function renderBotReset() {
+    const box = $('bot-reset-list');
+    const list = botsState?.bots ?? [];
+    if (!list.length) {
+        box.innerHTML = '<p class="muted">No bots set up yet.</p>';
+        return;
+    }
+    box.innerHTML = list
+        .map(
+            (b) => `
+      <div class="bot-reset-row" data-bot="${escapeHtml(b.id)}">
+        <div><strong>${escapeHtml(b.title)}</strong>
+          <div class="muted"><code>${escapeHtml(botShort(b.address))}</code>${
+              b.balanceKas != null ? `, holds ${b.balanceKas.toFixed(8)} KAS` : ''
+          }${b.status?.owner ? `, paired with ${escapeHtml(botShort(b.status.owner))}` : ''}</div></div>
+        <div class="row">
+          <button type="button" class="ghost mini" data-bot-newowner>New owner</button>
+          <button type="button" class="ghost mini danger" data-bot-wipe>Reset</button>
+        </div>
+      </div>`,
+        )
+        .join('');
+}
+
+$('bot-reset-list')?.addEventListener('click', async (ev) => {
+    const row = ev.target.closest('[data-bot]');
+    if (!row) return;
+    const id = row.dataset.bot;
+    const b = botsState?.bots.find((x) => x.id === id);
+    if (ev.target.closest('[data-bot-wipe]')) {
+        const holds = b?.balanceKas > 0 ? ` It still holds ${b.balanceKas.toFixed(8)} KAS.` : '';
+        const ok = await askConfirm(
+            `Reset ${b?.title ?? 'this bot'}?\n\nEverything is wiped: its wallet key, pairing, settings and messages.${holds}\n\n` +
+                'Any KAS left in its wallet is lost for good unless you have used Send to wallet or saved its wallet key first.',
+        );
+        if (!ok) return;
+        try {
+            await api(`/api/bots/${id}`, { method: 'DELETE', body: { confirm: id } });
+        } catch (e) {
+            await askConfirm(e.message);
+        }
+        return loadBot().catch(() => {});
+    }
+    if (ev.target.closest('[data-bot-newowner]')) {
+        const ok = await askConfirm(
+            `Give ${b?.title ?? 'this bot'} a new owner?\n\nIt forgets who it is paired with, its settings and its chat, and gets a new pairing code. Its wallet and the KAS in it stay.`,
+        );
+        if (!ok) return;
+        await api(`/api/bots/${id}/reset`, { method: 'POST' });
+        return loadBot().catch(() => {});
+    }
+});
 
 function botCard(b, d) {
     const st = b.status;
     const bal = b.balanceKas;
     const funded = st ? st.funded : bal != null && bal > 0.01;
-    const stage = b.enabled === false ? 'paused' : st?.stage || 'awaiting_pairing';
+    const stage = b.enabled === false ? 'off' : st?.stage || 'awaiting_pairing';
     // Only once it has been funded: before that, step 1 already says to fund it.
-    const low = funded && bal != null && bal < 1;
+    const low = funded && bal != null && bal < 0.25;
     const step = (done, text) => `<li class="${done ? 'done' : ''}">${done ? '&#10003;' : '&#9675;'} ${text}</li>`;
     return `
       <div class="bot-card" data-bot="${escapeHtml(b.id)}">
-        <div class="node-head"><span class="tag ${stage === 'active' ? 'ok' : stage === 'paused' ? '' : 'warn'}">${escapeHtml(STAGE_TEXT[stage] || stage)}</span></div>
+        <div class="node-head"><span class="tag ${stage === 'active' ? 'ok' : stage === 'paused' ? '' : 'warn'}">${escapeHtml(STAGE_TEXT[stage] || stage)}</span>
+          <label class="switch mini bot-switch" title="Turn this bot on or off. Off keeps its wallet, pairing and settings.">
+            <input type="checkbox" data-bot-toggle ${b.enabled === false ? '' : 'checked'} aria-label="Turn this bot on or off"><span class="track"></span>
+          </label></div>
         ${st?.summary ? `<p><strong>${escapeHtml(st.summary)}</strong></p>` : ''}
         <ol class="plain bot-steps">
-          ${step(funded, `Fund its address with about 10 KAS${bal != null ? ` (balance ${bal.toFixed(2)} KAS)` : ''}`)}
+          ${step(funded, `Fund its address with about 5 KAS${bal != null ? ` (balance ${bal.toFixed(2)} KAS)` : ''}`)}
           ${step(Boolean(st?.owner), st?.owner ? `Paired with ${escapeHtml(botShort(st.owner))}` : `In KaChat, start a chat with its address and send <code class="nowrap">${escapeHtml(b.pairingCode)}</code>`)}
           ${step(stage === 'active', 'Answer its questions in the chat')}
         </ol>
@@ -5947,11 +6006,8 @@ function botCard(b, d) {
         <details class="bot-more"><summary>Messages and options</summary>
           <div class="bot-history" data-history="${escapeHtml(b.id)}"><p class="muted">Loading...</p></div>
           <div class="row">
-            <button type="button" class="ghost mini" data-bot-act="${b.enabled === false ? 'resume' : 'pause'}">${b.enabled === false ? 'Resume' : 'Pause'}</button>
-            <button type="button" class="ghost mini" data-bot-act="reset">Pair with someone else</button>
             <button type="button" class="ghost mini" data-bot-act="sweep">Send to wallet</button>
             <button type="button" class="ghost mini" data-bot-act="reveal">Reveal wallet key</button>
-            <button type="button" class="ghost mini danger" data-bot-act="remove">Remove bot</button>
           </div>
           <div class="verdict" data-bot-key hidden></div>
         </details>
@@ -6000,16 +6056,21 @@ $('bot-grid')?.addEventListener('click', async (ev) => {
         });
         return loadBot().catch(() => {});
     }
-    if (act === 'remove') {
-        const b = botsState.bots.find((x) => x.id === id);
-        const holds = b?.balanceKas > 0 ? `\n\nIt still holds ${b.balanceKas.toFixed(8)} KAS: use Send to wallet first, or it is lost with the key.` : '';
-        const ok = await askConfirm(`Remove this bot?\n\nIts wallet key is deleted with it.${holds}`);
-        if (!ok) return;
-        await api(`/api/bots/${id}`, { method: 'DELETE', body: { confirm: id } });
-        return loadBot().catch(() => {});
+    loadBot().catch(() => {});
+});
+
+// A bot's switch: off stops it listening and sending; its wallet, pairing and settings stay.
+$('bot-grid')?.addEventListener('change', async (ev) => {
+    const input = ev.target.closest('[data-bot-toggle]');
+    if (!input) return;
+    const id = input.closest('[data-bot]').dataset.bot;
+    input.disabled = true;
+    try {
+        await api(`/api/bots/${id}/${input.checked ? 'resume' : 'pause'}`, { method: 'POST' });
+    } catch (e) {
+        input.checked = !input.checked;
+        await askConfirm(e.message);
     }
-    if (act === 'reset' && !(await askConfirm('Pair it with someone else?\n\nIt forgets its owner, settings and chat, and gets a new pairing code.'))) return;
-    await api(`/api/bots/${id}/${act}`, { method: 'POST' });
     loadBot().catch(() => {});
 });
 

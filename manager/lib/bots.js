@@ -137,6 +137,14 @@ export function history(id, limit = 30) {
     return out.reverse();
 }
 
+/** Removes everything a bot left in the state folder (status, history, its working state). */
+export function wipeState(id) {
+    if (!ID_RE.test(String(id))) return;
+    for (const f of [path.join(STATE_DIR, `${id}.json`), path.join(STATE_DIR, `${id}.history.jsonl`), path.join(BOT_DIR, 'state', 'botd', `${id}.json`)]) {
+        fs.rmSync(f, { force: true });
+    }
+}
+
 /** A bot as the panel shows it: its config without the key, plus what it reports. */
 export function view(b) {
     const st = status(b.id);

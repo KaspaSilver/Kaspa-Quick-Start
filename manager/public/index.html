@@ -2028,6 +2028,7 @@
       <nav class="subnav" aria-label="KaChat Bot">
         <button class="subtab-btn active" data-subtab="bot-bots">Bots</button>
         <button class="subtab-btn" data-subtab="bot-wallet">Wallet</button>
+        <button class="subtab-btn" data-subtab="bot-reset">Reset</button>
         <button class="subtab-btn" data-subtab="bot-updates">Updates</button>
         <button class="subtab-btn" data-subtab="bot-log">Log</button>
         <button class="subtab-btn" data-subtab="bot-uninstall">Uninstall</button>
@@ -2045,7 +2046,7 @@
               <span id="bot-state" class="tag off">off</span>
             </div>
             <p class="muted">
-              Pick a bot and set it up. It gets its own small wallet: send it about 10 KAS, which pays
+              Pick a bot and set it up. It gets its own small wallet: send it about 5 KAS, which pays
               for its messages for a long time. Then open KaChat, start a chat with the bot's address,
               and send it the pairing code. That makes the chat yours, and the bot asks you everything
               else right there in the conversation. Message it <code>help</code> any time.
@@ -2079,6 +2080,23 @@
               </span>
             </label>
             <p class="hint" id="bot-payout-note"></p>
+          </article>
+        </div>
+      </div>
+
+      <!-- Reset: the only place a bot is wiped. Turning one off (its switch) keeps everything. -->
+      <div id="sub-bot-reset" class="subtab">
+        <div class="grid">
+          <article class="card span2">
+            <h3>Reset a bot</h3>
+            <p class="muted">
+              Resetting wipes a bot completely: its wallet key, its pairing, its settings and its
+              messages. Its square goes back to Set up, with a new wallet and a new pairing code.
+              <strong>Any KAS still in its wallet is lost</strong> unless you use Send to wallet or save
+              its wallet key first. To stop a bot for a while instead, turn it off with the switch on
+              its square: that keeps everything.
+            </p>
+            <div id="bot-reset-list"><p class="muted">No bots set up yet.</p></div>
           </article>
         </div>
       </div>
