@@ -6015,6 +6015,7 @@ function botCard(b, d) {
               <button type="button" class="ghost mini" data-copy="${escapeHtml(b.address)}">Copy</button></div>
             ${!st?.owner ? `<p class="bot-pair">Pairing code: <code class="bot-code nowrap">${escapeHtml(b.pairingCode)}</code> <button type="button" class="ghost mini" data-copy="${escapeHtml(b.pairingCode)}">Copy</button></p>` : ''}
             ${low ? '<p class="hint bad">Its balance is low: send it a few KAS so it can keep messaging you.</p>' : ''}
+            ${b.type === 'faq' && stage === 'active' ? '<p class="hint">Live: anyone can message this address in KaChat with a Kaspa question. Share it.</p>' : ''}
             ${st?.error ? `<p class="error">${escapeHtml(st.error)}</p>` : ''}
           </div>
         </div>
