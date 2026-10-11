@@ -508,11 +508,10 @@ export async function ensureSecrets(log = () => {}) {
 }
 
 /**
- * The bot branch this panel builds. The bots branch of this panel runs KaChat Bot v2, which
- * lives on the bot repo's own `bots` branch until it is merged, so a stored 'main' (the
- * default) means `bots` here. (Drop this when both branches reach main.)
+ * The bot branch this panel builds. KaChat Bot v2 is on the bot repo's main now; a ref left
+ * at its old experimental `bots` branch builds main too, so that branch can go.
  */
-export const botRef = (cfg) => (!cfg.bot?.ref || cfg.bot.ref === 'main' ? 'bots' : cfg.bot.ref);
+export const botRef = (cfg) => (!cfg.bot?.ref || cfg.bot.ref === 'bots' ? 'main' : cfg.bot.ref);
 
 /** Writes the non-secret settings the compose file reads for these services. */
 export function writeAppsEnv(cfg) {
@@ -533,9 +532,6 @@ export function writeAppsEnv(cfg) {
         // Both the image tag and the build arg, so switching refs actually
         // rebuilds rather than re-tagging the layers already cached.
         KACHAT_DESKTOP_REF: cfg.desktop?.ref || 'main',
-        // The bots branch of this panel runs KaChat Bot v2, which lives on the bot repo's own
-        // `bots` branch until it is merged: a stored 'main' builds that instead. (Drop this when
-        // both branches reach main.)
         BOT_REF: botRef(cfg),
         BOT_NETWORK: cfg.bot?.network || 'mainnet',
         // Optional gap-filling for incoming messages after downtime: the chat API of the KaChat

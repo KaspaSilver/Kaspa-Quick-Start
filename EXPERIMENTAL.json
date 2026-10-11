@@ -1,6 +1,0 @@
-{
-  "title": "KaChat bots you set up by chatting",
-  "summary": "The Bot tab becomes a set of bots (Mining notifier, Price bot, Wallet watcher). Set one up, fund its own small wallet with about 5 KAS, then message it in KaChat with its pairing code: it asks what to watch right in the chat. Needs the KaChat Bot reinstalled from its bots branch (Updates, Rebuild).",
-  "apps": [],
-  "items": []
-}
