@@ -6001,7 +6001,9 @@ $('bot-grid')?.addEventListener('click', async (ev) => {
         return loadBot().catch(() => {});
     }
     if (act === 'remove') {
-        const ok = await askConfirm('Remove this bot?\n\nIts wallet key is deleted with it. If it still holds KAS, reveal the key first and import it into a wallet, or the KAS is lost.');
+        const b = botsState.bots.find((x) => x.id === id);
+        const holds = b?.balanceKas > 0 ? `\n\nIt still holds ${b.balanceKas.toFixed(8)} KAS: use Send to wallet first, or it is lost with the key.` : '';
+        const ok = await askConfirm(`Remove this bot?\n\nIts wallet key is deleted with it.${holds}`);
         if (!ok) return;
         await api(`/api/bots/${id}`, { method: 'DELETE', body: { confirm: id } });
         return loadBot().catch(() => {});
