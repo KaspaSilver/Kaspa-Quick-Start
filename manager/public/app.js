@@ -5864,11 +5864,11 @@ const STAGE_TEXT = {
     disabled: 'Paused',
 };
 
-async function loadBot() {
+async function loadBot({ fresh = false } = {}) {
     let app;
     let payout;
     try {
-        [app, botsState, payout] = await Promise.all([api('/api/bot'), api('/api/bots'), api('/api/bots/payout')]);
+        [app, botsState, payout] = await Promise.all([api('/api/bot'), api(`/api/bots${fresh ? '?fresh=1' : ''}`), api('/api/bots/payout')]);
     } catch {
         return;
     }
@@ -5994,9 +5994,11 @@ function botCard(b, d) {
     return `
       <div class="bot-card" data-bot="${escapeHtml(b.id)}">
         <div class="node-head"><span class="tag ${stage === 'active' ? 'ok' : stage === 'paused' ? '' : 'warn'}">${escapeHtml(STAGE_TEXT[stage] || stage)}</span>
+          <span class="row bot-head-actions">
+          <button type="button" class="ghost mini" data-bot-act="refresh" title="Read its balance from the node now, and how many people use it">Refresh</button>
           <label class="switch mini bot-switch" title="Turn this bot on or off. Off keeps its wallet and everyone's settings.">
             <input type="checkbox" data-bot-toggle ${b.enabled === false ? '' : 'checked'} aria-label="Turn this bot on or off"><span class="track"></span>
-          </label></div>
+          </label></span></div>
         ${st?.summary ? `<p><strong>${escapeHtml(st.summary)}</strong></p>` : ''}
         <ol class="plain bot-steps">
           ${step(funded, `Fund its address with about 5 KAS${bal != null ? ` (balance ${bal.toFixed(2)} KAS)` : ''}`)}
@@ -6046,6 +6048,18 @@ $('bot-grid')?.addEventListener('click', async (ev) => {
     const card = ev.target.closest('[data-bot]');
     if (!act || !card) return;
     const id = card.dataset.bot;
+    if (act === 'refresh') {
+        const btn = ev.target.closest('[data-bot-act]');
+        btn.disabled = true;
+        btn.textContent = 'Refreshing...';
+        await loadBot({ fresh: true }).catch(() => {});
+        // Re-rendered with the fresh numbers; if this square was kept, give its button back.
+        if (btn.isConnected) {
+            btn.disabled = false;
+            btn.textContent = 'Refresh';
+        }
+        return;
+    }
     if (act === 'reveal') {
         const r = await api(`/api/bots/${id}/reveal`, { method: 'POST' });
         const box = card.querySelector('[data-bot-key]');

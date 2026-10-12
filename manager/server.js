@@ -2895,15 +2895,17 @@ async function botImageBuilt() {
         .catch(() => false);
 }
 
-route('GET', /^\/api\/bots$/, async (req, res) => {
+route('GET', /^\/api\/bots$/, async (req, res, match, url) => {
     const state = await lifecycle.status('bot');
     const imageBuilt = Boolean(state?.installed) && (await botImageBuilt());
     const list = bots.readBots().bots.map(bots.view);
-    // The node answers balances even before the bot has run and reported its own.
+    // The node answers balances even before the bot has run and reported its own, and always on
+    // a square's Refresh (?fresh=1): what the bot last reported can be up to a minute old.
+    const fresh = url.searchParams.get('fresh') === '1';
     await Promise.all(
         list.map(async (b) => {
-            if (b.status?.balanceSompi == null) b.balanceKas = await botBalanceKas(b.address);
-            else b.balanceKas = Number(b.status.balanceSompi) / 1e8;
+            const live = fresh || b.status?.balanceSompi == null ? await botBalanceKas(b.address) : null;
+            b.balanceKas = live ?? (b.status?.balanceSompi != null ? Number(b.status.balanceSompi) / 1e8 : null);
         }),
     );
     sendJson(res, 200, {
