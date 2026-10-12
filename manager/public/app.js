@@ -6006,7 +6006,7 @@ function botCard(b, d) {
               : 'Share its address: anyone who messages it in KaChat (you too) sets it up for themselves')}
         </ol>
         ${isFaq && st?.stats ? `<p class="muted">${st.stats.answered} answers given, ${st.stats.peopleToday} ${st.stats.peopleToday === 1 ? 'person' : 'people'} asked today.</p>` : ''}
-        ${!isFaq && st?.stats ? `<p class="muted">${st.stats.active} ${st.stats.active === 1 ? 'person' : 'people'} set up${st.stats.people > st.stats.active ? `, ${st.stats.people - st.stats.active} still setting up` : ''}. Up to ${st.stats.perPersonPerDay} messages a day each.</p>` : ''}
+        ${!isFaq && st?.stats ? `<p class="muted">${st.stats.active} ${st.stats.active === 1 ? 'person' : 'people'} set up${st.stats.people > st.stats.active ? `, ${st.stats.people - st.stats.active} still setting up` : ''}.</p>` : ''}
         <div class="bot-wallet-row">
           <div class="bot-wallet-qr bot-qr" data-address="${escapeHtml(b.address)}"></div>
           <div>

@@ -38,7 +38,7 @@ export const CATALOG = [
     {
         type: 'faq',
         title: 'Kaspa answers',
-        description: 'Once funded it answers common Kaspa questions for anyone who messages it in KaChat (supply, mining, wallets, fees and more) from a fixed list of checked answers, up to 30 a day per person.',
+        description: 'Once funded it answers common Kaspa questions for anyone who messages it in KaChat (supply, mining, wallets, fees and more) from a fixed list of checked answers.',
         asks: 'nothing: it has no setup',
     },
 ];
