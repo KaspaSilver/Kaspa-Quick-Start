@@ -5913,7 +5913,11 @@ function renderBotGrid() {
                 : `<p class="muted">${escapeHtml(kind.description)}</p>
                    <div class="row"><button type="button" class="primary" data-bot-setup="${escapeHtml(kind.type)}" ${d.installed && !d.needsRebuild ? '' : 'disabled'}>Set up</button></div>
                    ${!d.installed ? '<p class="hint">Install the KaChat Bot first (sidebar).</p>' : d.needsRebuild ? '<p class="hint">Rebuild it first (Updates, Rebuild).</p>' : ''}`;
-            return `<article class="card bot-square"><h3>${escapeHtml(kind.title)}</h3>${body}</article>`;
+            // The balance it holds, next to its name (one bot per kind in practice).
+            const bals = mine.map((b) => b.balanceKas).filter((v) => v != null);
+            const bal = bals.length ? bals.reduce((a, v) => a + v, 0) : null;
+            const tag = mine.length ? `<span class="tag bot-balance">${bal == null ? 'balance unknown' : `${bal.toFixed(bal < 1 ? 4 : 2)} KAS`}</span>` : '';
+            return `<article class="card bot-square"><h3 class="bot-title">${escapeHtml(kind.title)} ${tag}</h3>${body}</article>`;
         })
         .join('');
     for (const el of grid.querySelectorAll('.bot-qr')) renderQr(el, el.dataset.address);
@@ -5990,7 +5994,6 @@ function botCard(b, d) {
     const stage = b.enabled === false ? 'off' : st?.stage || 'active';
     // Only once it has been funded: before that, step 1 already says to fund it.
     const low = funded && bal != null && bal < 0.25;
-    const step = (done, text) => `<li class="${done ? 'done' : ''}">${done ? '&#10003;' : '&#9675;'} ${text}</li>`;
     return `
       <div class="bot-card" data-bot="${escapeHtml(b.id)}">
         <div class="node-head"><span class="tag ${stage === 'active' ? 'ok' : stage === 'paused' ? '' : 'warn'}">${escapeHtml(STAGE_TEXT[stage] || stage)}</span>
@@ -6000,12 +6003,7 @@ function botCard(b, d) {
             <input type="checkbox" data-bot-toggle ${b.enabled === false ? '' : 'checked'} aria-label="Turn this bot on or off"><span class="track"></span>
           </label></span></div>
         ${st?.summary ? `<p><strong>${escapeHtml(st.summary)}</strong></p>` : ''}
-        <ol class="plain bot-steps">
-          ${step(funded, `Fund its address with about 5 KAS${bal != null ? ` (balance ${bal.toFixed(2)} KAS)` : ''}`)}
-          ${step(funded && stage === 'active', isFaq
-              ? 'Share its address: anyone in KaChat can message it a Kaspa question'
-              : 'Share its address: anyone who messages it in KaChat (you too) sets it up for themselves')}
-        </ol>
+        ${!funded ? '<p class="hint">Send it about 5 KAS to start: it pays for every message it sends.</p>' : ''}
         ${isFaq && st?.stats ? `<p class="muted">${st.stats.answered} answers given, ${st.stats.peopleToday} ${st.stats.peopleToday === 1 ? 'person' : 'people'} asked today.</p>` : ''}
         ${!isFaq && st?.stats ? `<p class="muted">${st.stats.active} ${st.stats.active === 1 ? 'person' : 'people'} set up${st.stats.people > st.stats.active ? `, ${st.stats.people - st.stats.active} still setting up` : ''}.</p>` : ''}
         <div class="bot-wallet-row">
