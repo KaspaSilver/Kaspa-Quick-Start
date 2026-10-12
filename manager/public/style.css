@@ -2537,5 +2537,7 @@ body:not(.testnet-view) [data-testnet-only]:not(.nav-item):not(.nav-row) { displ
 
 .bot-card .node-head { justify-content: space-between; }
 .bot-head-actions { display: flex; align-items: center; gap: 8px; }
+.bot-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.bot-title .bot-balance { font-size: 13px; font-weight: 600; }
 .bot-reset-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 0; border-top: 1px solid var(--line); }
 .bot-reset-row:first-child { border-top: 0; }
