@@ -5857,7 +5857,7 @@ let botsState = null;
 const botShort = (a) => (a && a.length > 26 ? `${a.slice(0, 16)}…${a.slice(-6)}` : a || '');
 const STAGE_TEXT = {
     off: 'Off',
-    awaiting_pairing: 'Waiting for you to message it the pairing code',
+    awaiting_pairing: 'Starting',
     setup: 'Setting up in your KaChat chat',
     active: 'Running',
     paused: 'Paused',
@@ -5935,10 +5935,9 @@ function renderBotReset() {
         <div><strong>${escapeHtml(b.title)}</strong>
           <div class="muted"><code>${escapeHtml(botShort(b.address))}</code>${
               b.balanceKas != null ? `, holds ${b.balanceKas.toFixed(8)} KAS` : ''
-          }${b.status?.owner && b.type !== 'faq' ? `, paired with ${escapeHtml(botShort(b.status.owner))}` : ''}</div></div>
+          }</div></div>
         <div class="row">
           <button type="button" class="ghost mini" data-bot-resetsettings>Reset</button>
-          ${b.type === 'faq' ? '' : '<button type="button" class="ghost mini" data-bot-newowner>New owner</button>'}
           <button type="button" class="ghost mini danger" data-bot-wipe>Remove</button>
         </div>
       </div>`,
@@ -5955,8 +5954,8 @@ $('bot-reset-list')?.addEventListener('click', async (ev) => {
         const ok = await askConfirm(
             b?.type === 'faq'
                 ? `Reset ${b.title}?\n\nIts counts (answers given, people today, each person's daily answers) and its list of unanswered questions start over. Its wallet and its KAS stay.`
-                : `Reset ${b?.title ?? 'this bot'}?\n\nIt forgets the answers you gave it and messages you its setup questions again in KaChat. ` +
-                      'Its wallet, its KAS, its pairing code and you as its owner all stay.',
+                : `Reset ${b?.title ?? 'this bot'}?\n\nIt forgets everyone's setup: each person gets its first setup questions again the next time they message it. ` +
+                      'Its wallet and its KAS stay.',
         );
         if (!ok) return;
         try {
@@ -5969,7 +5968,7 @@ $('bot-reset-list')?.addEventListener('click', async (ev) => {
     if (ev.target.closest('[data-bot-wipe]')) {
         const holds = b?.balanceKas > 0 ? ` It still holds ${b.balanceKas.toFixed(8)} KAS.` : '';
         const ok = await askConfirm(
-            `Remove ${b?.title ?? 'this bot'}?\n\nEverything is wiped: its wallet key, pairing, settings and messages.${holds}\n\n` +
+            `Remove ${b?.title ?? 'this bot'}?\n\nEverything is wiped: its wallet key, everyone's settings and its messages.${holds}\n\n` +
                 'Any KAS left in its wallet is lost for good unless you have used Send to wallet or saved its wallet key first.',
         );
         if (!ok) return;
@@ -5980,53 +5979,44 @@ $('bot-reset-list')?.addEventListener('click', async (ev) => {
         }
         return loadBot().catch(() => {});
     }
-    if (ev.target.closest('[data-bot-newowner]')) {
-        const ok = await askConfirm(
-            `Give ${b?.title ?? 'this bot'} a new owner?\n\nIt forgets who it is paired with, its settings and its chat, and gets a new pairing code. Its wallet and the KAS in it stay.`,
-        );
-        if (!ok) return;
-        await api(`/api/bots/${id}/reset`, { method: 'POST' });
-        return loadBot().catch(() => {});
-    }
 });
 
 function botCard(b, d) {
     const st = b.status;
     const bal = b.balanceKas;
     const funded = st ? st.funded : bal != null && bal > 0.01;
-    // The Kaspa answers bot is public: no owner, no pairing, live as soon as it runs.
-    const isPublic = b.type === 'faq';
-    const stage = b.enabled === false ? 'off' : st?.stage || (isPublic ? 'active' : 'awaiting_pairing');
+    // Every bot is public: no owner, no pairing code, live as soon as it runs.
+    const isFaq = b.type === 'faq';
+    const stage = b.enabled === false ? 'off' : st?.stage || 'active';
     // Only once it has been funded: before that, step 1 already says to fund it.
     const low = funded && bal != null && bal < 0.25;
     const step = (done, text) => `<li class="${done ? 'done' : ''}">${done ? '&#10003;' : '&#9675;'} ${text}</li>`;
     return `
       <div class="bot-card" data-bot="${escapeHtml(b.id)}">
         <div class="node-head"><span class="tag ${stage === 'active' ? 'ok' : stage === 'paused' ? '' : 'warn'}">${escapeHtml(STAGE_TEXT[stage] || stage)}</span>
-          <label class="switch mini bot-switch" title="Turn this bot on or off. Off keeps its wallet, pairing and settings.">
+          <label class="switch mini bot-switch" title="Turn this bot on or off. Off keeps its wallet and everyone's settings.">
             <input type="checkbox" data-bot-toggle ${b.enabled === false ? '' : 'checked'} aria-label="Turn this bot on or off"><span class="track"></span>
           </label></div>
         ${st?.summary ? `<p><strong>${escapeHtml(st.summary)}</strong></p>` : ''}
         <ol class="plain bot-steps">
           ${step(funded, `Fund its address with about 5 KAS${bal != null ? ` (balance ${bal.toFixed(2)} KAS)` : ''}`)}
-          ${isPublic
-              ? step(funded && stage === 'active', 'Share its address: anyone in KaChat can message it a Kaspa question')
-              : `${step(Boolean(st?.owner), st?.owner ? `Paired with ${escapeHtml(botShort(st.owner))}` : `In KaChat, start a chat with its address and send <code class="nowrap">${escapeHtml(b.pairingCode)}</code>`)}
-          ${step(stage === 'active', 'Answer its questions in the chat')}`}
+          ${step(funded && stage === 'active', isFaq
+              ? 'Share its address: anyone in KaChat can message it a Kaspa question'
+              : 'Share its address: anyone who messages it in KaChat (you too) sets it up for themselves')}
         </ol>
-        ${isPublic && st?.stats ? `<p class="muted">${st.stats.answered} answers given, ${st.stats.peopleToday} ${st.stats.peopleToday === 1 ? 'person' : 'people'} asked today.</p>` : ''}
+        ${isFaq && st?.stats ? `<p class="muted">${st.stats.answered} answers given, ${st.stats.peopleToday} ${st.stats.peopleToday === 1 ? 'person' : 'people'} asked today.</p>` : ''}
+        ${!isFaq && st?.stats ? `<p class="muted">${st.stats.active} ${st.stats.active === 1 ? 'person' : 'people'} set up${st.stats.people > st.stats.active ? `, ${st.stats.people - st.stats.active} still setting up` : ''}. Up to ${st.stats.perPersonPerDay} messages a day each.</p>` : ''}
         <div class="bot-wallet-row">
           <div class="bot-wallet-qr bot-qr" data-address="${escapeHtml(b.address)}"></div>
           <div>
             <div class="row x4kas-copy"><code>${escapeHtml(b.address)}</code>
               <button type="button" class="ghost mini" data-copy="${escapeHtml(b.address)}">Copy</button></div>
-            ${!st?.owner && !isPublic ? `<p class="bot-pair">Pairing code: <code class="bot-code nowrap">${escapeHtml(b.pairingCode)}</code> <button type="button" class="ghost mini" data-copy="${escapeHtml(b.pairingCode)}">Copy</button></p>` : ''}
             ${low ? '<p class="hint bad">Its balance is low: send it a few KAS so it can keep messaging you.</p>' : ''}
             ${st?.error ? `<p class="error">${escapeHtml(st.error)}</p>` : ''}
           </div>
         </div>
         <details class="bot-more"><summary>Messages and options</summary>
-          ${isPublic ? `<p class="muted"><strong>Questions it had no answer for</strong>${
+          ${isFaq ? `<p class="muted"><strong>Questions it had no answer for</strong>${
               st?.stats?.missed?.length
                   ? `</p><ul class="bot-msgs">${st.stats.missed.map((m) => `<li>${escapeHtml(m)}</li>`).join('')}</ul>`
                   : ': none yet.</p>'
@@ -6086,7 +6076,7 @@ $('bot-grid')?.addEventListener('click', async (ev) => {
     loadBot().catch(() => {});
 });
 
-// A bot's switch: off stops it listening and sending; its wallet, pairing and settings stay.
+// A bot's switch: off stops it listening and sending; its wallet and everyone's settings stay.
 $('bot-grid')?.addEventListener('change', async (ev) => {
     const input = ev.target.closest('[data-bot-toggle]');
     if (!input) return;

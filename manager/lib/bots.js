@@ -5,11 +5,12 @@ import path from 'node:path';
 import { BOT_DIR } from './bot.js';
 
 /**
- * KaChat Bot v2: several bots in the one kachat-bot container, each with its own wallet,
- * owner and conversation (KaspaSilver/KaChat-Bot, branch bots). The panel only writes which
- * bots exist (conf/bot/bots.json, mounted read-only at /conf/bots.json) and reads what each
- * reports (conf/bot/state/bots/<id>.json + .history.jsonl). Everything a bot watches is set
- * up in KaChat, by talking to it: fund its address, send it the pairing code, answer it.
+ * KaChat Bot v2: several bots in the one kachat-bot container, each with its own wallet
+ * (KaspaSilver/KaChat-Bot). Bots are public: no owner and no pairing code; anyone who messages
+ * one gets their own conversation and settings. The panel only writes which bots exist
+ * (conf/bot/bots.json, mounted read-only at /conf/bots.json) and reads what each reports
+ * (conf/bot/state/bots/<id>.json + .history.jsonl). Everything a bot watches is set up in
+ * KaChat, by each person talking to it. (bots.json still carries a pairingCode; it is unused.)
  */
 export const BOTS_FILE = path.join(BOT_DIR, 'bots.json');
 const STATE_DIR = path.join(BOT_DIR, 'state', 'bots');
@@ -19,25 +20,25 @@ export const CATALOG = [
     {
         type: 'mining',
         title: 'Mining notifier',
-        description: 'Tells you every time your mining address finds a block: the reward, your balance and your miners’ hashrate. Can also warn when the hashrate drops.',
+        description: 'Tells anyone who sets it up every time their mining address finds a block: the reward and their balance.',
         asks: 'which mining address to watch',
     },
     {
         type: 'price',
         title: 'Price bot',
-        description: 'Kaspa price alerts: when it goes above or below a level you pick, a daily price summary, or big moves within a day.',
+        description: 'Kaspa price alerts for anyone who sets it up: when it goes above or below a level they pick, a daily price summary, or big moves within a day.',
         asks: 'which alerts you want',
     },
     {
         type: 'wallet',
         title: 'Wallet watcher',
-        description: 'Tells you when an address you care about receives or sends KAS, with the amount and the transaction.',
+        description: 'Tells anyone who sets it up when an address they care about receives or sends KAS, with the amount and the new balance.',
         asks: 'which addresses to watch',
     },
     {
         type: 'faq',
         title: 'Kaspa answers',
-        description: 'Public: no pairing code and no owner. Once funded it answers common Kaspa questions for anyone who messages it in KaChat (supply, mining, wallets, fees and more) from a fixed list of checked answers, up to 30 a day per person.',
+        description: 'Once funded it answers common Kaspa questions for anyone who messages it in KaChat (supply, mining, wallets, fees and more) from a fixed list of checked answers, up to 30 a day per person.',
         asks: 'nothing: it has no setup',
     },
 ];
