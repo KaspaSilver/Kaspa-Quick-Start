@@ -951,9 +951,11 @@ route('GET', /^\/api\/logs\/stream$/, async (req, res, match, url) => {
         send('line', { line: `[panel] ${source.label} is not installed on this machine, so it has no log yet.` });
         return onClose(() => {});
     }
-    // A filtered source reads a deep backlog: its lines are a small share of the container's.
+    // A filtered source reads a deep backlog: its lines are a small share of the container's
+    // (push is only tens/hour), so tail far more raw lines than an unfiltered view to open with a
+    // meaningful history rather than a near-empty box.
     const stop = dockerctl.streamLogs(source.name, dockerctl.filterFor(source, (line) => send('line', { line })), {
-        ...(source.match ? { tail: 3000 } : {}),
+        ...(source.match ? { tail: 20000 } : {}),
     });
     onClose(stop);
 });
