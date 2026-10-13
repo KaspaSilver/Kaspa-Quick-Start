@@ -3509,7 +3509,22 @@ route(
  * quietly deletes an hour of building -- is the same mistake everywhere.
  */
 route('GET', /^\/api\/services$/, async (req, res) => {
-    sendJson(res, 200, { services: await lifecycle.statusAll() });
+    const services = await lifecycle.statusAll();
+    // Push has no container of its own (it runs inside the indexer), so it is not a lifecycle
+    // unit. Present it as a pseudo-service so the sidebar renders its switch like every other:
+    // always "installed" (nothing to build), running = the master flag, `configured` = whether
+    // keys exist so the dot can distinguish on-and-ready from on-but-no-keys.
+    const k = apps.loadAppsConfig().kachat ?? {};
+    const pushEnabled = k.pushEnabled !== undefined ? Boolean(k.pushEnabled) : Boolean(k.fcmProjectId || k.apns?.teamId);
+    services.push = {
+        installed: true,
+        runnable: true,
+        running: pushEnabled,
+        configured: push.hasApns() || push.hasFcm(),
+        tab: 'push',
+        status: pushEnabled ? 'running' : 'stopped',
+    };
+    sendJson(res, 200, { services });
 });
 
 route('POST', /^\/api\/services\/([a-z0-9-]+)\/install$/, async (req, res, match) => {

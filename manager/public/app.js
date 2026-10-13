@@ -1193,6 +1193,21 @@ for (const input of document.querySelectorAll('[data-service]')) {
         input.dataset.busy = '1';
         input.disabled = true;
 
+        // Push is not a container: flip the indexer's master flag instead of start/stop, applied
+        // on a short indexer restart (same restart "Save push settings" does).
+        if (service === 'push') {
+            const job = await runAction({
+                key: 'push',
+                title: wanted ? 'Turning push on' : 'Turning push off',
+                request: () => api('/api/push/config', { method: 'POST', body: { pushEnabled: wanted } }),
+            });
+            if (!job?.ok) input.checked = !wanted; // setting .checked fires no change event
+            input.dataset.busy = '0';
+            input.disabled = false;
+            loadPush().catch(() => {});
+            return;
+        }
+
         // Stopping the reverse proxy while you are viewing this panel THROUGH it
         // pulls the route out from under the reply: the stop succeeds, but this
         // page hangs on "Stopping…" forever because nothing can answer it any
@@ -5582,6 +5597,14 @@ async function loadServices() {
         // (mining-testnet) also lives on the Mining tab, and drawing its gate here put
         // "Stratum bridge (testnet-10) is not installed" over mainnet's Mining tab.
         if (TESTNET_UNIT_VALUES.has(key) || key.endsWith('-testnet')) continue;
+        // Push has no container, so it gets no Install button or "stopped = red" treatment: just
+        // the switch (on = master flag) and a dot that reads grey off, green on, amber on-but-no-keys.
+        if (key === 'push') {
+            const on = Boolean(state?.running);
+            setNavSwitch('push', on);
+            setNavHealth('push', !on ? 'absent' : state?.configured ? 'ok' : 'warn');
+            continue;
+        }
         renderServiceRow(key, state);
         renderInstallGate(key, state);
     }
@@ -6763,7 +6786,8 @@ async function loadPush() {
     setPill('push-apns-status', d.credentials?.apns);
     const on = (d.credentials?.fcm ? 1 : 0) + (d.credentials?.apns ? 1 : 0);
     const pushOn = Boolean(d.pushEnabled);
-    if (!pushLive) $('push-enabled').checked = pushOn; // don't fight an in-flight toggle
+    // The on/off control is the sidebar switch (data-service="push"), like every other service;
+    // here we only reflect the resulting state in the tab's status tag.
     const tag = $('push-state');
     if (!pushOn) {
         tag.textContent = 'off';
@@ -6774,34 +6798,8 @@ async function loadPush() {
     }
 }
 
-// Guards loadPush from snapping the switch back while a toggle request is applying.
-let pushLive = false;
-
-// The switch acts like a service toggle: flipping it applies immediately (and, if the indexer
-// is running, restarts it to pick up the change) rather than waiting for "Save push settings".
-$('push-enabled').addEventListener('change', async () => {
-    const input = $('push-enabled');
-    const wanted = input.checked;
-    pushLive = true;
-    input.disabled = true;
-    try {
-        await runAction({
-            key: 'push',
-            title: wanted ? 'Turning push on' : 'Turning push off',
-            request: () => api('/api/push/config', { method: 'POST', body: { pushEnabled: wanted } }),
-        });
-    } catch {
-        input.checked = !wanted; // revert on failure (setting .checked fires no change event)
-    } finally {
-        input.disabled = false;
-        pushLive = false;
-        await loadPush();
-    }
-});
-
 $('push-save').addEventListener('click', async () => {
     const body = {
-        pushEnabled: $('push-enabled').checked,
         fcmProjectId: $('push-fcm-project').value.trim(),
         apns: {
             teamId: $('push-apns-team').value.trim(),
