@@ -164,7 +164,10 @@ services:
       APNS_TEAM_ID: ${KACHAT_APNS_TEAM_ID:-}
       APNS_ENVIRONMENT: ${KACHAT_APNS_ENVIRONMENT:-production}
       APNS_KEY_PATH: /push/apns/AuthKey.p8
-      RUST_LOG: info
+      # fjall=warn silences the per-write "Stalling writes ... many segments in L0" INFO
+      # flood (~23 lines/s) that pins CPU and evicts all other logs within ~3h. Keep the
+      # indexer's own logs at info.
+      RUST_LOG: info,fjall=warn
     volumes:
       - kachat-app-data:/app/data
       # Mobile push credentials (Firebase service-account.json + Apple .p8),
@@ -640,7 +643,8 @@ services:
       # (kachat-names-testnet below), which the proxy routes the names paths to.
       # Profiles follower start (hex); empty = the names manifest's scanFrom, else the pruning point.
       KACHAT_PROFILES_SCAN_FROM: ${KACHAT_PROFILES_SCAN_FROM_TESTNET:-}
-      RUST_LOG: info
+      # See the mainnet kachat-app service: fjall=warn silences the L0 write-stall flood.
+      RUST_LOG: info,fjall=warn
     volumes:
       - kachat-app-testnet-data:/app/data
       - ${STACK_DIR}/conf/push:/push:ro
