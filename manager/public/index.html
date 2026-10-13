@@ -2154,7 +2154,9 @@
               <span class="muted">Mobile push notifications for the KaChat indexer: Android via Firebase, iPhone via Apple.</span>
             </div>
             <span id="push-state" class="tag off">not set</span>
+            <label class="switch" title="Turn the push service on or off. Off keeps your settings but sends no notifications; it applies on a short indexer restart."><input type="checkbox" id="push-enabled"><span class="track"></span></label>
           </div>
+          <p class="hint" id="push-enabled-hint">Off by default — only turn this on if you run the KaChat mobile apps. The indexer keeps running either way; off simply means it sends no push. Flipping this restarts the indexer (about two minutes) if it is on.</p>
           <div class="notice">
             <p><strong>This is only for people who run the KaChat mobile apps.</strong> Every value below
             belongs to <em>your own</em> Firebase project (Android) and Apple developer account (iOS), the

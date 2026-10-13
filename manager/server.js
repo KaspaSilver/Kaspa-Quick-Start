@@ -4039,7 +4039,11 @@ route('GET', /^\/api\/push$/, async (req, res) => {
     const k = apps.loadAppsConfig().kachat ?? {};
     const container = await dockerctl.containerState('kaspa-node-kachat');
     sendJson(res, 200, {
+        // `enabled` = the indexer service itself (whether it is running at all).
         enabled: Boolean(k.enabled),
+        // `pushEnabled` = the Push Service master switch. Infer from configured identifiers when
+        // never set, so an existing push setup shows on rather than off after upgrade.
+        pushEnabled: k.pushEnabled !== undefined ? Boolean(k.pushEnabled) : Boolean(k.fcmProjectId || k.apns?.teamId),
         fcmProjectId: k.fcmProjectId ?? '',
         apns: k.apns ?? apps.DEFAULT_APPS_CONFIG.kachat.apns,
         // Whether the key files are actually on disk. The panel never reads them
@@ -4065,6 +4069,7 @@ route('POST', /^\/api\/push\/config$/, async (req, res) => {
             ...current,
             kachat: {
                 ...current.kachat,
+                pushEnabled: body.pushEnabled ?? current.kachat.pushEnabled,
                 fcmProjectId: body.fcmProjectId ?? current.kachat.fcmProjectId,
                 apns: { ...current.kachat.apns, ...(body.apns ?? {}) },
             },

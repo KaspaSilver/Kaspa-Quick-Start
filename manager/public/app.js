@@ -6762,13 +6762,46 @@ async function loadPush() {
     setPill('push-fcm-status', d.credentials?.fcm);
     setPill('push-apns-status', d.credentials?.apns);
     const on = (d.credentials?.fcm ? 1 : 0) + (d.credentials?.apns ? 1 : 0);
+    const pushOn = Boolean(d.pushEnabled);
+    if (!pushLive) $('push-enabled').checked = pushOn; // don't fight an in-flight toggle
     const tag = $('push-state');
-    tag.textContent = on === 2 ? 'both set' : on === 1 ? 'partly set' : 'not set';
-    tag.className = on === 2 ? 'tag ok' : on === 1 ? 'tag warn' : 'tag off';
+    if (!pushOn) {
+        tag.textContent = 'off';
+        tag.className = 'tag off';
+    } else {
+        tag.textContent = on === 2 ? 'on' : on === 1 ? 'on (partly set)' : 'on (no keys)';
+        tag.className = on === 2 ? 'tag ok' : 'tag warn';
+    }
 }
+
+// Guards loadPush from snapping the switch back while a toggle request is applying.
+let pushLive = false;
+
+// The switch acts like a service toggle: flipping it applies immediately (and, if the indexer
+// is running, restarts it to pick up the change) rather than waiting for "Save push settings".
+$('push-enabled').addEventListener('change', async () => {
+    const input = $('push-enabled');
+    const wanted = input.checked;
+    pushLive = true;
+    input.disabled = true;
+    try {
+        await runAction({
+            key: 'push',
+            title: wanted ? 'Turning push on' : 'Turning push off',
+            request: () => api('/api/push/config', { method: 'POST', body: { pushEnabled: wanted } }),
+        });
+    } catch {
+        input.checked = !wanted; // revert on failure (setting .checked fires no change event)
+    } finally {
+        input.disabled = false;
+        pushLive = false;
+        await loadPush();
+    }
+});
 
 $('push-save').addEventListener('click', async () => {
     const body = {
+        pushEnabled: $('push-enabled').checked,
         fcmProjectId: $('push-fcm-project').value.trim(),
         apns: {
             teamId: $('push-apns-team').value.trim(),
