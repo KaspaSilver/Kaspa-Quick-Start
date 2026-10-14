@@ -168,6 +168,12 @@ export const NAMES_ROUTES = ['/names', '/market', '/offers', '/profiles', '/iden
 export const DEFAULT_APPS_CONFIG = {
     kachat: {
         enabled: false,
+        // Push Service master switch, independent of `enabled` (the indexer itself). The indexer
+        // runs either way; when this is off it accepts device registrations but sends no
+        // notifications. Default off so operators who don't run the mobile apps are never bothered;
+        // a one-time inference in validateAppsConfig flips it on for installs that already have push
+        // credentials configured, so an existing push setup is not silently switched off.
+        pushEnabled: false,
         ref: 'main',
         network: 'mainnet',
         // The raw chat port (8600) is never published (kachat-audits KQS-003): it
@@ -309,6 +315,11 @@ export function validateAppsConfig(input) {
     // --- KaChat ---
     const k = input.kachat ?? {};
     cfg.kachat.enabled = Boolean(k.enabled);
+    // Push master switch. When the field has never been set (upgrading from before it existed),
+    // infer it from whether push identifiers are already configured, so an existing push setup
+    // stays on while a fresh install stays off.
+    cfg.kachat.pushEnabled =
+        k.pushEnabled !== undefined ? Boolean(k.pushEnabled) : Boolean(k.fcmProjectId || k.apns?.teamId);
     // The ref is interpolated into a compose build context (`repo.git#ref`), so
     // it has to stay inside the characters git refs are allowed to use.
     const kref = String(k.ref ?? 'main').trim();
@@ -520,6 +531,8 @@ export function writeAppsEnv(cfg) {
         KACHAT_NETWORK: cfg.kachat.network,
         KACHAT_NODE_PORT: cfg.kachat.network === 'testnet-10' ? 17210 : 17110,
         KACHAT_FCM_PROJECT_ID: cfg.kachat.fcmProjectId,
+        // Push Service master switch read by the indexer at startup (KACHAT_PUSH_ENABLED).
+        KACHAT_PUSH_ENABLED: cfg.kachat.pushEnabled ? 'true' : 'false',
         // Apple push identifiers (iOS). The .p8 key file is not here -- it is
         // bind-mounted from conf/push/ (see docker-compose.yml APNS_KEY_PATH).
         KACHAT_APNS_TEAM_ID: cfg.kachat.apns?.teamId || '',

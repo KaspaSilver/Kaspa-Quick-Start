@@ -189,6 +189,10 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 16v-5a6 6 0 10-12 0v5l-1.5 2h15z"/><path d="M10 20.5a2 2 0 004 0"/></svg>
           <span class="label">Push Service</span>
         </button>
+        <label class="switch mini" title="Turn the push service on or off">
+          <input type="checkbox" data-service="push" aria-label="Turn push notifications on or off">
+          <span class="track"></span>
+        </label>
       </div>
       <p class="nav-group-title">Apps</p>
       <div class="nav-row">
@@ -2224,6 +2228,12 @@
 
     <!-- ------------------------------------------------------------ push -->
     <section id="tab-push" class="tab">
+      <nav class="subnav" aria-label="Push service">
+        <button class="subtab-btn active" data-subtab="push-settings">Settings</button>
+        <button class="subtab-btn" data-subtab="push-log">Log</button>
+      </nav>
+
+      <div id="sub-push-settings" class="subtab active">
       <div class="grid">
         <article class="card span2">
           <div class="toggle-row">
@@ -2232,6 +2242,7 @@
             </div>
             <span id="push-state" class="tag off">not set</span>
           </div>
+          <p class="hint">Turn the Push Service on or off with its switch in the sidebar. Off keeps these settings but sends no notifications; the indexer keeps running either way. Flipping it restarts the indexer (about two minutes) if it is on.</p>
           <div class="notice">
             <p><strong>This is only for people who run the KaChat mobile apps.</strong> Every value below
             belongs to <em>your own</em> Firebase project (Android) and Apple developer account (iOS), the
@@ -2279,8 +2290,20 @@
           <p class="hint">Saving restarts the KaChat indexer to load the new settings (about two minutes). If the indexer is switched off, they apply the next time it starts.</p>
           <div id="push-result" class="verdict" hidden></div>
         </article>
+
+        <article class="card span2" id="push-stats-card">
+          <h3>Registered devices</h3>
+          <dl class="kv dense" id="push-stats"></dl>
+          <p class="hint" id="push-stats-note">A live census from the indexer. A large “sandbox” or “unknown” share of iOS devices is the usual reason notifications never arrive on iPhone.</p>
+        </article>
+      </div>
+      </div>
+
+      <div id="sub-push-log" class="subtab">
+      <div class="grid">
         <!-- The indexer's push lines only (both the chat indexer and KaPosts sends). -->
         <div class="svclog span2" data-svclog="push" data-title="push service log"></div>
+      </div>
       </div>
 </section>
 

@@ -952,9 +952,11 @@ route('GET', /^\/api\/logs\/stream$/, async (req, res, match, url) => {
         send('line', { line: `[panel] ${source.label} is not installed on this machine, so it has no log yet.` });
         return onClose(() => {});
     }
-    // A filtered source reads a deep backlog: its lines are a small share of the container's.
+    // A filtered source reads a deep backlog: its lines are a small share of the container's
+    // (push is only tens/hour), so tail far more raw lines than an unfiltered view to open with a
+    // meaningful history rather than a near-empty box.
     const stop = dockerctl.streamLogs(source.name, dockerctl.filterFor(source, (line) => send('line', { line })), {
-        ...(source.match ? { tail: 3000 } : {}),
+        ...(source.match ? { tail: 20000 } : {}),
     });
     onClose(stop);
 });
@@ -3541,7 +3543,22 @@ route(
  * quietly deletes an hour of building -- is the same mistake everywhere.
  */
 route('GET', /^\/api\/services$/, async (req, res) => {
-    sendJson(res, 200, { services: await lifecycle.statusAll() });
+    const services = await lifecycle.statusAll();
+    // Push has no container of its own (it runs inside the indexer), so it is not a lifecycle
+    // unit. Present it as a pseudo-service so the sidebar renders its switch like every other:
+    // always "installed" (nothing to build), running = the master flag, `configured` = whether
+    // keys exist so the dot can distinguish on-and-ready from on-but-no-keys.
+    const k = apps.loadAppsConfig().kachat ?? {};
+    const pushEnabled = k.pushEnabled !== undefined ? Boolean(k.pushEnabled) : Boolean(k.fcmProjectId || k.apns?.teamId);
+    services.push = {
+        installed: true,
+        runnable: true,
+        running: pushEnabled,
+        configured: push.hasApns() || push.hasFcm(),
+        tab: 'push',
+        status: pushEnabled ? 'running' : 'stopped',
+    };
+    sendJson(res, 200, { services });
 });
 
 route('POST', /^\/api\/services\/([a-z0-9-]+)\/install$/, async (req, res, match) => {
@@ -4071,7 +4088,11 @@ route('GET', /^\/api\/push$/, async (req, res) => {
     const k = apps.loadAppsConfig().kachat ?? {};
     const container = await dockerctl.containerState('kaspa-node-kachat');
     sendJson(res, 200, {
+        // `enabled` = the indexer service itself (whether it is running at all).
         enabled: Boolean(k.enabled),
+        // `pushEnabled` = the Push Service master switch. Infer from configured identifiers when
+        // never set, so an existing push setup shows on rather than off after upgrade.
+        pushEnabled: k.pushEnabled !== undefined ? Boolean(k.pushEnabled) : Boolean(k.fcmProjectId || k.apns?.teamId),
         fcmProjectId: k.fcmProjectId ?? '',
         apns: k.apns ?? apps.DEFAULT_APPS_CONFIG.kachat.apns,
         // Whether the key files are actually on disk. The panel never reads them
@@ -4079,6 +4100,21 @@ route('GET', /^\/api\/push$/, async (req, res) => {
         credentials: { apns: push.hasApns(), fcm: push.hasFcm() },
         container,
     });
+});
+
+// Device-registry census: proxy the chat indexer's GET /push/stats (on :8600, not publicly
+// proxied). Absence (indexer off, or an older build without the route) is "not available yet"
+// rather than an error, so the card degrades gracefully.
+route('GET', /^\/api\/push\/stats$/, async (req, res) => {
+    try {
+        const r = await fetch('http://kachat-app:8600/push/stats', { signal: AbortSignal.timeout(4000) });
+        if (!r.ok) {
+            return sendJson(res, 200, { available: false, reason: r.status === 404 ? 'unsupported' : 'error', status: r.status });
+        }
+        sendJson(res, 200, { available: true, ...(await r.json()) });
+    } catch {
+        sendJson(res, 200, { available: false, reason: 'offline' });
+    }
 });
 
 route('POST', /^\/api\/push\/config$/, async (req, res) => {
@@ -4097,6 +4133,7 @@ route('POST', /^\/api\/push\/config$/, async (req, res) => {
             ...current,
             kachat: {
                 ...current.kachat,
+                pushEnabled: body.pushEnabled ?? current.kachat.pushEnabled,
                 fcmProjectId: body.fcmProjectId ?? current.kachat.fcmProjectId,
                 apns: { ...current.kachat.apns, ...(body.apns ?? {}) },
             },

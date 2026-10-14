@@ -1194,6 +1194,21 @@ for (const input of document.querySelectorAll('[data-service]')) {
         input.dataset.busy = '1';
         input.disabled = true;
 
+        // Push is not a container: flip the indexer's master flag instead of start/stop, applied
+        // on a short indexer restart (same restart "Save push settings" does).
+        if (service === 'push') {
+            const job = await runAction({
+                key: 'push',
+                title: wanted ? 'Turning push on' : 'Turning push off',
+                request: () => api('/api/push/config', { method: 'POST', body: { pushEnabled: wanted } }),
+            });
+            if (!job?.ok) input.checked = !wanted; // setting .checked fires no change event
+            input.dataset.busy = '0';
+            input.disabled = false;
+            loadPush().catch(() => {});
+            return;
+        }
+
         // Stopping the reverse proxy while you are viewing this panel THROUGH it
         // pulls the route out from under the reply: the stop succeeds, but this
         // page hangs on "Stopping…" forever because nothing can answer it any
@@ -5583,6 +5598,14 @@ async function loadServices() {
         // (mining-testnet) also lives on the Mining tab, and drawing its gate here put
         // "Stratum bridge (testnet-10) is not installed" over mainnet's Mining tab.
         if (TESTNET_UNIT_VALUES.has(key) || key.endsWith('-testnet')) continue;
+        // Push has no container, so it gets no Install button or "stopped = red" treatment: just
+        // the switch (on = master flag) and a dot that reads grey off, green on, amber on-but-no-keys.
+        if (key === 'push') {
+            const on = Boolean(state?.running);
+            setNavSwitch('push', on);
+            setNavHealth('push', !on ? 'absent' : state?.configured ? 'ok' : 'warn');
+            continue;
+        }
         renderServiceRow(key, state);
         renderInstallGate(key, state);
     }
@@ -6763,9 +6786,53 @@ async function loadPush() {
     setPill('push-fcm-status', d.credentials?.fcm);
     setPill('push-apns-status', d.credentials?.apns);
     const on = (d.credentials?.fcm ? 1 : 0) + (d.credentials?.apns ? 1 : 0);
+    const pushOn = Boolean(d.pushEnabled);
+    // The on/off control is the sidebar switch (data-service="push"), like every other service;
+    // here we only reflect the resulting state in the tab's status tag.
     const tag = $('push-state');
-    tag.textContent = on === 2 ? 'both set' : on === 1 ? 'partly set' : 'not set';
-    tag.className = on === 2 ? 'tag ok' : on === 1 ? 'tag warn' : 'tag off';
+    if (!pushOn) {
+        tag.textContent = 'off';
+        tag.className = 'tag off';
+    } else {
+        tag.textContent = on === 2 ? 'on' : on === 1 ? 'on (partly set)' : 'on (no keys)';
+        tag.className = on === 2 ? 'tag ok' : 'tag warn';
+    }
+    // Device census is its own call so a slow/absent indexer never blocks the settings form.
+    loadPushStats().catch(() => {});
+}
+
+/** Render the indexer's device-registry census (GET /api/push/stats), degrading gracefully. */
+async function loadPushStats() {
+    const dl = $('push-stats');
+    const note = $('push-stats-note');
+    if (!dl) return;
+    let d;
+    try {
+        d = await api('/api/push/stats');
+    } catch {
+        d = { available: false, reason: 'offline' };
+    }
+    if (!d.available) {
+        dl.innerHTML = '';
+        note.textContent =
+            d.reason === 'unsupported'
+                ? 'Update the indexer to enable the device census (GET /push/stats).'
+                : 'The indexer is not reachable right now — start it to see the device census.';
+        return;
+    }
+    const rows = [['Total devices', d.total ?? 0]];
+    const plat = d.by_platform || {};
+    for (const k of Object.keys(plat).sort()) rows.push([k, plat[k]]);
+    const env = d.apns_by_environment || {};
+    for (const k of Object.keys(env).sort()) rows.push([`APNs ${k}`, env[k]]);
+    rows.push(['VoIP-capable', d.voip_capable ?? 0]);
+    rows.push(['With primary addr', d.with_primary_address ?? 0]);
+    rows.push(['KaPosts on', d.kaposts_enabled ?? 0]);
+    dl.innerHTML = rows
+        .map(([k, v]) => `<div><dt>${escapeHtml(String(k))}</dt><dd>${escapeHtml(String(v))}</dd></div>`)
+        .join('');
+    note.textContent =
+        'A live census from the indexer. A large “sandbox” or “unknown” iOS share is the usual reason notifications never arrive on iPhone.';
 }
 
 $('push-save').addEventListener('click', async () => {
