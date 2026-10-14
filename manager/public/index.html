@@ -1232,30 +1232,8 @@
             for 30 days and the preview shows the first 200 characters.
           </p>
         </article>
+        <p class="hint">Deleting a public chat, or purging stored public chats by channel, is under the <strong>Delete</strong> tab.</p>
 
-        <article class="card span2 danger-zone">
-          <h3>Delete public-chat data</h3>
-          <p class="muted">
-            These remove the indexer's stored copy only, and a re-index would
-            bring it back. They happen immediately and cannot be undone from
-            here. Switching a channel off stops new messages but leaves what is
-            already stored. Purging is how you clear that.
-          </p>
-          <label class="stack">Delete a public chat by transaction id
-            <span class="row">
-              <input id="kachat-del-bcast" placeholder="public-chat transaction id (hex)" size="40">
-              <button type="button" id="kachat-del-bcast-btn" class="danger">Delete message</button>
-            </span>
-          </label>
-          <label class="stack">Purge public chats by channel
-            <span class="row">
-              <select id="kachat-purge-channel"></select>
-              <button type="button" id="kachat-purge-channel-btn" class="danger">Purge channel</button>
-              <button type="button" id="kachat-purge-all-btn" class="danger">Purge every public chat</button>
-            </span>
-          </label>
-          <div id="kachat-bcast-del-result" class="verdict" hidden></div>
-        </article>
       </div>
 
       <div id="sub-kachat-chats" class="subtab">
@@ -1307,25 +1285,8 @@
             </details>
           </div>
         </article>
+        <p class="hint">Purging the stored chat data is under the <strong>Delete</strong> tab.</p>
 
-        <article class="card span2 danger-zone">
-          <h3>Delete chat data</h3>
-          <p class="muted">
-            This wipes every one to one message, group, handshake and payment
-            the indexer holds. It only removes the stored copy. The messages are still
-            on chain, so a re-index would bring them back.
-          </p>
-          <label class="stack">Purge the chat store
-            <span class="row">
-              <button type="button" id="kachat-purge-chat-btn" class="danger">Purge all chat data</button>
-            </span>
-          </label>
-          <p class="hint">
-            With personal mode on, the store then refills with only your own
-            data, which is how you turn a public store into a personal one.
-          </p>
-          <div id="kachat-chat-del-result" class="verdict" hidden></div>
-        </article>
       </div>
 
       <div id="sub-kachat-groups" class="subtab">
@@ -1647,6 +1608,49 @@
             </span>
           </label>
           <div id="kachat-kaposts-del-result" class="verdict" hidden></div>
+        </article>
+
+        <article class="card span2 danger-zone">
+          <h3>Delete public-chat data</h3>
+          <p class="muted">
+            These remove the indexer's stored copy only, and a re-index would
+            bring it back. They happen immediately and cannot be undone from
+            here. Switching a channel off stops new messages but leaves what is
+            already stored. Purging is how you clear that.
+          </p>
+          <label class="stack">Delete a public chat by transaction id
+            <span class="row">
+              <input id="kachat-del-bcast" placeholder="public-chat transaction id (hex)" size="40">
+              <button type="button" id="kachat-del-bcast-btn" class="danger">Delete message</button>
+            </span>
+          </label>
+          <label class="stack">Purge public chats by channel
+            <span class="row">
+              <select id="kachat-purge-channel"></select>
+              <button type="button" id="kachat-purge-channel-btn" class="danger">Purge channel</button>
+              <button type="button" id="kachat-purge-all-btn" class="danger">Purge every public chat</button>
+            </span>
+          </label>
+          <div id="kachat-bcast-del-result" class="verdict" hidden></div>
+        </article>
+
+        <article class="card span2 danger-zone">
+          <h3>Delete chat data</h3>
+          <p class="muted">
+            This wipes every one to one message, group, handshake and payment
+            the indexer holds. It only removes the stored copy. The messages are still
+            on chain, so a re-index would bring them back.
+          </p>
+          <label class="stack">Purge the chat store
+            <span class="row">
+              <button type="button" id="kachat-purge-chat-btn" class="danger">Purge all chat data</button>
+            </span>
+          </label>
+          <p class="hint">
+            With personal mode on, the store then refills with only your own
+            data, which is how you turn a public store into a personal one.
+          </p>
+          <div id="kachat-chat-del-result" class="verdict" hidden></div>
         </article>
       </div>
 

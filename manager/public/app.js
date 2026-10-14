@@ -4600,7 +4600,11 @@ function renderChannelSelects() {
     const keep = feed.value;
     feed.innerHTML = `<option value="">All channels</option>${options}`;
     if ([...feed.options].some((o) => o.value === keep)) feed.value = keep;
-    $('kachat-purge-channel').innerHTML = options;
+    // The Delete tab's picker: refreshed every few seconds, so it keeps what was picked.
+    const purge = $('kachat-purge-channel');
+    const picked = purge.value;
+    purge.innerHTML = options;
+    if ([...purge.options].some((o) => o.value === picked)) purge.value = picked;
 }
 
 async function loadBroadcastRows() {
@@ -4828,6 +4832,10 @@ function refreshKachatPanel() {
             break;
         case 'kachat-translate':
             loadTranslate();
+            break;
+        case 'kachat-delete':
+            // Its public-chat purge needs the tracked channels for its picker.
+            loadKachatBroadcasts();
             break;
         default:
             break;
