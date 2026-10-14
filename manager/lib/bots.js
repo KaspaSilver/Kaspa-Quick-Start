@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { loadAppsConfig } from './apps.js';
 import { BOT_DIR } from './bot.js';
 
 /**
@@ -13,7 +14,17 @@ import { BOT_DIR } from './bot.js';
  * KaChat, by each person talking to it. (bots.json still carries a pairingCode; it is unused.)
  */
 export const BOTS_FILE = path.join(BOT_DIR, 'bots.json');
-const STATE_DIR = path.join(BOT_DIR, 'state', 'bots');
+// KaChat Bot keeps each network's state apart (BOT-007): mainnet in conf/bot/state itself,
+// testnet-10 in conf/bot/state/testnet-10. The panel reads the one for the bot's current network.
+const stateRoot = (network) => (network && network !== 'mainnet' ? path.join(BOT_DIR, 'state', network) : path.join(BOT_DIR, 'state'));
+function botNetwork() {
+    try {
+        return loadAppsConfig().bot?.network || 'mainnet';
+    } catch {
+        return 'mainnet';
+    }
+}
+const statusDir = () => path.join(stateRoot(botNetwork()), 'bots');
 
 /** The bots on offer: one square each in the Bot tab. */
 export const CATALOG = [
@@ -47,7 +58,24 @@ export const catalogType = (type) => CATALOG.find((c) => c.type === type) ?? nul
 const ID_RE = /^[a-z0-9-]{1,32}$/;
 
 /** The bots file, created empty the first time so the container always has one to read. */
+/**
+ * KaChat Bot runs as its own unprivileged user, uid 10001 (KaChat-Bot BOT-008), and this file
+ * holds its keys, readable by its owner only: so its owner is that user. Done on every write and
+ * once for a file written before (until then the bot keeps running as root and says why).
+ */
+const BOT_UID = 10001;
+let botsFileOwned = false;
+function ownBotsFile() {
+    try {
+        fs.chownSync(BOTS_FILE, BOT_UID, BOT_UID);
+        botsFileOwned = true;
+    } catch {
+        /* no file yet, or a filesystem that has no owners (Docker Desktop): nothing to do */
+    }
+}
+
 export function readBots() {
+    if (!botsFileOwned) ownBotsFile();
     try {
         const doc = JSON.parse(fs.readFileSync(BOTS_FILE, 'utf8'));
         return { version: 1, bots: Array.isArray(doc.bots) ? doc.bots : [] };
@@ -63,6 +91,7 @@ export function writeBots(doc) {
     fs.writeFileSync(tmp, `${JSON.stringify({ version: 1, bots: doc.bots }, null, 2)}\n`, { mode: 0o600 });
     fs.renameSync(tmp, BOTS_FILE);
     fs.chmodSync(BOTS_FILE, 0o600);
+    ownBotsFile();
 }
 
 /**
@@ -102,7 +131,7 @@ export function writePayout(address) {
 
 export function ensureBotsFile() {
     if (!fs.existsSync(BOTS_FILE)) writeBots({ bots: [] });
-    fs.mkdirSync(STATE_DIR, { recursive: true });
+    fs.mkdirSync(statusDir(), { recursive: true });
 }
 
 export const newPairingCode = () => String(crypto.randomInt(100000, 1000000));
@@ -117,7 +146,7 @@ export function findBot(id) {
 export function status(id) {
     if (!ID_RE.test(String(id))) return null;
     try {
-        return JSON.parse(fs.readFileSync(path.join(STATE_DIR, `${id}.json`), 'utf8'));
+        return JSON.parse(fs.readFileSync(path.join(statusDir(), `${id}.json`), 'utf8'));
     } catch {
         return null;
     }
@@ -128,7 +157,7 @@ export function history(id, limit = 30) {
     if (!ID_RE.test(String(id))) return [];
     let raw = '';
     try {
-        raw = fs.readFileSync(path.join(STATE_DIR, `${id}.history.jsonl`), 'utf8');
+        raw = fs.readFileSync(path.join(statusDir(), `${id}.history.jsonl`), 'utf8');
     } catch {
         return [];
     }
@@ -147,8 +176,16 @@ export function history(id, limit = 30) {
 /** Removes everything a bot left in the state folder (status, history, its working state). */
 export function wipeState(id) {
     if (!ID_RE.test(String(id))) return;
-    for (const f of [path.join(STATE_DIR, `${id}.json`), path.join(STATE_DIR, `${id}.history.jsonl`), path.join(BOT_DIR, 'state', 'botd', `${id}.json`)]) {
-        fs.rmSync(f, { force: true });
+    // Both networks' state, and a public bot's people (botd/<id>/).
+    for (const root of [stateRoot('mainnet'), stateRoot('testnet-10')]) {
+        for (const f of [
+            path.join(root, 'bots', `${id}.json`),
+            path.join(root, 'bots', `${id}.history.jsonl`),
+            path.join(root, 'botd', `${id}.json`),
+            path.join(root, 'botd', id),
+        ]) {
+            fs.rmSync(f, { force: true, recursive: true });
+        }
     }
 }
 

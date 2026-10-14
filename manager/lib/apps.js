@@ -61,7 +61,10 @@ export const APPS = {
             // `/contextual-messages/import` is an unauthenticated bulk insert
             // that sits under the public `/contextual-messages` prefix; public,
             // anyone could write forged 1:1 rows into the store.
-            deny: ['/self-stash-gc-orphans', '/internal/push', '/contextual-messages/import'],
+            // `/v1/push/stats` is the device census: the panel reads it internally for the Push
+            // Service card, and from outside it is only a way to make the push registry busy
+            // (kachat-audits IDX-025).
+            deny: ['/self-stash-gc-orphans', '/internal/push', '/contextual-messages/import', '/v1/push/stats'],
             // The indexer is read cross-origin by browser clients: the web app
             // at kachat.app (and anyone self-hosting it on their own domain) is
             // a different origin from this API, so without these headers the
@@ -288,6 +291,14 @@ export function loadAppsConfig() {
         // apns is nested too, and newer than most saved files, so a shallow
         // merge would drop keys an older apps.json never wrote.
         if (defaults.apns) cfg[name].apns = { ...defaults.apns, ...(saved.apns ?? {}) };
+    }
+
+    // The Push Service switch (KQS-027): never set on this install means push stays as it was,
+    // on wherever push was already configured (an FCM project or an Apple team), off otherwise.
+    // The merge above would otherwise hand every caller the default `false`, and writeAppsEnv
+    // then puts KACHAT_PUSH_ENABLED=false in .env, so the next indexer update turned push off.
+    if (stored.kachat?.pushEnabled === undefined) {
+        cfg.kachat.pushEnabled = Boolean(cfg.kachat.fcmProjectId || cfg.kachat.apns?.teamId);
     }
 
     // Earlier versions defaulted Nextcloud to 8080, which is this panel's port,

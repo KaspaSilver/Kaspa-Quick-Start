@@ -609,6 +609,7 @@ legend { color: var(--muted); font-size: 12px; text-transform: uppercase; letter
 }
 .locked { color: var(--muted); font-size: 12px; font-style: italic; }
 .pill.warn { background: color-mix(in srgb, var(--warn) 30%, transparent); }
+.pill.bad { background: color-mix(in srgb, var(--danger) 30%, transparent); }
 .suffix { color: var(--muted); font-family: var(--mono); font-size: 13px; }
 
 /* ---------------------------------------------------------------- tables */

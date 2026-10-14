@@ -2601,13 +2601,14 @@ async function botGenerateWallet(network, fromKey = null) {
  * Mining notifier when there is one, else any bot that is on. `botd.py --send` hands it to the
  * running daemon (its outbox) so it never races the daemon's own sends from the same wallet.
  */
-async function botSendMessage(text) {
+async function botSendMessage(text, viaId = null) {
     const to = bots.readPayout();
     if (!to) throw new Error('Set your Kaspa address in Bot > Wallet to get alerts in KaChat.');
     const on = bots
         .readBots()
         .bots.filter((b) => b.enabled !== false)
-        .sort((a, b) => (b.type === 'mining') - (a.type === 'mining'));
+        // A given bot first (the one an alert is about), else the Mining notifier, else any.
+        .sort((a, b) => (b.id === viaId) - (a.id === viaId) || (b.type === 'mining') - (a.type === 'mining'));
     if (!on.length) throw new Error('No bot is set up and on, so there is nothing to send the alert with.');
     return dockerctl.compose(
         ['run', '--rm', '-T', '--no-deps', '--entrypoint', 'python', 'kachat-bot', 'botd.py', '--send', on[0].id, text, '--to', to],
@@ -2704,54 +2705,48 @@ function startMiningStatsPersist() {
 }
 
 /**
- * Watches the bot's sending wallet and, when asked to, messages you once it
- * drops below the chosen amount -- while it still has enough to send that very
- * message, which is the whole point of a threshold rather than "when empty".
- *
- * Fires once per low spell and re-arms when the wallet is topped back up, with a
- * minimum gap so a balance hovering at the line cannot ping repeatedly. A node
- * that cannot be reached is not "low", so nothing is sent then.
+ * Watches every KaChat bot's wallet (KQS-023: the v2 bots, not the old Block Notifier wallet,
+ * which v2 no longer shows) and messages you, at your Bot > Wallet address, once a bot drops
+ * under 0.5 KAS, through that bot, while it can still afford the message. Once per low spell
+ * per bot, re-armed when it is topped up past the line, with a minimum gap so a balance hovering
+ * at the line cannot ping repeatedly. A node that cannot be reached is not "low".
  */
-let lowBalAlerted = false;
-let lowBalLastAlertAt = 0;
+const LOWBAL_KAS = 0.5;
 const LOWBAL_MIN_INTERVAL_MS = 6 * 60 * 60_000;
+const lowBal = new Map(); // bot id -> { alerted, lastAt }
 
 async function lowBalanceWatchTick() {
-    const config = bot.readConfig();
-    if (!config.lowBalanceAlert) {
-        lowBalAlerted = false;
-        return;
-    }
-    const address = bot.walletAddress();
-    if (!address || !config.complete) return;
-
-    let balanceKas;
-    try {
-        const r = await rpc.call('getBalanceByAddress', { address }, 6000);
-        balanceKas = Number(r?.balance ?? 0) / 1e8;
-    } catch {
-        return; // node not reachable or still syncing
-    }
-
-    const threshold = Math.max(0, Number(config.lowBalanceKas) || 0.5);
-    if (balanceKas > threshold) {
-        lowBalAlerted = false; // topped up / armed
-        return;
-    }
-
-    const now = Date.now();
-    if (lowBalAlerted || now - lowBalLastAlertAt < LOWBAL_MIN_INTERVAL_MS) return;
-
-    const message =
-        `Wallet alert: your KaChat bot wallet is low -- ${balanceKas.toFixed(4)} KAS left, below ${threshold} KAS. ` +
-        `Top it up so it can keep sending notifications.`;
-    try {
-        await botSendMessage(message);
-        lowBalAlerted = true;
-        lowBalLastAlertAt = now;
-        log(`low-balance-alert: sent (${balanceKas.toFixed(4)} KAS left)`);
-    } catch (err) {
-        log(`low-balance-alert: could not send: ${err.message}`);
+    if (!bots.readPayout()) return;
+    const client = apps.loadAppsConfig().bot?.network === 'testnet-10' ? rpcTestnet : rpc;
+    for (const b of bots.readBots().bots) {
+        if (b.enabled === false || !b.address) continue;
+        let balanceKas;
+        try {
+            const r = await client.call('getBalanceByAddress', { address: b.address }, 6000);
+            balanceKas = Number(r?.balance ?? 0) / 1e8;
+        } catch {
+            return; // node not reachable or still syncing
+        }
+        const st = lowBal.get(b.id) ?? { alerted: false, lastAt: 0 };
+        lowBal.set(b.id, st);
+        if (balanceKas >= LOWBAL_KAS || balanceKas <= 0) {
+            if (balanceKas >= LOWBAL_KAS) st.alerted = false; // topped up: armed again
+            continue;
+        }
+        const now = Date.now();
+        if (st.alerted || now - st.lastAt < LOWBAL_MIN_INTERVAL_MS) continue;
+        const title = bots.catalogType(b.type)?.title ?? 'bot';
+        const message =
+            `Wallet alert: your KaChat ${title} is low, ${balanceKas.toFixed(4)} KAS left (under ${LOWBAL_KAS} KAS). ` +
+            `Top up ${b.address} so it can keep sending messages.`;
+        try {
+            await botSendMessage(message, b.id);
+            st.alerted = true;
+            st.lastAt = now;
+            log(`low-balance-alert: ${b.id} (${balanceKas.toFixed(4)} KAS left)`);
+        } catch (err) {
+            log(`low-balance-alert: could not send for ${b.id}: ${err.message}`);
+        }
     }
 }
 
@@ -4235,17 +4230,28 @@ route('POST', /^\/api\/push\/config$/, async (req, res) => {
         apps.saveAppsConfig(current);
         apps.writeAppsEnv(current);
 
-        // The indexer reads push settings only at startup, so a change is not
-        // live until it restarts. Only worth doing when the app is switched on;
-        // otherwise the new settings apply the next time it starts.
-        if (current.kachat.enabled) {
+        // Both indexers read push settings only at startup, so a change is not live until they
+        // restart. Each one that is running is recreated (KQS-028: the testnet indexer shares
+        // the push keys and the switch too); one that is stopped picks them up when it starts.
+        const testnetRunning = Boolean((await lifecycle.status('kachat-testnet').catch(() => null))?.running);
+        if (current.kachat.enabled || testnetRunning) {
             const job = jobs.start('Apply push settings', async (onLine) => {
-                onLine('Restarting the KaChat indexer so it picks up the new push settings...');
-                await dockerctl.compose(['up', '-d', '--force-recreate', 'kachat-app'], {
-                    onLine,
-                    profile: apps.APPS.kachat.profile,
-                    timeoutMs: 20 * 60_000,
-                });
+                if (current.kachat.enabled) {
+                    onLine('Restarting the KaChat indexer so it picks up the new push settings...');
+                    await dockerctl.compose(['up', '-d', '--force-recreate', 'kachat-app'], {
+                        onLine,
+                        profile: apps.APPS.kachat.profile,
+                        timeoutMs: 20 * 60_000,
+                    });
+                }
+                if (testnetRunning) {
+                    onLine('Restarting the testnet indexer so it picks up the new push settings...');
+                    await dockerctl.compose(['up', '-d', '--no-deps', '--force-recreate', 'kachat-app-testnet'], {
+                        onLine,
+                        profile: 'testnet-kachat',
+                        timeoutMs: 10 * 60_000,
+                    });
+                }
                 onLine('Done. Push notifications now use the new settings.');
             });
             return sendJson(res, 202, {
@@ -4728,6 +4734,8 @@ function migrateExposeModel(cfg) {
 async function bootstrap() {
     ensureDirs();
     protectManagerConfig();
+    // KaChat Bot runs unprivileged (BOT-008): hand it its bots file once at start.
+    bots.readBots();
 
     if (!fs.existsSync(NODE_CONFIG_FILE)) saveNodeConfig(structuredClone(DEFAULT_NODE_CONFIG));
     if (!fs.existsSync(PROXIES_FILE)) saveProxies([]);
