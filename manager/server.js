@@ -4068,6 +4068,21 @@ route('GET', /^\/api\/push$/, async (req, res) => {
     });
 });
 
+// Device-registry census: proxy the chat indexer's GET /push/stats (on :8600, not publicly
+// proxied). Absence (indexer off, or an older build without the route) is "not available yet"
+// rather than an error, so the card degrades gracefully.
+route('GET', /^\/api\/push\/stats$/, async (req, res) => {
+    try {
+        const r = await fetch('http://kachat-app:8600/push/stats', { signal: AbortSignal.timeout(4000) });
+        if (!r.ok) {
+            return sendJson(res, 200, { available: false, reason: r.status === 404 ? 'unsupported' : 'error', status: r.status });
+        }
+        sendJson(res, 200, { available: true, ...(await r.json()) });
+    } catch {
+        sendJson(res, 200, { available: false, reason: 'offline' });
+    }
+});
+
 route('POST', /^\/api\/push\/config$/, async (req, res) => {
     const body = await readBody(req);
     try {
