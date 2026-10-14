@@ -4196,17 +4196,28 @@ route('POST', /^\/api\/push\/config$/, async (req, res) => {
         apps.saveAppsConfig(current);
         apps.writeAppsEnv(current);
 
-        // The indexer reads push settings only at startup, so a change is not
-        // live until it restarts. Only worth doing when the app is switched on;
-        // otherwise the new settings apply the next time it starts.
-        if (current.kachat.enabled) {
+        // Both indexers read push settings only at startup, so a change is not live until they
+        // restart. Each one that is running is recreated (KQS-028: the testnet indexer shares
+        // the push keys and the switch too); one that is stopped picks them up when it starts.
+        const testnetRunning = Boolean((await lifecycle.status('kachat-testnet').catch(() => null))?.running);
+        if (current.kachat.enabled || testnetRunning) {
             const job = jobs.start('Apply push settings', async (onLine) => {
-                onLine('Restarting the KaChat indexer so it picks up the new push settings...');
-                await dockerctl.compose(['up', '-d', '--force-recreate', 'kachat-app'], {
-                    onLine,
-                    profile: apps.APPS.kachat.profile,
-                    timeoutMs: 20 * 60_000,
-                });
+                if (current.kachat.enabled) {
+                    onLine('Restarting the KaChat indexer so it picks up the new push settings...');
+                    await dockerctl.compose(['up', '-d', '--force-recreate', 'kachat-app'], {
+                        onLine,
+                        profile: apps.APPS.kachat.profile,
+                        timeoutMs: 20 * 60_000,
+                    });
+                }
+                if (testnetRunning) {
+                    onLine('Restarting the testnet indexer so it picks up the new push settings...');
+                    await dockerctl.compose(['up', '-d', '--no-deps', '--force-recreate', 'kachat-app-testnet'], {
+                        onLine,
+                        profile: 'testnet-kachat',
+                        timeoutMs: 10 * 60_000,
+                    });
+                }
                 onLine('Done. Push notifications now use the new settings.');
             });
             return sendJson(res, 202, {
