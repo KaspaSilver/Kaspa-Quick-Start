@@ -2693,6 +2693,19 @@
           </p>
           <div id="global-update-result" class="verdict" hidden></div>
         </article>
+        <!--
+          Every app switched on in the sidebar, in one list: its build and update status, and its own
+          Check / Update buttons (pressed for you, so it behaves exactly as on the app's Updates tab).
+          Apps that are off are not listed.
+        -->
+        <article class="card span2">
+          <div class="node-head">
+            <h3>Your apps</h3>
+            <button type="button" class="ghost" id="global-apps-check-all" style="margin-left:auto">Check all</button>
+          </div>
+          <div class="app-updates" id="global-app-updates"><p class="muted">No apps switched on.</p></div>
+          <p class="hint">Update becomes available once a check finds one, as on each app's own Updates tab. Open goes to that tab.</p>
+        </article>
         </div>
       </div>
 

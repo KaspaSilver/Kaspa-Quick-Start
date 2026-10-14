@@ -836,6 +836,7 @@ function selectSubtab(section, name) {
     // the tab that shows it is opened rather than on every page load.
     if (name === 'updates') loadReleasePicker().catch(() => {});
     if (name === 'kassigner-updates') loadKassignerReleases().catch(() => {});
+    setGlobalAppUpdates(name === 'global-update');
     if (name === 'names-rules') loadNamesRules().catch(() => {});
     if (name === 'global-cache') loadDiskCache().catch(() => {});
 }
@@ -2024,6 +2025,104 @@ function setUpdateStatus(el, state, text) {
     const prefix = state === 'available' ? '⬆ ' : state === 'current' ? '✓ ' : '';
     el.textContent = `${prefix}${text}`;
 }
+
+// --- Global settings > Updates: every running app's updates in one list ---
+
+/**
+ * One row per app switched on in the sidebar (and shown in this network view): its build, its
+ * update status as its own Updates tab shows it, and Check / Update / Open. Check and Update
+ * press that app's own buttons, so they behave exactly as there (confirmations included), and
+ * Update is only pressable when the app's own is (a check found one). KasSigner writes firmware
+ * to a device, so it only gets Open. Refreshed every second while this sub-tab is on screen.
+ */
+const APP_UPDATES = [
+    { tab: 'kaspad', sub: 'updates', status: 'update-status', check: 'check-update', update: 'apply-update', build: 'stat-version' },
+    { tab: 'kachat', sub: 'kachat-updates', status: 'kachat-update-status', check: 'kachat-check', update: 'kachat-update', build: 'kachat-build' },
+    { tab: 'names', sub: 'names-updates', status: 'kd-update-status', check: 'kd-check', update: 'kd-update', build: 'kd-installed' },
+    { tab: 'desktop', sub: 'desktop-updates', status: 'desktop-update-status', check: 'desktop-check', update: 'desktop-update', build: 'desktop-build' },
+    { tab: 'nextcloud', sub: 'nextcloud-updates', status: 'nextcloud-update-status', check: 'nextcloud-check', update: 'nextcloud-update', build: 'nextcloud-build' },
+    { tab: 'bot', sub: 'bot-updates', status: 'bot-update-status', check: 'bot-check', update: 'bot-update', build: 'bot-build' },
+    { tab: 'kassigner', sub: 'kassigner-updates', status: 'kassigner-update-status', check: 'kassigner-check', update: null, build: 'kassigner-build' },
+];
+let globalAppTimer = null;
+let globalAppKey = '';
+
+function runningApps() {
+    return APP_UPDATES.filter((a) => {
+        const row = document.querySelector(`.nav-item[data-tab="${a.tab}"]`)?.closest('.nav-row');
+        return row && row.offsetParent !== null && row.querySelector('input[data-service]')?.checked;
+    });
+}
+
+function setGlobalAppUpdates(on) {
+    clearInterval(globalAppTimer);
+    globalAppTimer = null;
+    if (!on) return;
+    globalAppKey = '';
+    renderGlobalAppUpdates();
+    globalAppTimer = setInterval(() => {
+        if (!$('sub-global-update')?.classList.contains('active') || !$('tab-global')?.classList.contains('active')) {
+            return setGlobalAppUpdates(false);
+        }
+        renderGlobalAppUpdates();
+    }, 1000);
+}
+
+function renderGlobalAppUpdates() {
+    const box = $('global-app-updates');
+    if (!box) return;
+    const apps = runningApps();
+    const key = apps.map((a) => a.tab).join(',');
+    // Rows are built when the set of apps changes and updated in place otherwise, so a button is
+    // never replaced under the pointer.
+    if (key !== globalAppKey) {
+        globalAppKey = key;
+        box.innerHTML = apps.length
+            ? apps
+                  .map((a) => {
+                      const label = el('.label', document.querySelector(`.nav-item[data-tab="${a.tab}"]`))?.textContent || a.tab;
+                      return `<div class="app-update-row" data-app="${a.tab}">
+                        <div class="app-update-what"><strong>${escapeHtml(label)}</strong><small data-f="build"></small></div>
+                        <div class="app-update-status" data-f="status"></div>
+                        <div class="row">
+                          <button type="button" class="ghost mini" data-press="${a.check}">Check</button>
+                          ${a.update ? `<button type="button" class="primary mini" data-press="${a.update}" disabled>Update</button>` : ''}
+                          <button type="button" class="ghost mini" data-open="${a.tab}/${a.sub}">Open</button>
+                        </div>
+                      </div>`;
+                  })
+                  .join('')
+            : '<p class="muted">No apps switched on.</p>';
+    }
+    for (const a of apps) {
+        const row = box.querySelector(`[data-app="${a.tab}"]`);
+        if (!row) continue;
+        const status = $(a.status);
+        const statusBox = row.querySelector('[data-f="status"]');
+        statusBox.textContent = status?.textContent?.trim() || 'Not checked yet.';
+        statusBox.className = `app-update-status ${status?.className?.replace(/\bverdict\b/, '') ?? ''}`;
+        row.querySelector('[data-f="build"]').textContent = $(a.build)?.textContent?.trim() || '';
+        if (a.update) row.querySelector(`[data-press="${a.update}"]`).disabled = Boolean($(a.update)?.disabled);
+    }
+}
+
+$('global-app-updates')?.addEventListener('click', (event) => {
+    const press = event.target.closest('[data-press]');
+    if (press && !press.disabled) {
+        $(press.dataset.press)?.click();
+        return;
+    }
+    const open = event.target.closest('[data-open]');
+    if (open) {
+        const [tab, sub] = open.dataset.open.split('/');
+        selectTab(tab);
+        selectSubtab($(`tab-${tab}`), sub);
+    }
+});
+
+$('global-apps-check-all')?.addEventListener('click', () => {
+    for (const a of runningApps()) $(a.check)?.click();
+});
 
 $('check-update').addEventListener('click', async () => {
     const status = $('update-status');
