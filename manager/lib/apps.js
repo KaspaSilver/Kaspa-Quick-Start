@@ -290,6 +290,14 @@ export function loadAppsConfig() {
         if (defaults.apns) cfg[name].apns = { ...defaults.apns, ...(saved.apns ?? {}) };
     }
 
+    // The Push Service switch (KQS-027): never set on this install means push stays as it was,
+    // on wherever push was already configured (an FCM project or an Apple team), off otherwise.
+    // The merge above would otherwise hand every caller the default `false`, and writeAppsEnv
+    // then puts KACHAT_PUSH_ENABLED=false in .env, so the next indexer update turned push off.
+    if (stored.kachat?.pushEnabled === undefined) {
+        cfg.kachat.pushEnabled = Boolean(cfg.kachat.fcmProjectId || cfg.kachat.apns?.teamId);
+    }
+
     // Earlier versions defaulted Nextcloud to 8080, which is this panel's port,
     // so it could never start. Move those forward rather than leaving somebody
     // with a saved setting that only fails.
