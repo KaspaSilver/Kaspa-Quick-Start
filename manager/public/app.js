@@ -1879,7 +1879,57 @@ const pendingPorts = new Map(); // `${key}:${axis}` -> { value, until }
 // -- what keeps the switches from churning (and feeling laggy) under the pointer.
 let lastPortsHtml = '';
 
+// --- Unsafe RPC vs RPC that other machines can reach (KQS-024) ---
+// --unsaferpc lets any RPC client shut the node down or ban and add peers, so it must never meet
+// an RPC endpoint published on the network or through Proxy & domains. Not forbidden (an
+// operator may know their firewall), but confirmed twice and flagged in red while both are true.
+const RPC_PORT_KEYS = new Set(['grpc', 'borsh', 'json']);
+const RPC_PROXY_KINDS = new Set(['borsh', 'json', 'grpc']);
+let lastPortMatrix = [];
+
+const unsafeRpcOn = () => Boolean(currentConfig?.flags?.unsaferpc);
+
+/** How the node's RPC is reachable from other machines, in words ([] when it is not). */
+function rpcPublishedVia() {
+    const out = lastPortMatrix.filter((p) => RPC_PORT_KEYS.has(p.key) && p.public).map((p) => `${p.name} port ${p.port} on the network`);
+    for (const p of proxies ?? []) {
+        if (p.enabled !== false && RPC_PROXY_KINDS.has(p.target?.kind)) out.push(`${p.domain} through Proxy & domains`);
+    }
+    return out;
+}
+
+function renderUnsafeRpcNotice() {
+    const via = unsafeRpcOn() ? rpcPublishedVia() : [];
+    const text = via.length
+        ? `Unsafe RPC calls are on while the node's RPC is reachable from other machines (${via.join(', ')}). ` +
+          'Anyone who can reach it can shut the node down or ban its peers. Turn off unsafe RPC (Kaspad, Settings) or stop publishing RPC.'
+        : '';
+    for (const id of ['unsafe-rpc-notice-ports', 'unsafe-rpc-notice-proxy']) {
+        const el = $(id);
+        if (!el) continue;
+        el.hidden = !text;
+        el.textContent = text;
+    }
+}
+
+async function confirmUnsafeRpc(what) {
+    return askConfirm(
+        `${what}\n\nWith unsafe RPC calls on, anyone who can reach the node's RPC can shut the node down or ban and add its peers. ` +
+            'Only do this if you are sure nothing outside your own machines can reach it.',
+    );
+}
+
+$('cfg-flag-unsaferpc')?.addEventListener('change', async (event) => {
+    const via = rpcPublishedVia();
+    if (!event.target.checked || !via.length) return;
+    if (!await confirmUnsafeRpc(`Turn on unsafe RPC calls while the node's RPC is reachable from other machines (${via.join(', ')})?`)) {
+        event.target.checked = false;
+    }
+});
+
 function renderPorts(s) {
+    lastPortMatrix = s.portMatrix || [];
+    renderUnsafeRpcNotice();
     const publishedSet = new Set(s.published.map((p) => (p.container || '').split('/')[0]));
     const now = Date.now();
 
@@ -1952,6 +2002,13 @@ $('ports-body').addEventListener('change', async (event) => {
     const { port: key, axis } = event.target.dataset ?? {};
     if (!key || !axis) return;
     const value = event.target.checked;
+    if (value && axis === 'public' && RPC_PORT_KEYS.has(key) && unsafeRpcOn()) {
+        const name = lastPortMatrix.find((p) => p.key === key)?.name ?? key;
+        if (!await confirmUnsafeRpc(`Open ${name} to the network while unsafe RPC calls are on?`)) {
+            event.target.checked = false;
+            return;
+        }
+    }
     // Hold the intent so the next status poll cannot redraw it back while the
     // node restarts with the change. renderPorts clears the hold once the node
     // reports the same value, or after this grace window if it never takes.
@@ -2265,6 +2322,7 @@ async function loadSettings() {
     $('cfg-network').disabled = testnet;
 
     for (const flag of FLAGS) $(`cfg-flag-${flag}`).checked = Boolean(c.flags[flag]);
+    renderUnsafeRpcNotice();
 
     $('cfg-loglevel').value = c.tuning.logLevel;
     $('cfg-outpeers').value = c.tuning.outpeers;
@@ -5576,6 +5634,7 @@ async function loadProxies() {
     const r = await api('/api/proxies');
     proxies = r.proxies;
     targetKinds = r.targets ?? {};
+    renderUnsafeRpcNotice();
 
     // Reflect whether the proxy is running before anything else: with it off,
     // adding a host would write config nothing is serving.
@@ -7671,6 +7730,9 @@ $('setup-run').addEventListener('click', async () => {
         allowlist: $('setup-allowlist').value,
     };
 
+    if (key === 'kaspad' && unsafeRpcOn()) {
+        if (!await confirmUnsafeRpc("Publish the node's RPC (wRPC Borsh) while unsafe RPC calls are on?")) return;
+    }
     $('setup-run').disabled = true;
     try {
         const r = await api(`/api/setup/${key}`, { method: 'POST', body });
@@ -7803,6 +7865,9 @@ $('proxy-form').addEventListener('submit', async (event) => {
         rateLimit: Number($('px-rate').value) || null,
     };
 
+    if (RPC_PROXY_KINDS.has(payload.target.kind) && payload.enabled && unsafeRpcOn()) {
+        if (!await confirmUnsafeRpc(`Publish the node's RPC on ${payload.domain || 'this name'} while unsafe RPC calls are on?`)) return;
+    }
     try {
         if (editingId) await api(`/api/proxies/${editingId}`, { method: 'PUT', body: { proxy: payload } });
         else await api('/api/proxies', { method: 'POST', body: { proxy: payload } });

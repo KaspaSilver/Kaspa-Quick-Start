@@ -457,6 +457,7 @@
                 <tbody id="ports-body"></tbody>
               </table>
             </div>
+            <p class="verdict bad" id="unsafe-rpc-notice-ports" hidden></p>
             </div>
           </div>
         </article>
@@ -487,7 +488,10 @@
               <span class="pill">recommended</span>
             </label>
             <label class="check"><input type="checkbox" id="cfg-flag-archival"> Archival node <span class="muted">(keeps all history, large disk)</span></label>
-            <label class="check"><input type="checkbox" id="cfg-flag-unsaferpc"> Enable unsafe RPC calls</label>
+            <label class="check" title="Passes --unsaferpc. kaspad then accepts its operator-only RPC calls (shut the node down, ban, unban and add peers) from any RPC client. Only for a node whose RPC is never reachable from other machines: do not combine it with publishing gRPC or wRPC on the network or through Proxy &amp; domains.">
+              <input type="checkbox" id="cfg-flag-unsaferpc"> Enable unsafe RPC calls
+              <span class="pill bad">unsafe</span>
+            </label>
             <label class="check"><input type="checkbox" id="cfg-flag-perfMetrics"> Performance metrics</label>
             <label class="check"><input type="checkbox" id="cfg-flag-disableUpnp"> Disable UPnP</label>
             <label class="check"><input type="checkbox" id="cfg-flag-noDnsSeed"> Disable DNS seeding</label>
@@ -2306,6 +2310,7 @@
         <p class="error" id="proxy-error" hidden></p>
       </article>
 
+      <p class="verdict bad" id="unsafe-rpc-notice-proxy" hidden></p>
       <div class="grid" id="proxy-config">
         <article class="card span2">
           <h3>Public addresses</h3>
