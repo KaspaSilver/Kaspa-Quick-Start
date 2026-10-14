@@ -61,7 +61,10 @@ export const APPS = {
             // `/contextual-messages/import` is an unauthenticated bulk insert
             // that sits under the public `/contextual-messages` prefix; public,
             // anyone could write forged 1:1 rows into the store.
-            deny: ['/self-stash-gc-orphans', '/internal/push', '/contextual-messages/import'],
+            // `/v1/push/stats` is the device census: the panel reads it internally for the Push
+            // Service card, and from outside it is only a way to make the push registry busy
+            // (kachat-audits IDX-025).
+            deny: ['/self-stash-gc-orphans', '/internal/push', '/contextual-messages/import', '/v1/push/stats'],
             // The indexer is read cross-origin by browser clients: the web app
             // at kachat.app (and anyone self-hosting it on their own domain) is
             // a different origin from this API, so without these headers the
