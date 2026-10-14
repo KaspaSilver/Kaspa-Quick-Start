@@ -2603,3 +2603,6 @@ body.cycling .tab.active { animation: cycle-in 0.55s ease both; }
 @media (max-width: 700px) {
     .app-update-row { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Indexer overview: the day's KaChat transactions, above the Pipeline tiles. */
+.stat.stat-wide { margin-bottom: 12px; }

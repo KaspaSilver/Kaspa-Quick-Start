@@ -4341,6 +4341,22 @@ async function loadKachatOverview() {
         // is still backfilling history and only becomes a live rate once it has
         // caught up with the tip.
         $('kachat-hour').textContent = fmtNum(s.ingest_last_60m);
+        // The day's KaChat transactions (an indexer from before tx_24h leaves it blank).
+        const d = s.tx_24h;
+        $('kachat-day').textContent = d ? fmtNum(d.total) : '–';
+        $('kachat-day-detail').textContent = !d
+            ? 'Update the indexer to count these.'
+            : [
+                  d.chats == null
+                      ? 'private chats not counted (chat indexer not reachable)'
+                      : `${fmtNum(d.chats)} private chat${d.chats === 1 ? '' : 's'}${
+                            d.chats_since && Date.now() - d.chats_since < 23 * 3_600_000
+                                ? ` (counting since ${new Date(d.chats_since).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })})`
+                                : ''
+                        }`,
+                  `${fmtNum(d.kaposts)} KaPosts`,
+                  `${fmtNum(d.public_chats)} public chats`,
+              ].join(', ');
         $('kachat-5m').textContent = fmtNum(s.ingest_last_5m);
         $('kachat-messages').textContent = fmtNum(cm.contextual_messages ?? 0);
         $('kachat-blocks').textContent = fmtNum(cm.blocks_processed ?? 0);
