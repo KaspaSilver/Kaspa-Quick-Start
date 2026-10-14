@@ -19,6 +19,9 @@ const el = (sel, root = document) => root.querySelector(sel);
  * seconds until the browser's six connections per origin were all taken, and every click
  * queued behind them, so the panel looked frozen (docs/HANDOFF-PANEL-STATUS-SPEED.md).
  */
+// Overview's live BlockDAG view (see setDagView); here so selectTab can reach it at any point.
+const dag = { blocks: new Map(), reds: new Set(), next: null, active: false, timer: null, frame: null, view: null, arrivals: [] };
+
 function noOverlap(fn) {
     let running = false;
     return async (...args) => {
@@ -156,6 +159,7 @@ function showApp() {
     // naming it here, so moving which one starts active cannot leave its page
     // sitting empty until someone navigates away and back.
     setHostPolling(document.querySelector('.nav-item.active')?.dataset.tab === 'overview');
+    setDagView(document.querySelector('.nav-item.active')?.dataset.tab === 'overview');
     startPolling();
     // A remembered Testnet view hides Kaspad's mainnet-only sub-tabs from the start.
     applyKaspadSubtabsForView();
@@ -264,6 +268,7 @@ function selectTab(name) {
     setMiningPolling(name === 'mining');
     // Same for the machine's own disk/memory figures.
     setHostPolling(name === 'overview');
+    setDagView(name === 'overview');
     // The KaChat panels do the same, and each one loads only itself.
     setKachatPolling(name === 'kachat');
     // A section's log streams only while it is on screen.
@@ -302,7 +307,8 @@ for (const item of document.querySelectorAll('.nav-item')) {
 const CYCLE_KEY = 'kqs-cycle-overviews';
 const CYCLE_MS = 8_000;
 const CYCLE_FADE_MS = 450;
-const NOT_CYCLED = new Set(['overview', 'logs', 'experimental', 'global', 'support']);
+// Not shown: settings pages, and the Push Service and Proxy & domains screens (owner's choice).
+const NOT_CYCLED = new Set(['overview', 'logs', 'experimental', 'global', 'support', 'push', 'proxy']);
 const CYCLE_SCROLL_PX_PER_S = 120;       // All logs scrolls at a pace you can follow
 let cycleRunning = false;
 let cycleTimer = null;
@@ -3047,18 +3053,167 @@ function renderHost(data) {
     $('host-uptime').textContent = fmtUptime(machine.uptimeSeconds);
     $('host-load').textContent = Array.isArray(machine.loadAverage) ? machine.loadAverage.join('  ') : '–';
 
-    const rows = (data.services ?? []).map((svc) => {
-        const [tone, word] = !svc.installed
-            ? ['off', 'not installed']
-            : svc.running
-              ? ['ok', 'running']
-              : ['warn', svc.status || 'stopped'];
-        const uptime = svc.startedAt ? `up ${fmtDuration(svc.startedAt)}` : '';
-        return `<tr><td>${escapeHtml(svc.label)}</td><td><span class="tag ${tone}">${escapeHtml(word)}</span></td><td class="muted">${escapeHtml(uptime)}</td></tr>`;
+    // Small tiles, running first, then stopped, then not installed: the whole list fits on one
+    // screen without scrolling.
+    const order = (svc) => (!svc.installed ? 2 : svc.running ? 0 : 1);
+    const services = [...(data.services ?? [])].sort((a, b) => order(a) - order(b));
+    const tiles = services.map((svc) => {
+        const [dot, word] = !svc.installed ? ['', 'not installed'] : svc.running ? ['ok', 'running'] : ['warn', svc.status || 'stopped'];
+        const uptime = svc.running && svc.startedAt ? `, up ${fmtDuration(svc.startedAt)}` : '';
+        return `<div class="svc-card${svc.installed ? '' : ' absent'}"><span class="svc-dot ${dot}"></span><div class="svc-meta"><strong>${escapeHtml(svc.label)}</strong><small>${escapeHtml(word + uptime)}</small></div></div>`;
     });
-    $('host-services').innerHTML = rows.length
-        ? rows.join('')
-        : '<tr><td colspan="3" class="empty">Nothing on this machine yet.</td></tr>';
+    const count = (n) => services.filter((svc) => order(svc) === n).length;
+    $('host-services-sum').textContent = services.length
+        ? `${count(0)} running, ${count(1)} stopped, ${count(2)} not installed`
+        : '';
+    $('host-services').innerHTML = tiles.length ? tiles.join('') : '<p class="muted">Nothing on this machine yet.</p>';
+}
+
+// --- Overview: live BlockDAG ---
+
+/**
+ * The newest blocks from this node, drawn as they arrive: x is blue score (so the picture drifts
+ * left at the network's pace), blocks with the same blue score stack, thin lines join each block
+ * to its parents, the selected chain (followed back from the top block's selected parents) is
+ * highlighted, and blocks merged as red are red. Polls /api/dag/blocks once a second, only while
+ * Overview is on screen and the node is running and fully synced.
+ */
+const DAG_PX_PER_BLUE = 18;
+const DAG_KEEP_BLUE = 160;
+// (`dag`, the view's state, is declared at the top of this file: selectTab can run before here.)
+
+function setDagView(active) {
+    dag.active = active;
+    clearInterval(dag.timer);
+    dag.timer = null;
+    if (active) {
+        pollDag();
+        dag.timer = setInterval(noOverlap(pollDag), 1000);
+        if (dag.frame == null) dag.frame = requestAnimationFrame(drawDag);
+    } else if (dag.frame != null) {
+        cancelAnimationFrame(dag.frame);
+        dag.frame = null;
+    }
+}
+
+async function pollDag() {
+    if (document.hidden) return;
+    let r;
+    try {
+        r = await api(`/api/dag/blocks?net=${networkView}${dag.next ? `&since=${dag.next}` : ''}`);
+    } catch {
+        return;
+    }
+    if (!r?.available) {
+        dag.blocks.clear();
+        dag.reds.clear();
+        dag.next = null;
+        dag.view = null;
+        $('dag-note').textContent =
+            r?.reason === 'syncing'
+                ? 'Waiting for Kaspad to finish syncing: the BlockDAG shows once it is 100% synced.'
+                : 'Starts when Kaspad is running and 100% synced.';
+        $('dag-stats').textContent = '';
+        return;
+    }
+    const now = performance.now();
+    for (const b of r.blocks ?? []) {
+        if (!dag.blocks.has(b.h)) {
+            dag.blocks.set(b.h, b);
+            dag.arrivals.push(now);
+        }
+        for (const red of b.r ?? []) dag.reds.add(red);
+    }
+    dag.next = r.next;
+    // Keep a short window: everything well behind the top falls away.
+    const top = Math.max(0, ...[...dag.blocks.values()].map((b) => b.b));
+    for (const [h, b] of dag.blocks) if (b.b < top - DAG_KEEP_BLUE) dag.blocks.delete(h);
+    dag.arrivals = dag.arrivals.filter((t) => now - t < 10_000);
+    $('dag-note').innerHTML =
+        '<span class="dag-legend"><i style="background:var(--accent)"></i>selected chain</span>' +
+        '<span class="dag-legend"><i style="background:var(--muted)"></i>blue</span>' +
+        '<span class="dag-legend"><i style="background:var(--danger)"></i>red</span> Live from your node.';
+    if (dag.blocks.size) {
+        const reds = [...dag.blocks.keys()].filter((h) => dag.reds.has(h)).length;
+        $('dag-stats').textContent = `blue score ${fmtNum(top)}, ${(dag.arrivals.length / 10).toFixed(1)} blocks/s, ${reds} red of ${dag.blocks.size}`;
+    }
+}
+
+function drawDag() {
+    dag.frame = dag.active ? requestAnimationFrame(drawDag) : null;
+    const canvas = $('dag-canvas');
+    if (!canvas || !canvas.offsetParent) return;
+    const ratio = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth;
+    const hgt = canvas.clientHeight;
+    if (canvas.width !== Math.round(w * ratio) || canvas.height !== Math.round(hgt * ratio)) {
+        canvas.width = Math.round(w * ratio);
+        canvas.height = Math.round(hgt * ratio);
+    }
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.clearRect(0, 0, w, hgt);
+    const blocks = [...dag.blocks.values()];
+    if (!blocks.length) return;
+    const css = getComputedStyle(document.documentElement);
+    const color = (v, fb) => css.getPropertyValue(v).trim() || fb;
+    const accent = color('--accent', '#49eacb');
+    const muted = color('--muted', '#8aa');
+    const danger = color('--danger', '#e5484d');
+
+    // The view's right edge glides toward the top blue score instead of jumping.
+    const top = Math.max(...blocks.map((b) => b.b));
+    dag.view = dag.view == null ? top : dag.view + (top - dag.view) * 0.08;
+
+    // Lanes: blocks sharing a blue score stack around the middle line, in arrival order.
+    const lanes = new Map();
+    const pos = new Map();
+    const laneH = 18;
+    const mid = hgt / 2;
+    for (const b of blocks) {
+        const n = lanes.get(b.b) ?? 0;
+        lanes.set(b.b, n + 1);
+        const off = n === 0 ? 0 : (n % 2 ? 1 : -1) * Math.ceil(n / 2);
+        const x = w - 24 - (dag.view - b.b) * DAG_PX_PER_BLUE;
+        pos.set(b.h, { x, y: mid + off * laneH });
+    }
+
+    // The selected chain: from the top block back along selected parents.
+    const chain = new Set();
+    let cur = blocks.reduce((best, b) => (b.b > best.b ? b : best), blocks[0]);
+    while (cur && !chain.has(cur.h)) {
+        chain.add(cur.h);
+        cur = cur.s ? dag.blocks.get(cur.s) : null;
+    }
+
+    ctx.lineWidth = 1;
+    for (const b of blocks) {
+        const a = pos.get(b.h);
+        if (a.x < -20) continue;
+        for (const p of b.p ?? []) {
+            const q = pos.get(p);
+            if (!q) continue;
+            const onChain = chain.has(b.h) && b.s === p;
+            ctx.strokeStyle = onChain ? accent : muted;
+            ctx.globalAlpha = onChain ? 0.9 : 0.4;
+            // A gentle curve, so links between neighbouring blocks stay visible.
+            const mx = (a.x + q.x) / 2;
+            ctx.beginPath();
+            ctx.moveTo(a.x - 5, a.y);
+            ctx.bezierCurveTo(mx, a.y, mx, q.y, q.x + 5, q.y);
+            ctx.stroke();
+        }
+    }
+    ctx.globalAlpha = 1;
+    for (const b of blocks) {
+        const { x, y } = pos.get(b.h);
+        if (x < -20 || x > w + 20) continue;
+        ctx.fillStyle = dag.reds.has(b.h) ? danger : chain.has(b.h) ? accent : muted;
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(x - 5, y - 4, 10, 8, 2);
+        else ctx.rect(x - 5, y - 4, 10, 8);
+        ctx.fill();
+    }
 }
 
 async function refreshHost() {
@@ -4446,7 +4601,11 @@ function renderChannelSelects() {
     const keep = feed.value;
     feed.innerHTML = `<option value="">All channels</option>${options}`;
     if ([...feed.options].some((o) => o.value === keep)) feed.value = keep;
-    $('kachat-purge-channel').innerHTML = options;
+    // The Delete tab's picker: refreshed every few seconds, so it keeps what was picked.
+    const purge = $('kachat-purge-channel');
+    const picked = purge.value;
+    purge.innerHTML = options;
+    if ([...purge.options].some((o) => o.value === picked)) purge.value = picked;
 }
 
 async function loadBroadcastRows() {
@@ -4674,6 +4833,10 @@ function refreshKachatPanel() {
             break;
         case 'kachat-translate':
             loadTranslate();
+            break;
+        case 'kachat-delete':
+            // Its public-chat purge needs the tracked channels for its picker.
+            loadKachatBroadcasts();
             break;
         default:
             break;

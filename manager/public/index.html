@@ -321,6 +321,30 @@
       </div>
       <div class="grid">
 
+        <!--
+          Every container this stack can run, as small status tiles (running first, then stopped,
+          then not installed) so the whole list fits on one screen without scrolling.
+        -->
+        <article class="card span2">
+          <div class="node-head">
+            <h3>Services</h3>
+            <span class="muted" id="host-services-sum"></span>
+          </div>
+          <div class="services-grid compact" id="host-services"><p class="muted">Reading the stack…</p></div>
+          <p class="hint">Not installed is not a fault: each service is switched on from its own tab.</p>
+        </article>
+        <!--
+          A live picture of the BlockDAG from this node: only while Kaspad is running and fully
+          synced. Blocks drift left as new ones arrive; parallel blocks stack; lines are parent links.
+        -->
+        <article class="card span2 dag-card">
+          <div class="node-head">
+            <h3>BlockDAG</h3>
+            <span class="muted" id="dag-stats"></span>
+          </div>
+          <canvas id="dag-canvas" aria-label="Live BlockDAG from this node"></canvas>
+          <p class="hint" id="dag-note">Starts when Kaspad is running and 100% synced.</p>
+        </article>
         <article class="card figure">
           <h3>Storage</h3>
           <p class="muted">The disk your apps write to. The chain, the databases and Nextcloud all land here.</p>
@@ -343,24 +367,7 @@
           <p class="muted" id="host-mem-detail">–</p>
         </article>
 
-        <article class="card span2">
-          <h3>Services</h3>
-          <p class="muted">
-            Every container this stack can run. Anything not installed is simply
-            not installed: it is not a fault, and switching it on is done from
-            its own tab.
-          </p>
-          <div class="scroll-x">
-            <table>
-              <thead>
-                <tr><th>Service</th><th>Status</th><th>Uptime</th></tr>
-              </thead>
-              <tbody id="host-services">
-                <tr><td colspan="3" class="empty">Reading the stack…</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </article>
+
 
         <article class="card span2">
           <h3>This machine</h3>
@@ -1233,30 +1240,8 @@
             for 30 days and the preview shows the first 200 characters.
           </p>
         </article>
+        <p class="hint">Deleting a public chat, or purging stored public chats by channel, is under the <strong>Delete</strong> tab.</p>
 
-        <article class="card span2 danger-zone">
-          <h3>Delete public-chat data</h3>
-          <p class="muted">
-            These remove the indexer's stored copy only, and a re-index would
-            bring it back. They happen immediately and cannot be undone from
-            here. Switching a channel off stops new messages but leaves what is
-            already stored. Purging is how you clear that.
-          </p>
-          <label class="stack">Delete a public chat by transaction id
-            <span class="row">
-              <input id="kachat-del-bcast" placeholder="public-chat transaction id (hex)" size="40">
-              <button type="button" id="kachat-del-bcast-btn" class="danger">Delete message</button>
-            </span>
-          </label>
-          <label class="stack">Purge public chats by channel
-            <span class="row">
-              <select id="kachat-purge-channel"></select>
-              <button type="button" id="kachat-purge-channel-btn" class="danger">Purge channel</button>
-              <button type="button" id="kachat-purge-all-btn" class="danger">Purge every public chat</button>
-            </span>
-          </label>
-          <div id="kachat-bcast-del-result" class="verdict" hidden></div>
-        </article>
       </div>
 
       <div id="sub-kachat-chats" class="subtab">
@@ -1308,25 +1293,8 @@
             </details>
           </div>
         </article>
+        <p class="hint">Purging the stored chat data is under the <strong>Delete</strong> tab.</p>
 
-        <article class="card span2 danger-zone">
-          <h3>Delete chat data</h3>
-          <p class="muted">
-            This wipes every one to one message, group, handshake and payment
-            the indexer holds. It only removes the stored copy. The messages are still
-            on chain, so a re-index would bring them back.
-          </p>
-          <label class="stack">Purge the chat store
-            <span class="row">
-              <button type="button" id="kachat-purge-chat-btn" class="danger">Purge all chat data</button>
-            </span>
-          </label>
-          <p class="hint">
-            With personal mode on, the store then refills with only your own
-            data, which is how you turn a public store into a personal one.
-          </p>
-          <div id="kachat-chat-del-result" class="verdict" hidden></div>
-        </article>
       </div>
 
       <div id="sub-kachat-groups" class="subtab">
@@ -1648,6 +1616,49 @@
             </span>
           </label>
           <div id="kachat-kaposts-del-result" class="verdict" hidden></div>
+        </article>
+
+        <article class="card span2 danger-zone">
+          <h3>Delete public-chat data</h3>
+          <p class="muted">
+            These remove the indexer's stored copy only, and a re-index would
+            bring it back. They happen immediately and cannot be undone from
+            here. Switching a channel off stops new messages but leaves what is
+            already stored. Purging is how you clear that.
+          </p>
+          <label class="stack">Delete a public chat by transaction id
+            <span class="row">
+              <input id="kachat-del-bcast" placeholder="public-chat transaction id (hex)" size="40">
+              <button type="button" id="kachat-del-bcast-btn" class="danger">Delete message</button>
+            </span>
+          </label>
+          <label class="stack">Purge public chats by channel
+            <span class="row">
+              <select id="kachat-purge-channel"></select>
+              <button type="button" id="kachat-purge-channel-btn" class="danger">Purge channel</button>
+              <button type="button" id="kachat-purge-all-btn" class="danger">Purge every public chat</button>
+            </span>
+          </label>
+          <div id="kachat-bcast-del-result" class="verdict" hidden></div>
+        </article>
+
+        <article class="card span2 danger-zone">
+          <h3>Delete chat data</h3>
+          <p class="muted">
+            This wipes every one to one message, group, handshake and payment
+            the indexer holds. It only removes the stored copy. The messages are still
+            on chain, so a re-index would bring them back.
+          </p>
+          <label class="stack">Purge the chat store
+            <span class="row">
+              <button type="button" id="kachat-purge-chat-btn" class="danger">Purge all chat data</button>
+            </span>
+          </label>
+          <p class="hint">
+            With personal mode on, the store then refills with only your own
+            data, which is how you turn a public store into a personal one.
+          </p>
+          <div id="kachat-chat-del-result" class="verdict" hidden></div>
         </article>
       </div>
 
