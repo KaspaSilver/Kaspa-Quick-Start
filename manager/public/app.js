@@ -294,17 +294,19 @@ for (const item of document.querySelectorAll('.nav-item')) {
 
 /**
  * Overview > "Cycle through app overviews": the panel shows Overview, then each app switched on
- * in the sidebar (on its own Overview sub-tab), 10 seconds each, fading from one to the next,
- * round and round. Any click or key pauses it, so it never moves a page out from under someone
+ * in the sidebar (on its own Overview sub-tab), 5 seconds each, fading from one to the next,
+ * and last All logs, scrolled smoothly from top to bottom and held 5 seconds; round and round. Any click or key pauses it, so it never moves a page out from under someone
  * using the panel; Resume in the top bar, or coming back to Overview, starts it again. The
  * setting is this browser's (localStorage); a hidden tab does not cycle.
  */
 const CYCLE_KEY = 'kqs-cycle-overviews';
-const CYCLE_MS = 10_000;
+const CYCLE_MS = 5_000;
 const CYCLE_FADE_MS = 450;
 const NOT_CYCLED = new Set(['overview', 'logs', 'experimental', 'global', 'support']);
+const CYCLE_SCROLL_PX_PER_S = 120;       // All logs scrolls at a pace you can follow
 let cycleRunning = false;
 let cycleTimer = null;
+let cycleScroll = null;                  // the All logs scroll in progress (an animation frame)
 let cycleTab = 'overview';
 // The switch's state; this browser's localStorage keeps it across reloads when it can.
 let cycleSetting = (() => {
@@ -330,6 +332,7 @@ function cycleScreens() {
         if (row.offsetParent === null || item.classList.contains('locked')) continue;
         out.push(tab);
     }
+    out.push('logs');
     return out;
 }
 
@@ -356,7 +359,30 @@ function updateCyclePill() {
 
 function scheduleCycle() {
     clearTimeout(cycleTimer);
-    if (cycleRunning && !document.hidden) cycleTimer = setTimeout(cycleStep, CYCLE_MS);
+    if (cycleRunning && !document.hidden && cycleScroll == null) cycleTimer = setTimeout(cycleStep, CYCLE_MS);
+}
+
+/** All logs: once it has faded in, scroll smoothly to the bottom, then the usual 5 seconds. */
+function cycleScrollLogs() {
+    const from = window.scrollY;
+    const to = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+    if (to - from < 20) return scheduleCycle();
+    const ms = Math.min(45_000, Math.max(2_500, ((to - from) / CYCLE_SCROLL_PX_PER_S) * 1000));
+    const ease = (p) => (p < 0.5 ? 2 * p * p : 1 - (-2 * p + 2) ** 2 / 2);
+    let start = null;
+    const frame = (t) => {
+        if (!cycleRunning) return;
+        start ??= t;
+        const p = Math.min(1, (t - start) / ms);
+        window.scrollTo(0, from + (to - from) * ease(p));
+        if (p < 1) {
+            cycleScroll = requestAnimationFrame(frame);
+        } else {
+            cycleScroll = null;
+            scheduleCycle();
+        }
+    };
+    cycleScroll = requestAnimationFrame(frame);
 }
 
 function cycleStep() {
@@ -366,11 +392,28 @@ function cycleStep() {
     document.body.classList.add('cycle-leaving');
     setTimeout(() => {
         if (!cycleRunning) return;
-        showOverviewOf(next);
-        window.scrollTo({ top: 0 });
-        document.body.classList.remove('cycle-leaving');
-        updateCyclePill();
-        scheduleCycle();
+        try {
+            showOverviewOf(next);
+        } catch (e) {
+            // One app's page failing to draw must not leave the screen faded out and the cycle
+            // stopped (it did on the Indexer): note it, show what there is, and carry on.
+            console.warn(`overview cycle: ${next}:`, e);
+            cycleTab = next;
+        } finally {
+            window.scrollTo({ top: 0 });
+            document.body.classList.remove('cycle-leaving');
+            updateCyclePill();
+            if (cycleTab === 'logs') {
+                // Let it fade in and the tiles fill first, then scroll.
+                cycleScroll = -1;
+                setTimeout(() => {
+                    cycleScroll = null;
+                    if (cycleRunning) cycleScrollLogs();
+                }, 1200);
+            } else {
+                scheduleCycle();
+            }
+        }
     }, CYCLE_FADE_MS);
 }
 
@@ -386,6 +429,8 @@ function startCycle() {
 function pauseCycle() {
     cycleRunning = false;
     clearTimeout(cycleTimer);
+    if (cycleScroll > 0) cancelAnimationFrame(cycleScroll);
+    cycleScroll = null;
     document.body.classList.remove('cycling', 'cycle-leaving');
     updateCyclePill();
 }
