@@ -282,8 +282,141 @@ function selectTab(name) {
 }
 
 for (const item of document.querySelectorAll('.nav-item')) {
-    item.addEventListener('click', () => selectTab(item.dataset.tab));
+    item.addEventListener('click', () => {
+        selectTab(item.dataset.tab);
+        // Back on Overview: the dashboard cycle (if it is on) starts again from here.
+        if (item.dataset.tab === 'overview' && cycleEnabled()) startCycle();
+    });
 }
+
+// --- Overview dashboard mode: every app's Overview in turn ---
+
+/**
+ * Overview > "Cycle through app overviews": the panel shows Overview, then each app switched on
+ * in the sidebar (on its own Overview sub-tab), 10 seconds each, fading from one to the next,
+ * round and round. Any click or key pauses it, so it never moves a page out from under someone
+ * using the panel; Resume in the top bar, or coming back to Overview, starts it again. The
+ * setting is this browser's (localStorage); a hidden tab does not cycle.
+ */
+const CYCLE_KEY = 'kqs-cycle-overviews';
+const CYCLE_MS = 10_000;
+const CYCLE_FADE_MS = 450;
+const NOT_CYCLED = new Set(['overview', 'logs', 'experimental', 'global', 'support']);
+let cycleRunning = false;
+let cycleTimer = null;
+let cycleTab = 'overview';
+// The switch's state; this browser's localStorage keeps it across reloads when it can.
+let cycleSetting = (() => {
+    try {
+        return localStorage.getItem(CYCLE_KEY) === '1';
+    } catch {
+        return false;
+    }
+})();
+
+function cycleEnabled() {
+    return cycleSetting;
+}
+
+/** Overview, then every app switched on in the sidebar that this network view shows. */
+function cycleScreens() {
+    const out = ['overview'];
+    for (const row of document.querySelectorAll('.nav-row')) {
+        const item = row.querySelector('.nav-item');
+        const tab = item?.dataset.tab;
+        if (!tab || NOT_CYCLED.has(tab) || out.includes(tab)) continue;
+        if (!row.querySelector('input[data-service]')?.checked) continue;
+        if (row.offsetParent === null || item.classList.contains('locked')) continue;
+        out.push(tab);
+    }
+    return out;
+}
+
+/** A tab on its Overview sub-tab (the first one this view shows). */
+function showOverviewOf(tab) {
+    selectTab(tab);
+    const section = document.getElementById(`tab-${tab}`);
+    const buttons = [...(section?.querySelectorAll('.subtab-btn') ?? [])].filter((b) => b.offsetParent !== null);
+    const pick = buttons.find((b) => /overview$/.test(b.dataset.subtab)) ?? buttons[0];
+    if (pick) selectSubtab(section, pick.dataset.subtab);
+    cycleTab = tab;
+}
+
+function updateCyclePill() {
+    const pill = $('topbar-cycle');
+    if (!pill) return;
+    pill.hidden = !cycleEnabled();
+    const screens = cycleScreens();
+    const i = Math.max(0, screens.indexOf(cycleTab));
+    const label = el('.label', document.querySelector(`.nav-item[data-tab="${cycleTab}"]`) ?? document.body)?.textContent || cycleTab;
+    $('cycle-now').textContent = cycleRunning ? `Cycling: ${label} (${i + 1} of ${screens.length})` : 'Cycling paused';
+    $('cycle-pause').textContent = cycleRunning ? 'Pause' : 'Resume';
+}
+
+function scheduleCycle() {
+    clearTimeout(cycleTimer);
+    if (cycleRunning && !document.hidden) cycleTimer = setTimeout(cycleStep, CYCLE_MS);
+}
+
+function cycleStep() {
+    if (!cycleRunning) return;
+    const screens = cycleScreens();
+    const next = screens[(screens.indexOf(cycleTab) + 1) % screens.length] ?? 'overview';
+    document.body.classList.add('cycle-leaving');
+    setTimeout(() => {
+        if (!cycleRunning) return;
+        showOverviewOf(next);
+        window.scrollTo({ top: 0 });
+        document.body.classList.remove('cycle-leaving');
+        updateCyclePill();
+        scheduleCycle();
+    }, CYCLE_FADE_MS);
+}
+
+function startCycle() {
+    if (!cycleEnabled()) return;
+    cycleRunning = true;
+    cycleTab = document.querySelector('.tab.active')?.id?.replace(/^tab-/, '') || 'overview';
+    document.body.classList.add('cycling');
+    updateCyclePill();
+    scheduleCycle();
+}
+
+function pauseCycle() {
+    cycleRunning = false;
+    clearTimeout(cycleTimer);
+    document.body.classList.remove('cycling', 'cycle-leaving');
+    updateCyclePill();
+}
+
+// Someone is using the panel: stop moving it (the pill's own button excepted).
+for (const type of ['pointerdown', 'keydown', 'wheel']) {
+    document.addEventListener(
+        type,
+        (e) => {
+            if (cycleRunning && !e.target.closest?.('#topbar-cycle')) pauseCycle();
+        },
+        { capture: true, passive: true },
+    );
+}
+document.addEventListener('visibilitychange', () => (document.hidden ? clearTimeout(cycleTimer) : scheduleCycle()));
+$('cycle-pause')?.addEventListener('click', () => (cycleRunning ? pauseCycle() : startCycle()));
+$('cycle-enabled')?.addEventListener('change', (e) => {
+    cycleSetting = e.target.checked;
+    try {
+        localStorage.setItem(CYCLE_KEY, cycleSetting ? '1' : '0');
+    } catch {
+        /* this browser keeps no settings: it cycles until the page is reloaded */
+    }
+    if (e.target.checked) startCycle();
+    else pauseCycle();
+    updateCyclePill();
+});
+if ($('cycle-enabled')) $('cycle-enabled').checked = cycleEnabled();
+// Opened on Overview with the cycle on: start once the sidebar knows which apps are on.
+setTimeout(() => {
+    if (cycleEnabled() && $('tab-overview')?.classList.contains('active')) startCycle();
+}, 3000);
 
 // --- in-page confirm ---
 

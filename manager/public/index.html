@@ -283,6 +283,11 @@
         <code id="topbar-lan-ip">…</code>
         <button type="button" class="copy-btn" id="topbar-lan-copy" disabled>Copy</button>
       </span>
+      <!-- While the overviews cycle (Overview > Cycle through app overviews): where it is, and pause/resume. -->
+      <span class="topbar-cycle" id="topbar-cycle" hidden>
+        <span class="muted" id="cycle-now"></span>
+        <button type="button" class="ghost mini" id="cycle-pause">Pause</button>
+      </span>
     </header>
 
     <main>
@@ -295,6 +300,17 @@
       one /api/host poll that only runs while the page is open.
     -->
     <section id="tab-overview" class="tab active">
+      <!--
+        Dashboard mode: from here the panel shows each app's Overview in turn (every app switched on
+        in the sidebar), 10 seconds each with a fade, and back. A click or a key pauses it, so it never
+        moves a page out from under you; Resume (top bar) or coming back to Overview starts it again.
+      -->
+      <div class="cycle-bar">
+        <label class="switch-field">
+          <span class="switch mini"><input type="checkbox" id="cycle-enabled"><span class="track"></span></span>
+          <span>Cycle through app overviews, 10 seconds each</span>
+        </label>
+      </div>
       <div class="grid">
 
         <article class="card figure">
