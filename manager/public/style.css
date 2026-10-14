@@ -2571,3 +2571,9 @@ body.cycling .tab.active { animation: cycle-in 0.55s ease both; }
 .bot-title .bot-balance { font-size: 13px; font-weight: 600; }
 .bot-reset-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 0; border-top: 1px solid var(--line); }
 .bot-reset-row:first-child { border-top: 0; }
+
+/* Overview's live BlockDAG. */
+.dag-card canvas { display: block; width: 100%; height: 170px; border-radius: 8px; background: var(--panel-2); }
+.dag-card .hint { margin-top: 8px; }
+.dag-legend { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; }
+.dag-legend i { display: inline-block; width: 10px; height: 8px; border-radius: 2px; }

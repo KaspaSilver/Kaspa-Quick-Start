@@ -521,6 +521,72 @@ route('POST', /^\/api\/auth\/signout-all$/, async (req, res) => {
 // off /api/status because that one is polled constantly by every screen, and
 // this walks the filesystem and shells out to the daemon. The Overview page
 // polls it on its own, only while it is on screen.
+// --- BlockDAG view (Overview) ---------------------------------------------------------------
+// The newest blocks, for Overview's live BlockDAG picture: each block's hash, direct parents,
+// selected parent, blue score and the reds it merged. Only while the node is running and fully
+// synced (a syncing node's tips are history, and asking it for blocks only slows it down);
+// otherwise { available: false, reason }. `since` is where the last answer left off (`next`).
+const dagReadyCache = new Map();
+
+async function dagReady(client) {
+    const hit = dagReadyCache.get(client);
+    if (hit && Date.now() - hit.at < 5000) return hit;
+    let out;
+    try {
+        const s = await client.call('getSyncStatus', {}, 3000);
+        out = s?.isSynced ? { ok: true } : { ok: false, reason: 'syncing' };
+    } catch {
+        out = { ok: false, reason: 'down' };
+    }
+    out.at = Date.now();
+    dagReadyCache.set(client, out);
+    return out;
+}
+
+/** One block as the browser draws it; wRPC (parentsByLevel) and gRPC-style (parents) headers both. */
+function dagBlock(b) {
+    const h = b?.header ?? {};
+    const v = b?.verboseData ?? {};
+    const hash = v.hash ?? h.hash;
+    if (!hash) return null;
+    const parents = Array.isArray(h.parentsByLevel)
+        ? (h.parentsByLevel[0] ?? [])
+        : (h.parents?.[0]?.parentHashes ?? []);
+    return {
+        h: hash,
+        p: parents,
+        s: v.selectedParentHash ?? null,
+        b: Number(h.blueScore ?? v.blueScore ?? 0),
+        r: v.mergeSetRedsHashes ?? [],
+    };
+}
+
+route('GET', /^\/api\/dag\/blocks$/, async (req, res, match, url) => {
+    const client = url.searchParams.get('net') === 'testnet' ? rpcTestnet : rpc;
+    const ready = await dagReady(client);
+    if (!ready.ok) return sendJson(res, 200, { available: false, reason: ready.reason });
+    let since = url.searchParams.get('since') || '';
+    try {
+        if (!/^[0-9a-f]{64}$/.test(since)) {
+            // First call: start from the sink; the next poll brings what came after it.
+            const info = await client.call('getBlockDagInfo', {}, 4000);
+            since = info?.sink ?? info?.virtualParentHashes?.[0] ?? info?.tipHashes?.[0] ?? '';
+            return sendJson(res, 200, { available: true, blocks: [], next: since || null });
+        }
+        const r = await client.call('getBlocks', { lowHash: since, includeBlocks: true, includeTransactions: false }, 6000);
+        const blocks = (r?.blocks ?? []).map(dagBlock).filter(Boolean).slice(-400);
+        // Carry on from a block a few blue scores behind the newest, so blocks mined beside the
+        // newest ones still come in next time (the browser drops the repeats).
+        const top = Math.max(0, ...blocks.map((b) => b.b));
+        const back = blocks.filter((b) => b.b <= top - 5).reduce((best, b) => (!best || b.b > best.b ? b : best), null);
+        const newest = back ?? blocks.reduce((best, b) => (!best || b.b > best.b ? b : best), null);
+        sendJson(res, 200, { available: true, blocks, next: newest?.h ?? since });
+    } catch {
+        // A starting point the node no longer knows (pruned, reorged away): start over.
+        sendJson(res, 200, { available: true, blocks: [], next: null });
+    }
+});
+
 route('GET', /^\/api\/host$/, async (req, res) => {
     sendJson(res, 200, await host.snapshot());
 });
