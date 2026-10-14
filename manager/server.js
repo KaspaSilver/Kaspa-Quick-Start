@@ -4077,6 +4077,30 @@ route('GET', /^\/api\/names\/status$/, async (req, res, match, url) => {
     }
 });
 
+// The registry's totals (names by status, the market, activity) for the overview's stats card:
+// the names server's GET /stats/names, over the internal network. Absent (server off, still
+// syncing, or an older build without the route) is "not available yet", not an error.
+route('GET', /^\/api\/names\/stats$/, async (req, res, match, url) => {
+    const N = kachatDomains.NETWORKS[namesNet(url)];
+    try {
+        const r = await fetch(`http://${N.host}:3080/stats/names`, { signal: AbortSignal.timeout(8000) });
+        if (!r.ok) {
+            return sendJson(res, 200, {
+                available: false,
+                message:
+                    r.status === 404
+                        ? 'Update the .kachat Domains server (Updates) to see registry stats.'
+                        : r.status === 503
+                          ? 'Stats show once the server has synced the registry.'
+                          : `Stats returned ${r.status}.`,
+            });
+        }
+        sendJson(res, 200, { available: true, ...(await r.json()) });
+    } catch {
+        sendJson(res, 200, { available: false, message: 'The .kachat Domains server is not running.' });
+    }
+});
+
 // -------------------------------------------------------------------- push --
 // Mobile push for the KaChat indexer: Android via Firebase (FCM) and iPhone via
 // Apple (APNs). The non-secret identifiers live
@@ -4107,7 +4131,7 @@ route('GET', /^\/api\/push$/, async (req, res) => {
 // rather than an error, so the card degrades gracefully.
 route('GET', /^\/api\/push\/stats$/, async (req, res) => {
     try {
-        const r = await fetch('http://kachat-app:8600/push/stats', { signal: AbortSignal.timeout(4000) });
+        const r = await fetch('http://kachat-app:8600/v1/push/stats', { signal: AbortSignal.timeout(4000) });
         if (!r.ok) {
             return sendJson(res, 200, { available: false, reason: r.status === 404 ? 'unsupported' : 'error', status: r.status });
         }

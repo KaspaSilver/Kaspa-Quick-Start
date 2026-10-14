@@ -6712,6 +6712,7 @@ async function loadNames() {
     try {
         const s = await api(`/api/names/status?net=${networkView}`);
         loadKachatDomains(s).catch(() => {});
+        loadNamesStats().catch(() => {});
         if (!s || s.available === false) {
             if (tag) {
                 tag.textContent = { off: 'no manifest', unreachable: 'indexer off' }[s?.reason] || 'not running';
@@ -6761,7 +6762,47 @@ async function loadNames() {
     }
 }
 
-$('names-refresh')?.addEventListener('click', () => loadNames().catch(() => {}));
+/** The overview's Registry stats card: names, the market and activity, from /stats/names. */
+async function loadNamesStats() {
+    const box = $('kd-stats');
+    if (!box) return;
+    let d;
+    try {
+        d = await api(`/api/names/stats?net=${networkView}`);
+    } catch {
+        d = { available: false, message: 'Stats are not available right now.' };
+    }
+    if (!d.available) {
+        box.innerHTML = '';
+        $('kd-stats-note').textContent = d.message || '';
+        $('kd-stats-when').textContent = '';
+        return;
+    }
+    const kas = (sompi) => (sompi == null ? '–' : `${fmtNum(Math.round(Number(sompi) / 1e8 * 100) / 100)} KAS`);
+    const a = d.activity || {};
+    const act = (k) => a[k] || { total: 0, last24h: 0, last7d: 0 };
+    const tile = (label, value, sub = '') =>
+        `<div class="stat"><span>${escapeHtml(String(value))}</span><small>${escapeHtml(label)}</small>${
+            sub ? `<small class="stat-sub">${escapeHtml(sub)}</small>` : ''
+        }</div>`;
+    const recent = (k) => `${fmtNum(act(k).last24h)} today, ${fmtNum(act(k).last7d)} this week`;
+    box.innerHTML = [
+        tile('Names registered', fmtNum(d.names.active), `${fmtNum(d.names.owners)} owners`),
+        tile('In grace', fmtNum(d.names.grace), `${fmtNum(d.names.lapsed)} lapsed`),
+        tile('For sale', fmtNum(d.market.listed), d.market.floorPrice ? `from ${kas(d.market.floorPrice)}` : 'none listed'),
+        tile('Open offers', fmtNum(d.market.openOffers), `${kas(d.market.openOfferValue)} offered`),
+        tile('Registrations', fmtNum(act('registrations').total), recent('registrations')),
+        tile('Renewals', fmtNum(act('renewals').total), recent('renewals')),
+        tile('Sales', fmtNum(act('sales').total), `${kas(d.salesVolume)} in fixed-price sales`),
+        tile('Offers made', fmtNum(act('offers').total), recent('offers')),
+        tile('Listings', fmtNum(act('listings').total), recent('listings')),
+        tile('Transfers', fmtNum(act('transfers').total), recent('transfers')),
+    ].join('');
+    $('kd-stats-note').textContent = '';
+    $('kd-stats-when').textContent = d.updatedAt ? `as of ${new Date(d.updatedAt).toLocaleTimeString()}` : '';
+}
+
+$('names-refresh')?.addEventListener('click', () => { loadNames().catch(() => {}); loadNamesStats().catch(() => {}); });
 async function loadPush() {
     let d;
     try {

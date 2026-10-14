@@ -767,6 +767,8 @@ dialog .row label { flex: 1; min-width: 110px; }
     overflow-wrap: anywhere;
 }
 .stat small { color: var(--muted); font-size: 12px; }
+.stat small.stat-sub { display: block; margin-top: 2px; }
+#kd-stats { margin-bottom: 0; }
 /* The fiat line sits between the KAS figure and its caption, and holds its
    height so the row does not jump when there is no price to show. */
 .stat .fiat { display: block; min-height: 14px; color: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums; }
