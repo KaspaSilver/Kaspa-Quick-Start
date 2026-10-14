@@ -2482,6 +2482,20 @@ body:not(.testnet-view) [data-testnet-only]:not(.nav-item):not(.nav-row) { displ
 }
 .topbar-lan code { font-size: 13px; user-select: all; }
 
+/* Overview dashboard mode: the overviews cycle with a fade. Only while cycling, so ordinary
+   navigation stays instant. */
+.cycle-bar { display: flex; justify-content: flex-end; margin: -4px 0 10px; }
+.topbar-cycle { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; margin-left: auto; min-width: 0; }
+.topbar-cycle #cycle-now { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.cycling main { transition: opacity 0.45s ease; }
+body.cycling.cycle-leaving main { opacity: 0; }
+@keyframes cycle-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+body.cycling .tab.active { animation: cycle-in 0.55s ease both; }
+@media (prefers-reduced-motion: reduce) {
+    body.cycling main { transition: none; }
+    body.cycling .tab.active { animation: none; }
+}
+
 /* Masked public addresses: the eye button shows them. */
 .private-value { font-variant-numeric: tabular-nums; }
 .reveal-eye {
