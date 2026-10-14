@@ -7137,6 +7137,12 @@ async function loadNamesStats() {
         tile('Offers made', fmtNum(act('offers').total), recent('offers')),
         tile('Listings', fmtNum(act('listings').total), recent('listings')),
         tile('Transfers', fmtNum(act('transfers').total), recent('transfers')),
+        // What .kachat activity paid miners: network fees plus the registry's prices (paid as fee).
+        d.fees
+            ? tile('Paid to miners', kas(d.fees.total), d.fees.pending
+                ? `${kas(d.fees.last7d)} this week, ${fmtNum(d.fees.pending)} older transactions still being added`
+                : `${kas(d.fees.last24h)} today, ${kas(d.fees.last7d)} this week`)
+            : '',
     ].join('');
     $('kd-stats-note').textContent = '';
     $('kd-stats-when').textContent = d.updatedAt ? `as of ${new Date(d.updatedAt).toLocaleTimeString()}` : '';
