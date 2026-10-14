@@ -293,13 +293,13 @@ for (const item of document.querySelectorAll('.nav-item')) {
 
 /**
  * Overview > "Cycle through app overviews": the panel shows Overview, then each app switched on
- * in the sidebar (on its own Overview sub-tab), 5 seconds each, fading from one to the next,
- * and last All logs, scrolled smoothly from top to bottom and held 5 seconds; round and round. Any click or key pauses it, so it never moves a page out from under someone
+ * in the sidebar (on its own Overview sub-tab), 8 seconds each, fading from one to the next,
+ * and last All logs, scrolled smoothly from top to bottom and held 8 seconds; round and round. Any click or key pauses it, so it never moves a page out from under someone
  * using the panel; Resume in the top bar, or coming back to Overview, starts it again. The
  * setting is this browser's (localStorage); a hidden tab does not cycle.
  */
 const CYCLE_KEY = 'kqs-cycle-overviews';
-const CYCLE_MS = 5_000;
+const CYCLE_MS = 8_000;
 const CYCLE_FADE_MS = 450;
 const NOT_CYCLED = new Set(['overview', 'logs', 'experimental', 'global', 'support']);
 const CYCLE_SCROLL_PX_PER_S = 120;       // All logs scrolls at a pace you can follow
@@ -361,7 +361,7 @@ function scheduleCycle() {
     if (cycleRunning && !document.hidden && cycleScroll == null) cycleTimer = setTimeout(cycleStep, CYCLE_MS);
 }
 
-/** All logs: once it has faded in, scroll smoothly to the bottom, then the usual 5 seconds. */
+/** All logs: once it has faded in, scroll smoothly to the bottom, then the usual 8 seconds. */
 function cycleScrollLogs() {
     const from = window.scrollY;
     const to = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
