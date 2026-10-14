@@ -7304,7 +7304,7 @@ async function loadPushStats() {
         note.textContent =
             d.reason === 'unsupported'
                 ? 'Update the indexer to enable the device census (GET /push/stats).'
-                : 'The indexer is not reachable right now — start it to see the device census.';
+                : 'The indexer is not reachable right now, so start it to see the device census.';
         return;
     }
     const rows = [['Total devices', d.total ?? 0]];
