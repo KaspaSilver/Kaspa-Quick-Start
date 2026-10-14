@@ -2591,3 +2591,15 @@ body.cycling .tab.active { animation: cycle-in 0.55s ease both; }
 .dag-card .hint { margin-top: 8px; }
 .dag-legend { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; }
 .dag-legend i { display: inline-block; width: 10px; height: 8px; border-radius: 2px; }
+
+/* Global settings > Updates: one row per running app. */
+.app-updates { display: flex; flex-direction: column; }
+.app-update-row { display: grid; grid-template-columns: minmax(110px, 160px) minmax(0, 1fr) auto; gap: 6px 14px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+.app-update-row:first-child { border-top: 0; }
+.app-update-row .app-update-what { min-width: 0; }
+.app-update-row .app-update-what small { display: block; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.app-update-row .app-update-status { font-size: 13px; overflow-wrap: anywhere; }
+.app-update-row .row { flex-wrap: nowrap; gap: 6px; }
+@media (max-width: 700px) {
+    .app-update-row { grid-template-columns: minmax(0, 1fr); }
+}
