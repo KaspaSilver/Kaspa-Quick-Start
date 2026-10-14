@@ -3047,18 +3047,20 @@ function renderHost(data) {
     $('host-uptime').textContent = fmtUptime(machine.uptimeSeconds);
     $('host-load').textContent = Array.isArray(machine.loadAverage) ? machine.loadAverage.join('  ') : '–';
 
-    const rows = (data.services ?? []).map((svc) => {
-        const [tone, word] = !svc.installed
-            ? ['off', 'not installed']
-            : svc.running
-              ? ['ok', 'running']
-              : ['warn', svc.status || 'stopped'];
-        const uptime = svc.startedAt ? `up ${fmtDuration(svc.startedAt)}` : '';
-        return `<tr><td>${escapeHtml(svc.label)}</td><td><span class="tag ${tone}">${escapeHtml(word)}</span></td><td class="muted">${escapeHtml(uptime)}</td></tr>`;
+    // Small tiles, running first, then stopped, then not installed: the whole list fits on one
+    // screen without scrolling.
+    const order = (svc) => (!svc.installed ? 2 : svc.running ? 0 : 1);
+    const services = [...(data.services ?? [])].sort((a, b) => order(a) - order(b));
+    const tiles = services.map((svc) => {
+        const [dot, word] = !svc.installed ? ['', 'not installed'] : svc.running ? ['ok', 'running'] : ['warn', svc.status || 'stopped'];
+        const uptime = svc.running && svc.startedAt ? `, up ${fmtDuration(svc.startedAt)}` : '';
+        return `<div class="svc-card${svc.installed ? '' : ' absent'}"><span class="svc-dot ${dot}"></span><div class="svc-meta"><strong>${escapeHtml(svc.label)}</strong><small>${escapeHtml(word + uptime)}</small></div></div>`;
     });
-    $('host-services').innerHTML = rows.length
-        ? rows.join('')
-        : '<tr><td colspan="3" class="empty">Nothing on this machine yet.</td></tr>';
+    const count = (n) => services.filter((svc) => order(svc) === n).length;
+    $('host-services-sum').textContent = services.length
+        ? `${count(0)} running, ${count(1)} stopped, ${count(2)} not installed`
+        : '';
+    $('host-services').innerHTML = tiles.length ? tiles.join('') : '<p class="muted">Nothing on this machine yet.</p>';
 }
 
 async function refreshHost() {
