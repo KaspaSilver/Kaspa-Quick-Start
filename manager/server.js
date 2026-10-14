@@ -4073,7 +4073,7 @@ route('GET', /^\/api\/push$/, async (req, res) => {
 // rather than an error, so the card degrades gracefully.
 route('GET', /^\/api\/push\/stats$/, async (req, res) => {
     try {
-        const r = await fetch('http://kachat-app:8600/push/stats', { signal: AbortSignal.timeout(4000) });
+        const r = await fetch('http://kachat-app:8600/v1/push/stats', { signal: AbortSignal.timeout(4000) });
         if (!r.ok) {
             return sendJson(res, 200, { available: false, reason: r.status === 404 ? 'unsupported' : 'error', status: r.status });
         }
