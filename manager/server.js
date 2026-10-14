@@ -4694,6 +4694,8 @@ function migrateExposeModel(cfg) {
 async function bootstrap() {
     ensureDirs();
     protectManagerConfig();
+    // KaChat Bot runs unprivileged (BOT-008): hand it its bots file once at start.
+    bots.readBots();
 
     if (!fs.existsSync(NODE_CONFIG_FILE)) saveNodeConfig(structuredClone(DEFAULT_NODE_CONFIG));
     if (!fs.existsSync(PROXIES_FILE)) saveProxies([]);

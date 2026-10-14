@@ -58,7 +58,24 @@ export const catalogType = (type) => CATALOG.find((c) => c.type === type) ?? nul
 const ID_RE = /^[a-z0-9-]{1,32}$/;
 
 /** The bots file, created empty the first time so the container always has one to read. */
+/**
+ * KaChat Bot runs as its own unprivileged user, uid 10001 (KaChat-Bot BOT-008), and this file
+ * holds its keys, readable by its owner only: so its owner is that user. Done on every write and
+ * once for a file written before (until then the bot keeps running as root and says why).
+ */
+const BOT_UID = 10001;
+let botsFileOwned = false;
+function ownBotsFile() {
+    try {
+        fs.chownSync(BOTS_FILE, BOT_UID, BOT_UID);
+        botsFileOwned = true;
+    } catch {
+        /* no file yet, or a filesystem that has no owners (Docker Desktop): nothing to do */
+    }
+}
+
 export function readBots() {
+    if (!botsFileOwned) ownBotsFile();
     try {
         const doc = JSON.parse(fs.readFileSync(BOTS_FILE, 'utf8'));
         return { version: 1, bots: Array.isArray(doc.bots) ? doc.bots : [] };
@@ -74,6 +91,7 @@ export function writeBots(doc) {
     fs.writeFileSync(tmp, `${JSON.stringify({ version: 1, bots: doc.bots }, null, 2)}\n`, { mode: 0o600 });
     fs.renameSync(tmp, BOTS_FILE);
     fs.chmodSync(BOTS_FILE, 0o600);
+    ownBotsFile();
 }
 
 /**
