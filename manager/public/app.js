@@ -301,7 +301,8 @@ for (const item of document.querySelectorAll('.nav-item')) {
 const CYCLE_KEY = 'kqs-cycle-overviews';
 const CYCLE_MS = 8_000;
 const CYCLE_FADE_MS = 450;
-const NOT_CYCLED = new Set(['overview', 'logs', 'experimental', 'global', 'support']);
+// Not shown: settings pages, and the Push Service and Proxy & domains screens (owner's choice).
+const NOT_CYCLED = new Set(['overview', 'logs', 'experimental', 'global', 'support', 'push', 'proxy']);
 const CYCLE_SCROLL_PX_PER_S = 120;       // All logs scrolls at a pace you can follow
 let cycleRunning = false;
 let cycleTimer = null;
