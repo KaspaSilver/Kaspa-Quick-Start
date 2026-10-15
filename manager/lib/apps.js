@@ -297,7 +297,11 @@ export function loadAppsConfig() {
     // on wherever push was already configured (an FCM project or an Apple team), off otherwise.
     // The merge above would otherwise hand every caller the default `false`, and writeAppsEnv
     // then puts KACHAT_PUSH_ENABLED=false in .env, so the next indexer update turned push off.
-    if (stored.kachat?.pushEnabled === undefined) {
+    // A stored `false` with no `pushChoiceAt` was not chosen either (KQS-027, reopened): panels from
+    // 2026-10-13 14:26 to 2026-10-14 15:37 ET persisted that default on any save. Only the switch
+    // writes pushChoiceAt, so a choice made with it is kept.
+    const sk = stored.kachat ?? {};
+    if (sk.pushEnabled === undefined || (sk.pushEnabled === false && !sk.pushChoiceAt)) {
         cfg.kachat.pushEnabled = Boolean(cfg.kachat.fcmProjectId || cfg.kachat.apns?.teamId);
     }
 
@@ -331,6 +335,8 @@ export function validateAppsConfig(input) {
     // stays on while a fresh install stays off.
     cfg.kachat.pushEnabled =
         k.pushEnabled !== undefined ? Boolean(k.pushEnabled) : Boolean(k.fcmProjectId || k.apns?.teamId);
+    // When the Push Service switch itself last set pushEnabled (KQS-027): kept as is.
+    if (Number(k.pushChoiceAt) > 0) cfg.kachat.pushChoiceAt = Number(k.pushChoiceAt);
     // The ref is interpolated into a compose build context (`repo.git#ref`), so
     // it has to stay inside the characters git refs are allowed to use.
     const kref = String(k.ref ?? 'main').trim();

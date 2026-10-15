@@ -4185,6 +4185,8 @@ route('POST', /^\/api\/push\/config$/, async (req, res) => {
             kachat: {
                 ...current.kachat,
                 pushEnabled: body.pushEnabled ?? current.kachat.pushEnabled,
+                // Only the switch sends pushEnabled; remember it was a choice (KQS-027).
+                ...(body.pushEnabled !== undefined ? { pushChoiceAt: Date.now() } : {}),
                 fcmProjectId: body.fcmProjectId ?? current.kachat.fcmProjectId,
                 apns: { ...current.kachat.apns, ...(body.apns ?? {}) },
             },
