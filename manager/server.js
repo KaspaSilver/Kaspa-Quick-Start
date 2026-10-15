@@ -2578,8 +2578,8 @@ const GEN_WALLET_FROM_ENV =
 async function botGenerateWallet(network, fromKey = null) {
     const net = network || 'mainnet';
     const args = fromKey
-        ? ['run', '--rm', '-e', 'BOT_NET', '-e', 'BOT_FROM_KEY', '--entrypoint', 'python', botImageTag(), '-c', GEN_WALLET_FROM_ENV]
-        : ['run', '--rm', '--entrypoint', 'python', botImageTag(), 'gen_wallet.py', '--network', net];
+        ? ['run', '--rm', ...bots.BOT_USER_ARGS, '-e', 'BOT_NET', '-e', 'BOT_FROM_KEY', '--entrypoint', 'python', botImageTag(), '-c', GEN_WALLET_FROM_ENV]
+        : ['run', '--rm', ...bots.BOT_USER_ARGS, '--entrypoint', 'python', botImageTag(), 'gen_wallet.py', '--network', net];
     const { stdout } = await dockerctl.docker(args, {
         timeoutMs: 60_000,
         env: fromKey ? { BOT_NET: net, BOT_FROM_KEY: fromKey } : undefined,
@@ -2610,8 +2610,9 @@ async function botSendMessage(text, viaId = null) {
         // A given bot first (the one an alert is about), else the Mining notifier, else any.
         .sort((a, b) => (b.id === viaId) - (a.id === viaId) || (b.type === 'mining') - (a.type === 'mining'));
     if (!on.length) throw new Error('No bot is set up and on, so there is nothing to send the alert with.');
+    bots.ownBotState(); // the one-off runs as the bot user (BOT-008/009)
     return dockerctl.compose(
-        ['run', '--rm', '-T', '--no-deps', '--entrypoint', 'python', 'kachat-bot', 'botd.py', '--send', on[0].id, text, '--to', to],
+        ['run', '--rm', ...bots.BOT_USER_ARGS, '-T', '--no-deps', '--entrypoint', 'python', 'kachat-bot', 'botd.py', '--send', on[0].id, text, '--to', to],
         { profile: 'bot', timeoutMs: 3 * 60_000 },
     );
 }
@@ -3044,8 +3045,9 @@ route('POST', /^\/api\/bots\/([a-z0-9-]+)\/sweep$/, async (req, res, match) => {
     if (!(await botImageBuilt())) return fail(res, 409, 'Rebuild the KaChat Bot first (Bot, Updates, Rebuild).');
     const job = jobs.start(`Send ${b.type} bot funds to your wallet`, async (onLine) => {
         onLine(`Sending everything in ${b.address} to ${to}.`);
+        bots.ownBotState(); // the one-off runs as the bot user (BOT-008/009)
         const { stdout } = await dockerctl.compose(
-            ['run', '--rm', '-T', '--no-deps', '--entrypoint', 'python', 'kachat-bot', 'botd.py', '--sweep', id, to],
+            ['run', '--rm', ...bots.BOT_USER_ARGS, '-T', '--no-deps', '--entrypoint', 'python', 'kachat-bot', 'botd.py', '--sweep', id, to],
             { profile: 'bot', timeoutMs: 4 * 60_000 },
         ).catch((err) => ({ stdout: err.stdout || '', failed: err }));
         let r = null;
@@ -4219,6 +4221,8 @@ route('POST', /^\/api\/push\/config$/, async (req, res) => {
             kachat: {
                 ...current.kachat,
                 pushEnabled: body.pushEnabled ?? current.kachat.pushEnabled,
+                // Only the switch sends pushEnabled; remember it was a choice (KQS-027).
+                ...(body.pushEnabled !== undefined ? { pushChoiceAt: Date.now() } : {}),
                 fcmProjectId: body.fcmProjectId ?? current.kachat.fcmProjectId,
                 apns: { ...current.kachat.apns, ...(body.apns ?? {}) },
             },
