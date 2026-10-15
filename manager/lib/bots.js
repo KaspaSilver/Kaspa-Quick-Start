@@ -74,6 +74,26 @@ function ownBotsFile() {
     }
 }
 
+/**
+ * The bot's state folder belongs to its user too (BOT-008/009): handed over before the panel
+ * runs a one-off bot command, so that command (run as uid 10001) can write the outbox and status
+ * even when the daemon has not started yet to do it. Small folder; best effort.
+ */
+export function ownBotState() {
+    const walk = (p) => {
+        try {
+            fs.lchownSync(p, BOT_UID, BOT_UID);
+            if (fs.lstatSync(p).isDirectory()) for (const n of fs.readdirSync(p)) walk(path.join(p, n));
+        } catch {
+            /* gone, or a filesystem without owners (Docker Desktop) */
+        }
+    };
+    walk(path.join(BOT_DIR, 'state'));
+}
+
+/** `docker run` / `compose run` arguments that make a one-off bot command run as the bot user. */
+export const BOT_USER_ARGS = ['--user', `${BOT_UID}:${BOT_UID}`];
+
 export function readBots() {
     if (!botsFileOwned) ownBotsFile();
     try {
