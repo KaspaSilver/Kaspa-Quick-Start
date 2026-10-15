@@ -4351,6 +4351,31 @@ document.addEventListener(
     true,
 );
 
+// The kinds after kchat:1:, grouped the way people think of them; anything else is "other".
+const KACHAT_TX_GROUPS = [
+    ['private chats', ['comm', 'dm', 'handshake', 'self_stash']],
+    ['group chats', ['gcomm', 'gctl']],
+    ['public chats', ['bcast']],
+    ['payments', ['pay']],
+    ['KaPosts', ['post', 'reply', 'quote', 'repost', 'vote', 'follow', 'unfollow', 'block', 'unblock', 'broadcast', 'mention']],
+    ['.kachat', ['name', 'offer']],
+    ['profiles', ['profile']],
+];
+
+function kachatDayBreakdown(d) {
+    const by = { ...(d.by_kind ?? {}) };
+    const parts = [];
+    for (const [label, kinds] of KACHAT_TX_GROUPS) {
+        const n = kinds.reduce((sum, k) => sum + (by[k] ?? 0), 0);
+        for (const k of kinds) delete by[k];
+        if (n) parts.push(`${fmtNum(n)} ${label}`);
+    }
+    const other = Object.values(by).reduce((a, b) => a + b, 0);
+    if (other) parts.push(`${fmtNum(other)} other`);
+    const since = d.since ? ` (counting since ${new Date(d.since).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })})` : '';
+    return (parts.join(', ') || 'none yet') + since;
+}
+
 async function loadKachatOverview() {
     try {
         const health = await kachat('health');
@@ -4398,22 +4423,11 @@ async function loadKachatOverview() {
         // is still backfilling history and only becomes a live rate once it has
         // caught up with the tip.
         $('kachat-hour').textContent = fmtNum(s.ingest_last_60m);
-        // The day's KaChat transactions (an indexer from before tx_24h leaves it blank).
+        // Every KaChat transaction of the last 24 hours, by kind (the word after kchat:1:),
+        // grouped for reading. An indexer from before this leaves it blank.
         const d = s.tx_24h;
         $('kachat-day').textContent = d ? fmtNum(d.total) : '–';
-        $('kachat-day-detail').textContent = !d
-            ? 'Update the indexer to count these.'
-            : [
-                  d.chats == null
-                      ? 'private chats not counted (chat indexer not reachable)'
-                      : `${fmtNum(d.chats)} private chat${d.chats === 1 ? '' : 's'}${
-                            d.chats_since && Date.now() - d.chats_since < 23 * 3_600_000
-                                ? ` (counting since ${new Date(d.chats_since).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })})`
-                                : ''
-                        }`,
-                  `${fmtNum(d.kaposts)} KaPosts`,
-                  `${fmtNum(d.public_chats)} public chats`,
-              ].join(', ');
+        $('kachat-day-detail').textContent = !d ? 'Update the indexer to count these.' : kachatDayBreakdown(d);
         $('kachat-5m').textContent = fmtNum(s.ingest_last_5m);
         $('kachat-messages').textContent = fmtNum(cm.contextual_messages ?? 0);
         $('kachat-blocks').textContent = fmtNum(cm.blocks_processed ?? 0);
