@@ -274,7 +274,11 @@ function selectTab(name) {
     // A section's log streams only while it is on screen.
     syncSvcLog();
     // Read on arrival rather than polled: nothing on it changes by itself.
-    if (name === 'global') loadGlobal().catch(() => {});
+    if (name === 'global') {
+        loadGlobal().catch(() => {});
+        // Updates is the first sub-tab, so its app list starts on arrival too.
+        setGlobalAppUpdates(!!$('sub-global-update')?.classList.contains('active'));
+    }
     if (name === 'bot') loadBot().catch(() => {});
     if (name === 'push') loadPush().catch(() => {});
     if (name === 'names') loadNames().catch(() => {});
