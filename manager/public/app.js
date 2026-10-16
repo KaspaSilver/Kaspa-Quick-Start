@@ -4412,8 +4412,10 @@ const KACHAT_TX_GROUPS = [
     ['group chats', ['gcomm', 'gctl']],
     ['public chats', ['bcast']],
     ['payments', ['pay']],
-    ['KaPosts', ['post', 'reply', 'quote', 'repost', 'vote', 'follow', 'unfollow', 'block', 'unblock', 'broadcast', 'mention']],
-    ['.kachat', ['name', 'offer']],
+    // Every KaPosts op the indexer reads (kasia-indexer FOREIGN_KACHAT_OPS), tips apart (KQS-030).
+    ['KaPosts', ['post', 'reply', 'quote', 'unquote', 'vote', 'upvote', 'downvote', 'follow', 'unfollow', 'block', 'unblock', 'edit', 'delete', 'poll', 'pollvote', 'broadcast']],
+    ['tips', ['tip']],
+    ['.kachat', ['name', 'offer', 'prices']],
     ['profiles', ['profile']],
 ];
 
