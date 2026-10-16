@@ -4312,6 +4312,17 @@ route('GET', /^\/api\/system\/panel-latest$/, async (req, res, match, url) => {
 
 route('POST', /^\/api\/system\/panel-update$/, async (req, res) => {
     const body = await readBody(req);
+    // Updating the panel recreates the manager, which kills the running job and loses the
+    // queue (it lives in memory). So not while anything is running or waiting (KQS-032).
+    const busy = [...(jobs.busy ? [jobs.snapshot()] : []), ...jobs.pending].map((j) => j.name);
+    if (busy.length) {
+        return fail(
+            res,
+            409,
+            'The Update Queue is not empty. Updating the panel now would stop what is running and lose what is waiting, so wait for it to finish (System, Update Queue).',
+            { details: busy },
+        );
+    }
     try {
         const started = await selfservice.updatePanel({
             repo: String(body.repo || 'KaspaSilver/Kaspa-Quick-Start').trim(),

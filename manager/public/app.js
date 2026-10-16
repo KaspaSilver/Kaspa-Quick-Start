@@ -8905,10 +8905,33 @@ $('global-check-btn').addEventListener('click', async () => {
     }
 });
 
+/**
+ * Updating the panel recreates the manager, which would stop the job running and lose
+ * everything waiting in the Update Queue, so the manager refuses while it is not empty
+ * (KQS-032). Asked first here, so the answer is "wait" with a way to the queue, not an error.
+ * True when the queue is busy (and the person has been told).
+ */
+async function panelUpdateBlockedByQueue() {
+    let q;
+    try {
+        q = await api('/api/jobs/queue');
+    } catch {
+        return false; // the manager answers for itself if it is busy
+    }
+    const names = [...(q.current ? [q.current.name] : []), ...(q.pending ?? []).map((j) => j.name)];
+    if (!names.length) return false;
+    const open = await askConfirm(
+        `Wait for the Update Queue first\n\nUpdating the panel restarts it, which would stop what is running and lose what is waiting:\n\n• ${names.join('\n• ')}\n\nOpen the Update Queue? Update the panel again once it is empty.`,
+    );
+    if (open) selectTab('queue');
+    return true;
+}
+
 $('global-update-btn').addEventListener('click', async () => {
     const button = $('global-update-btn');
     const repo = $('global-repo').value.trim();
     const ref = $('global-ref').value.trim();
+    if (await panelUpdateBlockedByQueue()) return;
     if (!await askConfirm(`Update the panel from ${repo}@${ref}?\n\nIt will go offline for a minute or two while it rebuilds. The node keeps running.`)) return;
 
     button.disabled = true;
@@ -9413,6 +9436,7 @@ $('exp-list')?.addEventListener('click', async (ev) => {
     const ref = ev.target.closest('[data-exp-try]')?.dataset.expTry;
     if (!ref) return;
     const b = expState?.branches.find((x) => x.branch === ref);
+    if (await panelUpdateBlockedByQueue()) return;
     const ok = await askConfirm(
         `Try "${b?.title ?? ref}"?\n\nThis rebuilds the panel from the branch ${ref}: the regular panel plus what is being tested. ` +
             'It is offline for a minute or two; the node and every app keep running. System > Experimental brings you back to main.',
@@ -9436,13 +9460,22 @@ $('exp-leave-btn')?.addEventListener('click', async () => {
             'Then the panel rebuilds from main. It is offline for a minute or two; the node and every app keep running.',
     );
     if (!ok) return;
+    if (await panelUpdateBlockedByQueue()) return;
     for (const a of apps) {
-        // Before going back to main, whose panel cannot run it.
-        await queueAction({
+        // Before going back to main, whose panel cannot run it. If one did not happen (it
+        // failed, or was taken out of the queue), stop here rather than leave main a panel
+        // that cannot manage it (KQS-032).
+        const job = await queueAction({
             title: `Uninstalling ${a.label}`,
             noCancel: true,
             request: (headers) => api(`/api/services/${a.key}/uninstall`, { method: 'POST', body: { keepData, confirm: a.key }, headers }),
         });
+        if (!job?.ok) {
+            await askConfirm(
+                `Still on this branch\n\n${a.label} was not uninstalled (${job?.status === 'cancelled' ? 'it was taken out of the queue' : job?.error || 'it failed'}), and main's panel cannot manage it, so the panel was not switched. See System, Update Queue for its log, then try again.`,
+            );
+            return;
+        }
     }
     try {
         await switchPanelTo('main');
