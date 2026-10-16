@@ -2686,15 +2686,15 @@
     <!-- ---------------------------------------------------------- support -->
     <section id="tab-global" class="tab">
       <nav class="subnav" aria-label="Global settings">
-        <button class="subtab-btn active" data-subtab="global-password">Password</button>
+        <button class="subtab-btn active" data-subtab="global-update">Updates</button>
+        <button class="subtab-btn" data-subtab="global-password">Password</button>
         <button class="subtab-btn" data-subtab="global-address">Address</button>
-        <button class="subtab-btn" data-subtab="global-update">Updates</button>
         <button class="subtab-btn" data-subtab="global-log">Panel log</button>
         <button class="subtab-btn" data-subtab="global-cache">Clear cache</button>
         <button class="subtab-btn" data-subtab="global-teardown">Remove everything</button>
       </nav>
 
-      <div id="sub-global-password" class="subtab active">
+      <div id="sub-global-password" class="subtab">
         <div class="grid">
         <article class="card span2" id="password-card">
           <h3>Admin password</h3>
@@ -2755,7 +2755,7 @@
 
       <!-- Updating takes the panel offline for a minute or two, which is not
            something to leave one scroll under a password field. -->
-      <div id="sub-global-update" class="subtab">
+      <div id="sub-global-update" class="subtab active">
         <div class="grid">
         <article class="card span2">
           <h3>Update the control panel</h3>
