@@ -3895,6 +3895,11 @@ async function reconcileNamesRoutes() {
     for (const net of Object.keys(kachatDomains.NETWORKS)) {
         const N = kachatDomains.NETWORKS[net];
         const st = await dockerctl.containerState(N.container).catch(() => null);
+        // The indexer's KaPosts pushes name the actor from this server's /identity once it is
+        // installed with a registry (IDX-029); without one, the lookup is off. Picked up the
+        // next time the indexer container is recreated (its Update).
+        const identity = st && kachatDomains.manifestSet(net) ? `http://${N.host}:3080` : '';
+        if ((readEnvFile()[N.envIdentity] ?? '') !== identity) updateEnvFile({ [N.envIdentity]: identity });
         if (!st) continue;
         const should = st.running && kachatDomains.manifestSet(net);
         if (kachatDomains.routed(net) !== should) {
