@@ -52,11 +52,20 @@ class JobRunner extends EventEmitter {
         // leave the queue while they wait, but Cancel is refused once running.
         const noCancel = asked?.noCancel === true;
         if (queued && asked.title) name = asked.title;
-        // The same update asked for twice while it still waits is one update.
-        // (Once it is running, asking again lines up a second run, which is
-        // how to pick up a commit pushed during the first one.)
-        const waiting = this.queue.find(({ job }) => job.name === name);
-        if (waiting) return waiting.job;
+        // The same thing asked for again while it is the last one waiting is one
+        // job, and the latest click wins: its function replaces the waiting one,
+        // because routes save new settings and capture them in `fn` (Rebuild on
+        // fix-x, then fix-y, builds fix-y). Anything else lined up behind it in
+        // between means the order matters (Stop, Start, Stop must end stopped),
+        // so then it is a new job. Once running, asking again lines up a second
+        // run, which is how to pick up a commit pushed during the first one.
+        // (kachat-audits KQS-031)
+        const last = this.queue[this.queue.length - 1];
+        if (last && last.job.name === name) {
+            last.fn = fn;
+            last.job.noCancel = noCancel;
+            return last.job;
+        }
 
         const job = {
             // Two clicks in the same millisecond used to collide, which nothing
