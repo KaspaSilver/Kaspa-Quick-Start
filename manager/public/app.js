@@ -8787,6 +8787,8 @@ $('password-save').addEventListener('click', async () => {
 
 $('panel-port-save').addEventListener('click', async () => {
     const port = Number($('panel-port').value);
+    // The restart would kill the running job and lose the queue (KQS-033).
+    if (await panelUpdateBlockedByQueue('Moving the panel to another port')) return;
     if (!await askConfirm(`Move this panel to port ${port}?\n\nIt restarts, and this page will follow it to the new address. Anything you have bookmarked stops working.`)) return;
 
     $('panel-port-save').disabled = true;
@@ -8817,9 +8819,14 @@ $('panel-port-save').addEventListener('click', async () => {
 
 $('panel-lan')?.addEventListener('change', async (event) => {
     const lan = event.target.checked;
+    // The restart would kill the running job and lose the queue (KQS-033).
+    if (await panelUpdateBlockedByQueue('Changing who can open the panel')) {
+        event.target.checked = !lan;
+        return;
+    }
     const ok = await askConfirm(
         lan
-            ? 'Let other machines on your network open this panel?\n\nIt restarts (the node and every app keep running). The panel speaks plain HTTP, so your password crosses the network unencrypted: only do this on a network you trust, and never on a server whose port faces the internet. For remote access use Proxy & domains (HTTPS) or an SSH tunnel.'
+            ? 'Let other machines on your network open this panel?\n\nThe panel restarts; the node and every app keep running (the Update Queue must be empty, since a restart would lose it). The panel speaks plain HTTP, so your password crosses the network unencrypted: only do this on a network you trust, and never on a server whose port faces the internet. For remote access use Proxy & domains (HTTPS) or an SSH tunnel.'
             : 'Limit the panel to this machine only?\n\nIt restarts. Afterwards it opens only at http://localhost on the server itself.',
     );
     if (!ok) {
@@ -8912,7 +8919,7 @@ $('global-check-btn').addEventListener('click', async () => {
  * (KQS-032). Asked first here, so the answer is "wait" with a way to the queue, not an error.
  * True when the queue is busy (and the person has been told).
  */
-async function panelUpdateBlockedByQueue() {
+async function panelUpdateBlockedByQueue(what = 'Updating the panel') {
     let q;
     try {
         q = await api('/api/jobs/queue');
@@ -8922,7 +8929,7 @@ async function panelUpdateBlockedByQueue() {
     const names = [...(q.current ? [q.current.name] : []), ...(q.pending ?? []).map((j) => j.name)];
     if (!names.length) return false;
     const open = await askConfirm(
-        `Wait for the Update Queue first\n\nUpdating the panel restarts it, which would stop what is running and lose what is waiting:\n\n• ${names.join('\n• ')}\n\nOpen the Update Queue? Update the panel again once it is empty.`,
+        `Wait for the Update Queue first\n\n${what} restarts the panel, which would stop what is running and lose what is waiting:\n\n• ${names.join('\n• ')}\n\nOpen the Update Queue? Try again once it is empty.`,
     );
     if (open) selectTab('queue');
     return true;

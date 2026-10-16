@@ -1438,6 +1438,24 @@ route('POST', /^\/api\/proxy\/ports$/, async (req, res) => {
  * answer goes out. The browser has to be told where to look next, because the
  * address it is on stops working.
  */
+/**
+ * Anything that recreates the manager (updating the panel, changing its port or who can reach
+ * it) kills the running job and loses the queue, which lives in memory. So none of them while a
+ * job runs or waits: answered 409 with the jobs' names, before anything is saved (KQS-032,
+ * KQS-033). True when it answered.
+ */
+function refuseWhileQueueBusy(res, what) {
+    const busy = [...(jobs.busy ? [jobs.snapshot()] : []), ...jobs.pending].map((j) => j.name);
+    if (!busy.length) return false;
+    fail(
+        res,
+        409,
+        `The Update Queue is not empty. ${what} restarts the panel, which would stop what is running and lose what is waiting, so wait for it to finish (System, Update Queue).`,
+        { details: busy },
+    );
+    return true;
+}
+
 route('POST', /^\/api\/panel\/port$/, async (req, res) => {
     const body = await readBody(req);
     const wanted = Number(body.port);
@@ -1448,6 +1466,7 @@ route('POST', /^\/api\/panel\/port$/, async (req, res) => {
         return fail(res, 409, `Port ${wanted} belongs to the reverse proxy.`);
     }
     if (wanted === (Number(env.GUI_PORT) || 8080)) return sendJson(res, 200, { ok: true, unchanged: true });
+    if (refuseWhileQueueBusy(res, 'Changing the panel port')) return;
 
     updateEnvFile({ GUI_PORT: String(wanted) });
     await selfservice.restartManager();
@@ -1468,6 +1487,7 @@ route('POST', /^\/api\/panel\/bind$/, async (req, res) => {
     }
     const wanted = lan ? '0.0.0.0' : '127.0.0.1';
     if (managerBind() === wanted) return sendJson(res, 200, { ok: true, unchanged: true, bind: wanted });
+    if (refuseWhileQueueBusy(res, 'Changing who can open the panel')) return;
     updateEnvFile({ MANAGER_BIND: wanted });
     await selfservice.restartManager();
     sendJson(res, 202, { ok: true, restarting: true, bind: wanted });
@@ -4346,17 +4366,7 @@ route('GET', /^\/api\/system\/panel-latest$/, async (req, res, match, url) => {
 
 route('POST', /^\/api\/system\/panel-update$/, async (req, res) => {
     const body = await readBody(req);
-    // Updating the panel recreates the manager, which kills the running job and loses the
-    // queue (it lives in memory). So not while anything is running or waiting (KQS-032).
-    const busy = [...(jobs.busy ? [jobs.snapshot()] : []), ...jobs.pending].map((j) => j.name);
-    if (busy.length) {
-        return fail(
-            res,
-            409,
-            'The Update Queue is not empty. Updating the panel now would stop what is running and lose what is waiting, so wait for it to finish (System, Update Queue).',
-            { details: busy },
-        );
-    }
+    if (refuseWhileQueueBusy(res, 'Updating the panel')) return;
     try {
         const started = await selfservice.updatePanel({
             repo: String(body.repo || 'KaspaSilver/Kaspa-Quick-Start').trim(),
