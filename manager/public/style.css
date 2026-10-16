@@ -143,6 +143,7 @@ body {
 .sidebar.collapsed .label,
 .sidebar.collapsed .nav-group-title,
 .sidebar.collapsed .badge,
+.sidebar.collapsed .nav-count,
 .sidebar.collapsed #logout {
     display: none;
 }
@@ -399,6 +400,7 @@ body {
     .sidebar.collapsed .label,
     .sidebar.collapsed .nav-group-title,
     .sidebar.collapsed .badge,
+    .sidebar.collapsed .nav-count,
     .sidebar.collapsed #logout { display: revert; }
     .sidebar.collapsed .nav-item { justify-content: flex-start; padding-inline: 10px; }
     #sidebar-toggle { display: none; }
@@ -2593,3 +2595,110 @@ body.cycling .tab.active { animation: cycle-in 0.55s ease both; }
 
 /* Indexer overview: the day's KaChat transactions, above the Pipeline tiles. */
 .stat.stat-wide { margin-bottom: 12px; }
+
+/* ---------------------------------------------------------- update queue -- */
+
+.nav-count {
+    margin-left: auto;
+    min-width: 20px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--accent-dim);
+    color: var(--text);
+    font-size: 11px;
+    font-weight: 600;
+    text-align: center;
+}
+
+.queue-current-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 14px;
+    margin-bottom: 10px;
+}
+.queue-current-head button { margin-left: auto; }
+
+.queue-log {
+    margin: 0;
+    max-height: 420px;
+    overflow: auto;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 10px;
+}
+#queue-current-log { min-height: 160px; }
+
+.queue-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 8px;
+}
+
+.queue-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+}
+.queue-row button { margin-left: auto; }
+
+.queue-pos {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: inline-grid;
+    place-items: center;
+    background: var(--panel-2);
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.queue-name { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+
+.queue-done {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+.queue-done .queue-log { border: 0; border-top: 1px solid var(--line); border-radius: 0; }
+
+.queue-done-head {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    padding: 8px 10px;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+}
+
+.queue-status {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: var(--panel-2);
+    color: var(--muted);
+}
+.queue-status.good { color: var(--ok); }
+.queue-status.bad { color: var(--danger); }

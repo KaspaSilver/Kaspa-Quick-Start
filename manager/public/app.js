@@ -35,10 +35,10 @@ function noOverlap(fn) {
     };
 }
 
-async function api(path, { method = 'GET', body } = {}) {
+async function api(path, { method = 'GET', body, headers = {} } = {}) {
     const res = await fetch(path, {
         method,
-        headers: body ? { 'Content-Type': 'application/json' } : {},
+        headers: body ? { 'Content-Type': 'application/json', ...headers } : headers,
         body: body ? JSON.stringify(body) : undefined,
     });
     let data = {};
@@ -279,6 +279,7 @@ function selectTab(name) {
         // Updates is the first sub-tab, so its app list starts on arrival too.
         setGlobalAppUpdates(!!$('sub-global-update')?.classList.contains('active'));
     }
+    setUpdateQueueView(name === 'queue');
     if (name === 'bot') loadBot().catch(() => {});
     if (name === 'push') loadPush().catch(() => {});
     if (name === 'names') loadNames().catch(() => {});
@@ -1327,6 +1328,45 @@ async function runAction({ key, title, note, request, cancellable = true, termin
     return action.done;
 }
 
+/**
+ * Updates and rebuilds go to the Update Queue (System, Update Queue) instead of
+ * the overlay. A build can take half an hour, and the overlay meant watching
+ * every one of them before the next could be asked for. Now each Update click
+ * lines its job up and hands the page straight back; the manager runs them one
+ * at a time in the order they were asked for, and the queue page shows the one
+ * running (its log and how long it has been going) and what waits behind it.
+ *
+ * `request(headers)` must pass the headers to its api() call: they tell the
+ * manager this job is a queued one, and what to call it there.
+ */
+const queueEnds = new Map();
+
+async function queueAction({ title, request, onEnd }) {
+    const headers = { 'X-KQS-Queue': '1', 'X-KQS-Queue-Title': encodeURIComponent(title) };
+    let response;
+    try {
+        response = await request(headers);
+    } catch (e) {
+        toast(`${title}: ${e.message}`, 'bad');
+        return null;
+    }
+    // Answered on the spot ("already on the newest version"): nothing to queue.
+    if (!response?.jobId) {
+        toast(response?.message ?? `${title}: nothing to do.`);
+        return null;
+    }
+    if (onEnd) queueEnds.set(response.jobId, onEnd);
+    const ahead = updateQueue.current ? 1 + updateQueue.pending.length : 0;
+    toast(
+        ahead
+            ? `${title}: added to the Update Queue (${ahead} ahead of it). See System, Update Queue.`
+            : `${title}: started. Follow it in System, Update Queue.`,
+        'good',
+    );
+    loadUpdateQueue();
+    return response.jobId;
+}
+
 const ACTION_VERBS = { start: 'Starting', stop: 'Stopping', restart: 'Restarting' };
 
 // Each service is switched on in whatever way its own API expects.
@@ -2222,12 +2262,10 @@ $('apply-update').addEventListener('click', async () => {
     );
     if (!ok) return;
 
-    await runAction({
-        key: 'node',
-        title: `Updating kaspad to ${latestRelease.latest}`,
-        note: 'The image is rebuilt and the node restarted onto it. Chain data is kept, so there is no resync.',
-        request: async () => {
-            const r = await api('/api/update/apply', { method: 'POST', body: { version: latestRelease.latest, testnet } });
+    await queueAction({
+        title: `Updating ${testnet ? 'the testnet kaspad' : 'kaspad'} to ${latestRelease.latest}`,
+        request: async (headers) => {
+            const r = await api('/api/update/apply', { method: 'POST', body: { version: latestRelease.latest, testnet }, headers });
             return r.alreadyCurrent ? { ...r, message: 'Already on the newest version. Nothing to do.' } : r;
         },
     });
@@ -2291,11 +2329,9 @@ $('install-release').addEventListener('click', async () => {
     ) {
         return;
     }
-    await runAction({
-        key: 'node',
+    await queueAction({
         title: `Installing ${networkView === 'testnet' ? 'the testnet kaspad' : 'kaspad'} ${version}`,
-        note: 'The image is rebuilt at that version. Chain data is kept, so there is no resync.',
-        request: () => api('/api/update/apply', { method: 'POST', body: { version, testnet: networkView === 'testnet' } }),
+        request: (headers) => api('/api/update/apply', { method: 'POST', body: { version, testnet: networkView === 'testnet' }, headers }),
     });
 });
 
@@ -3989,13 +4025,10 @@ function collectAppConfig(name) {
 for (const app of ['kachat', 'desktop']) {
     $(`${app}-rebuild`).addEventListener('click', async () => {
         $(`${app}-error`).hidden = true;
-        // Same streaming overlay the Update button and the sidebar switches use,
-        // so a rebuild shows its build log instead of a silent spinner.
-        await runAction({
-            key: app,
+        // Into the Update Queue, where its build log can be watched (System, Update Queue).
+        await queueAction({
             title: `Rebuilding ${appsState?.apps?.[app]?.label ?? app}`,
-            note: 'Compiled from source, which takes a while. It stays up until the new build is ready, and a build that fails leaves the running one alone.',
-            request: () => api(`/api/apps/${app}`, { method: 'PUT', body: { config: collectAppConfig(app) } }),
+            request: (headers) => api(`/api/apps/${app}`, { method: 'PUT', body: { config: collectAppConfig(app) }, headers }),
         });
         loadApps();
     });
@@ -4114,11 +4147,9 @@ for (const name of ['kachat', 'desktop', 'nextcloud']) {
 
     $(`${name}-update`).addEventListener('click', async () => {
         if (!await askConfirm(`Rebuild ${name} from the newest commit?\n\nIt will be unavailable while it rebuilds.`)) return;
-        await runAction({
-            key: name,
-            title: `Rebuilding ${appsState?.apps?.[name]?.label ?? name}`,
-            note: 'Compiled from the newest commit, which takes a while. It is unavailable until it finishes, and a build that fails leaves the running one alone.',
-            request: () => api(`/api/apps/${name}/update`, { method: 'POST' }),
+        await queueAction({
+            title: `Updating ${appsState?.apps?.[name]?.label ?? name}`,
+            request: (headers) => api(`/api/apps/${name}/update`, { method: 'POST', headers }),
         });
     });
 }
@@ -4344,12 +4375,11 @@ document.addEventListener(
         if (id === 'kachat-check') return void loadTestnetIndexerUpdate();
         if (id === 'kachat-update') {
             if (!await askConfirm('Update the testnet-10 indexer?\n\nIt rebuilds KaChat-Indexer and recreates only the testnet indexer. Indexed data is kept.')) return;
-            return void runAction({
-                key: 'kachat-testnet',
+            return void queueAction({
                 title: 'Updating the testnet indexer',
-                note: 'Compiles KaChat-Indexer from source, then recreates only the testnet indexer. The mainnet indexer is not touched.',
-                request: () => api('/api/kachat-testnet/update', { method: 'POST' }),
-            }).then(() => loadTestnetIndexerUpdate());
+                request: (headers) => api('/api/kachat-testnet/update', { method: 'POST', headers }),
+                onEnd: () => loadTestnetIndexerUpdate(),
+            });
         }
     },
     true,
@@ -6743,11 +6773,9 @@ $('bot-check').addEventListener('click', async () => {
 
 $('bot-update').addEventListener('click', async () => {
     if (!await askConfirm('Rebuild the bot from the newest commit?\n\nIt stops sending notifications while it rebuilds.')) return;
-    await runAction({
-        key: 'bot',
+    await queueAction({
         title: 'Rebuilding KaChat Bot',
-        note: 'Built from the newest commit on the branch above. It is not sending anything until it finishes.',
-        request: () => api('/api/apps/bot/update', { method: 'POST' }),
+        request: (headers) => api('/api/apps/bot/update', { method: 'POST', headers }),
     });
 });
 
@@ -7221,15 +7249,15 @@ $('kd-check')?.addEventListener('click', async () => {
 });
 
 $('kd-update')?.addEventListener('click', async () => {
-    await runAction({
-        key: effectiveService('kachat-domains'),
+    await queueAction({
         title: 'Updating .kachat Domains',
-        note: 'Rebuilds the registry tooling and the names server, verifies the manifests again, and brings a running server back on the new build.',
-        request: () => api('/api/kachat-domains/update', { method: 'POST' }),
+        request: (headers) => api('/api/kachat-domains/update', { method: 'POST', headers }),
+        onEnd: (job) => {
+            if (job.status === 'succeeded') $('kd-update-status').textContent = 'Updated. Check again any time.';
+            loadNames().catch(() => {});
+        },
     });
     $('kd-update').disabled = true;
-    $('kd-update-status').textContent = 'Updated. Check again any time.';
-    loadNames().catch(() => {});
 });
 
 async function loadNames() {
@@ -8007,6 +8035,7 @@ document.addEventListener('click', (event) => {
 // None of these is a service, so their dots stay hollow rather than implying a
 // state they cannot have.
 setNavHealth('logs', 'none');
+setNavHealth('queue', 'none');
 setNavHealth('global', 'none');
 setNavHealth('support', 'none');
 
@@ -8210,7 +8239,8 @@ let jobStream = null;
 /** What is waiting, now that there is no console head to put it in. */
 let lastQueueNote = '';
 function renderQueue(pending) {
-    const list = pending ?? [];
+    // Queued updates have their own page; this is for what waits behind an overlay.
+    const list = (pending ?? []).filter((j) => !j.queued);
     const note = list.length ? `then: ${list.map((j) => j.name).join(', ')}` : '';
     // Only when it changes: this runs on every job event, and a toast repeating
     // itself is worse than no toast at all.
@@ -8312,8 +8342,11 @@ function connectJobs() {
     // starting from the next line.
     jobStream.addEventListener('snapshot', (event) => {
         const job = JSON.parse(event.data);
+        loadUpdateQueue();
         if (job.status !== 'running') return;
         for (const line of job.lines ?? []) pushJobLine(line);
+        // Queued updates are watched on the Update Queue page, never in the overlay.
+        if (job.queued) return;
         renderQueue(job.pending);
         adoptRunningJob(
             job,
@@ -8322,8 +8355,13 @@ function connectJobs() {
     });
     jobStream.addEventListener('start', (event) => {
         const job = JSON.parse(event.data);
-        renderQueue(job.pending);
+        loadUpdateQueue();
         pushJobLine(`\n> ${job.name}`);
+        if (job.queued) {
+            if (!pendingAction) toast(`${job.name}: started (System, Update Queue)`);
+            return;
+        }
+        renderQueue(job.pending);
 
         // The overlay is open on a job that has finished, and another was
         // waiting behind it. Follow that one rather than leaving it to run with
@@ -8339,6 +8377,9 @@ function connectJobs() {
     // between a queue and a click that appeared to do nothing.
     jobStream.addEventListener('queued', (event) => {
         const job = JSON.parse(event.data);
+        loadUpdateQueue();
+        // queueAction has already said where it went.
+        if (job.queued) return;
         if (job.ahead === 0 && !job.running) return;
         const waiting = `Waiting for ${job.running ?? 'the job running now'} to finish first.`;
         // If this is the overlay's own job, it belongs in its log rather than
@@ -8351,6 +8392,7 @@ function connectJobs() {
     jobStream.addEventListener('line', (event) => {
         const { line, jobId } = JSON.parse(event.data);
         pushJobLine(line);
+        updateQueueLine(jobId, line);
         // The overlay shows the action it started; a tab watching its own job
         // shows that one. Everything is in All logs either way.
         actionLine(jobId, line);
@@ -8358,7 +8400,15 @@ function connectJobs() {
     });
     jobStream.addEventListener('end', (event) => {
         const job = JSON.parse(event.data);
-        renderQueue(job.pending);
+        loadUpdateQueue();
+        const after = queueEnds.get(job.id);
+        if (after) {
+            queueEnds.delete(job.id);
+            Promise.resolve()
+                .then(() => after(job))
+                .catch(() => {});
+        }
+        if (!job.queued) renderQueue(job.pending);
         const wasOurs = pendingAction?.jobId === job.id;
         actionJobEnded(job);
         // Whether a service exists changes when a job finishes, and nothing
@@ -8390,6 +8440,188 @@ function connectJobs() {
         loadKassigner();
     });
 }
+
+// ------------------------------------------------------------ update queue ---
+
+/**
+ * System, Update Queue: what the manager is doing, one job at a time, and what
+ * it will do next. The job running now shows its log as it arrives and how long
+ * it has been going; the ones waiting can be taken out of the line; the last ten
+ * finished keep their logs for when something went wrong.
+ *
+ * Every job is listed, not only updates: there is one line for all of them, and
+ * a Restart asked for during a rebuild waits behind it like anything else.
+ */
+let updateQueue = { current: null, pending: [], history: [] };
+let updateQueueTimer = null;
+const updateQueueOpen = new Set();
+
+function queueClock(ms) {
+    const seconds = Math.max(0, Math.round(ms / 1000));
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ${String(seconds % 60).padStart(2, '0')}s`;
+    return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`;
+}
+
+function queueSince(iso) {
+    const t = Date.parse(iso ?? '');
+    return Number.isNaN(t) ? null : t;
+}
+
+const loadUpdateQueue = debounce(async () => {
+    try {
+        updateQueue = await api('/api/jobs/queue');
+    } catch {
+        return;
+    }
+    renderUpdateQueue();
+}, 200);
+
+function renderUpdateQueueCount() {
+    const count = (updateQueue.current ? 1 : 0) + updateQueue.pending.length;
+    const badge = $('queue-count');
+    if (badge) {
+        badge.hidden = count === 0;
+        badge.textContent = String(count);
+    }
+    setNavHealth('queue', updateQueue.current ? 'warn' : 'none');
+}
+
+function renderUpdateQueue() {
+    renderUpdateQueueCount();
+    if (!$('tab-queue')?.classList.contains('active')) return;
+
+    const cur = updateQueue.current;
+    $('queue-current-empty').hidden = Boolean(cur);
+    $('queue-current').hidden = !cur;
+    if (cur) {
+        const card = $('queue-current');
+        if (card.dataset.job !== cur.id) {
+            card.dataset.job = cur.id;
+            $('queue-current-name').textContent = cur.name;
+            const log = $('queue-current-log');
+            log.textContent = (cur.lines ?? []).join('\n') + '\n';
+            log.scrollTop = log.scrollHeight;
+            const cancel = $('queue-current-cancel');
+            cancel.disabled = false;
+            cancel.textContent = 'Cancel';
+        }
+        tickUpdateQueue();
+    } else {
+        $('queue-current').dataset.job = '';
+    }
+
+    const waiting = $('queue-pending');
+    $('queue-pending-empty').hidden = updateQueue.pending.length > 0;
+    waiting.innerHTML = updateQueue.pending
+        .map(
+            (j, i) =>
+                `<li class="queue-row"><span class="queue-pos">${i + 1}</span>` +
+                `<span class="queue-name">${escapeHtml(j.name)}</span>` +
+                `<span class="muted queue-when" data-since="${escapeHtml(j.queuedAt ?? '')}"></span>` +
+                `<button class="ghost" data-queue-cancel="${escapeHtml(j.id)}">Remove</button></li>`,
+        )
+        .join('');
+
+    const done = $('queue-history');
+    $('queue-history-empty').hidden = updateQueue.history.length > 0;
+    done.innerHTML = updateQueue.history
+        .map((j) => {
+            const took = queueSince(j.finishedAt) && queueSince(j.startedAt) ? queueClock(queueSince(j.finishedAt) - queueSince(j.startedAt)) : '';
+            const label = { succeeded: 'done', failed: 'failed', cancelled: 'cancelled' }[j.status] ?? j.status;
+            const tone = { succeeded: 'good', failed: 'bad' }[j.status] ?? '';
+            const when = queueSince(j.finishedAt) ? new Date(queueSince(j.finishedAt)).toLocaleString() : '';
+            const open = updateQueueOpen.has(j.id);
+            return (
+                `<li class="queue-done"><button class="queue-done-head" data-queue-open="${escapeHtml(j.id)}">` +
+                `<span class="queue-status ${tone}">${escapeHtml(label)}</span>` +
+                `<span class="queue-name">${escapeHtml(j.name)}</span>` +
+                `<span class="muted">${escapeHtml(took ? `took ${took}` : '')}</span>` +
+                `<span class="muted">${escapeHtml(when)}</span></button>` +
+                (open ? `<pre class="queue-log">${escapeHtml((j.lines ?? []).join('\n'))}</pre>` : '') +
+                `</li>`
+            );
+        })
+        .join('');
+    tickUpdateQueue();
+}
+
+/** The clocks: how long the running job has been going, how long each waiting one has waited. */
+function tickUpdateQueue() {
+    const cur = updateQueue.current;
+    const began = queueSince(cur?.startedAt);
+    if (began) $('queue-current-elapsed').textContent = `Running for ${queueClock(Date.now() - began)}`;
+    for (const node of document.querySelectorAll('#queue-pending [data-since]')) {
+        const at = queueSince(node.dataset.since);
+        node.textContent = at ? `waiting ${queueClock(Date.now() - at)}` : '';
+    }
+}
+
+/** A line from the job stream, for the running job's log on the queue page. */
+function updateQueueLine(jobId, line) {
+    const cur = updateQueue.current;
+    if (!cur || cur.id !== jobId) return;
+    (cur.lines ??= []).push(line);
+    if (cur.lines.length > 2000) cur.lines.shift();
+    if (!$('tab-queue')?.classList.contains('active') || $('queue-current').dataset.job !== jobId) return;
+    const log = $('queue-current-log');
+    const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+    log.textContent += `${line}\n`;
+    if (atBottom) log.scrollTop = log.scrollHeight;
+}
+
+function setUpdateQueueView(on) {
+    clearInterval(updateQueueTimer);
+    updateQueueTimer = null;
+    if (!on) return;
+    $('queue-current').dataset.job = '';
+    loadUpdateQueue();
+    updateQueueTimer = setInterval(() => {
+        if (!$('tab-queue')?.classList.contains('active')) return setUpdateQueueView(false);
+        tickUpdateQueue();
+    }, 1000);
+}
+
+async function cancelQueuedJob(id, name, running) {
+    const question = running
+        ? `Cancel "${name}"?\n\nWhatever it has already done stays done: this stops it where it is rather than undoing it. A build keeps the parts it finished, so starting again does not start from the beginning.`
+        : `Take "${name}" out of the queue?\n\nIt has not started, so nothing has changed yet.`;
+    if (!(await askConfirm(question))) return false;
+    try {
+        await api(`/api/jobs/${id}/cancel`, { method: 'POST' });
+        return true;
+    } catch (e) {
+        toast(e.message, 'bad');
+        return false;
+    } finally {
+        loadUpdateQueue();
+    }
+}
+
+$('queue-current-cancel')?.addEventListener('click', async () => {
+    const cur = updateQueue.current;
+    if (!cur) return;
+    const button = $('queue-current-cancel');
+    if (await cancelQueuedJob(cur.id, cur.name, true)) {
+        button.disabled = true;
+        button.textContent = 'Cancelling…';
+    }
+});
+
+$('queue-pending')?.addEventListener('click', (event) => {
+    const id = event.target.closest('[data-queue-cancel]')?.dataset.queueCancel;
+    const job = updateQueue.pending.find((j) => j.id === id);
+    if (job) cancelQueuedJob(job.id, job.name, false);
+});
+
+$('queue-history')?.addEventListener('click', (event) => {
+    const id = event.target.closest('[data-queue-open]')?.dataset.queueOpen;
+    if (!id) return;
+    if (updateQueueOpen.has(id)) updateQueueOpen.delete(id);
+    else updateQueueOpen.add(id);
+    renderUpdateQueue();
+});
 
 // ------------------------------------------------------------------- boot ---
 

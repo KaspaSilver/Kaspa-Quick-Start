@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { EventEmitter } from 'node:events';
 import { jobContext } from './jobcontext.js';
 import { killJob } from './dockerctl.js';
@@ -13,6 +14,16 @@ import { killJob } from './dockerctl.js';
  * with a "Busy" error for trying -- and the only thing wrong with asking was
  * the timing, which a queue knows how to fix.
  */
+/**
+ * What the request that is starting a job asked for. Update and Rebuild buttons
+ * send their work to the Update Queue (System, Update Queue) instead of a
+ * full-screen log: the page stays usable, several can be lined up, and the
+ * queue page shows the one running and what waits behind it. The server wraps
+ * every route in this store, so `start` knows which kind it is without every
+ * route passing it along.
+ */
+export const requestContext = new AsyncLocalStorage();
+
 class JobRunner extends EventEmitter {
     current = null;
     queue = [];
@@ -25,16 +36,34 @@ class JobRunner extends EventEmitter {
 
     /** Everything asked for and not yet finished, in the order it will run. */
     get pending() {
-        return this.queue.map(({ job }) => ({ id: job.id, name: job.name, status: job.status }));
+        return this.queue.map(({ job }) => ({
+            id: job.id,
+            name: job.name,
+            status: job.status,
+            queued: job.queued,
+            queuedAt: job.queuedAt,
+        }));
     }
 
     start(name, fn) {
+        const asked = requestContext.getStore();
+        const queued = asked?.queued === true;
+        if (queued && asked.title) name = asked.title;
+        // The same update asked for twice while it still waits is one update.
+        // (Once it is running, asking again lines up a second run, which is
+        // how to pick up a commit pushed during the first one.)
+        const waiting = this.queue.find(({ job }) => job.name === name);
+        if (waiting) return waiting.job;
+
         const job = {
             // Two clicks in the same millisecond used to collide, which nothing
             // noticed while only one job could exist at a time.
             id: `${Date.now().toString(36)}-${(this.#seq += 1).toString(36)}`,
             name,
             status: 'queued',
+            // Sent to the Update Queue rather than watched in the overlay.
+            queued,
+            queuedAt: new Date().toISOString(),
             startedAt: null,
             finishedAt: null,
             lines: [],
@@ -116,6 +145,8 @@ class JobRunner extends EventEmitter {
             job.status = 'cancelled';
             job.error = 'Cancelled before it started.';
             job.finishedAt = new Date().toISOString();
+            this.history.unshift({ ...job, lines: [job.error] });
+            this.history = this.history.slice(0, 10);
             this.emit('end', { ...job, pending: this.pending });
             return { cancelled: true, started: false };
         }
@@ -141,8 +172,28 @@ class JobRunner extends EventEmitter {
 
     snapshot() {
         if (!this.current) return null;
-        const { id, name, status, startedAt, finishedAt, error, lines } = this.current;
-        return { id, name, status, startedAt, finishedAt, error, lines: lines.slice(-400), pending: this.pending };
+        const { id, name, status, queued, queuedAt, startedAt, finishedAt, error, lines } = this.current;
+        return { id, name, status, queued, queuedAt, startedAt, finishedAt, error, lines: lines.slice(-400), pending: this.pending };
+    }
+
+    /** Everything the Update Queue page shows: running, waiting, and the last ten finished. */
+    view() {
+        const current = this.busy ? this.snapshot() : null;
+        return {
+            current,
+            pending: this.pending,
+            history: this.history.map(({ id, name, status, queued, queuedAt, startedAt, finishedAt, error, lines }) => ({
+                id,
+                name,
+                status,
+                queued,
+                queuedAt,
+                startedAt,
+                finishedAt,
+                error,
+                lines,
+            })),
+        };
     }
 }
 
