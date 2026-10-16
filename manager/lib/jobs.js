@@ -48,6 +48,9 @@ class JobRunner extends EventEmitter {
     start(name, fn) {
         const asked = requestContext.getStore();
         const queued = asked?.queued === true;
+        // Some jobs must run to the end once started (uninstalling): they can
+        // leave the queue while they wait, but Cancel is refused once running.
+        const noCancel = asked?.noCancel === true;
         if (queued && asked.title) name = asked.title;
         // The same update asked for twice while it still waits is one update.
         // (Once it is running, asking again lines up a second run, which is
@@ -63,6 +66,7 @@ class JobRunner extends EventEmitter {
             status: 'queued',
             // Sent to the Update Queue rather than watched in the overlay.
             queued,
+            noCancel,
             queuedAt: new Date().toISOString(),
             startedAt: null,
             finishedAt: null,
@@ -154,6 +158,9 @@ class JobRunner extends EventEmitter {
         if (this.current?.id !== id || this.current.status !== 'running') {
             return { cancelled: false, reason: 'That job is not running.' };
         }
+        if (this.current.noCancel) {
+            return { cancelled: false, reason: 'This one cannot be stopped partway: it would leave half of it behind.' };
+        }
 
         // Marked first: whichever way the function ends after its processes
         // die, the end handler has to know this was asked for.
@@ -172,8 +179,8 @@ class JobRunner extends EventEmitter {
 
     snapshot() {
         if (!this.current) return null;
-        const { id, name, status, queued, queuedAt, startedAt, finishedAt, error, lines } = this.current;
-        return { id, name, status, queued, queuedAt, startedAt, finishedAt, error, lines: lines.slice(-400), pending: this.pending };
+        const { id, name, status, queued, noCancel, queuedAt, startedAt, finishedAt, error, lines } = this.current;
+        return { id, name, status, queued, noCancel, queuedAt, startedAt, finishedAt, error, lines: lines.slice(-400), pending: this.pending };
     }
 
     /** Everything the Update Queue page shows: running, waiting, and the last ten finished. */

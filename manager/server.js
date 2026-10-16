@@ -4665,7 +4665,7 @@ async function handleRequest(req, res) {
         } catch {
             title = null;
         }
-        const asked = { queued: req.headers['x-kqs-queue'] === '1', title };
+        const asked = { queued: req.headers['x-kqs-queue'] === '1', title, noCancel: req.headers['x-kqs-no-cancel'] === '1' };
         await requestContext.run(asked, () => match.handler(req, res, match.pattern.exec(url.pathname), url));
     } catch (err) {
         log('request failed', url.pathname, err);

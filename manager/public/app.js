@@ -1340,22 +1340,56 @@ async function runAction({ key, title, note, request, cancellable = true, termin
  * manager this job is a queued one, and what to call it there.
  */
 const queueEnds = new Map();
+// Jobs that ended before this page was waiting on them (an instant failure can
+// beat its own job id back), kept briefly so the wait still settles.
+const queueEnded = new Map();
 
-async function queueAction({ title, request, onEnd }) {
+/** A job ended: settle whoever is waiting on it, or keep it for whoever is about to. */
+function settleQueueJob(job) {
+    const waiter = queueEnds.get(job.id);
+    if (waiter) {
+        queueEnds.delete(job.id);
+        waiter(job);
+        return;
+    }
+    queueEnded.set(job.id, job);
+    if (queueEnded.size > 50) queueEnded.delete(queueEnded.keys().next().value);
+}
+
+/**
+ * Resolves with the job ({ ok, status, error, ... }) once it has finished, so a
+ * switch can stay held until then and flip back on failure; the page itself
+ * stays usable the whole time. `noCancel`: once started it runs to the end.
+ */
+async function queueAction({ title, request, onEnd, noCancel = false }) {
     const headers = { 'X-KQS-Queue': '1', 'X-KQS-Queue-Title': encodeURIComponent(title) };
+    if (noCancel) headers['X-KQS-No-Cancel'] = '1';
     let response;
     try {
         response = await request(headers);
     } catch (e) {
         toast(`${title}: ${e.message}`, 'bad');
-        return null;
+        return { ok: false, status: 'failed', error: e.message };
     }
     // Answered on the spot ("already on the newest version"): nothing to queue.
     if (!response?.jobId) {
         toast(response?.message ?? `${title}: nothing to do.`);
-        return null;
+        return { ok: true, status: 'succeeded' };
     }
-    if (onEnd) queueEnds.set(response.jobId, onEnd);
+    const ended = new Promise((resolve) => {
+        const finish = (job) => {
+            const result = { ...job, ok: job.status === 'succeeded' };
+            Promise.resolve()
+                .then(() => onEnd?.(result))
+                .catch(() => {});
+            resolve(result);
+        };
+        const early = queueEnded.get(response.jobId);
+        if (early) {
+            queueEnded.delete(response.jobId);
+            finish(early);
+        } else queueEnds.set(response.jobId, finish);
+    });
     const ahead = updateQueue.current ? 1 + updateQueue.pending.length : 0;
     toast(
         ahead
@@ -1364,7 +1398,7 @@ async function queueAction({ title, request, onEnd }) {
         'good',
     );
     loadUpdateQueue();
-    return response.jobId;
+    return ended;
 }
 
 const ACTION_VERBS = { start: 'Starting', stop: 'Stopping', restart: 'Restarting' };
@@ -1379,13 +1413,13 @@ const ACTION_VERBS = { start: 'Starting', stop: 'Stopping', restart: 'Restarting
  * one careless click from gone. Installing and removing are their own actions
  * now, with their own buttons.
  */
-const start = (key) => (on) => api(`/api/services/${key}/${on ? 'start' : 'stop'}`, { method: 'POST' });
+const start = (key) => (on, headers) => api(`/api/services/${key}/${on ? 'start' : 'stop'}`, { method: 'POST', headers });
 
 const SERVICE_ACTIONS = {
-    node: (on) => api(`/api/node/${on ? 'start' : 'stop'}`, { method: 'POST' }),
+    node: (on, headers) => api(`/api/node/${on ? 'start' : 'stop'}`, { method: 'POST', headers }),
     // Not a container: it fetches and verifies firmware, so there is nothing to
     // install or leave running.
-    kassigner: (on) => api('/api/kassigner', { method: 'PUT', body: { enabled: on } }),
+    kassigner: (on, headers) => api('/api/kassigner', { method: 'PUT', body: { enabled: on }, headers }),
     mining: start('mining'),
     kachat: start('kachat'),
     desktop: start('desktop'),
@@ -1425,10 +1459,9 @@ for (const input of document.querySelectorAll('[data-service]')) {
         // Push is not a container: flip the indexer's master flag instead of start/stop, applied
         // on a short indexer restart (same restart "Save push settings" does).
         if (service === 'push') {
-            const job = await runAction({
-                key: 'push',
+            const job = await queueAction({
                 title: wanted ? 'Turning push on' : 'Turning push off',
-                request: () => api('/api/push/config', { method: 'POST', body: { pushEnabled: wanted } }),
+                request: (headers) => api('/api/push/config', { method: 'POST', body: { pushEnabled: wanted }, headers }),
             });
             if (!job?.ok) input.checked = !wanted; // setting .checked fires no change event
             input.dataset.busy = '0';
@@ -1464,15 +1497,12 @@ for (const input of document.querySelectorAll('[data-service]')) {
         const unitKey = effectiveService(service);
         // Anything without a bespoke action goes through the generic route, so a new switch can
         // never fail in the browser for want of an entry here.
-        const request = unitKey === service ? (SERVICE_ACTIONS[service] ?? start(service)) : (on) => start(unitKey)(on);
+        const request = unitKey === service ? (SERVICE_ACTIONS[service] ?? start(service)) : (on, headers) => start(unitKey)(on, headers);
 
-        const job = await runAction({
-            key: unitKey,
+        // Into the Update Queue; the switch stays held until the job has finished.
+        const job = await queueAction({
             title: `${wanted ? 'Starting' : 'Stopping'} ${name}${unitKey !== service ? ' (testnet)' : ''}`,
-            note: wanted
-                ? 'Starting a container that already exists is quick. Nothing is rebuilt.'
-                : 'The container stops and keeps everything: its data, its image, and the container itself.',
-            request: () => request(wanted),
+            request: (headers) => request(wanted, headers),
         });
 
         // Setting .checked does not fire change, so putting the switch back is
@@ -2094,14 +2124,9 @@ document.addEventListener('click', async (event) => {
 for (const button of document.querySelectorAll('[data-node]')) {
     button.addEventListener('click', async () => {
         const action = button.dataset.node;
-        await runAction({
-            key: 'node',
+        await queueAction({
             title: `${ACTION_VERBS[action] ?? action} the node`,
-            note:
-                action === 'stop'
-                    ? 'The container stops and keeps everything: its chain data, its image, and the container itself.'
-                    : 'Nothing is rebuilt and no chain data is touched.',
-            request: () => api(`/api/node/${action}`, { method: 'POST' }),
+            request: (headers) => api(`/api/node/${action}`, { method: 'POST', headers }),
         });
     });
 }
@@ -3147,11 +3172,9 @@ $('mining-save').addEventListener('click', async () => {
 for (const button of document.querySelectorAll('[data-bridge]')) {
     button.addEventListener('click', async () => {
         const action = button.dataset.bridge;
-        await runAction({
-            key: 'mining',
+        await queueAction({
             title: `${ACTION_VERBS[action] ?? action} the stratum bridge`,
-            note: 'Miners connected to it lose their connection and reconnect on their own.',
-            request: () => api(`/api/mining/${action}`, { method: 'POST' }),
+            request: (headers) => api(`/api/mining/${action}`, { method: 'POST', headers }),
         });
     });
 }
@@ -4160,11 +4183,9 @@ for (const button of document.querySelectorAll('[data-app-action]')) {
     button.addEventListener('click', async () => {
         const [name, action] = button.dataset.appAction.split('/');
         const verb = ACTION_VERBS[action] ?? action;
-        await runAction({
-            key: name,
+        await queueAction({
             title: `${verb} ${appsState?.apps?.[name]?.label ?? name}`,
-            note: 'Nothing is rebuilt and nothing is removed.',
-            request: () => api(`/api/apps/${button.dataset.appAction}`, { method: 'POST' }),
+            request: (headers) => api(`/api/apps/${button.dataset.appAction}`, { method: 'POST', headers }),
         });
     });
 }
@@ -6357,14 +6378,9 @@ document.addEventListener('click', async (event) => {
     if (!key) return;
 
     const label = serviceState[key]?.label ?? key;
-    await runAction({
-        key,
+    await queueAction({
         title: `Installing ${label}`,
-        note:
-            serviceState[key]?.runnable === false
-                ? 'Downloading the firmware and checking it against the published hashes.'
-                : 'The first install builds an image from source, which can take a long time. It does not start the service -- that is the switch. Leave this open.',
-        request: () => api(`/api/services/${key}/install`, { method: 'POST' }),
+        request: (headers) => api(`/api/services/${key}/install`, { method: 'POST', headers }),
     });
 });
 
@@ -6382,7 +6398,6 @@ document.addEventListener('click', async (event) => {
 
     const state = serviceState[key];
     const keepData = document.querySelector(`[data-keepdata="${key}"]`)?.checked === true;
-    const what = keepData ? 'its containers and images' : `its containers, images and ${UNINSTALL_COPY[key]}`;
 
     // Typed rather than clicked. This is the one action in the panel that
     // deletes something a person cannot get back. Typed into the card, not a
@@ -6391,11 +6406,12 @@ document.addEventListener('click', async (event) => {
     const typed = document.querySelector(`[data-uninstall-typed="${key}"]`)?.value.trim();
     if (typed !== key) return toast('Type the name exactly to confirm. Nothing was removed.');
 
-    await runAction({
-        key,
+    // Stopping partway would leave half of it behind, so once
+    // it starts it runs to the end (it can still leave the queue while it waits).
+    await queueAction({
         title: `Uninstalling ${state?.label ?? key}`,
-        note: `Removing ${what}. Stopping partway through would leave half of it behind, so this runs to the end.`,
-        request: () => api(`/api/services/${key}/uninstall`, { method: 'POST', body: { confirm: key, keepData } }),
+        noCancel: true,
+        request: (headers) => api(`/api/services/${key}/uninstall`, { method: 'POST', body: { confirm: key, keepData }, headers }),
     });
 });
 
@@ -8401,13 +8417,7 @@ function connectJobs() {
     jobStream.addEventListener('end', (event) => {
         const job = JSON.parse(event.data);
         loadUpdateQueue();
-        const after = queueEnds.get(job.id);
-        if (after) {
-            queueEnds.delete(job.id);
-            Promise.resolve()
-                .then(() => after(job))
-                .catch(() => {});
-        }
+        settleQueueJob(job);
         if (!job.queued) renderQueue(job.pending);
         const wasOurs = pendingAction?.jobId === job.id;
         actionJobEnded(job);
@@ -8475,6 +8485,9 @@ const loadUpdateQueue = debounce(async () => {
     } catch {
         return;
     }
+    for (const job of updateQueue.history ?? []) {
+        if (queueEnds.has(job.id)) settleQueueJob(job);
+    }
     renderUpdateQueue();
 }, 200);
 
@@ -8504,6 +8517,7 @@ function renderUpdateQueue() {
             log.textContent = (cur.lines ?? []).join('\n') + '\n';
             log.scrollTop = log.scrollHeight;
             const cancel = $('queue-current-cancel');
+            cancel.hidden = cur.noCancel === true;
             cancel.disabled = false;
             cancel.textContent = 'Cancel';
         }
@@ -9421,11 +9435,11 @@ $('exp-leave-btn')?.addEventListener('click', async () => {
     );
     if (!ok) return;
     for (const a of apps) {
-        await runAction({
-            key: a.key,
+        // Before going back to main, whose panel cannot run it.
+        await queueAction({
             title: `Uninstalling ${a.label}`,
-            note: 'Before going back to main, whose panel cannot run it.',
-            request: () => api(`/api/services/${a.key}/uninstall`, { method: 'POST', body: { keepData, confirm: a.key } }),
+            noCancel: true,
+            request: (headers) => api(`/api/services/${a.key}/uninstall`, { method: 'POST', body: { keepData, confirm: a.key }, headers }),
         });
     }
     try {
