@@ -167,6 +167,10 @@ services:
       # this field keep their current behavior; the panel writes true/false when toggled.
       KACHAT_PUSH_ENABLED: ${KACHAT_PUSH_ENABLED:-true}
       APNS_KEY_PATH: /push/apns/AuthKey.p8
+      # Where KaPosts pushes look up the actor's .kachat name (GET <url>/identity/<address>): this
+      # network's .kachat Domains server, set by the panel once it is installed; empty = lookup
+      # off, short addresses only (kachat-audits IDX-029, KACHAT_NAMES_STANDALONE.md).
+      KACHAT_IDENTITY_URL: ${KACHAT_IDENTITY_URL_MAINNET:-}
       # fjall=warn silences the per-write "Stalling writes ... many segments in L0" INFO
       # flood (~23 lines/s) that pins CPU and evicts all other logs within ~3h. Keep the
       # indexer's own logs at info.
@@ -645,6 +649,10 @@ services:
       # this field keep their current behavior; the panel writes true/false when toggled.
       KACHAT_PUSH_ENABLED: ${KACHAT_PUSH_ENABLED:-true}
       APNS_KEY_PATH: /push/apns/AuthKey.p8
+      # Where KaPosts pushes look up the actor's .kachat name (GET <url>/identity/<address>): this
+      # network's .kachat Domains server, set by the panel once it is installed; empty = lookup
+      # off, short addresses only (kachat-audits IDX-029, KACHAT_NAMES_STANDALONE.md).
+      KACHAT_IDENTITY_URL: ${KACHAT_IDENTITY_URL_TESTNET:-}
       # No .kachat names here: the registry runs in .kachat Domains' own server
       # (kachat-names-testnet below), which the proxy routes the names paths to.
       # Profiles follower start (hex); empty = the names manifest's scanFrom, else the pruning point.
