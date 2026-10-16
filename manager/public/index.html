@@ -249,6 +249,14 @@
         </button>
       </div>
       <div class="nav-row">
+        <button class="nav-item" data-tab="queue" title="Update Queue">
+          <span class="nav-dot" data-health="queue"></span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h11M4 12h11M4 18h7M18 14v6M15 17l3 3 3-3"/></svg>
+          <span class="label">Update Queue</span>
+          <span class="nav-count" id="queue-count" hidden>0</span>
+        </button>
+      </div>
+      <div class="nav-row">
         <button class="nav-item" data-tab="experimental" title="Experimental">
           <span class="nav-dot" data-health="experimental"></span>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6M10 3v6l-5 9a2 2 0 001.8 3h10.4a2 2 0 001.8-3l-5-9V3"/><path d="M7.5 15h9"/></svg>
@@ -2555,6 +2563,40 @@
       </div>
       <!-- One tile per container, all fed by a single multiplexed stream. -->
       <div class="log-grid" id="log-grid"></div>
+    </section>
+
+    <!-- ----------------------------------------------------- update queue -->
+    <!--
+      Updates and rebuilds line up here instead of covering the screen. The
+      manager runs one job at a time, in the order asked for.
+    -->
+    <section id="tab-queue" class="tab">
+      <div class="grid">
+        <article class="card span2">
+          <h3>Running now</h3>
+          <p class="muted" id="queue-current-empty">Nothing is running. Update, Rebuild, Install, Uninstall, Start, Stop and Restart all line up here, one at a time; you can keep using the panel while they run.</p>
+          <div id="queue-current" hidden>
+            <div class="queue-current-head">
+              <strong id="queue-current-name"></strong>
+              <span class="muted" id="queue-current-elapsed"></span>
+              <button class="ghost" id="queue-current-cancel">Cancel</button>
+            </div>
+            <pre class="queue-log" id="queue-current-log"></pre>
+          </div>
+        </article>
+        <article class="card span2">
+          <h3>Waiting</h3>
+          <p class="muted">Each one starts by itself when the one before it finishes.</p>
+          <p class="muted" id="queue-pending-empty">Nothing is waiting.</p>
+          <ol class="queue-list" id="queue-pending"></ol>
+        </article>
+        <article class="card span2">
+          <h3>Finished</h3>
+          <p class="muted">The last ten, newest first. Click one to see its log.</p>
+          <p class="muted" id="queue-history-empty">Nothing has finished since the panel started.</p>
+          <ol class="queue-list" id="queue-history"></ol>
+        </article>
+      </div>
     </section>
 
     <!-- -------------------------------------------------------- kassigner -->

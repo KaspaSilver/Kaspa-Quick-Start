@@ -54,7 +54,7 @@ import * as bot from './lib/bot.js';
 import * as bots from './lib/bots.js';
 import * as backup from './lib/backup.js';
 import { nodeSnapshot, rpc, rpcTestnet } from './lib/rpc.js';
-import { jobs } from './lib/jobs.js';
+import { jobs, requestContext } from './lib/jobs.js';
 import {
     authConfigured,
     authRequired,
@@ -1129,8 +1129,9 @@ route('GET', /^\/api\/jobs\/stream$/, async (req, res) => {
     const snapshot = jobs.snapshot();
     if (snapshot) send('snapshot', snapshot);
     const onLine = (e) => send('line', e);
-    const onStart = (job) => send('start', { id: job.id, name: job.name, pending: jobs.pending });
-    const onEnd = (job) => send('end', { id: job.id, name: job.name, status: job.status, error: job.error, pending: jobs.pending });
+    const onStart = (job) => send('start', { id: job.id, name: job.name, queued: job.queued, startedAt: job.startedAt, pending: jobs.pending });
+    const onEnd = (job) =>
+        send('end', { id: job.id, name: job.name, queued: job.queued, status: job.status, error: job.error, pending: jobs.pending });
     // Asked for but not started. Without this the browser has no way to show
     // that a second request was accepted rather than swallowed.
     const onQueued = (job) => send('queued', job);
@@ -1147,6 +1148,9 @@ route('GET', /^\/api\/jobs\/stream$/, async (req, res) => {
 });
 
 route('GET', /^\/api\/jobs\/current$/, async (req, res) => sendJson(res, 200, { job: jobs.snapshot(), busy: jobs.busy }));
+
+// System, Update Queue: the job running now (with its log), what waits behind it, and the last ten.
+route('GET', /^\/api\/jobs\/queue$/, async (req, res) => sendJson(res, 200, jobs.view()));
 
 /**
  * Stop a job. What it had already done stays done -- the overlay says so before
@@ -4687,7 +4691,16 @@ async function handleRequest(req, res) {
     }
 
     try {
-        await match.handler(req, res, match.pattern.exec(url.pathname), url);
+        // An Update or Rebuild button asks for its job to go to the Update Queue
+        // (and names it the way the button does).
+        let title = null;
+        try {
+            title = decodeURIComponent(String(req.headers['x-kqs-queue-title'] || '')).slice(0, 120) || null;
+        } catch {
+            title = null;
+        }
+        const asked = { queued: req.headers['x-kqs-queue'] === '1', title, noCancel: req.headers['x-kqs-no-cancel'] === '1' };
+        await requestContext.run(asked, () => match.handler(req, res, match.pattern.exec(url.pathname), url));
     } catch (err) {
         log('request failed', url.pathname, err);
         if (!res.headersSent) fail(res, 500, err.message || 'Internal error');
