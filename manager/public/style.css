@@ -2716,3 +2716,12 @@ body.cycling .tab.active { animation: cycle-in 0.55s ease both; }
 }
 .queue-status.good { color: var(--ok); }
 .queue-status.bad { color: var(--danger); }
+
+/* ------------------------------------------------- offer refund keeper -- */
+
+.keeper-table .good { color: var(--ok); font-weight: 600; }
+.keeper-table .bad { color: var(--danger); font-weight: 600; }
+.keeper-table td:last-child { text-align: right; white-space: nowrap; }
+.keeper-log { margin-top: 12px; }
+.keeper-log summary { cursor: pointer; color: var(--muted); }
+.keeper-log pre { margin-top: 8px; }

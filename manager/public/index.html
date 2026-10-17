@@ -1720,6 +1720,7 @@
       <nav class="subnav" aria-label=".kachat Domains">
         <button class="subtab-btn active" data-subtab="names-overview">Overview</button>
         <button class="subtab-btn" data-subtab="names-updates">Updates</button>
+        <button class="subtab-btn" data-subtab="names-refunds">Refunds</button>
         <button class="subtab-btn" data-subtab="names-rules">Rules</button>
         <button class="subtab-btn" data-subtab="names-log">Log</button>
         <button class="subtab-btn" data-subtab="names-uninstall">Uninstall</button>
@@ -1794,6 +1795,35 @@
               <button type="button" id="kd-check" class="ghost">Check for updates</button>
               <button type="button" id="kd-update" class="primary" disabled>Update</button>
             </div>
+          </article>
+        </div>
+      </div>
+
+      <!-- The offer refund keeper (kachat-domains docs/KQS.md section 6): every 6 hours it refunds
+           expired .kachat offers to their buyers from this server, on each network it runs. -->
+      <div id="sub-names-refunds" class="subtab">
+        <div class="grid">
+          <article class="card span2">
+            <div class="node-head">
+              <h3>Offer refund keeper</h3>
+              <label class="switch" title="Refund expired offers every few hours"><input type="checkbox" id="keeper-enabled" checked aria-label="Offer refund keeper on or off"><span class="track"></span></label>
+            </div>
+            <p class="muted">
+              A .kachat offer stays acceptable by the seller until someone spends it, even after it
+              expires: nothing on chain runs by itself. Once an offer's refund time has passed, the
+              contract lets anyone send it back, and only to the buyer, with the fee taken from the
+              offer. This server does that every <span id="keeper-every">6</span> hours for every
+              buyer, using its own node. No wallet or key of yours is used, and no KAS of yours is
+              spent. Another server refunding the same offer first is normal.
+            </p>
+            <div id="keeper-alert" class="update-status error" hidden></div>
+            <div class="scroll-x">
+              <table class="keeper-table">
+                <thead><tr><th>Network</th><th>Last run</th><th>Result</th><th>Refunded</th><th>Next run</th><th></th></tr></thead>
+                <tbody id="keeper-rows"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
+              </table>
+            </div>
+            <details class="keeper-log"><summary>Last run's output</summary><pre id="keeper-tail" class="queue-log">Nothing yet.</pre></details>
           </article>
         </div>
       </div>

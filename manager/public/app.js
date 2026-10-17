@@ -844,6 +844,7 @@ function selectSubtab(section, name) {
     if (name === 'kassigner-updates') loadKassignerReleases().catch(() => {});
     setGlobalAppUpdates(name === 'global-update');
     if (name === 'names-rules') loadNamesRules().catch(() => {});
+    if (name === 'names-refunds') loadKeeper().catch(() => {});
     if (name === 'global-cache') loadDiskCache().catch(() => {});
 }
 
@@ -7277,6 +7278,76 @@ $('kd-update')?.addEventListener('click', async () => {
         },
     });
     $('kd-update').disabled = true;
+});
+
+// ------------------------------------------------------ offer refund keeper ---
+
+/**
+ * .kachat Domains, Refunds: the offer refund keeper's switch and each network's last run. The
+ * keeper itself runs in the manager every few hours (lib/refund-keeper.js); this only shows it.
+ */
+const keeperWhen = (ms) => (ms ? new Date(ms).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'never');
+
+function renderKeeper(v) {
+    $('keeper-enabled').checked = v.enabled;
+    $('keeper-every').textContent = String(v.everyHours);
+    const rows = [];
+    const alerts = [];
+    let tail = '';
+    for (const [net, r] of Object.entries(v.nets)) {
+        let result;
+        if (r.running) result = 'running now…';
+        else if (r.idle) result = `<span class="muted">${escapeHtml(r.idle)}</span>`;
+        else if (r.ok === null) result = '<span class="muted">not run yet</span>';
+        else if (r.ok) {
+            const extra = [r.skipped ? `${r.skipped} skipped` : '', r.alreadySpent ? `${r.alreadySpent} already refunded elsewhere` : ''].filter(Boolean).join(', ');
+            result = `<span class="good">OK</span>, ${fmtNum(r.open)} open, ${fmtNum(r.due)} expired${extra ? `, ${escapeHtml(extra)}` : ''}`;
+        } else result = `<span class="bad">failed</span>: ${escapeHtml(r.error || 'see the output')}`;
+        if (r.fails >= 2) alerts.push(`${r.label}: failed ${r.fails} times in a row. Expired offers are not being refunded from this server.`);
+        rows.push(
+            `<tr><td>${escapeHtml(r.label)}</td><td>${escapeHtml(keeperWhen(r.lastAt))}</td><td>${result}</td>` +
+                `<td>${r.ok === null ? '–' : fmtNum(r.refunded)}</td>` +
+                `<td>${v.enabled && !r.idle ? escapeHtml(keeperWhen(r.nextAt)) : '–'}</td>` +
+                `<td><button type="button" class="ghost" data-keeper-run="${net}" ${r.running || r.idle ? 'disabled' : ''}>Run now</button></td></tr>`,
+        );
+        if (r.tail?.length && (!tail || (r.lastAt ?? 0) > tail.at)) tail = { at: r.lastAt, text: `${r.label}, ${keeperWhen(r.lastAt)}\n\n${r.tail.join('\n')}` };
+    }
+    $('keeper-rows').innerHTML = rows.join('');
+    $('keeper-alert').hidden = alerts.length === 0;
+    $('keeper-alert').textContent = alerts.join(' ');
+    $('keeper-tail').textContent = tail ? tail.text : 'Nothing yet.';
+}
+
+async function loadKeeper() {
+    renderKeeper(await api('/api/kachat-domains/keeper'));
+}
+
+$('keeper-enabled')?.addEventListener('change', async (event) => {
+    const on = event.target.checked;
+    if (!on && !(await askConfirm('Turn the offer refund keeper off?\n\nExpired .kachat offers are then refunded only when their buyer opens their own app, or another server refunds them.'))) {
+        event.target.checked = true;
+        return;
+    }
+    try {
+        renderKeeper(await api('/api/kachat-domains/keeper', { method: 'PUT', body: { enabled: on } }));
+    } catch (e) {
+        event.target.checked = !on;
+        toast(e.message, 'bad');
+    }
+});
+
+$('keeper-rows')?.addEventListener('click', async (event) => {
+    const net = event.target.closest('[data-keeper-run]')?.dataset.keeperRun;
+    if (!net) return;
+    event.target.disabled = true;
+    event.target.textContent = 'Running…';
+    try {
+        renderKeeper(await api('/api/kachat-domains/keeper/run', { method: 'POST', body: { net } }));
+        toast('Refund keeper run finished.', 'good');
+    } catch (e) {
+        toast(e.message, 'bad');
+        loadKeeper().catch(() => {});
+    }
 });
 
 async function loadNames() {

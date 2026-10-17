@@ -44,6 +44,7 @@ import * as kassigner from './lib/kassigner.js';
 import * as selfservice from './lib/selfservice.js';
 import * as kachatDomains from './lib/kachat-domains.js';
 import * as x4kas from './lib/x4kas.js';
+import * as refundKeeper from './lib/refund-keeper.js';
 import * as cpuminer from './lib/cpuminer.js';
 import * as publish from './lib/publish.js';
 import * as portcheck from './lib/portcheck.js';
@@ -3936,6 +3937,25 @@ async function reconcileNamesRoutes() {
 // that does not match them, and publishes the verified one the server follows. Install builds
 // both and leaves the server stopped; the sidebar switch starts and stops it.
 
+// ---- .kachat offer refund keeper (kachat-domains docs/KQS.md section 6, audit DOM-002) ---
+
+route('GET', /^\/api\/kachat-domains\/keeper$/, async (req, res) => sendJson(res, 200, await refundKeeper.view()));
+
+route('PUT', /^\/api\/kachat-domains\/keeper$/, async (req, res) => {
+    const body = await readBody(req);
+    refundKeeper.setEnabled(body.enabled === true);
+    sendJson(res, 200, await refundKeeper.view());
+});
+
+/** Run now, for one network. Answers when the run is over (a few seconds to a few minutes). */
+route('POST', /^\/api\/kachat-domains\/keeper\/run$/, async (req, res) => {
+    const body = await readBody(req);
+    const net = body.net === 'testnet' ? 'testnet' : 'mainnet';
+    const r = await refundKeeper.runOnce(net, { alert: (text) => botSendMessage(text), log });
+    if (r.idle) return fail(res, 409, `Nothing to run on ${kachatDomains.NETWORKS[net].label}: ${r.idle}.`);
+    sendJson(res, 200, await refundKeeper.view());
+});
+
 route('GET', /^\/api\/kachat-domains$/, async (req, res, match, url) => {
     const net = namesNet(url);
     const N = kachatDomains.NETWORKS[net];
@@ -4881,6 +4901,8 @@ async function bootstrap() {
     // The names paths follow whether each .kachat Domains server is really running (KQS-013).
     reconcileNamesRoutes().catch((e) => log('names route', e));
     setInterval(() => reconcileNamesRoutes().catch(() => {}), 60_000).unref?.();
+    // .kachat offer refund keeper: every 6 h per network with a running names server.
+    refundKeeper.start({ alert: (text) => botSendMessage(text), log });
 
     // Certificates are valid for 90 days; a daily attempt is what certbot's own
     // packaging recommends and is a no-op until one is close to expiry.
