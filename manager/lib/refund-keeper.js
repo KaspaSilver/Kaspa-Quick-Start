@@ -2,8 +2,9 @@ import path from 'node:path';
 
 import { docker, containerState } from './dockerctl.js';
 import * as kachatDomains from './kachat-domains.js';
+import { ports } from './kaspad-args.js';
 import { CONF_DIR } from './paths.js';
-import { readJson, writeJson } from './store.js';
+import { loadNodeConfig, loadTestnetNodeConfig, readJson, writeJson } from './store.js';
 
 /**
  * The .kachat offer refund keeper (kachat-domains docs/KQS.md section 6, audit DOM-002).
@@ -28,11 +29,18 @@ const RUN_TIMEOUT_MS = 20 * 60_000;
 const DOCKER_NET = 'kaspa-node-net';
 const MAX_FEE_KAS = '0.1';
 
-/** Where each network's keeper reads the chain and the offers. Ports are fixed per network. */
+/**
+ * Where each network's keeper reads the chain. Over wRPC Borsh, not gRPC: a default mainnet
+ * node runs --nogrpc (gRPC only binds for mining, the bot or a published port), while the Borsh
+ * listener is exactly what installing this network's names server guarantees (KQS-034). The port
+ * is read from the node's own config at run time.
+ */
 const TARGETS = {
-    mainnet: { node: 'grpc://kaspad:16110', args: ['--network', 'mainnet'] },
-    testnet: { node: 'grpc://kaspad-testnet:16210', args: [] },
+    mainnet: { host: 'kaspad', config: loadNodeConfig, args: ['--network', 'mainnet'] },
+    testnet: { host: 'kaspad-testnet', config: loadTestnetNodeConfig, args: [] },
 };
+
+const nodeUrl = (net) => `ws://${TARGETS[net].host}:${ports(TARGETS[net].config()).borsh}`;
 
 const blankNet = () => ({
     lastAt: null,
@@ -42,6 +50,7 @@ const blankNet = () => ({
     open: 0,
     skipped: 0,
     alreadySpent: 0,
+    unreadable: 0,
     failed: 0,
     error: '',
     tail: [],
@@ -63,12 +72,15 @@ async function ready(net) {
     if (!(await kachatDomains.installedRevision())) return 'the kachat-domains tool image is not built';
     const st = await containerState(kachatDomains.NETWORKS[net].container).catch(() => null);
     if (!st?.running) return 'its .kachat Domains server is not running';
+    // Checking an offer's coins is GetUtxosByAddresses, which needs the node's UTXO index. With
+    // it off every due offer would be "skip"ped and nothing refunded (KQS-035).
+    if (!TARGETS[net].config().flags?.utxoindex) return "the node's UTXO index is off (Node settings)";
     return null;
 }
 
 /** Reads the keeper's own report lines (kachat-names-cli main.rs refund_expired). */
 export function parseReport(lines) {
-    const out = { refunded: 0, due: 0, open: 0, skipped: 0, alreadySpent: 0, failed: 0 };
+    const out = { refunded: 0, due: 0, open: 0, skipped: 0, alreadySpent: 0, unreadable: 0, failed: 0 };
     for (const line of lines) {
         let m;
         if ((m = /^(\d+) open offer\(s\), (\d+) past refundAfter/.exec(line))) {
@@ -79,6 +91,9 @@ export function parseReport(lines) {
             out.due = Number(m[2]);
         } else if (/^SKIPPED /.test(line)) out.skipped += 1;
         else if (/^already spent /.test(line)) out.alreadySpent += 1;
+        // The CLI's lowercase "skip <offer>: <error>" is a due offer whose coins could not be
+        // read (the UTXO index off, the node restarting); it does not fail the CLI's exit.
+        else if (/^skip /.test(line)) out.unreadable += 1;
         else if (/^FAILED /.test(line)) out.failed += 1;
     }
     return out;
@@ -107,7 +122,7 @@ export async function runOnce(net, { alert = async () => {}, log = () => {} } = 
             await docker(
                 [
                     'run', '--rm', '--network', DOCKER_NET, kachatDomains.imageTag(),
-                    ...T.args, '--node', T.node, '--max-fee', MAX_FEE_KAS,
+                    ...T.args, '--node', nodeUrl(net), '--max-fee', MAX_FEE_KAS,
                     'refund-expired', '--indexer', `http://${N.host}:3080`, '--submit',
                 ],
                 { onLine: (l) => lines.push(String(l)), timeoutMs: RUN_TIMEOUT_MS },
@@ -124,6 +139,11 @@ export async function runOnce(net, { alert = async () => {}, log = () => {} } = 
     const tooOld = error && /unrecognized subcommand|unexpected argument '--indexer'/i.test(`${lines.join('\n')}\n${error}`);
     if (tooOld) error = 'the kachat-domains tool image is older than the refund keeper: Update .kachat Domains (Updates tab)';
     const report = parseReport(lines);
+    // A clean exit that was due to refund offers but could not read a single one of them is not
+    // OK: it is how an off UTXO index or a restarting node looks from outside (KQS-035).
+    if (!error && report.due > 0 && report.refunded === 0 && report.unreadable > 0) {
+        error = `${report.unreadable} expired offer(s) could not be read from the node (is the UTXO index on in Node settings?)`;
+    }
     const s = load();
     const r = s.nets[net];
     Object.assign(r, report, {

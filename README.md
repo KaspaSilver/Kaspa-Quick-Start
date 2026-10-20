@@ -1,4 +1,4 @@
-# Quick Start Kaspa
+# Kaspa Quick Start
 
 One command installs Docker (if needed), runs a Kaspa node with the right
 arguments, and gives you a web control panel to manage it: node settings,

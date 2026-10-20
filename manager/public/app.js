@@ -7300,7 +7300,7 @@ function renderKeeper(v) {
         else if (r.idle) result = `<span class="muted">${escapeHtml(r.idle)}</span>`;
         else if (r.ok === null) result = '<span class="muted">not run yet</span>';
         else if (r.ok) {
-            const extra = [r.skipped ? `${r.skipped} skipped` : '', r.alreadySpent ? `${r.alreadySpent} already refunded elsewhere` : ''].filter(Boolean).join(', ');
+            const extra = [r.skipped ? `${r.skipped} skipped` : '', r.alreadySpent ? `${r.alreadySpent} already refunded elsewhere` : '', r.unreadable ? `${r.unreadable} could not be read` : ''].filter(Boolean).join(', ');
             result = `<span class="good">OK</span>, ${fmtNum(r.open)} open, ${fmtNum(r.due)} expired${extra ? `, ${escapeHtml(extra)}` : ''}`;
         } else result = `<span class="bad">failed</span>: ${escapeHtml(r.error || 'see the output')}`;
         if (r.fails >= 2) alerts.push(`${r.label}: failed ${r.fails} times in a row. Expired offers are not being refunded from this server.`);
