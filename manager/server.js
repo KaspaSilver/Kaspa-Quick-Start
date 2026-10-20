@@ -3949,6 +3949,13 @@ route('GET', /^\/api\/kachat-domains$/, async (req, res, match, url) => {
     });
 });
 
+/**
+ * What the names server image is built from (docker/kachat-names/Dockerfile in KaChat-Indexer).
+ * The rest of that repo is the chat/KaPosts indexer, which gets commits nearly every day; a
+ * commit touching none of these changes nothing in the server, so it is not an update here.
+ */
+const NAMES_SERVER_PATHS = ['kachat-webserver/', 'kachat-names/', 'kachat-names-follower/', 'docker/kachat-names/', 'Cargo.toml', 'Cargo.lock'];
+
 route('GET', /^\/api\/kachat-domains\/check$/, async (req, res) => {
     try {
         const env = readEnvFile();
@@ -3958,12 +3965,21 @@ route('GET', /^\/api\/kachat-domains\/check$/, async (req, res) => {
             kachatDomains.installedRevision(),
         ]);
         const built = env.KACHAT_NAMES_SERVER_COMMIT || null;
+        // The server half is an update only when the new commits touch what the server is built
+        // from; an unreadable comparison counts as touching (never claim up to date on a guess).
+        let serverUpdate = Boolean(built) && built !== server.sha;
+        if (serverUpdate) {
+            const files = await selfservice.changedFiles({ repo: 'KaspaSilver/KaChat-Indexer', base: built, head: server.sha });
+            if (files) serverUpdate = files.some((f) => NAMES_SERVER_PATHS.some((p) => f === p || f.startsWith(p)));
+        }
         sendJson(res, 200, {
             latest,
             server,
             revision,
             serverBuilt: built,
-            updateAvailable: revision !== null && (revision !== latest.sha || built !== server.sha),
+            toolingUpdate: revision !== null && revision !== latest.sha,
+            serverUpdate,
+            updateAvailable: revision !== null && (revision !== latest.sha || !built || serverUpdate),
         });
     } catch (err) {
         fail(res, 502, err.message);

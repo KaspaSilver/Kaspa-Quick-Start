@@ -222,6 +222,26 @@ async function ghFetch(url) {
 }
 
 /** The commit a branch or tag currently points at. */
+/**
+ * The files changed between two commits (GitHub's compare API, one request), or null when the
+ * answer cannot be trusted: the base commit gone (a force push), more files than the API lists
+ * (it caps at 300), or any error. Callers treat null as "assume everything changed".
+ */
+export async function changedFiles({ repo, base, head }) {
+    if (!REPO_RE.test(repo) || !/^[0-9a-f]{7,40}$/i.test(base) || !/^[0-9a-f]{7,40}$/i.test(head)) return null;
+    try {
+        const res = await ghFetch(`https://api.github.com/repos/${repo}/compare/${base}...${head}`);
+        if (!res.ok) return null;
+        const c = await res.json();
+        const files = (c.files ?? []).map((f) => f.filename);
+        // 300 listed files means there may be more, unlisted; the caller must not conclude
+        // "nothing relevant changed" from a list that is not the whole story.
+        return files.length >= 300 ? null : files;
+    } catch {
+        return null;
+    }
+}
+
 export async function latestCommit({ repo = 'KaspaSilver/Kaspa-Quick-Start', ref = 'main' } = {}) {
     if (!REPO_RE.test(repo)) throw new Error(`"${repo}" is not a valid owner/repo.`);
     if (!REF_RE.test(ref)) throw new Error(`"${ref}" is not a valid branch, tag or commit.`);
