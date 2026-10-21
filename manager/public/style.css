@@ -2737,11 +2737,11 @@ body.cycling .tab.active { animation: cycle-in 0.55s ease both; }
 
 .topbar-sys .sys-item {
     position: relative;
-    display: inline-grid;
-    place-items: center;
-    width: 36px;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
     height: 36px;
-    padding: 0;
+    padding: 0 11px;
     margin: 0;
     background: transparent;
     border: 1px solid transparent;
@@ -2752,10 +2752,16 @@ body.cycling .tab.active { animation: cycle-in 0.55s ease both; }
 .topbar-sys .sys-item:hover { background: var(--panel-2); color: var(--text); }
 .topbar-sys .sys-item.active { background: var(--panel-2); color: var(--accent); border-color: var(--line); }
 .topbar-sys .sys-item svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.topbar-sys .sys-label { font-size: 13px; font-weight: 600; white-space: nowrap; }
 .topbar-sys .nav-count { position: absolute; top: -4px; right: -4px; margin: 0; }
 
+/* Named buttons need room; when there is none, the icons alone say the same. */
+@media (max-width: 1280px) {
+    .topbar-sys .sys-label { display: none; }
+    .topbar-sys .sys-item { padding: 0 9px; }
+}
 @media (max-width: 520px) {
     .topbar-sys { gap: 0; }
-    .topbar-sys .sys-item { width: 32px; }
+    .topbar-sys .sys-item { padding: 0 7px; }
     #page-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 }
