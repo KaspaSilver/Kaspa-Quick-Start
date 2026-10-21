@@ -7261,7 +7261,12 @@ $('kd-check')?.addEventListener('click', async () => {
             `<br>server <code>${escapeHtml(r.server.sha.slice(0, 12))}</code> ${escapeHtml(r.server.message || '')}`;
         $('kd-update').disabled = !r.updateAvailable;
         status.className = `update-status ${r.updateAvailable ? 'available' : 'current'}`;
-        status.textContent = r.updateAvailable ? 'A newer version is available.' : 'Up to date.';
+        // Which half moved: the registry tooling, the names server's own code, or neither.
+        // KaChat-Indexer commits that touch nothing the server is built from are not an update.
+        const what = [r.toolingUpdate ? 'the registry tooling' : '', r.serverUpdate ? "the names server's code" : ''].filter(Boolean).join(' and ');
+        status.textContent = r.updateAvailable
+            ? `A newer version of ${what || '.kachat Domains'} is available.`
+            : 'Up to date. New KaChat-Indexer commits that leave the names server untouched are not counted.';
     } catch (e) {
         status.className = 'update-status error';
         status.textContent = e.message;
