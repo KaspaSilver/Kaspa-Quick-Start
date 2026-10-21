@@ -371,7 +371,12 @@ function updateCyclePill() {
     pill.hidden = !cycleEnabled();
     const screens = cycleScreens();
     const i = Math.max(0, screens.indexOf(cycleTab));
-    const label = el('.label', document.querySelector(`.nav-item[data-tab="${cycleTab}"]`) ?? document.body)?.textContent || cycleTab;
+    // A sidebar item's label, or a topbar System button's name (All logs ends every cycle);
+    // never a body-wide lookup, which found the sidebar brand for an unmatched tab (KQS-036).
+    const label =
+        document.querySelector(`.nav-item[data-tab="${cycleTab}"] .label`)?.textContent ??
+        document.querySelector(`.sys-item[data-tab="${cycleTab}"]`)?.title ??
+        cycleTab;
     $('cycle-now').textContent = cycleRunning ? `Cycling: ${label} (${i + 1} of ${screens.length})` : 'Cycling paused';
     $('cycle-pause').textContent = cycleRunning ? 'Pause' : 'Resume';
 }
