@@ -312,7 +312,9 @@ const CYCLE_KEY = 'kqs-cycle-overviews';
 const CYCLE_MS = 8_000;
 const CYCLE_FADE_MS = 450;
 // Not shown: settings pages, and the Push Service and Proxy & domains screens (owner's choice).
-const NOT_CYCLED = new Set(['overview', 'logs', 'experimental', 'global', 'support', 'push', 'proxy']);
+// kassigner and desktop are out by request: a hardware flasher and a static web app, with
+// nothing live to glance at.
+const NOT_CYCLED = new Set(['overview', 'logs', 'experimental', 'global', 'support', 'push', 'proxy', 'kassigner', 'desktop']);
 const CYCLE_SCROLL_PX_PER_S = 120;       // All logs scrolls at a pace you can follow
 let cycleRunning = false;
 let cycleTimer = null;
@@ -414,10 +416,18 @@ function cycleStep() {
             document.body.classList.remove('cycle-leaving');
             updateCyclePill();
             if (cycleTab === 'logs') {
+                // The dashboard look: every tile follows its newest line while the page drifts
+                // past, so each log is visibly moving.
+                const follow = $('log-follow');
+                if (follow && !follow.checked) {
+                    follow.checked = true;
+                    for (const key of logBuffers.keys()) renderLogTile(key);
+                }
                 // Let it fade in and the tiles fill first, then scroll.
                 cycleScroll = -1;
                 setTimeout(() => {
                     cycleScroll = null;
+                    for (const pre of document.querySelectorAll('[data-tilelog]')) pre.scrollTop = pre.scrollHeight;
                     if (cycleRunning) cycleScrollLogs();
                 }, 1200);
             } else {
