@@ -2711,3 +2711,37 @@ body.cycling .tab.active { animation: cycle-in 0.55s ease both; }
 .keeper-log { margin-top: 12px; }
 .keeper-log summary { cursor: pointer; color: var(--muted); }
 .keeper-log pre { margin-top: 8px; }
+
+/* ------------------------------------------------ topbar system screens -- */
+/* All logs, Update Queue, Experimental, Global settings and Support sit in the
+   top banner on every page (they used to be the sidebar's System group). */
+
+.topbar-sys { display: flex; align-items: center; gap: 2px; margin-left: auto; }
+/* The cycle pill keeps its place in the middle when it shows. */
+.topbar-cycle { margin-left: auto; }
+.topbar-cycle:not([hidden]) ~ .topbar-sys { margin-left: 0; }
+
+.topbar-sys .sys-item {
+    position: relative;
+    display: inline-grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    margin: 0;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    color: var(--muted);
+    cursor: pointer;
+}
+.topbar-sys .sys-item:hover { background: var(--panel-2); color: var(--text); }
+.topbar-sys .sys-item.active { background: var(--panel-2); color: var(--accent); border-color: var(--line); }
+.topbar-sys .sys-item svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.topbar-sys .nav-count { position: absolute; top: -4px; right: -4px; margin: 0; }
+
+@media (max-width: 520px) {
+    .topbar-sys { gap: 0; }
+    .topbar-sys .sys-item { width: 32px; }
+    #page-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+}
