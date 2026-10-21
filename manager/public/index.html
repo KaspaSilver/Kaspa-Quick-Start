@@ -240,43 +240,6 @@
         </label>
       </div>
 
-      <p class="nav-group-title">System</p>
-      <div class="nav-row">
-        <button class="nav-item" data-tab="logs" title="All logs">
-          <span class="nav-dot" data-health="logs"></span>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8zM14 3v5h5M9 13h6M9 17h4"/></svg>
-          <span class="label">All logs</span>
-        </button>
-      </div>
-      <div class="nav-row">
-        <button class="nav-item" data-tab="queue" title="Update Queue">
-          <span class="nav-dot" data-health="queue"></span>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h11M4 12h11M4 18h7M18 14v6M15 17l3 3 3-3"/></svg>
-          <span class="label">Update Queue</span>
-          <span class="nav-count" id="queue-count" hidden>0</span>
-        </button>
-      </div>
-      <div class="nav-row">
-        <button class="nav-item" data-tab="experimental" title="Experimental">
-          <span class="nav-dot" data-health="experimental"></span>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6M10 3v6l-5 9a2 2 0 001.8 3h10.4a2 2 0 001.8-3l-5-9V3"/><path d="M7.5 15h9"/></svg>
-          <span class="label">Experimental</span>
-        </button>
-      </div>
-      <div class="nav-row">
-        <button class="nav-item" data-tab="global" title="Global settings">
-          <span class="nav-dot" data-health="global"></span>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5v.2a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.6 1.7 1.7 0 00-1.9.4l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1A1.7 1.7 0 004.7 9a1.7 1.7 0 00-.4-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>
-          <span class="label">Global settings</span>
-        </button>
-      </div>
-      <div class="nav-row">
-        <button class="nav-item" data-tab="support" title="Support">
-          <span class="nav-dot" data-health="support"></span>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.2a2.5 2.5 0 114 2.2c-.8.5-1.6 1-1.6 2M12 17h.01"/></svg>
-          <span class="label">Support</span>
-        </button>
-      </div>
     </nav>
 
     <div class="sidebar-foot">
@@ -304,6 +267,25 @@
         <span class="muted" id="cycle-now"></span>
         <button type="button" class="ghost mini" id="cycle-pause">Pause</button>
       </span>
+      <!-- The System screens, reachable from every page (they used to be a sidebar group). -->
+      <nav class="topbar-sys" aria-label="System">
+        <button type="button" class="sys-item" data-tab="logs" title="All logs" aria-label="All logs">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8zM14 3v5h5M9 13h6M9 17h4"/></svg>
+        </button>
+        <button type="button" class="sys-item" data-tab="queue" title="Update Queue" aria-label="Update Queue">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h11M4 12h11M4 18h7M18 14v6M15 17l3 3 3-3"/></svg>
+          <span class="nav-count" id="queue-count" hidden>0</span>
+        </button>
+        <button type="button" class="sys-item" data-tab="experimental" title="Experimental" aria-label="Experimental">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6M10 3v6l-5 9a2 2 0 001.8 3h10.4a2 2 0 001.8-3l-5-9V3"/><path d="M7.5 15h9"/></svg>
+        </button>
+        <button type="button" class="sys-item" data-tab="global" title="Global settings" aria-label="Global settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5v.2a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.6 1.7 1.7 0 00-1.9.4l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1A1.7 1.7 0 004.7 9a1.7 1.7 0 00-.4-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>
+        </button>
+        <button type="button" class="sys-item" data-tab="support" title="Support" aria-label="Support">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.2a2.5 2.5 0 114 2.2c-.8.5-1.6 1-1.6 2M12 17h.01"/></svg>
+        </button>
+      </nav>
     </header>
 
     <main>

@@ -260,6 +260,12 @@ function selectTab(name) {
         item.closest('.nav-row')?.classList.toggle('active', active);
         if (active) title = el('.label', item).textContent;
     }
+    // The System screens live in the top banner, on every page (no sidebar row).
+    for (const item of document.querySelectorAll('.sys-item')) {
+        const active = item.dataset.tab === name;
+        item.classList.toggle('active', active);
+        if (active) title = item.title;
+    }
     for (const tab of document.querySelectorAll('.tab')) {
         tab.classList.toggle('active', tab.id === `tab-${name}`);
     }
@@ -292,7 +298,7 @@ function selectTab(name) {
     if (MOBILE()) closeDrawer();
 }
 
-for (const item of document.querySelectorAll('.nav-item')) {
+for (const item of document.querySelectorAll('.nav-item, .sys-item')) {
     item.addEventListener('click', () => {
         selectTab(item.dataset.tab);
         // Back on Overview: the dashboard cycle (if it is on) starts again from here.
