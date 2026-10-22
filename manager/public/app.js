@@ -3324,15 +3324,16 @@ function renderHostServices() {
         $('host-services-hint').hidden = true;
         return;
     }
+    // Each chip carries the same dot its tiles do: green running, amber stopped, grey absent.
     const groups = [
-        [0, 'running'],
-        [1, 'stopped'],
-        [2, 'not installed'],
+        [0, 'running', 'ok'],
+        [1, 'stopped', 'warn'],
+        [2, 'not installed', ''],
     ];
     box.innerHTML = groups
-        .map(([n, word]) => {
+        .map(([n, word, dot]) => {
             const c = hostServices.filter((svc) => svcOrder(svc) === n).length;
-            return `<button type="button" class="svc-filter${svcFilter === n ? ' active' : ''}" data-svc-filter="${n}" ${c ? '' : 'disabled'}>${c} ${word}</button>`;
+            return `<button type="button" class="svc-filter${svcFilter === n ? ' active' : ''}" data-svc-filter="${n}" ${c ? '' : 'disabled'}><span class="svc-dot ${dot}"></span>${c} ${word}</button>`;
         })
         .join('');
     const shown = svcFilter === null ? [] : hostServices.filter((svc) => svcOrder(svc) === svcFilter);

@@ -2811,6 +2811,9 @@ body.cycling .tab.active { animation: cycle-in 0.55s ease both; }
 
 .svc-filters { display: flex; flex-wrap: wrap; gap: 8px; }
 .svc-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
     padding: 4px 12px;
     border: 1px solid var(--line);
     border-radius: 999px;
@@ -2823,3 +2826,4 @@ body.cycling .tab.active { animation: cycle-in 0.55s ease both; }
 .svc-filter:hover:not(:disabled) { background: var(--panel-2); color: var(--text); }
 .svc-filter.active { background: var(--panel-2); color: var(--accent); border-color: var(--accent-dim); }
 .svc-filter:disabled { opacity: 0.45; cursor: default; }
+.svc-filter .svc-dot { width: 8px; height: 8px; }
