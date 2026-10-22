@@ -3343,12 +3343,24 @@ function setDagView(active) {
 
 async function pollDag() {
     if (document.hidden) return;
+    // After a pause (a locked screen, a hidden tab, a sign-in) the cursor is far behind, and
+    // following it from there replays history a page a second, which at ten blocks a second
+    // never catches up. Start again at the tip, as on the first poll.
+    const paused = dag.lastAt != null && performance.now() - dag.lastAt > 5000;
+    if (paused && dag.next) {
+        dag.next = null;
+        dag.blocks.clear();
+        dag.reds.clear();
+        dag.arrivals = [];
+        dag.view = null;
+    }
     let r;
     try {
         r = await api(`/api/dag/blocks?net=${networkView}${dag.next ? `&since=${dag.next}` : ''}`);
     } catch {
         return;
     }
+    dag.lastAt = performance.now();
     if (!r?.available) {
         dag.blocks.clear();
         dag.reds.clear();
