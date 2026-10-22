@@ -853,7 +853,7 @@ function selectSubtab(section, name) {
     if (name === 'kachat-chess') loadChess().catch(() => {});
     if (name === 'kachat-profiles') loadProfiles().catch(() => {});
     if (name === 'kachat-updates') loadTestnetIndexerUpdate().catch(() => {});
-    else if (name === 'kachat-transfer') { loadBackup().catch(() => {}); refreshKachatPanel(); }
+    else if (name === 'kachat-transfer') { loadBackup().catch(() => {}); loadReindex().catch(() => {}); refreshKachatPanel(); }
     else if (name.startsWith('kachat-')) refreshKachatPanel();
     // Its own call: refreshKachatPanel gives up when the indexer is not
     // running, and this screen works without it -- the engine it configures is
@@ -7136,6 +7136,69 @@ function renderBackupStatus(s) {
         }, 2500);
     }
 }
+// ---- Recover missed KaPosts (Indexer, Export / Import): the processor's reindex ----
+
+/**
+ * The processor walks the node's blocks on request and indexes the KaChat transactions it
+ * finds (kachat-indexer reindex.rs); the admin API carries the request and its status. Polled
+ * every few seconds while it runs, and only while this card is on screen.
+ */
+let reindexTimer = null;
+
+function renderReindex(v) {
+    const s = v.status;
+    const running = v.requested || s?.state === 'running';
+    $('kachat-reindex').disabled = running;
+    const state = $('kachat-reindex-state');
+    if (v.requested && s?.state !== 'running') state.textContent = 'Asked for. The processor picks it up within a few seconds.';
+    else if (s?.state === 'running') {
+        state.textContent =
+            `Running: ${fmtNum(s.blocks)} blocks walked, ${fmtNum(s.found)} KaChat transactions seen, ` +
+            `${fmtNum(s.queued)} queued for indexing${s.oldest_ms ? `, from ${kTime(s.oldest_ms)} on` : ''}.`;
+    } else state.textContent = '';
+    const result = $('kachat-reindex-result');
+    if (s && s.state !== 'running' && !v.requested) {
+        result.hidden = false;
+        result.className = `update-status ${s.state === 'done' ? 'current' : 'error'}`;
+        result.textContent =
+            s.state === 'done'
+                ? `Done ${kTime(s.finished_at)}: ${fmtNum(s.blocks)} blocks from ${kTime(s.oldest_ms)} to ${kTime(s.newest_ms)}, ` +
+                  `${fmtNum(s.found)} KaChat transactions seen, ${fmtNum(s.queued)} were missing and are indexed now.`
+                : `Failed ${kTime(s.finished_at)} after ${fmtNum(s.blocks)} blocks: ${s.error || 'no reason given'}.`;
+    } else result.hidden = true;
+    return running;
+}
+
+async function loadReindex() {
+    clearTimeout(reindexTimer);
+    reindexTimer = null;
+    if (!$('sub-kachat-transfer')?.classList.contains('active') || !$('tab-kachat')?.classList.contains('active')) return;
+    try {
+        if (renderReindex(await kachat('kaposts/reindex'))) reindexTimer = setTimeout(() => loadReindex().catch(() => {}), 3000);
+    } catch (e) {
+        $('kachat-reindex-state').textContent = e instanceof IndexerDown ? 'The indexer is not running.' : e.message;
+    }
+}
+
+$('kachat-reindex')?.addEventListener('click', async () => {
+    if (
+        !(await askConfirm(
+            "Reindex KaPosts from the node's oldest block?\n\n" +
+                'The processor walks every block the node still holds and indexes the KaChat transactions it finds. ' +
+                'Anything already indexed is skipped, and no notifications go out for old activity. ' +
+                'It takes a while and runs inside the indexer, so you can leave this page.',
+        ))
+    ) {
+        return;
+    }
+    try {
+        renderReindex(await kachat('kaposts/reindex', { method: 'POST', body: {} }));
+        loadReindex().catch(() => {});
+    } catch (e) {
+        toast(e.message, 'bad');
+    }
+});
+
 async function loadBackup() {
     const s = await api('/api/kachat/backup');
     if ($('backup-enabled')) $('backup-enabled').checked = !!s.enabled;
