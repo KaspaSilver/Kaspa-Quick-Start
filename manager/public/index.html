@@ -317,18 +317,6 @@
       <div class="grid">
 
         <!--
-          Every container this stack can run, as small status tiles (running first, then stopped,
-          then not installed) so the whole list fits on one screen without scrolling.
-        -->
-        <article class="card span2">
-          <div class="node-head">
-            <h3>Services</h3>
-            <span class="muted" id="host-services-sum"></span>
-          </div>
-          <div class="services-grid compact" id="host-services"><p class="muted">Reading the stack…</p></div>
-          <p class="hint">Not installed is not a fault: each service is switched on from its own tab.</p>
-        </article>
-        <!--
           A live picture of the BlockDAG from this node: only while Kaspad is running and fully
           synced. Blocks drift left as new ones arrive; parallel blocks stack; lines are parent links.
         -->
@@ -339,6 +327,18 @@
           </div>
           <canvas id="dag-canvas" aria-label="Live BlockDAG from this node"></canvas>
           <p class="hint" id="dag-note">Starts when Kaspad is running and 100% synced.</p>
+        </article>
+        <!--
+          Every container this stack can run, folded behind its counts: each count is a filter,
+          and only a clicked one's tiles show. Collapsed, the card is one line.
+        -->
+        <article class="card span2">
+          <div class="node-head">
+            <h3>Services</h3>
+            <div class="svc-filters" id="svc-filters"><span class="muted">Reading the stack…</span></div>
+          </div>
+          <div class="services-grid compact" id="host-services" hidden></div>
+          <p class="hint" id="host-services-hint" hidden>Not installed is not a fault: each service is switched on from its own tab.</p>
         </article>
         <article class="card figure">
           <h3>Storage</h3>

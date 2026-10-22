@@ -3299,21 +3299,61 @@ function renderHost(data) {
     $('host-uptime').textContent = fmtUptime(machine.uptimeSeconds);
     $('host-load').textContent = Array.isArray(machine.loadAverage) ? machine.loadAverage.join('  ') : '–';
 
-    // Small tiles, running first, then stopped, then not installed: the whole list fits on one
-    // screen without scrolling.
-    const order = (svc) => (!svc.installed ? 2 : svc.running ? 0 : 1);
-    const services = [...(data.services ?? [])].sort((a, b) => order(a) - order(b));
-    const tiles = services.map((svc) => {
-        const [dot, word] = !svc.installed ? ['', 'not installed'] : svc.running ? ['ok', 'running'] : ['warn', svc.status || 'stopped'];
-        const uptime = svc.running && svc.startedAt ? `, up ${fmtDuration(svc.startedAt)}` : '';
-        return `<div class="svc-card${svc.installed ? '' : ' absent'}"><span class="svc-dot ${dot}"></span><div class="svc-meta"><strong>${escapeHtml(svc.label)}</strong><small>${escapeHtml(word + uptime)}</small></div></div>`;
-    });
-    const count = (n) => services.filter((svc) => order(svc) === n).length;
-    $('host-services-sum').textContent = services.length
-        ? `${count(0)} running, ${count(1)} stopped, ${count(2)} not installed`
-        : '';
-    $('host-services').innerHTML = tiles.length ? tiles.join('') : '<p class="muted">Nothing on this machine yet.</p>';
+    hostServices = [...(data.services ?? [])].sort((a, b) => svcOrder(a) - svcOrder(b));
+    renderHostServices();
 }
+
+// --- Overview: the Services card, folded behind its counts ---
+
+/**
+ * Collapsed, the card is one line: "N running, N stopped, N not installed", each count a
+ * filter. Clicking one shows that status's tiles; clicking it again folds the card. The
+ * choice holds while the page lives (the status poll redraws every ten seconds) and starts
+ * folded on a fresh load.
+ */
+let hostServices = [];
+let svcFilter = null;
+const svcOrder = (svc) => (!svc.installed ? 2 : svc.running ? 0 : 1);
+
+function renderHostServices() {
+    const box = $('svc-filters');
+    if (!box) return;
+    if (!hostServices.length) {
+        box.innerHTML = '<span class="muted">Nothing on this machine yet.</span>';
+        $('host-services').hidden = true;
+        $('host-services-hint').hidden = true;
+        return;
+    }
+    const groups = [
+        [0, 'running'],
+        [1, 'stopped'],
+        [2, 'not installed'],
+    ];
+    box.innerHTML = groups
+        .map(([n, word]) => {
+            const c = hostServices.filter((svc) => svcOrder(svc) === n).length;
+            return `<button type="button" class="svc-filter${svcFilter === n ? ' active' : ''}" data-svc-filter="${n}" ${c ? '' : 'disabled'}>${c} ${word}</button>`;
+        })
+        .join('');
+    const shown = svcFilter === null ? [] : hostServices.filter((svc) => svcOrder(svc) === svcFilter);
+    $('host-services').hidden = svcFilter === null;
+    $('host-services-hint').hidden = svcFilter !== 2;
+    $('host-services').innerHTML = shown
+        .map((svc) => {
+            const [dot, word] = !svc.installed ? ['', 'not installed'] : svc.running ? ['ok', 'running'] : ['warn', svc.status || 'stopped'];
+            const uptime = svc.running && svc.startedAt ? `, up ${fmtDuration(svc.startedAt)}` : '';
+            return `<div class="svc-card${svc.installed ? '' : ' absent'}"><span class="svc-dot ${dot}"></span><div class="svc-meta"><strong>${escapeHtml(svc.label)}</strong><small>${escapeHtml(word + uptime)}</small></div></div>`;
+        })
+        .join('');
+}
+
+$('svc-filters')?.addEventListener('click', (event) => {
+    const chip = event.target.closest('[data-svc-filter]');
+    if (!chip) return;
+    const n = Number(chip.dataset.svcFilter);
+    svcFilter = svcFilter === n ? null : n;
+    renderHostServices();
+});
 
 // --- Overview: live BlockDAG ---
 

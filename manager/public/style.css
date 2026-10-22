@@ -2805,3 +2805,21 @@ body.cycling .tab.active { animation: cycle-in 0.55s ease both; }
 }
 .queue-peek-log:empty::before { content: 'Waiting for the first lines of the log…'; color: var(--muted); }
 .queue-peek-foot { font-size: 11px; margin-top: 8px; text-align: right; }
+
+/* --------------------------------------------- services card, folded -- */
+/* The counts are the card: each one a filter, only a clicked one's tiles show. */
+
+.svc-filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.svc-filter {
+    padding: 4px 12px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+.svc-filter:hover:not(:disabled) { background: var(--panel-2); color: var(--text); }
+.svc-filter.active { background: var(--panel-2); color: var(--accent); border-color: var(--accent-dim); }
+.svc-filter:disabled { opacity: 0.45; cursor: default; }
