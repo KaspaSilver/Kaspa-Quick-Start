@@ -4269,6 +4269,72 @@ route('GET', /^\/api\/push\/stats$/, async (req, res) => {
     }
 });
 
+// ---- Web Push (the installed web app; KaChat-Desktop docs/WEB_PUSH_SERVER.md section 4) ----
+
+const WEBPUSH_NETS = {
+    mainnet: { envKey: 'KACHAT_WEBPUSH_VAPID_PRIVATE_KEY', host: 'kachat-app', unit: 'kachat' },
+    testnet: { envKey: 'KACHAT_WEBPUSH_VAPID_PRIVATE_KEY_TESTNET', host: 'kachat-app-testnet', unit: 'kachat-testnet' },
+};
+
+/** Per network: whether a key is stored, and what the running indexer answers. */
+route('GET', /^\/api\/push\/webpush$/, async (req, res) => {
+    const env = readEnvFile();
+    const out = { subject: env.KACHAT_WEBPUSH_VAPID_SUBJECT || '', nets: {} };
+    for (const [net, N] of Object.entries(WEBPUSH_NETS)) {
+        const keySet = Boolean((env[N.envKey] || '').trim());
+        let live = 'off';
+        let publicKey = null;
+        try {
+            const r = await fetch(`http://${N.host}:8600/v1/push/web-config`, { signal: AbortSignal.timeout(4000) });
+            if (r.ok) {
+                live = 'on';
+                publicKey = (await r.json())?.vapid_public_key ?? null;
+            } else if (r.status === 404) live = keySet ? 'pending' : 'off';
+            else live = 'error';
+        } catch {
+            live = 'offline';
+        }
+        out.nets[net] = { keySet, live, publicKey };
+    }
+    sendJson(res, 200, out);
+});
+
+/**
+ * Generate this network's VAPID key pair and store the private key in .env (base64url of the
+ * raw P-256 scalar, exactly what the indexer reads). The key is a secret: never logged, never
+ * sent to the browser, and never replaced unless `rotate` says so (rotation re-subscribes every
+ * browser within a day). The indexer reads it at startup, so a running one is recreated.
+ */
+route('POST', /^\/api\/push\/webpush\/setup$/, async (req, res) => {
+    const body = await readBody(req);
+    const net = body.net === 'testnet' ? 'testnet' : 'mainnet';
+    const N = WEBPUSH_NETS[net];
+    const env = readEnvFile();
+    if ((env[N.envKey] || '').trim() && body.rotate !== true) {
+        return fail(res, 409, 'This network already has a Web Push key. Rotating it signs every browser up again within a day; say so explicitly.');
+    }
+    const { privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+    const d = privateKey.export({ format: 'jwk' }).d; // base64url, 32-byte scalar
+    updateEnvFile({
+        [N.envKey]: d,
+        ...(String(env.KACHAT_WEBPUSH_VAPID_SUBJECT || '').trim() ? {} : { KACHAT_WEBPUSH_VAPID_SUBJECT: 'mailto:kaspasilver@gmail.com' }),
+    });
+    log(`webpush: ${body.rotate === true ? 'rotated' : 'generated'} the ${net} VAPID key`);
+
+    // The indexer reads env at startup; recreate it if it runs, else it applies at next start.
+    const running = Boolean((await lifecycle.status(N.unit).catch(() => null))?.running);
+    if (!running) return sendJson(res, 200, { ok: true, applied: 'next start' });
+    const job = jobs.start(`Apply the ${net} Web Push key`, async (onLine) => {
+        onLine(`Restarting the ${net} indexer so it reads the new Web Push key...`);
+        await dockerctl.compose(['up', '-d', '--force-recreate', N.host], {
+            onLine,
+            profile: net === 'testnet' ? 'testnet-kachat' : apps.APPS.kachat.profile,
+            timeoutMs: 20 * 60_000,
+        });
+    });
+    sendJson(res, 202, { ok: true, jobId: job.id });
+});
+
 route('POST', /^\/api\/push\/config$/, async (req, res) => {
     const body = await readBody(req);
     try {

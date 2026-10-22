@@ -2381,6 +2381,24 @@
           <div id="push-result" class="verdict" hidden></div>
         </article>
 
+        <!-- Web Push: the installed web app (KaChat Desktop in a browser). One VAPID key per
+             network, generated and stored here; the indexer turns it on at its next start. -->
+        <article class="card span2">
+          <h3>Web Push</h3>
+          <p class="muted">
+            Notifications for the KaChat web app installed from a browser. Each network gets its
+            own key, generated here and kept in this machine's settings; the key never leaves it.
+            Rotating a key signs every browser up again by itself within a day.
+          </p>
+          <div class="scroll-x">
+            <table class="keeper-table">
+              <thead><tr><th>Network</th><th>State</th><th></th></tr></thead>
+              <tbody id="webpush-rows"><tr><td colspan="3" class="muted">Loading…</td></tr></tbody>
+            </table>
+          </div>
+          <div id="webpush-result" class="verdict" hidden></div>
+        </article>
+
         <article class="card span2" id="push-stats-card">
           <h3>Registered devices</h3>
           <dl class="kv dense" id="push-stats"></dl>
