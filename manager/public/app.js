@@ -3312,6 +3312,7 @@ function renderHost(data) {
  * folded on a fresh load.
  */
 let hostServices = [];
+let indexerServices = [];
 let svcFilter = null;
 // running, degraded (crash-looping, dead, or running with a failing healthcheck), stopped, absent.
 const svcDegraded = (svc) => svc.installed && (svc.health === 'unhealthy' || svc.status === 'restarting' || svc.status === 'dead');
@@ -3320,7 +3321,31 @@ const svcOrder = (svc) => (!svc.installed ? 3 : svcDegraded(svc) ? 1 : svc.runni
 function renderHostServices() {
     const box = $('svc-filters');
     if (!box) return;
-    if (!hostServices.length) {
+    // One list: the containers, then the indexer's processes as "Indexer:" rows. A healthy
+    // process counts as running; anything else (degraded, down) lands under the red chip,
+    // with its own dot and words on the tile.
+    const entries = hostServices
+        .map((svc) => ({
+            group: svcOrder(svc),
+            tile: (() => {
+                const [dot, word] = !svc.installed
+                    ? ['', 'not installed']
+                    : svcDegraded(svc)
+                      ? ['bad', svc.health === 'unhealthy' ? 'running, failing its health check' : svc.status]
+                      : svc.running
+                        ? ['ok', 'running']
+                        : ['warn', svc.status || 'stopped'];
+                const uptime = svc.running && svc.startedAt ? `, up ${fmtDuration(svc.startedAt)}` : '';
+                return `<div class="svc-card${svc.installed ? '' : ' absent'}"><span class="svc-dot ${dot}"></span><div class="svc-meta"><strong>${escapeHtml(svc.label)}</strong><small>${escapeHtml(word + uptime)}</small></div></div>`;
+            })(),
+        }))
+        .concat(
+            indexerServices.map((s) => ({
+                group: s.status === 'healthy' ? 0 : 1,
+                tile: svcTile(`Indexer: ${s.name}`, kDot(s.status), svcLabel(s.status, s.detail)),
+            })),
+        );
+    if (!entries.length) {
         box.innerHTML = '<span class="muted">Nothing on this machine yet.</span>';
         $('host-services').hidden = true;
         $('host-services-hint').hidden = true;
@@ -3336,26 +3361,16 @@ function renderHostServices() {
     ];
     box.innerHTML = groups
         .map(([n, word, dot]) => {
-            const c = hostServices.filter((svc) => svcOrder(svc) === n).length;
+            const c = entries.filter((e) => e.group === n).length;
             if (!c && n === 1) return '';
             return `<button type="button" class="svc-filter${svcFilter === n ? ' active' : ''}" data-svc-filter="${n}" ${c ? '' : 'disabled'}><span class="svc-dot ${dot}"></span>${c} ${word}</button>`;
         })
         .join('');
-    const shown = svcFilter === null ? [] : hostServices.filter((svc) => svcOrder(svc) === svcFilter);
     $('host-services').hidden = svcFilter === null;
     $('host-services-hint').hidden = svcFilter !== 3;
-    $('host-services').innerHTML = shown
-        .map((svc) => {
-            const [dot, word] = !svc.installed
-                ? ['', 'not installed']
-                : svcDegraded(svc)
-                  ? ['bad', svc.health === 'unhealthy' ? 'running, failing its health check' : svc.status]
-                  : svc.running
-                    ? ['ok', 'running']
-                    : ['warn', svc.status || 'stopped'];
-            const uptime = svc.running && svc.startedAt ? `, up ${fmtDuration(svc.startedAt)}` : '';
-            return `<div class="svc-card${svc.installed ? '' : ' absent'}"><span class="svc-dot ${dot}"></span><div class="svc-meta"><strong>${escapeHtml(svc.label)}</strong><small>${escapeHtml(word + uptime)}</small></div></div>`;
-        })
+    $('host-services').innerHTML = entries
+        .filter((e) => svcFilter !== null && e.group === svcFilter)
+        .map((e) => e.tile)
         .join('');
 }
 
@@ -3532,6 +3547,16 @@ async function refreshHost() {
     } catch {
         /* transient; the next tick retries */
     }
+    // The indexer's own processes (database, ingest, processor, API, chat indexer, translation)
+    // belong on the Overview too: its container being green says nothing about them, as two
+    // days of a crash-looping processor behind a green tile proved. Best effort: no indexer,
+    // no rows.
+    try {
+        indexerServices = kachatRunning() ? ((await kachat('services')) ?? []) : [];
+    } catch {
+        indexerServices = [];
+    }
+    renderHostServices();
 }
 
 // Reads the filesystem and asks the daemon, so it is slower than the status
