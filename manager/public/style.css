@@ -2813,3 +2813,21 @@ body.cycling .tab.active { animation: cycle-in 0.55s ease both; }
 .svc-filter.active { background: var(--panel-2); color: var(--accent); border-color: var(--accent-dim); }
 .svc-filter:disabled { opacity: 0.45; cursor: default; }
 .svc-filter .svc-dot { width: 8px; height: 8px; }
+
+/* ---------------------------------------------------- BlockDAG, expanded -- */
+/* The same card over the whole screen; the canvas grows, the draw loop sizes
+   itself per frame, and Esc or Close brings the card back. */
+
+.dag-expand { margin-left: auto; }
+.dag-card.dag-full {
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    margin: 0;
+    border-radius: 0;
+    display: flex;
+    flex-direction: column;
+    padding: max(16px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+}
+.dag-card.dag-full canvas { flex: 1; height: auto; min-height: 0; }
+body.dag-fullscreen { overflow: hidden; }

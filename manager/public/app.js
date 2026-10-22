@@ -3402,11 +3402,31 @@ function setDagView(active) {
         pollDag();
         dag.timer = setInterval(noOverlap(pollDag), 1000);
         if (dag.frame == null) dag.frame = requestAnimationFrame(drawDag);
-    } else if (dag.frame != null) {
-        cancelAnimationFrame(dag.frame);
-        dag.frame = null;
+    } else {
+        // Leaving Overview (a tab click, the cycle) takes the full-screen view with it.
+        setDagFull(false);
+        if (dag.frame != null) {
+            cancelAnimationFrame(dag.frame);
+            dag.frame = null;
+        }
     }
 }
+
+/** The BlockDAG over the whole screen; the same canvas, just bigger. Esc or Close ends it. */
+function setDagFull(on) {
+    const card = document.querySelector('.dag-card');
+    if (!card || card.classList.contains('dag-full') === Boolean(on)) return;
+    card.classList.toggle('dag-full', on);
+    document.body.classList.toggle('dag-fullscreen', on);
+    const btn = $('dag-expand');
+    if (btn) btn.textContent = on ? 'Close' : 'Expand';
+}
+
+$('dag-expand')?.addEventListener('click', () => setDagFull(!document.querySelector('.dag-card.dag-full')));
+
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && document.querySelector('.dag-card.dag-full')) setDagFull(false);
+});
 
 async function pollDag() {
     if (document.hidden) return;
