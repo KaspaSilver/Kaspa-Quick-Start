@@ -7143,11 +7143,19 @@ function renderBackupStatus(s) {
  * every few seconds while it runs, and only while this card is on screen.
  */
 let reindexTimer = null;
+// What the status last said and when it last changed: a "running" that stops changing is a
+// walk the processor lost (a restart mid-way), and Retry asks again with force (IDX-037).
+let reindexSeen = { key: '', at: 0 };
+const REINDEX_STALE_MS = 90_000;
 
 function renderReindex(v) {
     const s = v.status;
     const running = v.requested || s?.state === 'running';
+    const key = `${v.requested}:${s?.state}:${s?.blocks}:${s?.queued}:${s?.started_at}`;
+    if (key !== reindexSeen.key) reindexSeen = { key, at: Date.now() };
+    const stale = running && Date.now() - reindexSeen.at > REINDEX_STALE_MS;
     $('kachat-reindex').disabled = running;
+    $('kachat-reindex-retry').hidden = !stale;
     const state = $('kachat-reindex-state');
     if (v.requested && s?.state !== 'running') state.textContent = 'Asked for. The processor picks it up within a few seconds.';
     else if (s?.state === 'running') {
@@ -7155,6 +7163,7 @@ function renderReindex(v) {
             `Running: ${fmtNum(s.blocks)} blocks walked, ${fmtNum(s.found)} KaChat transactions seen, ` +
             `${fmtNum(s.queued)} queued for indexing${s.oldest_ms ? `, from ${kTime(s.oldest_ms)} on` : ''}.`;
     } else state.textContent = '';
+    if (stale) state.textContent += ` No progress for ${Math.round((Date.now() - reindexSeen.at) / 1000)}s: the processor may have restarted. Retry starts it again.`;
     const result = $('kachat-reindex-result');
     if (s && s.state !== 'running' && !v.requested) {
         result.hidden = false;
@@ -7178,6 +7187,15 @@ async function loadReindex() {
         $('kachat-reindex-state').textContent = e instanceof IndexerDown ? 'The indexer is not running.' : e.message;
     }
 }
+
+$('kachat-reindex-retry')?.addEventListener('click', async () => {
+    try {
+        renderReindex(await kachat('kaposts/reindex', { method: 'POST', body: { force: true } }));
+        loadReindex().catch(() => {});
+    } catch (e) {
+        toast(e.message, 'bad');
+    }
+});
 
 $('kachat-reindex')?.addEventListener('click', async () => {
     if (
@@ -8640,10 +8658,17 @@ const queuePeek = (() => {
     let hovering = false;
     const box = () => $('queue-peek');
 
+    // Five seconds from the last thing it had to say, never past twelve from when it opened;
+    // under the pointer it waits, a second at a time, and goes as soon as the pointer leaves.
     function arm() {
         clearTimeout(timer);
-        const left = Math.min(PEEK_AFTER_MS, Math.max(0, shownAt + PEEK_MAX_MS - Date.now()));
-        timer = setTimeout(() => (hovering ? arm() : hide()), left || PEEK_AFTER_MS);
+        const remaining = shownAt + PEEK_MAX_MS - Date.now();
+        if (remaining <= 0) return hovering ? wait() : hide();
+        timer = setTimeout(() => (hovering ? wait() : hide()), Math.min(PEEK_AFTER_MS, remaining));
+    }
+    function wait() {
+        clearTimeout(timer);
+        timer = setTimeout(() => (hovering ? wait() : hide()), 1000);
     }
     function hide() {
         clearTimeout(timer);
@@ -8676,7 +8701,7 @@ const queuePeek = (() => {
         const log = $('queue-peek-log');
         log.textContent += `${text}\n`;
         log.scrollTop = log.scrollHeight;
-        arm();
+        // Lines do not keep it open: a build logs for minutes, and this is a glance.
     }
     function ended(job) {
         if (!is(job.id)) return;
