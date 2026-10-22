@@ -7681,6 +7681,7 @@ async function loadNamesStats() {
 
 $('names-refresh')?.addEventListener('click', () => { loadNames().catch(() => {}); loadNamesStats().catch(() => {}); });
 async function loadPush() {
+    loadWebPush().catch(() => {});
     let d;
     try {
         d = await api('/api/push');
@@ -7752,6 +7753,54 @@ async function loadPushStats() {
     note.textContent =
         'A live census from the indexer. A large “sandbox” or “unknown” iOS share is the usual reason notifications never arrive on iPhone.';
 }
+
+// ---- Web Push (the installed web app): one VAPID key per network ----
+
+function webpushState(r) {
+    if (r.live === 'on') return `<span class="good">on</span>, key served to browsers`;
+    if (r.live === 'pending') return 'key stored; the indexer serves it after its next restart or update';
+    if (r.live === 'offline') return r.keySet ? 'key stored; the indexer is not running' : 'the indexer is not running';
+    if (r.live === 'error') return '<span class="bad">the indexer answered with an error</span>';
+    return 'off: no key yet';
+}
+
+async function loadWebPush() {
+    const box = $('webpush-rows');
+    if (!box) return;
+    const d = await api('/api/push/webpush');
+    box.innerHTML = Object.entries(d.nets)
+        .map(
+            ([net, r]) =>
+                `<tr><td>${escapeHtml(net)}</td><td>${webpushState(r)}</td>` +
+                `<td><button type="button" class="ghost" data-webpush-setup="${net}" data-rotate="${r.keySet ? '1' : ''}">${r.keySet ? 'Rotate key' : 'Set up'}</button></td></tr>`,
+        )
+        .join('');
+}
+
+$('webpush-rows')?.addEventListener('click', async (event) => {
+    const btn = event.target.closest('[data-webpush-setup]');
+    if (!btn) return;
+    const net = btn.dataset.webpushSetup;
+    const rotate = btn.dataset.rotate === '1';
+    if (
+        rotate &&
+        !(await askConfirm(
+            `Rotate the ${net} Web Push key?\n\nEvery browser subscribed on ${net} stops getting pushes until it notices the new key and signs up again, which its app does by itself within a day.`,
+        ))
+    ) {
+        return;
+    }
+    btn.disabled = true;
+    try {
+        const r = await api('/api/push/webpush/setup', { method: 'POST', body: { net, rotate } });
+        kResult('webpush-result', r.applied === 'next start' ? `The ${net} key is stored. The indexer is not running; it reads the key when it starts.` : `The ${net} key is stored. The indexer is restarting to read it (System, Update Queue).`, false);
+    } catch (e) {
+        kResult('webpush-result', e.message, true);
+    } finally {
+        btn.disabled = false;
+        loadWebPush().catch(() => {});
+    }
+});
 
 $('push-save').addEventListener('click', async () => {
     const body = {
