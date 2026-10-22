@@ -1383,15 +1383,22 @@ function settleQueueJob(job) {
  * switch can stay held until then and flip back on failure; the page itself
  * stays usable the whole time. `noCancel`: once started it runs to the end.
  */
+let queueActionsInFlight = 0;
+
 async function queueAction({ title, request, onEnd, noCancel = false }) {
     const headers = { 'X-KQS-Queue': '1', 'X-KQS-Queue-Title': encodeURIComponent(title) };
     if (noCancel) headers['X-KQS-No-Cancel'] = '1';
     let response;
+    queueActionsInFlight += 1;
     try {
         response = await request(headers);
     } catch (e) {
         toast(`${title}: ${e.message}`, 'bad');
         return { ok: false, status: 'failed', error: e.message };
+    } finally {
+        // A fast job's start event can beat its own request back; held a moment longer so
+        // that start is not announced twice.
+        setTimeout(() => (queueActionsInFlight -= 1), 1500);
     }
     // Answered on the spot ("already on the newest version"): nothing to queue.
     if (!response?.jobId) {
@@ -1413,12 +1420,9 @@ async function queueAction({ title, request, onEnd, noCancel = false }) {
         } else queueEnds.set(response.jobId, finish);
     });
     const ahead = updateQueue.current ? 1 + updateQueue.pending.length : 0;
-    toast(
-        ahead
-            ? `${title}: added to the Update Queue (${ahead} ahead of it). See System, Update Queue.`
-            : `${title}: started. Follow it in System, Update Queue.`,
-        'good',
-    );
+    // A small log popup rather than a toast, which is easy to miss: it shows the first lines
+    // and goes away on its own; the topbar badge keeps the count.
+    queuePeek.show(response.jobId, title, ahead ? `waiting, ${ahead} ahead of it` : 'starting');
     loadUpdateQueue();
     return ended;
 }
@@ -8473,7 +8477,10 @@ function connectJobs() {
         loadUpdateQueue();
         pushJobLine(`\n> ${job.name}`);
         if (job.queued) {
-            if (!pendingAction) toast(`${job.name}: started (System, Update Queue)`);
+            // The popup is the notice for a job this page just sent; a job started from
+            // elsewhere (another browser, a reload) still gets a word.
+            if (queuePeek.is(job.id)) queuePeek.state('running');
+            else if (!pendingAction && !queueActionsInFlight) toast(`${job.name}: started (System, Update Queue)`);
             return;
         }
         renderQueue(job.pending);
@@ -8508,6 +8515,7 @@ function connectJobs() {
         const { line, jobId } = JSON.parse(event.data);
         pushJobLine(line);
         updateQueueLine(jobId, line);
+        queuePeek.line(jobId, line);
         // The overlay shows the action it started; a tab watching its own job
         // shows that one. Everything is in All logs either way.
         actionLine(jobId, line);
@@ -8516,6 +8524,7 @@ function connectJobs() {
     jobStream.addEventListener('end', (event) => {
         const job = JSON.parse(event.data);
         loadUpdateQueue();
+        queuePeek.ended(job);
         settleQueueJob(job);
         if (!job.queued) renderQueue(job.pending);
         const wasOurs = pendingAction?.jobId === job.id;
@@ -8549,6 +8558,79 @@ function connectJobs() {
         loadKassigner();
     });
 }
+
+// ------------------------------------------------------------- queue peek ---
+
+/**
+ * The small popup after an Update, Rebuild, Install or a switch: the job's name, whether it
+ * started or is waiting, and its first log lines as they arrive. It hides itself five seconds
+ * after the last thing it had to show (at most twelve in all), stays while the pointer is on
+ * it, and opens the Update Queue when clicked. Not shown on the Update Queue page itself,
+ * where the same is already on screen.
+ */
+const queuePeek = (() => {
+    const PEEK_AFTER_MS = 5000;
+    const PEEK_MAX_MS = 12_000;
+    let jobId = null;
+    let timer = null;
+    let shownAt = 0;
+    let hovering = false;
+    const box = () => $('queue-peek');
+
+    function arm() {
+        clearTimeout(timer);
+        const left = Math.min(PEEK_AFTER_MS, Math.max(0, shownAt + PEEK_MAX_MS - Date.now()));
+        timer = setTimeout(() => (hovering ? arm() : hide()), left || PEEK_AFTER_MS);
+    }
+    function hide() {
+        clearTimeout(timer);
+        timer = null;
+        jobId = null;
+        box()?.setAttribute('hidden', '');
+    }
+    function show(id, title, state) {
+        const el = box();
+        if (!el || $('tab-queue')?.classList.contains('active')) return;
+        jobId = id;
+        shownAt = Date.now();
+        $('queue-peek-title').textContent = title;
+        $('queue-peek-state').textContent = state;
+        $('queue-peek-log').textContent = '';
+        el.removeAttribute('hidden');
+        arm();
+    }
+    const is = (id) => jobId !== null && jobId === id;
+    function state(text) {
+        if (!jobId) return;
+        $('queue-peek-state').textContent = text;
+        arm();
+    }
+    function line(id, text) {
+        if (!is(id)) return;
+        // Lines mean it runs, whatever the stream's start event said or when it came.
+        const st = $('queue-peek-state');
+        if (st.textContent === 'starting' || st.textContent.startsWith('waiting')) st.textContent = 'running';
+        const log = $('queue-peek-log');
+        log.textContent += `${text}\n`;
+        log.scrollTop = log.scrollHeight;
+        arm();
+    }
+    function ended(job) {
+        if (!is(job.id)) return;
+        state({ succeeded: 'done', cancelled: 'cancelled' }[job.status] ?? `failed: ${job.error ?? ''}`);
+    }
+    const el = box();
+    el?.addEventListener('mouseenter', () => (hovering = true));
+    el?.addEventListener('mouseleave', () => {
+        hovering = false;
+        arm();
+    });
+    el?.addEventListener('click', () => {
+        hide();
+        selectTab('queue');
+    });
+    return { show, is, state, line, ended, hide };
+})();
 
 // ------------------------------------------------------------ update queue ---
 
