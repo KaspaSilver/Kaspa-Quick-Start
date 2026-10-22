@@ -1471,6 +1471,25 @@
           </div>
           <div id="backup-status" class="verdict" hidden></div>
         </article>
+
+        <!-- The KaPosts processor's reindex (kachat-indexer reindex.rs): for the time it was
+             down, nothing it missed comes back by itself. -->
+        <article class="card span2">
+          <h3>Recover missed KaPosts</h3>
+          <p class="muted">
+            If the KaPosts processor was down (a red Processor tile on the Overview), the posts,
+            replies, votes, follows, profile updates and tips from that time were never indexed.
+            This walks every block the node still holds, oldest first, and indexes the KaChat
+            transactions in them. Anything already indexed is skipped, so it is safe to run any
+            time, and nobody gets a notification for old activity. The node keeps roughly the
+            last two days of blocks; older activity is beyond its reach.
+          </p>
+          <div class="row">
+            <button type="button" id="kachat-reindex" class="ghost">Reindex from the node's oldest block</button>
+            <span class="muted" id="kachat-reindex-state"></span>
+          </div>
+          <div id="kachat-reindex-result" class="update-status" hidden></div>
+        </article>
        </div>
       </div>
 
