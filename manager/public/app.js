@@ -3391,8 +3391,10 @@ $('svc-filters')?.addEventListener('click', (event) => {
  * highlighted, and blocks merged as red are red. Polls /api/dag/blocks once a second, only while
  * Overview is on screen and the node is running and fully synced.
  */
-const DAG_PX_PER_BLUE = 18;
-const DAG_KEEP_BLUE = 160;
+// Tighter than the first cut (18px, 160 kept): a long DAG should show real history, on the
+// card and above all expanded, not just the last minute's blocks.
+const DAG_PX_PER_BLUE = 12;
+const DAG_KEEP_BLUE = 360;
 // (`dag`, the view's state, is declared at the top of this file: selectTab can run before here.)
 
 function setDagView(active) {
@@ -3403,11 +3405,31 @@ function setDagView(active) {
         pollDag();
         dag.timer = setInterval(noOverlap(pollDag), 1000);
         if (dag.frame == null) dag.frame = requestAnimationFrame(drawDag);
-    } else if (dag.frame != null) {
-        cancelAnimationFrame(dag.frame);
-        dag.frame = null;
+    } else {
+        // Leaving Overview (a tab click, the cycle) takes the full-screen view with it.
+        setDagFull(false);
+        if (dag.frame != null) {
+            cancelAnimationFrame(dag.frame);
+            dag.frame = null;
+        }
     }
 }
+
+/** The BlockDAG over the whole screen; the same canvas, just bigger. Esc or Close ends it. */
+function setDagFull(on) {
+    const card = document.querySelector('.dag-card');
+    if (!card || card.classList.contains('dag-full') === Boolean(on)) return;
+    card.classList.toggle('dag-full', on);
+    document.body.classList.toggle('dag-fullscreen', on);
+    const btn = $('dag-expand');
+    if (btn) btn.textContent = on ? 'Close' : 'Expand';
+}
+
+$('dag-expand')?.addEventListener('click', () => setDagFull(!document.querySelector('.dag-card.dag-full')));
+
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && document.querySelector('.dag-card.dag-full')) setDagFull(false);
+});
 
 async function pollDag() {
     if (document.hidden) return;
@@ -3524,8 +3546,8 @@ function drawDag() {
             // A gentle curve, so links between neighbouring blocks stay visible.
             const mx = (a.x + q.x) / 2;
             ctx.beginPath();
-            ctx.moveTo(a.x - 5, a.y);
-            ctx.bezierCurveTo(mx, a.y, mx, q.y, q.x + 5, q.y);
+            ctx.moveTo(a.x - 4, a.y);
+            ctx.bezierCurveTo(mx, a.y, mx, q.y, q.x + 4, q.y);
             ctx.stroke();
         }
     }
@@ -3535,8 +3557,8 @@ function drawDag() {
         if (x < -20 || x > w + 20) continue;
         ctx.fillStyle = dag.reds.has(b.h) ? danger : chain.has(b.h) ? accent : muted;
         ctx.beginPath();
-        if (ctx.roundRect) ctx.roundRect(x - 5, y - 4, 10, 8, 2);
-        else ctx.rect(x - 5, y - 4, 10, 8);
+        if (ctx.roundRect) ctx.roundRect(x - 4, y - 4, 8, 8, 2);
+        else ctx.rect(x - 4, y - 4, 8, 8);
         ctx.fill();
     }
 }

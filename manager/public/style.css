@@ -2590,7 +2590,7 @@ body.cycling .tab.active { animation: cycle-in 0.55s ease both; }
 .bot-reset-row:first-child { border-top: 0; }
 
 /* Overview's live BlockDAG. */
-.dag-card canvas { display: block; width: 100%; height: 170px; border-radius: 8px; background: var(--panel-2); }
+.dag-card canvas { display: block; width: 100%; height: 260px; border-radius: 8px; background: var(--panel-2); }
 .dag-card .hint { margin-top: 8px; }
 .dag-legend { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; }
 .dag-legend i { display: inline-block; width: 10px; height: 8px; border-radius: 2px; }
@@ -2827,3 +2827,21 @@ body.cycling .tab.active { animation: cycle-in 0.55s ease both; }
 .svc-filter.active { background: var(--panel-2); color: var(--accent); border-color: var(--accent-dim); }
 .svc-filter:disabled { opacity: 0.45; cursor: default; }
 .svc-filter .svc-dot { width: 8px; height: 8px; }
+
+/* ---------------------------------------------------- BlockDAG, expanded -- */
+/* The same card over the whole screen; the canvas grows, the draw loop sizes
+   itself per frame, and Esc or Close brings the card back. */
+
+.dag-expand { margin-left: auto; }
+.dag-card.dag-full {
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    margin: 0;
+    border-radius: 0;
+    display: flex;
+    flex-direction: column;
+    padding: max(16px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+}
+.dag-card.dag-full canvas { flex: 1; height: auto; min-height: 0; }
+body.dag-fullscreen { overflow: hidden; }
