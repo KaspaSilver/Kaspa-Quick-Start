@@ -3312,7 +3312,9 @@ function renderHost(data) {
  */
 let hostServices = [];
 let svcFilter = null;
-const svcOrder = (svc) => (!svc.installed ? 2 : svc.running ? 0 : 1);
+// running, degraded (crash-looping, dead, or running with a failing healthcheck), stopped, absent.
+const svcDegraded = (svc) => svc.installed && (svc.health === 'unhealthy' || svc.status === 'restarting' || svc.status === 'dead');
+const svcOrder = (svc) => (!svc.installed ? 3 : svcDegraded(svc) ? 1 : svc.running ? 0 : 2);
 
 function renderHostServices() {
     const box = $('svc-filters');
@@ -3323,24 +3325,33 @@ function renderHostServices() {
         $('host-services-hint').hidden = true;
         return;
     }
-    // Each chip carries the same dot its tiles do: green running, amber stopped, grey absent.
+    // Each chip carries the same dot its tiles do: green running, red degraded, amber
+    // stopped, grey absent. Degraded only shows while something is: most days it is not there.
     const groups = [
         [0, 'running', 'ok'],
-        [1, 'stopped', 'warn'],
-        [2, 'not installed', ''],
+        [1, 'degraded', 'bad'],
+        [2, 'stopped', 'warn'],
+        [3, 'not installed', ''],
     ];
     box.innerHTML = groups
         .map(([n, word, dot]) => {
             const c = hostServices.filter((svc) => svcOrder(svc) === n).length;
+            if (!c && n === 1) return '';
             return `<button type="button" class="svc-filter${svcFilter === n ? ' active' : ''}" data-svc-filter="${n}" ${c ? '' : 'disabled'}><span class="svc-dot ${dot}"></span>${c} ${word}</button>`;
         })
         .join('');
     const shown = svcFilter === null ? [] : hostServices.filter((svc) => svcOrder(svc) === svcFilter);
     $('host-services').hidden = svcFilter === null;
-    $('host-services-hint').hidden = svcFilter !== 2;
+    $('host-services-hint').hidden = svcFilter !== 3;
     $('host-services').innerHTML = shown
         .map((svc) => {
-            const [dot, word] = !svc.installed ? ['', 'not installed'] : svc.running ? ['ok', 'running'] : ['warn', svc.status || 'stopped'];
+            const [dot, word] = !svc.installed
+                ? ['', 'not installed']
+                : svcDegraded(svc)
+                  ? ['bad', svc.health === 'unhealthy' ? 'running, failing its health check' : svc.status]
+                  : svc.running
+                    ? ['ok', 'running']
+                    : ['warn', svc.status || 'stopped'];
             const uptime = svc.running && svc.startedAt ? `, up ${fmtDuration(svc.startedAt)}` : '';
             return `<div class="svc-card${svc.installed ? '' : ' absent'}"><span class="svc-dot ${dot}"></span><div class="svc-meta"><strong>${escapeHtml(svc.label)}</strong><small>${escapeHtml(word + uptime)}</small></div></div>`;
         })
