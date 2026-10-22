@@ -2765,3 +2765,43 @@ body.cycling .tab.active { animation: cycle-in 0.55s ease both; }
     .topbar-sys .sys-item { padding: 0 7px; }
     #page-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 }
+
+/* ------------------------------------------------------------ queue peek -- */
+/* The glance at a job just sent to the Update Queue (bottom right, goes away
+   on its own). Above the toast. */
+
+.queue-peek {
+    position: fixed;
+    right: 20px;
+    bottom: 24px;
+    width: min(380px, calc(100vw - 32px));
+    z-index: 61;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--glow-soft);
+    padding: 12px 14px;
+    cursor: pointer;
+    animation: peek-in 0.18s ease-out;
+}
+@keyframes peek-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.queue-peek-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.queue-peek-head strong { font-size: 14px; }
+.queue-peek-head .muted { font-size: 12px; white-space: nowrap; }
+.queue-peek-log {
+    margin: 0;
+    height: 96px;
+    overflow: auto;
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px;
+    color: var(--text);
+}
+.queue-peek-log:empty::before { content: 'Waiting for the first lines of the log…'; color: var(--muted); }
+.queue-peek-foot { font-size: 11px; margin-top: 8px; text-align: right; }

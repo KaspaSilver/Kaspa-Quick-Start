@@ -3193,6 +3193,16 @@
 </div>
 
 <div id="toast" class="toast hidden"></div>
+<!-- A glance at a job just sent to the Update Queue: its first log lines, then it goes away
+     by itself. The queue badge in the topbar keeps the count. Click it to open the queue. -->
+<div id="queue-peek" class="queue-peek" hidden role="status" aria-live="polite">
+  <div class="queue-peek-head">
+    <strong id="queue-peek-title"></strong>
+    <span class="muted" id="queue-peek-state"></span>
+  </div>
+  <pre class="queue-peek-log" id="queue-peek-log"></pre>
+  <div class="muted queue-peek-foot">Click to open the Update Queue</div>
+</div>
 
 <script src="/qrcode.js"></script>
 <script type="module" src="/app.js"></script>
