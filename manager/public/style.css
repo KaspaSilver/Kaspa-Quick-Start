@@ -2831,3 +2831,7 @@ body.cycling .tab.active { animation: cycle-in 0.55s ease both; }
 }
 .dag-card.dag-full canvas { flex: 1; height: auto; min-height: 0; }
 body.dag-fullscreen { overflow: hidden; }
+
+/* --------------------------------------------------------- download logs -- */
+.logs-download { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; flex-wrap: wrap; }
+.logs-download select { width: auto; }
