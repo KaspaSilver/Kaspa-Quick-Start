@@ -8520,6 +8520,13 @@ document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') closeLogOverlay();
 });
 
+// Download logs: the browser saves what the manager builds (attachment), nothing kept here.
+$('logs-dl')?.addEventListener('click', () => {
+    const preset = $('logs-dl-preset').value;
+    const since = $('logs-dl-since').value;
+    location.href = `/api/logs/download?preset=${encodeURIComponent(preset)}&since=${encodeURIComponent(since)}`;
+});
+
 $('log-filter').addEventListener('input', () => {
     for (const key of logBuffers.keys()) renderLogTile(key);
     updateLogSummary();

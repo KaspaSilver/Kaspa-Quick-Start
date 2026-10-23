@@ -45,6 +45,7 @@ import * as selfservice from './lib/selfservice.js';
 import * as kachatDomains from './lib/kachat-domains.js';
 import * as x4kas from './lib/x4kas.js';
 import * as refundKeeper from './lib/refund-keeper.js';
+import * as logexport from './lib/logexport.js';
 import * as cpuminer from './lib/cpuminer.js';
 import * as publish from './lib/publish.js';
 import * as portcheck from './lib/portcheck.js';
@@ -1026,6 +1027,32 @@ route('GET', /^\/api\/logs\/stream$/, async (req, res, match, url) => {
         ...(source.match ? { tail: 20000 } : {}),
     });
     onClose(stop);
+});
+
+/**
+ * Download logs (handoff docs/DOWNLOAD-LOGS.md): one redacted plain-text file of a preset's
+ * sources over a real time window, to hand to a session without access to this machine.
+ */
+route('GET', /^\/api\/logs\/download$/, async (req, res, match, url) => {
+    const preset = url.searchParams.get('preset') || 'push';
+    const window = url.searchParams.get('since') || '6h';
+    if (!logexport.PRESETS[preset] || !logexport.WINDOWS[window]) return fail(res, 400, 'Unknown preset or window.');
+    try {
+        const { filename, text } = await logexport.build({
+            preset,
+            window,
+            panelVersion: PANEL_VERSION,
+            allKeys: dockerctl.LOG_SOURCES.map((s) => s.key),
+        });
+        res.writeHead(200, {
+            'Content-Type': 'text/plain; charset=utf-8',
+            'Content-Disposition': `attachment; filename="${filename}"`,
+            'Cache-Control': 'no-store',
+        });
+        res.end(text);
+    } catch (err) {
+        fail(res, 500, err.message);
+    }
 });
 
 route('GET', /^\/api\/logs\/containers$/, async (req, res) => {
