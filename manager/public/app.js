@@ -7718,19 +7718,15 @@ async function loadPushStats() {
                 : 'The indexer is not reachable right now, so start it to see the device census.';
         return;
     }
-    const rows = [['Total devices', d.total ?? 0]];
-    const plat = d.by_platform || {};
-    for (const k of Object.keys(plat).sort()) rows.push([k, plat[k]]);
-    const env = d.apns_by_environment || {};
-    for (const k of Object.keys(env).sort()) rows.push([`APNs ${k}`, env[k]]);
-    rows.push(['VoIP-capable', d.voip_capable ?? 0]);
-    rows.push(['With primary addr', d.with_primary_address ?? 0]);
-    rows.push(['KaPosts on', d.kaposts_enabled ?? 0]);
+    // Push is web only: just the browsers. Phones registered before stay in the indexer's
+    // records but get nothing any more, and its other counts (VoIP, KaPosts, primary address)
+    // are totals over every device, so they would mislead here.
+    const rows = [['Browsers registered', d.by_platform?.web ?? 0]];
     dl.innerHTML = rows
         .map(([k, v]) => `<div><dt>${escapeHtml(String(k))}</dt><dd>${escapeHtml(String(v))}</dd></div>`)
         .join('');
     note.textContent =
-        'A live census of the devices and browsers registered with the indexer for notifications.';
+        'A live count of the browsers registered with the indexer for web push notifications.';
 }
 
 // ---- Web Push (the installed web app): one VAPID key per network ----
