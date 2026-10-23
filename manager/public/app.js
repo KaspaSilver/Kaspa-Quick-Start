@@ -7688,34 +7688,13 @@ async function loadPush() {
     } catch {
         return;
     }
-    $('push-fcm-project').value = d.fcmProjectId || '';
-    $('push-apns-team').value = d.apns?.teamId || '';
-    $('push-apns-keyid').value = d.apns?.keyId || '';
-    $('push-apns-topic').value = d.apns?.topic || 'com.kachat.app';
-    $('push-apns-env').value = d.apns?.environment || 'production';
-    // Never fill the key boxes: the panel does not read keys back out, and an
-    // empty box means "keep what is saved".
-    $('push-fcm-key').value = '';
-    $('push-apns-key').value = '';
-    const setPill = (id, present) => {
-        const n = $(id);
-        n.textContent = present ? 'key saved' : 'no key';
-        n.className = present ? 'pill' : 'pill warn';
-    };
-    setPill('push-fcm-status', d.credentials?.fcm);
-    setPill('push-apns-status', d.credentials?.apns);
-    const on = (d.credentials?.fcm ? 1 : 0) + (d.credentials?.apns ? 1 : 0);
-    const pushOn = Boolean(d.pushEnabled);
-    // The on/off control is the sidebar switch (data-service="push"), like every other service;
-    // here we only reflect the resulting state in the tab's status tag.
+    // The tab is web push only now: the Android/iPhone key forms are gone from the panel (any
+    // keys saved earlier stay on disk and the indexer still uses them). The on/off control is
+    // the sidebar switch (data-service="push"); here we only reflect its state.
     const tag = $('push-state');
-    if (!pushOn) {
-        tag.textContent = 'off';
-        tag.className = 'tag off';
-    } else {
-        tag.textContent = on === 2 ? 'on' : on === 1 ? 'on (partly set)' : 'on (no keys)';
-        tag.className = on === 2 ? 'tag ok' : 'tag warn';
-    }
+    const pushOn = Boolean(d.pushEnabled);
+    tag.textContent = pushOn ? 'on' : 'off';
+    tag.className = pushOn ? 'tag ok' : 'tag off';
     // Device census is its own call so a slow/absent indexer never blocks the settings form.
     loadPushStats().catch(() => {});
 }
@@ -7751,7 +7730,7 @@ async function loadPushStats() {
         .map(([k, v]) => `<div><dt>${escapeHtml(String(k))}</dt><dd>${escapeHtml(String(v))}</dd></div>`)
         .join('');
     note.textContent =
-        'A live census from the indexer. A large “sandbox” or “unknown” iOS share is the usual reason notifications never arrive on iPhone.';
+        'A live census of the devices and browsers registered with the indexer for notifications.';
 }
 
 // ---- Web Push (the installed web app): one VAPID key per network ----
@@ -7800,30 +7779,6 @@ $('webpush-rows')?.addEventListener('click', async (event) => {
         btn.disabled = false;
         loadWebPush().catch(() => {});
     }
-});
-
-$('push-save').addEventListener('click', async () => {
-    const body = {
-        fcmProjectId: $('push-fcm-project').value.trim(),
-        apns: {
-            teamId: $('push-apns-team').value.trim(),
-            keyId: $('push-apns-keyid').value.trim(),
-            topic: $('push-apns-topic').value.trim(),
-            environment: $('push-apns-env').value,
-        },
-    };
-    // Keys travel only when the box is non-empty; blank keeps the saved one.
-    const fcmKey = $('push-fcm-key').value.trim();
-    const apnsKey = $('push-apns-key').value.trim();
-    if (fcmKey) body.fcmServiceAccount = fcmKey;
-    if (apnsKey) body.apnsKey = apnsKey;
-
-    await runAction({
-        key: 'push',
-        title: 'Save push settings',
-        request: () => api('/api/push/config', { method: 'POST', body }),
-    });
-    await loadPush();
 });
 
 // ------------------------------------------------------------ setup wizard ---
