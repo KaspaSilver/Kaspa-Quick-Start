@@ -3608,7 +3608,8 @@ route('GET', /^\/api\/services$/, async (req, res) => {
         installed: true,
         runnable: true,
         running: pushEnabled,
-        configured: push.hasApns() || push.hasFcm(),
+        // Push is web only: "configured" = the mainnet Web Push key is stored.
+        configured: Boolean((readEnvFile().KACHAT_WEBPUSH_VAPID_PRIVATE_KEY || '').trim()),
         tab: 'push',
         status: pushEnabled ? 'running' : 'stopped',
     };
@@ -4202,6 +4203,36 @@ route('GET', /^\/api\/names\/stats$/, async (req, res, match, url) => {
 // bind-mounted into the indexer. Only relevant to whoever operates the KaChat
 // mobile apps and owns their Firebase project / Apple developer account.
 
+/**
+ * Push is web only (the owner, 2026-10-22: "remove the mobile credentials"). Once at start, if
+ * anything mobile is left from an earlier panel: pin the Push Service switch where it stands as
+ * an explicit choice first (its never-set default is inferred FROM the mobile ids, KQS-027, so
+ * clearing them alone would turn Web Push off too), then delete the Firebase and Apple key
+ * files and blank the ids in apps.json and .env. The indexers stop being given them at their
+ * next recreate (the compose file no longer passes them). Idempotent: nothing left, nothing done.
+ */
+function removeMobilePush() {
+    try {
+        const cfg = apps.loadAppsConfig();
+        const k = cfg.kachat ?? {};
+        const ids = Boolean(String(k.fcmProjectId || '').trim() || String(k.apns?.teamId || '').trim() || String(k.apns?.keyId || '').trim());
+        if (!ids && !push.hasMobileCredentials()) return;
+        cfg.kachat = {
+            ...k,
+            pushEnabled: Boolean(k.pushEnabled),
+            pushChoiceAt: k.pushChoiceAt || Date.now(),
+            fcmProjectId: '',
+            apns: { ...apps.DEFAULT_APPS_CONFIG.kachat.apns },
+        };
+        apps.saveAppsConfig(cfg);
+        apps.writeAppsEnv(cfg);
+        const removed = push.removeMobileCredentials();
+        log(`push: mobile push removed (web only now); deleted ${removed.length ? removed.join(', ') : 'no key files'}, cleared the Firebase/Apple ids, switch kept ${cfg.kachat.pushEnabled ? 'on' : 'off'}`);
+    } catch (err) {
+        log('push: removing the mobile push settings failed', err);
+    }
+}
+
 route('GET', /^\/api\/push$/, async (req, res) => {
     const k = apps.loadAppsConfig().kachat ?? {};
     const container = await dockerctl.containerState('kaspa-node-kachat');
@@ -4211,11 +4242,6 @@ route('GET', /^\/api\/push$/, async (req, res) => {
         // `pushEnabled` = the Push Service master switch. Infer from configured identifiers when
         // never set, so an existing push setup shows on rather than off after upgrade.
         pushEnabled: k.pushEnabled !== undefined ? Boolean(k.pushEnabled) : Boolean(k.fcmProjectId || k.apns?.teamId),
-        fcmProjectId: k.fcmProjectId ?? '',
-        apns: k.apns ?? apps.DEFAULT_APPS_CONFIG.kachat.apns,
-        // Whether the key files are actually on disk. The panel never reads them
-        // back out -- it only ever says present or not.
-        credentials: { apns: push.hasApns(), fcm: push.hasFcm() },
         container,
     });
 });
@@ -4304,11 +4330,6 @@ route('POST', /^\/api\/push\/webpush\/setup$/, async (req, res) => {
 route('POST', /^\/api\/push\/config$/, async (req, res) => {
     const body = await readBody(req);
     try {
-        // Keys first: a saved key id with no key file is a half-configured
-        // platform, and the indexer will not enable one of those.
-        if (body.apnsKey) push.saveApnsKey(body.apnsKey);
-        if (body.fcmServiceAccount) push.saveFcmKey(body.fcmServiceAccount);
-
         // Merge the push fields into the whole document and validate it, but
         // persist only the validated kachat block so bot/etc. keep their
         // stored settings untouched.
@@ -4320,8 +4341,6 @@ route('POST', /^\/api\/push\/config$/, async (req, res) => {
                 pushEnabled: body.pushEnabled ?? current.kachat.pushEnabled,
                 // Only the switch sends pushEnabled; remember it was a choice (KQS-027).
                 ...(body.pushEnabled !== undefined ? { pushChoiceAt: Date.now() } : {}),
-                fcmProjectId: body.fcmProjectId ?? current.kachat.fcmProjectId,
-                apns: { ...current.kachat.apns, ...(body.apns ?? {}) },
             },
         };
         const { cfg, errors } = apps.validateAppsConfig(merged);
@@ -4355,18 +4374,9 @@ route('POST', /^\/api\/push\/config$/, async (req, res) => {
                 }
                 onLine('Done. Push notifications now use the new settings.');
             });
-            return sendJson(res, 202, {
-                ok: true,
-                jobId: job.id,
-                apns: current.kachat.apns,
-                credentials: { apns: push.hasApns(), fcm: push.hasFcm() },
-            });
+            return sendJson(res, 202, { ok: true, jobId: job.id });
         }
-        sendJson(res, 200, {
-            ok: true,
-            apns: current.kachat.apns,
-            credentials: { apns: push.hasApns(), fcm: push.hasFcm() },
-        });
+        sendJson(res, 200, { ok: true });
     } catch (err) {
         fail(res, 400, err.message);
     }
@@ -4945,6 +4955,7 @@ async function bootstrap() {
     startMiningStatsPersist();
 
     // The names paths follow whether each .kachat Domains server is really running (KQS-013).
+    removeMobilePush();
     reconcileNamesRoutes().catch((e) => log('names route', e));
     setInterval(() => reconcileNamesRoutes().catch(() => {}), 60_000).unref?.();
     // .kachat offer refund keeper: every 6 h per network with a running names server.

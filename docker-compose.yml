@@ -154,19 +154,9 @@ services:
       # is the LibreTranslate beside it. Here it is a container of its own.
       LIBRETRANSLATE_URL: ${LIBRETRANSLATE_URL:-http://libretranslate:5000}
       INTERNAL_PUSH_SECRET: ${KACHAT_PUSH_SECRET:-}
-      # Mobile push (Firebase/Android + Apple/iOS). The non-secret identifiers
-      # come from the Push Service panel via .env; the key files are bind-mounted
-      # read-only from conf/push (written 0600 by that panel), not baked in.
-      FCM_PROJECT_ID: ${KACHAT_FCM_PROJECT_ID:-}
-      FCM_SERVICE_ACCOUNT_PATH: /push/fcm/service-account.json
-      APNS_TOPIC: ${KACHAT_APNS_TOPIC:-}
-      APNS_KEY_ID: ${KACHAT_APNS_KEY_ID:-}
-      APNS_TEAM_ID: ${KACHAT_APNS_TEAM_ID:-}
-      APNS_ENVIRONMENT: ${KACHAT_APNS_ENVIRONMENT:-production}
       # Push Service master switch (Push Service tab). Absent/empty = on, so installs predating
       # this field keep their current behavior; the panel writes true/false when toggled.
       KACHAT_PUSH_ENABLED: ${KACHAT_PUSH_ENABLED:-true}
-      APNS_KEY_PATH: /push/apns/AuthKey.p8
       # Where KaPosts pushes look up the actor's .kachat name (GET <url>/identity/<address>): this
       # network's .kachat Domains server, set by the panel once it is installed; empty = lookup
       # off, short addresses only (kachat-audits IDX-029, KACHAT_NAMES_STANDALONE.md).
@@ -182,9 +172,6 @@ services:
       RUST_LOG: info,fjall=warn
     volumes:
       - kachat-app-data:/app/data
-      # Mobile push credentials (Firebase service-account.json + Apple .p8),
-      # written 0600 by the Push Service panel. Read-only to the indexer.
-      - ${STACK_DIR}/conf/push:/push:ro
       # Upstream runs these containers with host networking, so its launch
       # scripts hardcode localhost as the database and bind the admin API to
       # loopback. Neither holds on a bridge network. These are the same scripts
@@ -642,18 +629,9 @@ services:
       KASIA_API_BIND: 0.0.0.0:8600
       LIBRETRANSLATE_URL: ${LIBRETRANSLATE_URL:-http://libretranslate:5000}
       INTERNAL_PUSH_SECRET: ${KACHAT_PUSH_SECRET:-}
-      # Same APNs/FCM credentials as mainnet; the separate DB above is what keeps
-      # the testnet push registrations apart (per KACHAT_NAMES_INDEXER.md part A).
-      FCM_PROJECT_ID: ${KACHAT_FCM_PROJECT_ID:-}
-      FCM_SERVICE_ACCOUNT_PATH: /push/fcm/service-account.json
-      APNS_TOPIC: ${KACHAT_APNS_TOPIC:-}
-      APNS_KEY_ID: ${KACHAT_APNS_KEY_ID:-}
-      APNS_TEAM_ID: ${KACHAT_APNS_TEAM_ID:-}
-      APNS_ENVIRONMENT: ${KACHAT_APNS_ENVIRONMENT:-production}
       # Push Service master switch (Push Service tab). Absent/empty = on, so installs predating
       # this field keep their current behavior; the panel writes true/false when toggled.
       KACHAT_PUSH_ENABLED: ${KACHAT_PUSH_ENABLED:-true}
-      APNS_KEY_PATH: /push/apns/AuthKey.p8
       # Where KaPosts pushes look up the actor's .kachat name (GET <url>/identity/<address>): this
       # network's .kachat Domains server, set by the panel once it is installed; empty = lookup
       # off, short addresses only (kachat-audits IDX-029, KACHAT_NAMES_STANDALONE.md).
@@ -670,7 +648,6 @@ services:
       RUST_LOG: info,fjall=warn
     volumes:
       - kachat-app-testnet-data:/app/data
-      - ${STACK_DIR}/conf/push:/push:ro
       - ${STACK_DIR}/kachat/run-admin.sh:/app/run-admin.sh:ro
       - ${STACK_DIR}/kachat/run-webserver.sh:/app/run-webserver.sh:ro
       - ${STACK_DIR}/kachat/run-processor.sh:/app/run-processor.sh:ro
