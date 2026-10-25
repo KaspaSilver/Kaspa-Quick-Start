@@ -2287,6 +2287,12 @@
             </label>
             <span id="push-apns-status" class="pill">no key</span>
           </div>
+          <div class="row" id="push-apns-apps">
+            <span class="muted">Also send to:</span>
+            <label class="check"><input type="checkbox" data-apns-app="com.kachat.kaposts"> KaPosts <code>com.kachat.kaposts</code></label>
+            <label class="check"><input type="checkbox" data-apns-app="com.kachat.wallet"> KaChat Wallet <code>com.kachat.wallet</code></label>
+          </div>
+          <p class="hint">The other KaChat iPhone apps on the same Apple team. The same .p8 key signs for all of them, and each phone gets its pushes on its own app's topic.</p>
           <label>Auth key (.p8)
             <textarea id="push-apns-key" rows="6" spellcheck="false" autocomplete="off" placeholder="Apple Developer → Keys → your APNs key. Paste the whole AuthKey_XXXX.p8, from its BEGIN line to its END line. Leave blank to keep the saved one."></textarea>
           </label>

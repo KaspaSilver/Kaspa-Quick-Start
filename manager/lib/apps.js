@@ -187,7 +187,9 @@ export const DEFAULT_APPS_CONFIG = {
         fcmProjectId: '',
         // Apple push (iOS). Non-secret identifiers only -- the .p8 key file lives
         // in conf/push/, written by the Push Service panel, never in this file.
-        apns: { enabled: false, teamId: '', keyId: '', topic: 'com.kachat.app', environment: 'production' },
+        // `apps`: the other iPhone apps on the same Apple team whose devices the push service
+        // accepts, each on its own APNs topic (KaChat Wallet PUSH_SERVICE.md section 1). Same .p8.
+        apns: { enabled: false, teamId: '', keyId: '', topic: 'com.kachat.app', environment: 'production', apps: ['com.kachat.kaposts', 'com.kachat.wallet'] },
         // Server-side translation of KaPosts. Its engine is a container of its
         // own -- gigabytes of language models -- so this is only the setting;
         // whether the engine exists at all is the `translate` service.
@@ -365,6 +367,8 @@ export function validateAppsConfig(input) {
     if (topic && !/^[A-Za-z0-9.-]{1,155}$/.test(topic)) errors.push('APNs topic (iOS bundle id) contains invalid characters.');
     apns.topic = topic || 'com.kachat.app';
     apns.environment = ['production', 'sandbox'].includes(a.environment) ? a.environment : 'production';
+    // The other iPhone apps' topics: only the known ones (APNS_ALLOWED_TOPICS stays a closed list).
+    apns.apps = Array.isArray(a.apps) ? IPHONE_APPS.map((x) => x.topic).filter((t) => a.apps.includes(t)) : [...DEFAULT_APPS_CONFIG.kachat.apns.apps];
     cfg.kachat.apns = apns;
 
     // Translation languages are edited on their own screen; a save from any other screen
@@ -542,6 +546,16 @@ export async function ensureSecrets(log = () => {}) {
 export const botRef = (cfg) => (!cfg.bot?.ref || cfg.bot.ref === 'bots' ? 'main' : cfg.bot.ref);
 
 /** Writes the non-secret settings the compose file reads for these services. */
+/** The other KaChat iPhone apps a push can go to, besides the main app's own topic. */
+export const IPHONE_APPS = [
+    { topic: 'com.kachat.kaposts', label: 'KaPosts' },
+    { topic: 'com.kachat.wallet', label: 'KaChat Wallet' },
+];
+
+/** The main app's topic plus the other apps switched on, for APNS_ALLOWED_TOPICS. */
+export const allowedApnsTopics = (apns) =>
+    [...new Set([apns?.topic || 'com.kachat.app', ...(apns?.apps ?? [])])].join(',');
+
 export function writeAppsEnv(cfg) {
     updateEnvFile({
         KACHAT_REF: cfg.kachat.ref,
@@ -556,6 +570,8 @@ export function writeAppsEnv(cfg) {
         KACHAT_APNS_KEY_ID: cfg.kachat.apns?.keyId || '',
         KACHAT_APNS_TOPIC: cfg.kachat.apns?.topic || '',
         KACHAT_APNS_ENVIRONMENT: cfg.kachat.apns?.environment || 'production',
+        // Every iPhone app the push service may send to, each device on its own app's topic.
+        KACHAT_APNS_ALLOWED_TOPICS: allowedApnsTopics(cfg.kachat.apns),
         // Read by the translation engine at startup and by nothing else. It
         // only loads what is listed here, so changing it means recreating it.
         LT_LOAD_ONLY: cfg.kachat.translate?.languages || 'en,es,pt,fr,de,ru,zh,ja,ko,ar,vi',
