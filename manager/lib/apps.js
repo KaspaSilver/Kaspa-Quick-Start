@@ -547,15 +547,15 @@ export function writeAppsEnv(cfg) {
         KACHAT_REF: cfg.kachat.ref,
         KACHAT_NETWORK: cfg.kachat.network,
         KACHAT_NODE_PORT: cfg.kachat.network === 'testnet-10' ? 17210 : 17110,
+        KACHAT_FCM_PROJECT_ID: cfg.kachat.fcmProjectId,
         // Push Service master switch read by the indexer at startup (KACHAT_PUSH_ENABLED).
         KACHAT_PUSH_ENABLED: cfg.kachat.pushEnabled ? 'true' : 'false',
-        // Mobile push is gone (web only, 2026-10-22): the old Firebase/Apple ids are blanked so
-        // no value stays in .env; the compose file no longer reads them.
-        KACHAT_FCM_PROJECT_ID: '',
-        KACHAT_APNS_TEAM_ID: '',
-        KACHAT_APNS_KEY_ID: '',
-        KACHAT_APNS_TOPIC: '',
-        KACHAT_APNS_ENVIRONMENT: '',
+        // Apple push identifiers (iOS). The .p8 key file is not here -- it is
+        // bind-mounted from conf/push/ (see docker-compose.yml APNS_KEY_PATH).
+        KACHAT_APNS_TEAM_ID: cfg.kachat.apns?.teamId || '',
+        KACHAT_APNS_KEY_ID: cfg.kachat.apns?.keyId || '',
+        KACHAT_APNS_TOPIC: cfg.kachat.apns?.topic || '',
+        KACHAT_APNS_ENVIRONMENT: cfg.kachat.apns?.environment || 'production',
         // Read by the translation engine at startup and by nothing else. It
         // only loads what is listed here, so changing it means recreating it.
         LT_LOAD_ONLY: cfg.kachat.translate?.languages || 'en,es,pt,fr,de,ru,zh,ja,ko,ar,vi',
