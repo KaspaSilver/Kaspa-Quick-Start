@@ -163,6 +163,9 @@ services:
       APNS_KEY_ID: ${KACHAT_APNS_KEY_ID:-}
       APNS_TEAM_ID: ${KACHAT_APNS_TEAM_ID:-}
       APNS_ENVIRONMENT: ${KACHAT_APNS_ENVIRONMENT:-production}
+      # The iPhone apps the push service accepts (KaChat, KaPosts, KaChat Wallet): each device's
+      # pushes go on its own app's topic. Set from the Push Service tab; empty = APNS_TOPIC only.
+      APNS_ALLOWED_TOPICS: ${KACHAT_APNS_ALLOWED_TOPICS:-}
       # Push Service master switch (Push Service tab). Absent/empty = on, so installs predating
       # this field keep their current behavior; the panel writes true/false when toggled.
       KACHAT_PUSH_ENABLED: ${KACHAT_PUSH_ENABLED:-true}
@@ -650,6 +653,9 @@ services:
       APNS_KEY_ID: ${KACHAT_APNS_KEY_ID:-}
       APNS_TEAM_ID: ${KACHAT_APNS_TEAM_ID:-}
       APNS_ENVIRONMENT: ${KACHAT_APNS_ENVIRONMENT:-production}
+      # The iPhone apps the push service accepts (KaChat, KaPosts, KaChat Wallet): each device's
+      # pushes go on its own app's topic. Set from the Push Service tab; empty = APNS_TOPIC only.
+      APNS_ALLOWED_TOPICS: ${KACHAT_APNS_ALLOWED_TOPICS:-}
       # Push Service master switch (Push Service tab). Absent/empty = on, so installs predating
       # this field keep their current behavior; the panel writes true/false when toggled.
       KACHAT_PUSH_ENABLED: ${KACHAT_PUSH_ENABLED:-true}

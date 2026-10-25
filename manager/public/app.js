@@ -7694,6 +7694,7 @@ async function loadPush() {
     $('push-apns-keyid').value = d.apns?.keyId || '';
     $('push-apns-topic').value = d.apns?.topic || 'com.kachat.app';
     $('push-apns-env').value = d.apns?.environment || 'production';
+    for (const box of document.querySelectorAll('[data-apns-app]')) box.checked = (d.apns?.apps ?? []).includes(box.dataset.apnsApp);
     // Never fill the key boxes: the panel does not read keys back out, and an
     // empty box means "keep what is saved".
     $('push-fcm-key').value = '';
@@ -7811,6 +7812,7 @@ $('push-save').addEventListener('click', async () => {
             keyId: $('push-apns-keyid').value.trim(),
             topic: $('push-apns-topic').value.trim(),
             environment: $('push-apns-env').value,
+            apps: [...document.querySelectorAll('[data-apns-app]:checked')].map((b) => b.dataset.apnsApp),
         },
     };
     // Keys travel only when the box is non-empty; blank keeps the saved one.
