@@ -4334,6 +4334,15 @@ route('POST', /^\/api\/push\/config$/, async (req, res) => {
     try {
         // Keys first: a saved key id with no key file is a half-configured
         // platform, and the indexer will not enable one of those.
+        // An Apple key is useless without the IDs it belongs to: Apple rejects every push as
+        // InvalidProviderToken (a grey example value in the Team ID box once hid exactly that).
+        // Checked before anything is stored, so a refused save leaves nothing half-done.
+        if (body.apnsKey) {
+            const a = { ...(apps.loadAppsConfig().kachat?.apns ?? {}), ...(body.apns ?? {}) };
+            if (!String(a.teamId || '').trim() || !String(a.keyId || '').trim()) {
+                return fail(res, 400, 'Fill in the Apple Team ID and Key ID together with the .p8 key: Apple rejects every push without them.');
+            }
+        }
         if (body.apnsKey) push.saveApnsKey(body.apnsKey);
         if (body.fcmServiceAccount) push.saveFcmKey(body.fcmServiceAccount);
 
