@@ -7706,6 +7706,16 @@ async function loadPush() {
     };
     setPill('push-fcm-status', d.credentials?.fcm);
     setPill('push-apns-status', d.credentials?.apns);
+    // A key alone does not sign anything: Apple also needs the Team ID and Key ID it belongs to,
+    // and Firebase the project. Say what is missing instead of a reassuring "key saved".
+    const incomplete = (id, missing) => {
+        if (!missing.length) return;
+        const n = $(id);
+        n.textContent = `missing ${missing.join(' and ')}`;
+        n.className = 'pill warn';
+    };
+    if (d.credentials?.apns) incomplete('push-apns-status', [!d.apns?.teamId && 'Team ID', !d.apns?.keyId && 'Key ID'].filter(Boolean));
+    if (d.credentials?.fcm) incomplete('push-fcm-status', [!d.fcmProjectId && 'Project ID'].filter(Boolean));
     const on = (d.credentials?.fcm ? 1 : 0) + (d.credentials?.apns ? 1 : 0);
     const pushOn = Boolean(d.pushEnabled);
     // The on/off control is the sidebar switch (data-service="push"), like every other service;
