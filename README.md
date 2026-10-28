@@ -218,6 +218,28 @@ otherwise hand-write nginx config for:
 - optional username/password, IP allow-lists and per-IP rate limits
 - DuckDNS: enter a subdomain and token to keep a free domain pointed here
 
+**Cloudflare Tunnel.** Serves your own domain from this machine with no port
+forwarded on your router and without DNS showing your home IP: `cloudflared`
+dials out to Cloudflare, and visitors reach this machine through it. You need a
+domain on a Cloudflare account (the free plan is enough). Install it under
+**Network → Cloudflare**, then:
+
+1. In the Cloudflare dashboard, **Zero Trust → Networks → Tunnels → Create a
+   tunnel → Cloudflared**. Copy the install command shown for any system (don't
+   run it) and paste it into the Cloudflare tab's token box. The panel keeps
+   only the token, in `conf/cloudflare/tunnel.env`, readable by you alone.
+2. Turn on the Cloudflare switch. The tab shows when it is connected.
+3. In the tunnel, **Add route → Published application** for each name, with the
+   service URL `http://proxy:8081`. Cloudflare creates the DNS record.
+4. On the tab's **Hostnames**, add the name and pick which domain under Proxy &
+   domains it serves the same as. For a name only the tunnel uses, add that
+   domain under Proxy & domains first, without HTTPS: Cloudflare does HTTPS.
+
+Tunnel traffic arrives on the proxy's port 8081, which is never published to
+the host, so nginx there takes each visitor's real address from Cloudflare.
+Rate limits and allow-lists keep working per visitor. Uploads through
+Cloudflare's free plan are capped at 100 MB each.
+
 **Mining.** Switches on the stratum bridge that ships with rusty-kaspa, so
 ASICs and miners can point at your own node instead of a pool:
 
@@ -338,6 +360,7 @@ bind-mounting a RocksDB database into Docker Desktop is painfully slow.
 | `kaspad`  | built from the release binary | the node |
 | `manager` | Node 22, zero npm deps        | control panel + Docker control plane |
 | `proxy`   | `nginx:1.27-alpine`           | domains, TLS, reverse proxying |
+| `cloudflared` | `cloudflare/cloudflared`  | Cloudflare Tunnel: public names with no open port (only when Cloudflare is on) |
 | `bridge`  | built from the release binary | stratum server for miners (only when mining is on) |
 | `kachat-app` + `kachat-db` | built from KaChat-Indexer | chat/KaPosts indexer and its Postgres (only when KaChat is on) |
 | `nextcloud` + db/redis/imaginary | `nextcloud:stable` + ffmpeg | private cloud (only when Nextcloud is on) |

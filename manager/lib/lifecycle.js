@@ -5,6 +5,7 @@ import { renderTestnetPortsOverride, writeTestnetArgsFile } from './kaspad-args.
 import { loadTestnetNodeConfig } from './store.js';
 import { loadBridgeConfig, writeTestnetBridgeFiles } from './bridge.js';
 import * as cpuminer from './cpuminer.js';
+import * as cloudflare from './cloudflare.js';
 
 /**
  * Install, start, stop, uninstall -- for everything in the stack that is a
@@ -147,6 +148,24 @@ export const UNITS = {
         images: [],
         buildable: [],
         data: 'nothing. Your domains and certificates live in the stack directory and are kept',
+    },
+    cloudflare: {
+        label: 'Cloudflare Tunnel',
+        profile: 'cloudflare',
+        services: ['cloudflared'],
+        containers: [cloudflare.CONTAINER],
+        primary: cloudflare.CONTAINER,
+        volumes: [],
+        // Pulled, not built here.
+        images: [],
+        buildable: [],
+        prepare: (onLine, { starting = false } = {}) => {
+            // Installing only creates the container; the token is pasted on its tab, which
+            // opens once it is installed. Started without one, cloudflared exits at once
+            // and restarts forever.
+            if (starting && !cloudflare.hasToken()) throw new Error('Paste the tunnel token on the Cloudflare tab first.');
+        },
+        data: 'nothing. The tunnel token and your hostnames stay in the stack directory',
     },
 
     // ---- Testnet-10 stack (runs alongside mainnet) --------------------------

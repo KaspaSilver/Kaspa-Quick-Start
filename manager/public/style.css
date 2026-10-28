@@ -1111,6 +1111,9 @@ button.big { font-size: 15px; padding: 11px 22px; }
 
 table.ports td.toggle { width: 56px; }
 table.ports td.note { color: var(--muted); font-size: 12.5px; font-family: inherit; }
+/* Cloudflare hostnames: names, not port numbers, so the first column takes what it needs. */
+table.cf-hosts td:first-child { width: auto; }
+table.cf-hosts td:last-child { width: 1%; white-space: nowrap; }
 
 /* ------------------------------------------------------------ sync detail */
 

@@ -290,6 +290,7 @@ function selectTab(name) {
     if (name === 'push') loadPush().catch(() => {});
     if (name === 'names') loadNames().catch(() => {});
     if (name === 'experimental') loadExperimental().catch(() => {});
+    setCloudflarePolling(name === 'cloudflare');
     // The machine's LAN address sits beside the title on Proxy & domains.
     $('topbar-lan').hidden = name !== 'proxy';
     if (name === 'proxy') loadLanIp().catch(() => {});
@@ -595,6 +596,7 @@ const SVC_LOGS = {
         ],
     },
     proxy: { mainnet: [['proxy', 'nginx proxy']] },
+    cloudflare: { mainnet: [['cloudflared', 'cloudflared']] },
     global: { mainnet: [['manager', 'control panel']] },
 };
 const SVC_LOG_LINES = 2000;
@@ -699,7 +701,7 @@ document.addEventListener('click', (event) => {
 // parallel *-testnet units, so both networks run side by side from one panel. The
 // choice is remembered across reloads.
 const NET_VIEW_KEY = 'kqs-network-view';
-const TESTNET_TABS = new Set(['overview', 'kaspad', 'mining', 'kachat', 'names', 'proxy', 'logs', 'global', 'experimental', 'support']);
+const TESTNET_TABS = new Set(['overview', 'kaspad', 'mining', 'kachat', 'names', 'proxy', 'cloudflare', 'logs', 'global', 'experimental', 'support']);
 
 // Proxy & domains state (filled by loadPublish). Declared up here because
 // applyNetworkView runs at load and re-renders it.
@@ -1454,6 +1456,7 @@ const SERVICE_ACTIONS = {
     // No sidebar row: its switch lives on the indexer's Translation tab.
     translate: start('translate'),
     proxy: start('proxy'),
+    cloudflare: start('cloudflare'),
     // Mainnet's unit (the Testnet view maps the switch to kachat-domains-testnet).
     'kachat-domains': start('kachat-domains'),
 };
@@ -1468,6 +1471,7 @@ const SERVICE_NAMES = {
     bot: 'the KaChat Bot',
     translate: 'the translation engine',
     proxy: 'the reverse proxy',
+    cloudflare: 'the Cloudflare Tunnel',
     'kachat-domains': '.kachat Domains',
 };
 
@@ -9603,6 +9607,131 @@ async function loadLanIp() {
         button.disabled = true;
     }
 }
+
+// --- Cloudflare Tunnel (lib/cloudflare.js) ---
+//
+// The container installs and switches like any other unit; this tab holds the
+// token and the public hostnames, each pointed at a domain under Proxy & domains.
+
+let cloudflareTimer = null;
+
+function setCloudflarePolling(active) {
+    clearInterval(cloudflareTimer);
+    cloudflareTimer = null;
+    if (active) {
+        loadCloudflare().catch(() => {});
+        // The connection comes up a few seconds after the switch, so it is worth watching.
+        cloudflareTimer = setInterval(noOverlap(() => loadCloudflare().catch(() => {})), 5000);
+    }
+}
+
+async function loadCloudflare() {
+    const d = await api('/api/cloudflare');
+
+    const tag = $('cf-state');
+    const conn = d.connection;
+    if (!d.state?.installed) {
+        tag.textContent = 'not installed';
+        tag.className = 'tag off';
+    } else if (!d.state.running) {
+        tag.textContent = 'off';
+        tag.className = 'tag off';
+    } else if (conn?.ready) {
+        tag.textContent = 'connected';
+        tag.className = 'tag ok';
+    } else {
+        tag.textContent = 'connecting';
+        tag.className = 'tag warn';
+    }
+    setNavHealth('cloudflare', !d.state?.installed ? 'absent' : !d.state.running ? 'bad' : conn?.ready ? 'ok' : 'warn');
+
+    $('cf-connection').textContent = !d.state?.running
+        ? 'stopped'
+        : conn?.ready
+          ? `connected (${conn.connections} link${conn.connections === 1 ? '' : 's'})`
+          : 'not connected yet';
+    $('cf-tunnel-id').textContent = d.token?.tunnelId ?? 'no token';
+    $('cf-proxy').textContent = d.proxyRunning ? 'running' : 'off';
+    $('cf-proxy-note').hidden = d.proxyRunning;
+
+    $('cf-token-note').textContent = d.token
+        ? `Saved for tunnel ${d.token.tunnelId}. Paste a new one to replace it.`
+        : 'No token saved yet.';
+    $('cf-token-forget').hidden = !d.token;
+
+    // The whole URL, http:// included: the dashboard takes it as one field.
+    $('cf-origin').textContent = d.origin;
+    $('cf-origin-copy').dataset.copy = d.origin;
+
+    // Left alone while somebody has it open, or the poll would close it under them.
+    const select = $('cf-serves');
+    if (document.activeElement !== select) {
+        const picked = select.value;
+        select.innerHTML = d.domains.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('');
+        if (d.domains.includes(picked)) select.value = picked;
+    }
+    $('cf-serves-note').hidden = d.domains.length > 0;
+    $('cf-host-add').disabled = d.domains.length === 0;
+
+    $('cf-hosts-body').innerHTML = d.hostnames.length
+        ? d.hostnames
+              .map(
+                  (h) => `<tr>
+          <td><a href="https://${escapeHtml(h.hostname)}/" target="_blank" rel="noopener">${escapeHtml(h.hostname)}</a></td>
+          <td>${escapeHtml(h.serves)}${h.servesMissing ? ' <span class="tag warn">not under Proxy &amp; domains</span>' : ''}</td>
+          <td><button type="button" class="ghost mini" data-cf-remove="${escapeHtml(h.id)}" data-cf-name="${escapeHtml(h.hostname)}">Remove</button></td>
+        </tr>`,
+              )
+              .join('')
+        : '<tr><td colspan="3" class="muted">No names on the tunnel yet.</td></tr>';
+}
+
+$('cf-token-save').addEventListener('click', async () => {
+    const input = $('cf-token');
+    if (!input.value.trim()) return toast('Paste the tunnel token first.', 'bad');
+    const job = await queueAction({
+        title: 'Saving the Cloudflare tunnel token',
+        request: (headers) => api('/api/cloudflare/token', { method: 'PUT', body: { token: input.value }, headers }),
+    });
+    if (job?.ok) input.value = '';
+    loadCloudflare().catch(() => {});
+});
+
+$('cf-token-forget').addEventListener('click', async () => {
+    if (!(await askConfirm('Forget the tunnel token? The tunnel cannot start again until you paste one.'))) return;
+    try {
+        await api('/api/cloudflare/token', { method: 'DELETE' });
+        toast('Token forgotten.');
+    } catch (e) {
+        toast(e.message, 'bad');
+    }
+    loadCloudflare().catch(() => {});
+});
+
+$('cf-host-add').addEventListener('click', async () => {
+    const hostname = $('cf-host').value.trim();
+    if (!hostname) return toast('Type the public hostname first.', 'bad');
+    try {
+        await api('/api/cloudflare/hostnames', { method: 'POST', body: { hostname, serves: $('cf-serves').value } });
+        $('cf-host').value = '';
+        toast(`${hostname} is on the tunnel.`, 'good');
+    } catch (e) {
+        toast(e.message, 'bad');
+    }
+    loadCloudflare().catch(() => {});
+});
+
+$('cf-hosts-body').addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-cf-remove]');
+    if (!button) return;
+    if (!(await askConfirm(`Take ${button.dataset.cfName} off the tunnel? Remove its route in the Cloudflare dashboard too.`))) return;
+    try {
+        await api(`/api/cloudflare/hostnames/${button.dataset.cfRemove}`, { method: 'DELETE' });
+    } catch (e) {
+        toast(e.message, 'bad');
+    }
+    loadCloudflare().catch(() => {});
+});
 
 // --- .kachat → Rules: the rules of the registry contract that is running ---
 //

@@ -231,6 +231,17 @@
           <span class="track"></span>
         </label>
       </div>
+      <div class="nav-row">
+        <button class="nav-item" data-tab="cloudflare" title="Cloudflare">
+          <span class="nav-dot" data-health="cloudflare"></span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18.5a4.5 4.5 0 01-.7-8.95 6 6 0 0111.5 1.1A3.9 3.9 0 0117.5 18.5z"/><path d="M9.5 14l2 2 3.5-3.5"/></svg>
+          <span class="label">Cloudflare</span>
+        </button>
+        <label class="switch mini" title="Start or stop the Cloudflare Tunnel">
+          <input type="checkbox" data-service="cloudflare" aria-label="Start or stop the Cloudflare Tunnel">
+          <span class="track"></span>
+        </label>
+      </div>
 
     </nav>
 
@@ -2529,6 +2540,124 @@
       <div id="sub-proxy-uninstall" class="subtab">
         <div class="grid">
           <article class="card span2 uninstall-card" data-uninstall="proxy"></article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ------------------------------------------------------ cloudflare -->
+    <!--
+      Cloudflare Tunnel (lib/cloudflare.js): public names on your own domain with no
+      port forwarded and without DNS showing this network's address. The tunnel and
+      its routes are made in the Cloudflare dashboard; this tab holds the token and
+      decides what each name serves, by pointing it at a domain under Proxy & domains.
+    -->
+    <section id="tab-cloudflare" class="tab">
+      <nav class="subnav" aria-label="Cloudflare">
+        <button class="subtab-btn active" data-subtab="cf-tunnel">Tunnel</button>
+        <button class="subtab-btn" data-subtab="cf-hostnames">Hostnames</button>
+        <button class="subtab-btn" data-subtab="cf-log">Log</button>
+        <button class="subtab-btn" data-subtab="cf-uninstall">Uninstall</button>
+      </nav>
+
+      <div id="sub-cf-tunnel" class="subtab active">
+        <div class="grid">
+          <article class="card span2">
+            <div class="node-head">
+              <h3>Cloudflare Tunnel</h3>
+              <span id="cf-state" class="tag off">off</span>
+            </div>
+            <p class="muted">
+              Serves your own domain from this machine with no port forwarded on your router, and
+              without DNS showing your home IP: visitors reach Cloudflare, and Cloudflare reaches
+              this machine through a connection it opened itself. You need a domain on a Cloudflare
+              account (the free plan is enough).
+            </p>
+            <dl class="kv">
+              <div><dt>Connection</dt><dd id="cf-connection">–</dd></div>
+              <div><dt>Tunnel</dt><dd id="cf-tunnel-id">–</dd></div>
+              <div><dt>Reverse proxy</dt><dd id="cf-proxy">–</dd></div>
+            </dl>
+            <p class="verdict bad" id="cf-proxy-note" hidden>
+              The tunnel delivers every request to the reverse proxy, which is off. Switch on
+              <strong>Proxy &amp; domains</strong> in the sidebar.
+            </p>
+          </article>
+
+          <article class="card span2">
+            <h3>1. Create the tunnel</h3>
+            <ol class="howto-steps">
+              <li>In the <a href="https://one.dash.cloudflare.com/" target="_blank" rel="noopener">Cloudflare dashboard</a>, open <strong>Zero Trust</strong>, then <strong>Networks</strong>, <strong>Tunnels</strong>, and <strong>Create a tunnel</strong>. Choose <strong>Cloudflared</strong> and give it a name.</li>
+              <li>On <strong>Install and run a connector</strong>, copy the command shown for any system. Don't run it: paste it below, and the panel takes the token out of it.</li>
+            </ol>
+            <label class="stack">Tunnel token
+              <span class="row">
+                <input id="cf-token" type="password" placeholder="eyJhIjoi... or the whole command" size="60" autocomplete="off" spellcheck="false">
+                <button type="button" class="primary" id="cf-token-save">Save</button>
+              </span>
+            </label>
+            <p class="hint" id="cf-token-note">No token saved yet.</p>
+            <div class="row">
+              <button type="button" class="ghost" id="cf-token-forget" hidden>Forget the token</button>
+            </div>
+          </article>
+
+          <article class="card span2">
+            <h3>2. Route your names to this machine</h3>
+            <p class="muted">
+              In the same tunnel, add a route for each name (<strong>Add route</strong>, then
+              <strong>Published application</strong>). Every route points at the same place:
+            </p>
+            <dl class="kv vertical">
+              <div><dt>Service URL</dt><dd><code id="cf-origin">http://proxy:8081</code> <button type="button" class="copy-btn" id="cf-origin-copy" data-copy="http://proxy:8081">Copy</button></dd></div>
+            </dl>
+            <p class="hint">
+              Cloudflare creates the DNS record for the name itself. Then add the name under
+              <strong>Hostnames</strong> here and pick what it serves.
+            </p>
+          </article>
+        </div>
+      </div>
+
+      <div id="sub-cf-hostnames" class="subtab">
+        <div class="grid">
+          <article class="card span2">
+            <h3>Hostnames</h3>
+            <p class="muted">
+              Each name on the tunnel serves the same as one of your domains under
+              <strong>Proxy &amp; domains</strong>: the same services, paths, passwords, allowlists and
+              limits. Both keep working side by side, so apps can move from one name to the other
+              at their own pace. For a name only the tunnel uses, add it under Proxy &amp; domains
+              without HTTPS: Cloudflare provides the certificate.
+            </p>
+            <div class="row">
+              <label class="stack">Public hostname
+                <input id="cf-host" placeholder="api.example.com" size="30" autocomplete="off" spellcheck="false">
+              </label>
+              <label class="stack">Serves the same as
+                <select id="cf-serves"></select>
+              </label>
+              <button type="button" class="primary" id="cf-host-add">Add</button>
+            </div>
+            <p class="hint" id="cf-serves-note" hidden>
+              Nothing is published under Proxy &amp; domains yet. Add a domain there first.
+            </p>
+            <div class="scroll-x">
+              <table class="ports cf-hosts">
+                <thead><tr><th>Hostname</th><th>Serves the same as</th><th></th></tr></thead>
+                <tbody id="cf-hosts-body"></tbody>
+              </table>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <div id="sub-cf-log" class="subtab">
+        <div class="svclog" data-svclog="cloudflare"></div>
+      </div>
+
+      <div id="sub-cf-uninstall" class="subtab">
+        <div class="grid">
+          <article class="card span2 uninstall-card" data-uninstall="cloudflare"></article>
         </div>
       </div>
     </section>

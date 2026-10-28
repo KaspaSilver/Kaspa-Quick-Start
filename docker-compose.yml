@@ -483,9 +483,38 @@ services:
       - ${STACK_DIR}/proxy/snippets:/etc/nginx/snippets:ro
       - ${STACK_DIR}/proxy/letsencrypt:/etc/letsencrypt:ro
       - ${STACK_DIR}/proxy/webroot:/var/www/certbot
+    # Only 80 and 443. The proxy also listens on 8081 for Cloudflare Tunnel
+    # traffic, and that one must never be published: nginx trusts the visitor
+    # address in CF-Connecting-IP there because only cloudflared can reach it.
     ports:
       - "${HTTP_PORT:-80}:80"
       - "${HTTPS_PORT:-443}:443"
+    networks:
+      - kaspa
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Cloudflare Tunnel. Dials out to Cloudflare, so public names reach this
+  # machine with no port forwarded and without DNS showing its address. The
+  # tunnel and its routes are made in the Cloudflare dashboard; every route
+  # points at the proxy's tunnel listener (http://proxy:8081), and the panel's
+  # Cloudflare tab decides what each name serves. The token comes from that tab,
+  # written 0600 to conf/cloudflare/tunnel.env.
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.2
+    container_name: kaspa-node-cloudflared
+    hostname: cloudflared
+    profiles: ["cloudflare"]
+    restart: unless-stopped
+    # Metrics on the internal network only: the panel reads /ready from it to
+    # show whether the tunnel is connected.
+    command: ["tunnel", "--no-autoupdate", "--metrics", "0.0.0.0:2000", "run"]
+    env_file:
+      - path: ./conf/cloudflare/tunnel.env
+        required: false
     networks:
       - kaspa
     logging:

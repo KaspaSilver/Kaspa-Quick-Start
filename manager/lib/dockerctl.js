@@ -55,6 +55,7 @@ export const STACK_CONTAINERS = [
     { key: 'nextcloud-redis', label: 'nextcloud redis', name: 'kaspa-node-nextcloud-redis' },
     { key: 'nextcloud-imaginary', label: 'nextcloud imaginary', name: 'kaspa-node-nextcloud-imaginary' },
     { key: 'proxy', label: 'nginx proxy', name: PROXY_CONTAINER },
+    { key: 'cloudflared', label: 'cloudflare tunnel', name: 'kaspa-node-cloudflared' },
     { key: 'manager', label: 'control panel', name: 'kaspa-node-manager' },
     // The testnet-10 stack (runs beside mainnet, or alone on a testnet-only machine).
     { key: 'kaspad-testnet', label: 'kaspad (testnet)', name: 'kaspa-node-kaspad-testnet' },

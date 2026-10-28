@@ -50,6 +50,7 @@ import * as publish from './lib/publish.js';
 import * as portcheck from './lib/portcheck.js';
 import * as push from './lib/push.js';
 import * as lifecycle from './lib/lifecycle.js';
+import * as cloudflare from './lib/cloudflare.js';
 import * as host from './lib/host.js';
 import * as bot from './lib/bot.js';
 import * as bots from './lib/bots.js';
@@ -3501,6 +3502,8 @@ const renderOptions = () => ({
     publicHttpsPort: loadManagerConfig().proxy.publicHttpsPort ?? 443,
     // The indexer names whose names paths go to that network's .kachat Domains server.
     namesOn: { kachat: kachatDomains.routed('mainnet'), 'kachat-testnet': kachatDomains.routed('testnet') },
+    // The Cloudflare Tunnel's names, each serving a copy of one of the domains.
+    tunnel: cloudflare.loadConfig().hostnames,
 });
 
 /**
@@ -3793,6 +3796,88 @@ route('POST', /^\/api\/services\/([a-z0-9-]+)\/uninstall$/, async (req, res, mat
         return removed;
     });
     sendJson(res, 202, { ok: true, jobId: job.id });
+});
+
+// ------------------------------------------------------- cloudflare tunnel --
+// lib/cloudflare.js: the token, the public hostnames and what each one serves.
+// The container itself installs, starts and stops through /api/services like
+// every other unit.
+
+/** The domains a tunnel name can serve: every name under Proxy & domains with something on it. */
+const publishedDomains = () => [...new Set(loadProxies().map((p) => p.domain))].sort();
+
+route('GET', /^\/api\/cloudflare$/, async (req, res) => {
+    const state = await lifecycle.status('cloudflare');
+    const domains = publishedDomains();
+    sendJson(res, 200, {
+        state,
+        token: cloudflare.tokenInfo(),
+        origin: cloudflare.TUNNEL_ORIGIN,
+        connection: state?.running ? await cloudflare.connection() : null,
+        proxyRunning: proxyEnabled() && (await dockerctl.containerState(dockerctl.PROXY_CONTAINER)).running,
+        domains,
+        hostnames: cloudflare.loadConfig().hostnames.map((h) => ({ ...h, servesMissing: !domains.includes(h.serves) })),
+    });
+});
+
+route('PUT', /^\/api\/cloudflare\/token$/, async (req, res) => {
+    const body = await readBody(req);
+    let info;
+    try {
+        info = cloudflare.saveToken(body.token);
+    } catch (err) {
+        return fail(res, 400, err.message);
+    }
+    // compose reads the token when it creates the container, so a running tunnel
+    // only picks up a new one by being recreated.
+    if (!(await lifecycle.status('cloudflare'))?.running) {
+        return sendJson(res, 200, { ok: true, message: 'Token saved. The switch in the sidebar starts the tunnel.', token: info });
+    }
+    const job = jobs.start('Use the new Cloudflare tunnel token', async (onLine) => {
+        onLine(`Token saved for tunnel ${info.tunnelId}. Recreating cloudflared so it uses it.`);
+        await dockerctl.compose(['up', '-d', '--no-deps', '--force-recreate', 'cloudflared'], {
+            onLine,
+            profile: 'cloudflare',
+            timeoutMs: 5 * 60_000,
+        });
+    });
+    sendJson(res, 202, { ok: true, jobId: job.id });
+});
+
+route('DELETE', /^\/api\/cloudflare\/token$/, async (req, res) => {
+    if ((await lifecycle.status('cloudflare'))?.running) return fail(res, 409, 'Stop the tunnel first: its switch is in the sidebar.');
+    cloudflare.forgetToken();
+    sendJson(res, 200, { ok: true });
+});
+
+/** Rewrites nginx for the tunnel's names and reloads it when it is running. */
+async function applyTunnelNames() {
+    nginx.writeAll(loadProxies(), loadNodeConfig(), renderOptions());
+    if (proxyEnabled()) await nginx.reload();
+}
+
+route('POST', /^\/api\/cloudflare\/hostnames$/, async (req, res) => {
+    const body = await readBody(req);
+    let entry;
+    try {
+        entry = cloudflare.addHostname({ hostname: body.hostname, serves: body.serves }, publishedDomains());
+    } catch (err) {
+        return fail(res, 400, err.message);
+    }
+    try {
+        await applyTunnelNames();
+    } catch (err) {
+        cloudflare.removeHostname(entry.id);
+        nginx.writeAll(loadProxies(), loadNodeConfig(), renderOptions());
+        return fail(res, 400, `nginx rejected the configuration: ${err.message}`);
+    }
+    sendJson(res, 200, { ok: true, hostname: entry });
+});
+
+route('DELETE', /^\/api\/cloudflare\/hostnames\/([a-f0-9]{12})$/, async (req, res, match) => {
+    if (!cloudflare.removeHostname(match[1])) return fail(res, 404, 'No such hostname.');
+    await applyTunnelNames();
+    sendJson(res, 200, { ok: true });
 });
 
 // --------------------------------------------------------- .kachat names ----
