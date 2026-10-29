@@ -159,6 +159,10 @@ services:
       # read-only from conf/push (written 0600 by that panel), not baked in.
       FCM_PROJECT_ID: ${KACHAT_FCM_PROJECT_ID:-}
       FCM_SERVICE_ACCOUNT_PATH: /push/fcm/service-account.json
+      # The Android apps the push service accepts (KaChat, KaPost, KaPay, KaPlay), all in the one
+      # Firebase project. Set from the Push Service tab; empty = com.kachat.app only. An indexer
+      # without per-app Android support ignores it.
+      FCM_ALLOWED_PACKAGES: ${KACHAT_FCM_ALLOWED_PACKAGES:-}
       APNS_TOPIC: ${KACHAT_APNS_TOPIC:-}
       APNS_KEY_ID: ${KACHAT_APNS_KEY_ID:-}
       APNS_TEAM_ID: ${KACHAT_APNS_TEAM_ID:-}
@@ -678,6 +682,10 @@ services:
       # the testnet push registrations apart (per KACHAT_NAMES_INDEXER.md part A).
       FCM_PROJECT_ID: ${KACHAT_FCM_PROJECT_ID:-}
       FCM_SERVICE_ACCOUNT_PATH: /push/fcm/service-account.json
+      # The Android apps the push service accepts (KaChat, KaPost, KaPay, KaPlay), all in the one
+      # Firebase project. Set from the Push Service tab; empty = com.kachat.app only. An indexer
+      # without per-app Android support ignores it.
+      FCM_ALLOWED_PACKAGES: ${KACHAT_FCM_ALLOWED_PACKAGES:-}
       APNS_TOPIC: ${KACHAT_APNS_TOPIC:-}
       APNS_KEY_ID: ${KACHAT_APNS_KEY_ID:-}
       APNS_TEAM_ID: ${KACHAT_APNS_TEAM_ID:-}

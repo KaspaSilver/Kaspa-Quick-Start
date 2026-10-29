@@ -185,6 +185,9 @@ export const DEFAULT_APPS_CONFIG = {
         // Android push (Firebase). Only the non-secret project id lives here; the
         // service-account.json is written to conf/push/ by the Push Service panel.
         fcmProjectId: '',
+        // The other Android apps in the same Firebase project whose devices the push service
+        // accepts (FCM_ALLOWED_PACKAGES). Same service account.
+        fcmApps: ['kapost.kachat.app', 'kapay.kachat.app', 'kaplay.kachat.app'],
         // Apple push (iOS). Non-secret identifiers only -- the .p8 key file lives
         // in conf/push/, written by the Push Service panel, never in this file.
         // `apps`: the other iPhone apps on the same Apple team whose devices the push service
@@ -351,6 +354,8 @@ export function validateAppsConfig(input) {
     const fcm = String(k.fcmProjectId ?? '').trim();
     if (fcm && !/^[a-z0-9-]{1,64}$/.test(fcm)) errors.push('FCM project id may only contain lowercase letters, digits and dashes.');
     cfg.kachat.fcmProjectId = fcm;
+    // The other Android apps' packages: only the known ones (FCM_ALLOWED_PACKAGES stays a closed list).
+    cfg.kachat.fcmApps = Array.isArray(k.fcmApps) ? ANDROID_APPS.map((x) => x.pkg).filter((p) => k.fcmApps.includes(p)) : [...DEFAULT_APPS_CONFIG.kachat.fcmApps];
 
     // Apple push identifiers (non-secret). The .p8 key itself is uploaded to
     // conf/push/ separately and never travels through this config.
@@ -552,6 +557,16 @@ export const IPHONE_APPS = [
     { topic: 'com.kachat.wallet', label: 'KaChat Wallet' },
 ];
 
+/** The other KaChat Android apps a push can go to, besides KaChat itself (com.kachat.app). */
+export const ANDROID_APPS = [
+    { pkg: 'kapost.kachat.app', label: 'KaPost' },
+    { pkg: 'kapay.kachat.app', label: 'KaPay' },
+    { pkg: 'kaplay.kachat.app', label: 'KaPlay' },
+];
+
+/** KaChat's own package plus the other Android apps switched on, for FCM_ALLOWED_PACKAGES. */
+export const allowedFcmPackages = (fcmApps) => ['com.kachat.app', ...(fcmApps ?? [])].join(',');
+
 /** The main app's topic plus the other apps switched on, for APNS_ALLOWED_TOPICS. */
 export const allowedApnsTopics = (apns) =>
     [...new Set([apns?.topic || 'com.kachat.app', ...(apns?.apps ?? [])])].join(',');
@@ -562,6 +577,8 @@ export function writeAppsEnv(cfg) {
         KACHAT_NETWORK: cfg.kachat.network,
         KACHAT_NODE_PORT: cfg.kachat.network === 'testnet-10' ? 17210 : 17110,
         KACHAT_FCM_PROJECT_ID: cfg.kachat.fcmProjectId,
+        // Every Android app the push service accepts devices from.
+        KACHAT_FCM_ALLOWED_PACKAGES: allowedFcmPackages(cfg.kachat.fcmApps),
         // Push Service master switch read by the indexer at startup (KACHAT_PUSH_ENABLED).
         KACHAT_PUSH_ENABLED: cfg.kachat.pushEnabled ? 'true' : 'false',
         // Apple push identifiers (iOS). The .p8 key file is not here -- it is

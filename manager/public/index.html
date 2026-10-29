@@ -2277,6 +2277,13 @@
             <label class="inline">Project ID <input id="push-fcm-project" size="24" autocomplete="off" spellcheck="false" placeholder="not set"></label>
             <span id="push-fcm-status" class="pill">no key</span>
           </div>
+          <div class="row" id="push-fcm-apps">
+            <span class="muted">Also send to:</span>
+            <label class="check"><input type="checkbox" data-fcm-app="kapost.kachat.app"> KaPost <code>kapost.kachat.app</code></label>
+            <label class="check"><input type="checkbox" data-fcm-app="kapay.kachat.app"> KaPay <code>kapay.kachat.app</code></label>
+            <label class="check"><input type="checkbox" data-fcm-app="kaplay.kachat.app"> KaPlay <code>kaplay.kachat.app</code></label>
+          </div>
+          <p class="hint">The other KaChat Android apps in the same Firebase project. The same service account sends to all of them.</p>
           <label>Service account JSON
             <textarea id="push-fcm-key" rows="6" spellcheck="false" autocomplete="off" placeholder='Firebase console → Project settings → Service accounts → Generate new private key. Paste the whole JSON. Leave blank to keep the saved one.'></textarea>
           </label>

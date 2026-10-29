@@ -4325,6 +4325,7 @@ route('GET', /^\/api\/push$/, async (req, res) => {
         // never set, so an existing push setup shows on rather than off after upgrade.
         pushEnabled: k.pushEnabled !== undefined ? Boolean(k.pushEnabled) : Boolean(k.fcmProjectId || k.apns?.teamId),
         fcmProjectId: k.fcmProjectId ?? '',
+        fcmApps: k.fcmApps ?? apps.DEFAULT_APPS_CONFIG.kachat.fcmApps,
         apns: k.apns ?? apps.DEFAULT_APPS_CONFIG.kachat.apns,
         // Whether the key files are actually on disk. The panel never reads them
         // back out -- it only ever says present or not.
@@ -4443,6 +4444,7 @@ route('POST', /^\/api\/push\/config$/, async (req, res) => {
                 // Only the switch sends pushEnabled; remember it was a choice (KQS-027).
                 ...(body.pushEnabled !== undefined ? { pushChoiceAt: Date.now() } : {}),
                 fcmProjectId: body.fcmProjectId ?? current.kachat.fcmProjectId,
+                fcmApps: body.fcmApps ?? current.kachat.fcmApps,
                 apns: { ...current.kachat.apns, ...(body.apns ?? {}) },
             },
         };

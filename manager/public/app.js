@@ -7693,6 +7693,7 @@ async function loadPush() {
         return;
     }
     $('push-fcm-project').value = d.fcmProjectId || '';
+    for (const box of document.querySelectorAll('[data-fcm-app]')) box.checked = (d.fcmApps ?? []).includes(box.dataset.fcmApp);
     $('push-apns-team').value = d.apns?.teamId || '';
     $('push-apns-keyid').value = d.apns?.keyId || '';
     $('push-apns-topic').value = d.apns?.topic || 'com.kachat.app';
@@ -7820,6 +7821,7 @@ $('webpush-rows')?.addEventListener('click', async (event) => {
 $('push-save').addEventListener('click', async () => {
     const body = {
         fcmProjectId: $('push-fcm-project').value.trim(),
+        fcmApps: [...document.querySelectorAll('[data-fcm-app]:checked')].map((b) => b.dataset.fcmApp),
         apns: {
             teamId: $('push-apns-team').value.trim(),
             keyId: $('push-apns-keyid').value.trim(),
