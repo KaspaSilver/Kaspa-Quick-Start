@@ -1994,6 +1994,11 @@ body {
     background: linear-gradient(180deg, rgba(16, 32, 37, 0.55), rgba(5, 11, 13, 0.85));
     border-right-color: var(--line);
 }
+/* As the phone drawer it lies over the page, so the same gradient gets a solid floor: otherwise
+   the page shows through the menu. */
+@media (max-width: 860px) {
+    .sidebar { background: linear-gradient(180deg, rgba(16, 32, 37, 0.55), rgba(5, 11, 13, 0.85)), var(--bg); }
+}
 
 .brand { letter-spacing: 0.01em; }
 
