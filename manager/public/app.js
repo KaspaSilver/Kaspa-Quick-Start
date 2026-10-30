@@ -6326,10 +6326,16 @@ async function loadServices() {
         if (TESTNET_UNIT_VALUES.has(key) || key.endsWith('-testnet')) continue;
         // Push has no container, so it gets no Install button or "stopped = red" treatment: just
         // the switch (on = master flag) and a dot that reads grey off, green on, amber on-but-no-keys.
+        // It runs inside the KaChat indexer, so until that is installed the switch is locked and
+        // the tab sends you to the indexer instead.
         if (key === 'push') {
-            const on = Boolean(state?.running);
-            setNavSwitch('push', on);
+            const installed = Boolean(state?.installed);
+            const on = installed && Boolean(state?.running);
+            setNavSwitch('push', on, { disabled: !installed });
+            const label = navSwitch('push')?.closest('.switch');
+            if (label) label.title = installed ? 'Turn the push service on or off' : 'Install the KaChat indexer first: it is what sends the pushes';
             setNavHealth('push', !on ? 'absent' : state?.configured ? 'ok' : 'warn');
+            renderPushGate(installed);
             continue;
         }
         renderServiceRow(key, state);
@@ -6450,6 +6456,29 @@ function renderInstallGate(key, state) {
         }</p>
         <button class="primary big" data-install="${escapeHtml(unitKey)}">Install ${label}</button>
       </div>`;
+}
+
+/**
+ * The Push tab's cover while no KaChat indexer is installed. Push has nothing to install of its
+ * own (it runs inside the indexer), so instead of an Install button it points to the indexer.
+ */
+function renderPushGate(installed) {
+    const section = $('tab-push');
+    if (!section) return;
+    section.classList.toggle('not-installed', !installed);
+    let gate = section.querySelector(':scope > .install-gate');
+    if (installed) return gate?.remove();
+    if (gate) return;
+    gate = document.createElement('div');
+    gate.className = 'install-gate';
+    gate.innerHTML = `
+      <div class="install-gate-card">
+        <h3>Push Service needs the KaChat indexer</h3>
+        <p class="muted">Push notifications are sent by the KaChat indexer, so there is nothing to install here on its own. Install the indexer on its tab, and this tab and the switch in the sidebar open up.</p>
+        <button class="primary big" data-push-goto="kachat">Go to KaChat indexer</button>
+      </div>`;
+    gate.querySelector('[data-push-goto]').addEventListener('click', () => document.querySelector('.nav-item[data-tab="kachat"]')?.click());
+    section.appendChild(gate);
 }
 
 /**

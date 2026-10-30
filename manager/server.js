@@ -3630,12 +3630,13 @@ route('GET', /^\/api\/services$/, async (req, res) => {
     const services = await lifecycle.statusAll();
     // Push has no container of its own (it runs inside the indexer), so it is not a lifecycle
     // unit. Present it as a pseudo-service so the sidebar renders its switch like every other:
-    // always "installed" (nothing to build), running = the master flag, `configured` = whether
-    // keys exist so the dot can distinguish on-and-ready from on-but-no-keys.
+    // "installed" = an indexer is installed to send the pushes (nothing to build of its own),
+    // running = the master flag, `configured` = whether keys exist so the dot can distinguish
+    // on-and-ready from on-but-no-keys.
     const k = apps.loadAppsConfig().kachat ?? {};
     const pushEnabled = k.pushEnabled !== undefined ? Boolean(k.pushEnabled) : Boolean(k.fcmProjectId || k.apns?.teamId);
     services.push = {
-        installed: true,
+        installed: Boolean(services.kachat?.installed || services['kachat-testnet']?.installed),
         runnable: true,
         running: pushEnabled,
         // Mobile keys, or the mainnet Web Push key: any working way to send.
