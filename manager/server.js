@@ -41,6 +41,7 @@ import * as network from './lib/network.js';
 import * as emission from './lib/emission.js';
 import * as pruning from './lib/pruning.js';
 import * as kassigner from './lib/kassigner.js';
+import * as extension from './lib/extension.js';
 import * as selfservice from './lib/selfservice.js';
 import * as kachatDomains from './lib/kachat-domains.js';
 import * as refundKeeper from './lib/refund-keeper.js';
@@ -2431,6 +2432,58 @@ async function applyAppConfig(name, cfg, onLine = () => {}) {
     onLine(`${app.label} is up.`);
     return { enabled: true };
 }
+
+// -------------------------------------------------------- browser extension --
+
+// The KaPay browser extension: built here, loaded into a browser in developer mode. Nothing runs,
+// so it is a unit with an install and an uninstall and no switch (runnable: false).
+lifecycle.registerUnit('extension', {
+    label: 'KaPay Extension',
+    tab: 'extension',
+    data: 'the built extension folders and zips. A browser that loaded it keeps its own copy until you remove it there',
+    hooks: {
+        async status() {
+            const installed = extension.isInstalled();
+            return { installed, running: false, runnable: false, status: installed ? 'ready' : 'absent' };
+        },
+        install: (onLine) => extension.build(onLine),
+        async setRunning() {
+            throw new Error('The KaPay Extension has nothing to run here: load it in your browser.');
+        },
+        uninstall: ({ onLine }) => extension.uninstall(onLine),
+    },
+});
+
+route('GET', /^\/api\/extension$/, async (req, res) => {
+    sendJson(res, 200, { repo: extension.REPO, ref: extension.REF, targets: extension.TARGETS, build: extension.buildInfo() });
+});
+
+/** The newest commit on the tracked branch, for "is there an update". */
+route('GET', /^\/api\/extension\/latest$/, async (req, res) => {
+    try {
+        sendJson(res, 200, await selfservice.latestCommit({ repo: extension.REPO, ref: extension.REF }));
+    } catch (err) {
+        fail(res, 502, err.message);
+    }
+});
+
+/** Update and Rebuild are the same thing: build the branch as it is now. */
+route('POST', /^\/api\/extension\/build$/, async (req, res) => {
+    const job = jobs.start('Build the KaPay Extension', (onLine) => extension.build(onLine));
+    sendJson(res, 202, { ok: true, jobId: job.id });
+});
+
+route('GET', /^\/api\/extension\/download\/([a-z]+)$/, async (req, res, match) => {
+    const pkg = extension.packageFile(match[1]);
+    if (!pkg) return fail(res, 404, 'There is no build of that yet. Install the KaPay Extension first.');
+    res.writeHead(200, {
+        'Content-Type': 'application/zip',
+        'Content-Disposition': `attachment; filename="${pkg.name}"`,
+        'Content-Length': fs.statSync(pkg.file).size,
+        'Cache-Control': 'no-store',
+    });
+    fs.createReadStream(pkg.file).pipe(res);
+});
 
 // ---------------------------------------------------------------- kassigner --
 

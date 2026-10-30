@@ -194,6 +194,18 @@
           <span class="track"></span>
         </label>
       </div>
+      <div class="nav-row">
+        <button class="nav-item" data-tab="extension" title="KaPay Extension">
+          <span class="nav-dot" data-health="extension"></span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 3.5a2 2 0 014 0V5h4a1 1 0 011 1v4h-1.5a2 2 0 000 4H19v4a1 1 0 01-1 1h-4v-1.5a2 2 0 00-4 0V19H6a1 1 0 01-1-1v-4h1.5a2 2 0 000-4H5V6a1 1 0 011-1h4z"/></svg>
+          <span class="label">KaPay Extension</span>
+        </button>
+        <!-- Nothing to run: the sidebar shows Install, then no control (runnable: false). -->
+        <label class="switch mini" hidden>
+          <input type="checkbox" data-service="extension" aria-label="KaPay Extension">
+          <span class="track"></span>
+        </label>
+      </div>
       <p class="nav-group-title">Apps</p>
       <div class="nav-row">
         <button class="nav-item" data-tab="nextcloud" title="Nextcloud">
@@ -1971,6 +1983,87 @@
       </div>
 
 </section>
+
+    <section id="tab-extension" class="tab">
+      <div class="subtabs">
+        <button class="subtab-btn active" data-subtab="extension-overview">Overview</button>
+        <button class="subtab-btn" data-subtab="extension-updates">Updates</button>
+        <button class="subtab-btn" data-subtab="extension-uninstall">Uninstall</button>
+      </div>
+
+      <div id="sub-extension-overview" class="subtab active">
+        <div class="grid">
+          <article class="card span2">
+            <div class="node-head">
+              <h3>KaPay Extension</h3>
+              <span id="extension-state" class="tag">-</span>
+            </div>
+            <p class="muted">
+              The KaChat wallet for your browser, built here from its repository so you can load
+              it in developer mode. Nothing runs on this machine: the browser runs it.
+            </p>
+            <div id="extension-build-info" class="verdict" hidden></div>
+          </article>
+
+          <article class="card span2">
+            <h3>Chrome, Brave or Edge</h3>
+            <ol class="steps">
+              <li>Open <code>chrome://extensions</code> (<code>brave://extensions</code> in Brave, <code>edge://extensions</code> in Edge).</li>
+              <li>Switch on <strong>Developer mode</strong>, top right.</li>
+              <li>Press <strong>Load unpacked</strong> and pick the folder below.</li>
+            </ol>
+            <p class="muted">On this machine, the folder is:</p>
+            <pre class="logview" id="extension-folder-chromium">-</pre>
+            <p class="muted">On another computer, download it, unzip it, and pick the unzipped folder instead.</p>
+            <div class="row">
+              <button type="button" id="extension-dl-chromium" class="primary" disabled>Download for Chrome, Brave and Edge</button>
+            </div>
+          </article>
+
+          <article class="card span2">
+            <h3>Firefox</h3>
+            <ol class="steps">
+              <li>Open <code>about:debugging#/runtime/this-firefox</code>.</li>
+              <li>Press <strong>Load Temporary Add-on</strong> and pick <code>manifest.json</code> inside the folder below.</li>
+            </ol>
+            <pre class="logview" id="extension-folder-firefox">-</pre>
+            <p class="hint">Firefox drops a temporary add-on when it closes, so it has to be loaded again after a restart.</p>
+            <div class="row">
+              <button type="button" id="extension-dl-firefox" class="ghost" disabled>Download for Firefox</button>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <div id="sub-extension-updates" class="subtab">
+        <div class="grid">
+          <article class="card span2">
+            <h3>Source and updates</h3>
+            <p class="muted">
+              Tracks <code>KaspaSilver/KaPay-Browser-Extension</code> on <code>main</code> and checks it for
+              commits newer than the one this build came from.
+            </p>
+            <div id="extension-build" class="verdict"></div>
+            <div id="extension-update-status" class="update-status">Not checked yet.</div>
+            <div class="row">
+              <button type="button" id="extension-check" class="ghost">Check for updates</button>
+              <button type="button" id="extension-update" class="primary" disabled>Update</button>
+              <button type="button" id="extension-rebuild" class="ghost">Rebuild</button>
+            </div>
+            <p class="hint">
+              After an update, press the extension's reload button on your browser's extensions page,
+              or load the new download, to pick it up. A failed build keeps the one you have.
+            </p>
+          </article>
+        </div>
+      </div>
+
+      <div id="sub-extension-uninstall" class="subtab">
+        <div class="grid">
+          <article class="card span2 uninstall-card" data-uninstall="extension"></article>
+        </div>
+      </div>
+    </section>
 
     <section id="tab-nextcloud" class="tab">
       <nav class="subnav" aria-label="Nextcloud">

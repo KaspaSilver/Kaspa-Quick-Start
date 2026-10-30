@@ -299,6 +299,14 @@ a browser app, so accounts and settings live in the browser you open it with,
 and it talks to whichever node and indexer you point it at from inside the app.
 It does not wait for this node to sync, because it does not have to.
 
+**KaPay Extension.** KaChat's wallet for Chrome, Brave,
+Edge and Firefox, built here from
+[KaPay-Browser-Extension](https://github.com/KaspaSilver/KaPay-Browser-Extension)
+so you can load it in developer mode. Nothing runs on this machine: Install
+builds it, and its tab shows the folder to pick under **Load unpacked** (or a
+zip to download for another computer), with Update and Rebuild for newer
+commits on `main`.
+
 **Nextcloud.** Your own cloud for the files, photos and video KaChat shares and
 backs up. The official `nextcloud:stable` image with ffmpeg added, and previews
 switched on for you: photos and iPhone HEIC through a separate Imaginary

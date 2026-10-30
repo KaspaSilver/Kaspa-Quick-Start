@@ -288,6 +288,7 @@ function selectTab(name) {
     setUpdateQueueView(name === 'queue');
     if (name === 'bot') loadBot().catch(() => {});
     if (name === 'push') loadPush().catch(() => {});
+    if (name === 'extension') loadExtension().catch(() => {});
     if (name === 'names') loadNames().catch(() => {});
     if (name === 'experimental') loadExperimental().catch(() => {});
     setCloudflarePolling(name === 'cloudflare');
@@ -321,7 +322,7 @@ const CYCLE_FADE_MS = 450;
 // Not shown: settings pages, and the Push Service and Proxy & domains screens (owner's choice).
 // kassigner and desktop are out by request: a hardware flasher and a static web app, with
 // nothing live to glance at.
-const NOT_CYCLED = new Set(['overview', 'logs', 'experimental', 'global', 'support', 'push', 'proxy', 'kassigner', 'desktop']);
+const NOT_CYCLED = new Set(['overview', 'logs', 'experimental', 'global', 'support', 'push', 'proxy', 'kassigner', 'desktop', 'extension']);
 const CYCLE_SCROLL_PX_PER_S = 120;       // All logs scrolls at a pace you can follow
 let cycleRunning = false;
 let cycleTimer = null;
@@ -1467,6 +1468,7 @@ const SERVICE_NAMES = {
     kachat: 'KaChat-Indexer',
     desktop: 'KaChat-Desktop',
     kassigner: 'KasSigner',
+    extension: 'the KaPay Extension',
     nextcloud: 'Nextcloud',
     bot: 'the KaChat Bot',
     translate: 'the translation engine',
@@ -6237,6 +6239,73 @@ $('ports-check').addEventListener('click', async () => {
     }
 });
 
+// -------------------------------------------------------- browser extension ---
+//
+// Built on this machine (Install in the sidebar), loaded into a browser in developer mode. The
+// tab says where the unpacked build is, offers the zips, and rebuilds from the repository.
+
+let extensionInstalled = null;
+let extensionBuild = null;
+
+async function loadExtension() {
+    const r = await api('/api/extension');
+    const b = r.build;
+    extensionBuild = b;
+    const tag = $('extension-state');
+    tag.textContent = b ? `v${b.version ?? '?'}` : 'not built';
+    tag.className = `tag ${b ? 'ok' : 'off'}`;
+
+    const info = $('extension-build-info');
+    info.hidden = !b;
+    if (b) {
+        info.className = 'verdict ok';
+        info.textContent = `Version ${b.version ?? '?'}, built from ${String(b.sha ?? '').slice(0, 7) || 'an unknown commit'}${b.builtAt ? ` on ${new Date(b.builtAt).toLocaleString()}` : ''}.`;
+    }
+    for (const target of Object.keys(r.targets)) {
+        $(`extension-folder-${target}`).textContent = b?.folders?.[target] ?? 'Not built yet. Install it from the sidebar.';
+        $(`extension-dl-${target}`).disabled = !b;
+    }
+    $('extension-build').textContent = b?.sha ? `Built from ${b.sha.slice(0, 7)} (${b.ref})${b.builtAt ? ` on ${new Date(b.builtAt).toLocaleString()}` : ''}` : 'Not built yet.';
+    $('extension-rebuild').disabled = !b;
+}
+
+for (const target of ['chromium', 'firefox']) {
+    $(`extension-dl-${target}`).addEventListener('click', () => {
+        location.href = `/api/extension/download/${target}`;
+    });
+}
+
+$('extension-check').addEventListener('click', async () => {
+    const status = $('extension-update-status');
+    const button = $('extension-check');
+    button.disabled = true;
+    status.textContent = 'Checking…';
+    try {
+        const latest = await api('/api/extension/latest');
+        const behind = Boolean(extensionBuild?.sha) && latest.sha !== extensionBuild.sha;
+        status.textContent = !extensionBuild
+            ? `Latest is ${latest.shortSha}: ${latest.message}`
+            : behind
+              ? `Update available: ${latest.shortSha}, ${latest.message}`
+              : 'Up to date.';
+        $('extension-update').disabled = !behind;
+    } catch (e) {
+        status.textContent = e.message;
+    } finally {
+        button.disabled = false;
+    }
+});
+
+async function buildExtension(title) {
+    // Into the Update Queue, where its build log can be watched (System, Update Queue).
+    await queueAction({ title, request: (headers) => api('/api/extension/build', { method: 'POST', headers }) });
+    $('extension-update').disabled = true;
+    $('extension-update-status').textContent = 'Not checked yet.';
+    loadExtension().catch(() => {});
+}
+$('extension-update').addEventListener('click', () => buildExtension('Updating the KaPay Extension'));
+$('extension-rebuild').addEventListener('click', () => buildExtension('Rebuilding the KaPay Extension'));
+
 // ------------------------------------------------------- kassigner verify ---
 
 /**
@@ -6298,6 +6367,7 @@ const UNINSTALL_COPY = {
     bot: 'nothing it collected. Its settings, including the wallet key, stay in the stack directory and are kept',
     node: 'the entire synced blockchain. Tens of gigabytes, and days of syncing to get back',
     kassigner: 'the downloaded firmware and the record of what was verified. A device you have already flashed is unaffected',
+    extension: 'the built extension folders and zips. A browser that already loaded it keeps working until you remove it on its extensions page',
     mining: "the bridge's own share and block records",
     proxy: 'nothing. Your domains and certificates live in the stack directory and are kept',
     translate: 'the downloaded language models, which are several gigabytes and have to be fetched again',
@@ -6343,6 +6413,12 @@ async function loadServices() {
     }
     // The one service with no sidebar row, so renderServiceRow leaves it alone.
     renderTranslateRow(serviceState.translate);
+    // The extension tab shows its build, which only changes when it is installed or removed.
+    const extInstalled = Boolean(serviceState.extension?.installed);
+    if (extInstalled !== extensionInstalled) {
+        extensionInstalled = extInstalled;
+        loadExtension().catch(() => {});
+    }
     renderUninstallCards();
 }
 
@@ -6399,7 +6475,8 @@ function renderServiceRow(key, state) {
 
     // Set before any tab has been opened, so a service nobody has looked at
     // still shows the right colour.
-    setNavHealth(state?.tab ?? key, !installed ? 'absent' : state.running ? 'ok' : 'bad');
+    // Something with nothing to run (KasSigner, the browser extension) is fine once it is installed.
+    setNavHealth(state?.tab ?? key, !installed ? 'absent' : !runnable || state.running ? 'ok' : 'bad');
 
     // A switch that is showing should say what is actually true, without
     // waiting for the next status poll to correct it.
@@ -6450,7 +6527,9 @@ function renderInstallGate(key, state) {
       <div class="install-gate-card">
         <h3>${label} is not installed</h3>
         <p class="muted">${
-            state?.runnable === false
+            unitKey === 'extension'
+                ? 'Installing builds the extension from its repository on this machine, ready to load in your browser in developer mode. Nothing runs here.'
+                : state?.runnable === false
                 ? 'Installing downloads the firmware and checks it against the hashes the release publishes.'
                 : 'Installing builds its image and creates its container. It stays switched off afterwards -- the switch in the sidebar is what starts it. Everything behind this is what it will look like.'
         }</p>
