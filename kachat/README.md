@@ -11,7 +11,7 @@ script in `docker/kachat/app/` is written on that assumption.
 
 This stack puts each service in its own container on a private bridge network,
 because host networking would collide with the things already running: kaspad's
-P2P and RPC ports, nginx on 80 and 443, and the panel on 8080. On a bridge
+P2P and RPC ports, nginx, and the panel. On a bridge
 network `localhost` means the container itself, so those assumptions stop
 holding and the Postgres-backed processes never connect.
 

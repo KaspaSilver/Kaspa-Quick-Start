@@ -118,7 +118,7 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
 
     if (-not $KeepBaseImages) {
         # These may be shared with other projects, so a refusal is expected.
-        foreach ($image in @('nginx:1.27-alpine', 'certbot/certbot:latest', 'node:22-alpine', 'alpine:3.21',
+        foreach ($image in @('nginx:1.27-alpine', 'cloudflare/cloudflared:2026.10.2', 'certbot/certbot:latest', 'node:22-alpine', 'alpine:3.21',
                              'postgres:17-alpine', 'mariadb:10.11', 'redis:7-alpine',
                              'nextcloud/aio-imaginary:latest', 'nextcloud:stable')) {
             & docker rmi $image 2>&1 | Out-Null

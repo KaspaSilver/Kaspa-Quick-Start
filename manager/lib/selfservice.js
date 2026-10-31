@@ -175,8 +175,8 @@ const REPO_RE = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
 const REF_RE = /^(?!.*\.\.)[A-Za-z0-9._/-]{1,120}$/;
 
 // Exactly the set install.sh replaces on a re-install. conf/ holds generated
-// state and proxy/ holds issued certificates, so neither is listed: wiping
-// either would cost real work to get back.
+// state and proxy/ the nginx configuration made from it, so neither is listed:
+// wiping either would cost real work to get back.
 const CODE_ITEMS = [
     'docker-compose.yml',
     'kaspad',
@@ -414,6 +414,8 @@ const PANEL_CONTAINER = 'kaspa-node-manager';
 // behaviour we want: nothing unrelated gets broken.
 const BASE_IMAGES = [
     'nginx:1.27-alpine',
+    'cloudflare/cloudflared:2026.10.2',
+    // Left by versions that issued Let's Encrypt certificates.
     'certbot/certbot:latest',
     'node:22-alpine',
     'alpine:3.21',

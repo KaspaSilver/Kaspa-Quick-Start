@@ -13,8 +13,6 @@ export const CONF_DIR = path.join(STACK_LOCAL, 'conf');
 export const PROXY_DIR = path.join(STACK_LOCAL, 'proxy');
 export const NGINX_CONF_D = path.join(PROXY_DIR, 'conf.d');
 export const NGINX_SNIPPETS = path.join(PROXY_DIR, 'snippets');
-export const LETSENCRYPT_DIR = path.join(PROXY_DIR, 'letsencrypt');
-export const WEBROOT_DIR = path.join(PROXY_DIR, 'webroot');
 
 export const COMPOSE_FILE = path.join(STACK_LOCAL, 'docker-compose.yml');
 export const PORTS_OVERRIDE = path.join(CONF_DIR, 'ports.yml');
@@ -42,7 +40,7 @@ export const NAMES_DIR = path.join(CONF_DIR, 'names');
 export const hostPath = (...parts) => path.posix.join(STACK_HOST.replace(/\\/g, '/'), ...parts);
 
 export function ensureDirs() {
-    for (const dir of [CONF_DIR, PROXY_DIR, NGINX_CONF_D, NGINX_SNIPPETS, LETSENCRYPT_DIR, WEBROOT_DIR, NAMES_DIR]) {
+    for (const dir of [CONF_DIR, PROXY_DIR, NGINX_CONF_D, NGINX_SNIPPETS, NAMES_DIR]) {
         fs.mkdirSync(dir, { recursive: true });
     }
 }

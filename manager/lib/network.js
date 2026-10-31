@@ -14,6 +14,27 @@ import { docker } from './dockerctl.js';
  * through the host), which is what makes the scanner below possible.
  */
 
+const IP_SERVICES = ['https://api.ipify.org', 'https://ifconfig.me/ip', 'https://icanhazip.com'];
+
+/**
+ * This connection's public address, as the internet sees it: what kaspad
+ * advertises to peers, and what a miner outside the network dials. Asked of
+ * whichever of a few services answers first.
+ */
+export async function publicIp() {
+    for (const url of IP_SERVICES) {
+        try {
+            const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+            if (!res.ok) continue;
+            const ip = (await res.text()).trim();
+            if (/^[0-9a-fA-F.:]+$/.test(ip)) return ip;
+        } catch {
+            /* try the next one */
+        }
+    }
+    return null;
+}
+
 let cache = { at: 0, addresses: [] };
 const CACHE_MS = 60_000;
 

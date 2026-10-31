@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { LETSENCRYPT_DIR, NGINX_CONF_D, NGINX_SNIPPETS } from './paths.js';
+import { NGINX_CONF_D, NGINX_SNIPPETS } from './paths.js';
 import { docker, PROXY_CONTAINER } from './dockerctl.js';
 import { htpasswdLine } from './auth.js';
 import { ports } from './kaspad-args.js';
@@ -71,7 +71,7 @@ export function validateDomainName(name) {
 }
 
 /** Throws on anything that would let a value escape into the nginx grammar. */
-export function validateProxy(proxy, { existing = [], panelHasPassword = true } = {}) {
+export function validateProxy(proxy, { existing = [], panelHasPassword = true, names = null } = {}) {
     const errors = [];
     const domain = String(proxy.domain || '').trim().toLowerCase();
 
@@ -88,6 +88,11 @@ export function validateProxy(proxy, { existing = [], panelHasPassword = true } 
 
     if (!domain) errors.push('Domain is required.');
     else if (domain.length > 253 || !DOMAIN_RE.test(domain)) errors.push(`"${domain}" is not a valid domain name.`);
+    // Only a name on the tunnel ever reaches this proxy, so a host for any other
+    // name would be configured and never answer.
+    else if (names && !names.includes(domain)) {
+        errors.push(`${domain} is not one of your names. Add it from a service's Set up first, under Tunnel & domains.`);
+    }
     // A domain can carry several services now, each on its own path, so what
     // has to be unique is the pair. Two things answering the same URL is the
     // only arrangement nginx cannot resolve.
@@ -105,19 +110,21 @@ export function validateProxy(proxy, { existing = [], panelHasPassword = true } 
     }
 
     if (!TARGET_KINDS[proxy.target?.kind]) errors.push('Unknown target type.');
+    // The tunnel hands nginx plain HTTP/1.1, and gRPC needs HTTP/2 all the way.
+    if (proxy.target?.kind === 'grpc' && proxy.enabled !== false) {
+        errors.push('Kaspad gRPC cannot go through a Cloudflare Tunnel. Publish wRPC Borsh instead: wallets and KDX use that.');
+    }
 
     if (proxy.target?.kind === 'custom') {
         const host = String(proxy.target.host || '').trim();
         if (!host || !/^[A-Za-z0-9._-]{1,253}$/.test(host)) errors.push('Custom target host is invalid.');
+        // Inside the proxy's container, localhost is nginx itself.
+        else if (['localhost', '127.0.0.1', '::1'].includes(host.toLowerCase())) {
+            errors.push("Use the machine's network address, like 192.168.1.20, not localhost. The proxy runs in its own container, where localhost is the proxy.");
+        }
         const port = Number(proxy.target.port);
         if (!Number.isInteger(port) || port < 1 || port > 65535) errors.push('Custom target port must be 1-65535.');
         if (!['http', 'https'].includes(proxy.target.scheme || 'http')) errors.push('Custom scheme must be http or https.');
-    }
-
-    // A contact address is optional for an ACME account, so it is optional
-    // here. One that is given still has to look like an address.
-    if (proxy.ssl?.mode === 'letsencrypt' && proxy.ssl.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(proxy.ssl.email))) {
-        errors.push(`"${proxy.ssl.email}" is not an e-mail address.`);
     }
 
     if (proxy.auth?.enabled) {
@@ -181,26 +188,6 @@ export function upstreamFor(proxy, nodeConfig) {
     }
 }
 
-export const certPath = (domain) => path.join(LETSENCRYPT_DIR, 'live', domain, 'fullchain.pem');
-export const hasCertificate = (domain) => fs.existsSync(certPath(domain));
-
-/**
- * When the certificate for a name runs out.
- *
- * This is what the Let's Encrypt contact address would have told someone by
- * e-mail, and the panel is a better place for it: it is on screen next to the
- * address it belongs to, and it is true right now rather than a warning sent
- * once. Renewal is automatic, so this is a check, not a chore.
- */
-export function certificateExpiry(domain) {
-    try {
-        const cert = new crypto.X509Certificate(fs.readFileSync(certPath(domain)));
-        const validTo = new Date(cert.validTo);
-        return { validTo: validTo.toISOString(), daysLeft: Math.floor((validTo - Date.now()) / 86_400_000) };
-    } catch {
-        return null;
-    }
-}
 
 // ------------------------------------------------------------- rendering ----
 
@@ -209,15 +196,15 @@ export function certificateExpiry(domain) {
 const RESOLVER = ['    resolver 127.0.0.11 valid=10s ipv6=off;', '    resolver_timeout 5s;'];
 
 /**
- * The listener Cloudflare Tunnel traffic arrives on (lib/cloudflare.js).
+ * The one port nginx listens on: where Cloudflare Tunnel traffic arrives
+ * (lib/cloudflare.js).
  *
- * Plain HTTP and never published to the host: compose maps only 80 and 443, so
- * the only things that can reach it are containers on the stack's own network,
- * cloudflared among them. That is what makes CF-Connecting-IP safe to believe
- * here and nowhere else. On 80/443 anyone could send that header; on this port
- * only cloudflared does, and it carries the visitor's real address. Without it
- * every tunnel request would come from cloudflared, and the indexer, which
- * rate-limits per address, would put every user of the tunnel in one bucket.
+ * Plain HTTP and never published to the host, so the only things that can
+ * reach it are containers on the stack's own network, cloudflared among them.
+ * That is what makes CF-Connecting-IP safe to believe here: only cloudflared
+ * sends it, and it carries the visitor's real address. Without it every request
+ * would come from cloudflared, and the indexer, which rate-limits per address,
+ * would put every visitor in one bucket. HTTPS is Cloudflare's, at its edge.
  */
 export const TUNNEL_PORT = 8081;
 
@@ -230,38 +217,21 @@ map $http_upgrade $connection_upgrade {
     ''      close;
 }
 
-# What the visitor used to reach Cloudflare, for requests that came through the
-# tunnel. The tunnel listener itself is plain http, so $scheme there would tell
-# every app it was reached insecurely and some (Nextcloud) would redirect to fix it.
+# What the visitor used to reach Cloudflare. The tunnel listener itself is plain
+# http, so $scheme would tell every app it was reached insecurely and some
+# (Nextcloud) would redirect to fix it.
 map $http_x_forwarded_proto $tunnel_proto {
     default https;
     http    http;
 }
 
-# Cloudflare Tunnel: a name the tunnel carries but nothing here serves.
+# A name the tunnel carries but nothing here serves.
 server {
     listen ${TUNNEL_PORT} default_server;
     server_name _;
 
     location / {
-        return 404 "This name is not on the tunnel. Add it under Cloudflare, Hostnames.\\n";
-    }
-}
-
-server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
-    server_name _;
-
-    # Served for every domain so a certificate can be issued before the vhost
-    # for that domain exists.
-    location /.well-known/acme-challenge/ {
-        root /var/www/certbot;
-        default_type "text/plain";
-    }
-
-    location / {
-        return 404 "No proxy host is configured for this domain.\\n";
+        return 404 "Nothing is published on this name. Put a service on it under Tunnel & domains.\\n";
     }
 }
 `;
@@ -291,14 +261,14 @@ function passTo(up, proxy, i, strip) {
     // stripped location has already rewritten $uri; an unstripped one should
     // forward exactly what arrived.
     const uri = strip ? '$uri$is_args$args' : '$request_uri';
-    lines.push(up.grpc ? `${i}grpc_pass grpc://${variable};` : `${i}proxy_pass ${up.scheme}://${variable}${uri};`);
+    lines.push(`${i}proxy_pass ${up.scheme}://${variable}${uri};`);
     return lines;
 }
 
 /**
  * CORS headers for a browser app on another origin, plus the preflight answer.
  *
- * Three things this gets right that a hand-written block usually does not:
+ * Two things this gets right that a hand-written block usually does not:
  *
  *  - `always`, so the header rides on 4xx/5xx too. The indexer answers 400 to a
  *    malformed query and 429 when rate-limited; without `always` those come back
@@ -309,12 +279,8 @@ function passTo(up, proxy, i, strip) {
  *    405 it) and never gets rewritten. It is emitted at the top of the location
  *    for exactly this reason -- `rewrite ... break` stops the rewrite module, and
  *    an `if` placed after it would not run.
- *  - HSTS is re-sent here when the vhost is TLS. A location that sets any
- *    add_header stops inheriting the server-level ones, so the Strict-Transport
- *    -Security added on the 443 server block would silently vanish on just these
- *    paths otherwise.
  */
-function corsBlock(cors, i, { hsts = false } = {}) {
+function corsBlock(cors, i) {
     if (!cors) return [];
     const methods = cors.methods || 'GET, POST, OPTIONS';
     const headers = cors.headers || 'Content-Type, Accept';
@@ -350,32 +316,20 @@ function corsBlock(cors, i, { hsts = false } = {}) {
     }
     // Same four headers, one indent level out, for the real request.
     for (const line of common) lines.push(line.replace(`${i}    `, `${i}`));
-    if (hsts) lines.push(`${i}add_header Strict-Transport-Security "max-age=31536000" always;`);
     return lines;
 }
 
-function locationBlock(up, proxy, indent = '        ', { strip = null, cors = null, hsts = false, tunnel = false } = {}) {
+function locationBlock(up, proxy, indent = '        ', { strip = null, cors = null } = {}) {
     const i = indent;
     const lines = [];
-    if (up.grpc) {
-        lines.push(...passTo(up, proxy, i, strip));
-        lines.push(`${i}grpc_read_timeout 3600s;`);
-        lines.push(`${i}grpc_send_timeout 3600s;`);
-        return lines.join('\n');
-    }
     // CORS first: the preflight short-circuit has to precede passTo()'s rewrite.
-    lines.push(...corsBlock(cors, i, { hsts }));
+    lines.push(...corsBlock(cors, i));
     lines.push(...passTo(up, proxy, i, strip));
     lines.push(`${i}proxy_http_version 1.1;`);
-    // $http_host, not $host. They differ in exactly one way that matters here:
-    // $host discards the port. An app behind this proxy on anything other than
-    // 443 then believes it is on 443, and every absolute URL it builds -- every
-    // redirect, every asset link -- comes out pointing at a port it does not
-    // live on. This stack can be bound to 8443 precisely because another
-    // machine holds 443, so those links land on that other machine, which is a
-    // confusing way to find out.
+    // $http_host, not $host: the same name the visitor asked Cloudflare for,
+    // which is what every absolute URL an app builds should carry.
     lines.push(`${i}proxy_set_header Host $http_host;`);
-    // X-Forwarded-For only, deliberately no X-Real-IP.
+    // X-Forwarded-For always; X-Real-IP for everything but Nextcloud.
     //
     // Both carry the same fact, and the second one breaks Nextcloud. Its image
     // runs mod_remoteip trusting X-Real-IP, so Apache rewrites REMOTE_ADDR to
@@ -388,7 +342,7 @@ function locationBlock(up, proxy, indent = '        ', { strip = null, cors = nu
     // honoured, and Nextcloud reads the real client out of X-Forwarded-For
     // itself. Nothing this header was carrying is lost.
     lines.push(`${i}proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`);
-    lines.push(`${i}proxy_set_header X-Forwarded-Proto ${tunnel ? '$tunnel_proto' : '$scheme'};`);
+    lines.push(`${i}proxy_set_header X-Forwarded-Proto $tunnel_proto;`);
     // Everything but Nextcloud gets X-Real-IP set to the real peer (kachat-audits IDX-021).
     // Unset, nginx passes along whatever X-Real-IP the client sent, and the indexer, which
     // trusts this proxy, took that as the client: a random value per request walked past
@@ -427,7 +381,7 @@ function locationBlock(up, proxy, indent = '        ', { strip = null, cors = nu
  * answer. Everything here comes from the app's own declaration in apps.js, so
  * the knowledge of which port serves what stays with the app.
  */
-function extraLocations(proxy, { hsts = false, namesOn = {}, tunnel = false } = {}) {
+function extraLocations(proxy, { namesOn = {} } = {}) {
     const publish = publishOf(proxy.target?.kind);
     if (!publish) return [];
 
@@ -449,7 +403,7 @@ function extraLocations(proxy, { hsts = false, namesOn = {}, tunnel = false } = 
             maxBodySize: route.maxBodySize ?? publish.maxBodySize ?? null,
         };
         lines.push(`    location ^~ ${route.location} {`);
-        lines.push(locationBlock(up, proxy, '        ', { cors, hsts, tunnel }));
+        lines.push(locationBlock(up, proxy, '        ', { cors }));
         lines.push('    }');
         lines.push('');
     }
@@ -460,7 +414,7 @@ function extraLocations(proxy, { hsts = false, namesOn = {}, tunnel = false } = 
         const up = { scheme: 'http', host: names.hostname, port: names.port, websocket: false, grpc: false, maxBodySize: null };
         for (const location of NAMES_ROUTES) {
             lines.push(`    location ^~ ${location} {`);
-            lines.push(locationBlock(up, proxy, '        ', { cors, hsts, tunnel }));
+            lines.push(locationBlock(up, proxy, '        ', { cors }));
             lines.push('    }');
             lines.push('');
         }
@@ -469,23 +423,23 @@ function extraLocations(proxy, { hsts = false, namesOn = {}, tunnel = false } = 
 }
 
 /** Every service on a name, as location blocks, longest path first. */
-function renderLocations(ordered, nodeConfig, { hsts = false, namesOn = {}, tunnel = false } = {}) {
+function renderLocations(ordered, nodeConfig, { namesOn = {} } = {}) {
     const lines = [];
     for (const proxy of ordered) {
         const up = upstreamFor(proxy, nodeConfig);
         const path = normalizePath(proxy.path);
         const cors = publishOf(proxy.target?.kind)?.cors ?? null;
         if (path === '/') {
-            lines.push(...extraLocations(proxy, { hsts, namesOn, tunnel }));
+            lines.push(...extraLocations(proxy, { namesOn }));
             lines.push('    location / {');
-            lines.push(locationBlock(up, proxy, '        ', { cors, hsts, tunnel }));
+            lines.push(locationBlock(up, proxy, '        ', { cors }));
             lines.push('    }');
         } else {
             // The rewrite is what makes the prefix invisible to the service:
             // /borsh and /borsh/anything both arrive as / and /anything. A
             // proxy_pass with a URI cannot do both without doubling slashes.
             lines.push(`    location ^~ ${path} {`);
-            lines.push(locationBlock(up, proxy, '        ', { strip: path, cors, hsts, tunnel }));
+            lines.push(locationBlock(up, proxy, '        ', { strip: path, cors }));
             lines.push('    }');
         }
         lines.push('');
@@ -494,89 +448,26 @@ function renderLocations(ordered, nodeConfig, { hsts = false, namesOn = {}, tunn
 }
 
 /**
- * The Cloudflare Tunnel's names, each a copy of a domain under Proxy & domains
- * on the tunnel listener (TUNNEL_PORT).
+ * One server block for one public name, serving every service published on it.
  *
- * A copy rather than a domain of its own, because the useful case is two names
- * for one service while its clients move over: an indexer's apps still asking
- * a DuckDNS name that points at home, and new ones asking a tunnel name that
- * does not. Each tunnel name serves whatever its domain serves, with the same
- * paths, blocks, CORS, allowlists, passwords and rate limits.
+ * A name can carry several services, each on its own path: whoever holds `/`
+ * gets the root, everyone else gets a prefix that is stripped before the
+ * request reaches them, so the service behind it needs to know nothing about
+ * being proxied.
  *
- * No TLS and no ACME here: Cloudflare holds the certificate for the public
- * name. gRPC is left out, since the tunnel's routes are plain HTTP and gRPC
- * needs HTTP/2 to the origin.
+ * gRPC is left out: the tunnel's routes are plain HTTP/1.1, and gRPC needs
+ * HTTP/2 to the origin. validateProxy refuses new ones; this skips any left
+ * from before.
  */
-export function renderTunnel(entries, proxies, nodeConfig, { namesOn = {} } = {}) {
-    const out = ['# Generated by the Kaspa Node Control panel - edits here are overwritten.', '# Cloudflare Tunnel names.'];
-    for (const entry of entries) {
-        // The same filter renderDomain uses, so every rate-limit zone a location
-        // below refers to is one that domain's own file declared.
-        const live = proxies.filter((p) => p.domain === entry.serves && p.enabled !== false);
-        const ordered = [...live]
-            .filter((p) => !upstreamFor(p, nodeConfig).grpc)
-            .sort((a, b) => normalizePath(b.path).length - normalizePath(a.path).length);
+export function renderDomain(domain, hosts, nodeConfig, { namesOn = {} } = {}) {
+    const live = hosts.filter((p) => p.enabled !== false && !upstreamFor(p, nodeConfig).grpc);
+    // A name whose every service is disabled still needs a file, or nginx would
+    // fall through to the catch-all and answer for it by accident.
+    if (!live.length) return `# Every service on ${domain} is disabled in the control panel.\n`;
 
-        out.push('');
-        out.push(`# ${entry.hostname}: serves the same as ${entry.serves}`);
-        out.push('server {');
-        out.push(`    listen ${TUNNEL_PORT};`);
-        out.push(`    server_name ${entry.hostname};`);
-        out.push('');
-        // Only cloudflared reaches this port (see TUNNEL_PORT), so the header it
-        // sets is the visitor's address. Allowlists and rate limits read
-        // $remote_addr, so they apply to the visitor too.
-        out.push('    set_real_ip_from 0.0.0.0/0;');
-        out.push('    set_real_ip_from ::/0;');
-        out.push('    real_ip_header CF-Connecting-IP;');
-        out.push('');
-        out.push('    client_max_body_size 512m;');
-        out.push('');
-        out.push(...RESOLVER);
-        out.push('');
-        if (ordered.length) {
-            out.push(...renderLocations(ordered, nodeConfig, { namesOn, tunnel: true }));
-        } else {
-            out.push('    location / {');
-            out.push(`        return 404 "Nothing is published on ${entry.serves} under Proxy & domains.\\n";`);
-            out.push('    }');
-        }
-        out.push('}');
-    }
-    return `${out.join('\n')}\n`;
-}
-
-/**
- * One vhost for one name, serving every service published on it.
- *
- * A domain used to mean a service. It does not any more: a Kaspa node and a
- * KaChat indexer are the obvious pair to put on the same free DuckDNS name, and
- * they can share it because they answer on different paths. So the unit of
- * rendering is the name, and each service on it contributes a location.
- *
- * Whoever holds `/` gets the root; everyone else gets a prefix that is stripped
- * before the request reaches them, so the service behind it needs to know
- * nothing about being proxied.
- */
-export function renderDomain(domain, hosts, nodeConfig, { publicHttpsPort = 443, namesOn = {} } = {}) {
-    const live = hosts.filter((p) => p.enabled !== false);
     // Longest path first: nginx picks the longest matching prefix anyway, and
     // reading the file top to bottom should agree with what it does.
     const ordered = [...live].sort((a, b) => normalizePath(b.path).length - normalizePath(a.path).length);
-
-    const tlsHost = live.find((p) => p.ssl?.mode === 'letsencrypt');
-    const useTls = Boolean(tlsHost) && hasCertificate(domain);
-    const forceHttps = useTls && tlsHost.ssl?.forceHttps !== false;
-    const anyGrpc = live.some((p) => upstreamFor(p, nodeConfig).grpc);
-    // A browser reaches wRPC Borsh/JSON with a raw WebSocket, and a WebSocket
-    // Upgrade cannot be carried over HTTP/2: a browser that negotiates h2 (via
-    // ALPN, which it will whenever the vhost offers it) then fails the handshake,
-    // and the non-upgraded request nginx forwards to kaspad's websocket-only port
-    // comes back 502. So a vhost serving a wRPC websocket endpoint must stay
-    // HTTP/1.1. gRPC is the opposite -- it REQUIRES http2 -- and the two never
-    // share a name in practice, so a wRPC websocket present simply suppresses it.
-    const anyWsRpc = live.some((p) => p.target?.kind === 'borsh' || p.target?.kind === 'json');
-    const useHttp2 = anyGrpc && !anyWsRpc;
 
     const out = ['# Generated by the Kaspa Node Control panel - edits here are overwritten.'];
     for (const proxy of live) {
@@ -585,66 +476,26 @@ export function renderDomain(domain, hosts, nodeConfig, { publicHttpsPort = 443,
         }
     }
 
-    // Every service on this name, as location blocks.
-    const locations = () => renderLocations(ordered, nodeConfig, { hsts: useTls, namesOn });
-
     out.push('');
     out.push('server {');
-    out.push('    listen 80;');
-    out.push('    listen [::]:80;');
-    // gRPC over plaintext is h2c. Since nginx 1.25.1 `http2 on` accepts both
-    // h2c and HTTP/1.1 on the same listener, so the ACME challenge still works.
-    if (useHttp2) out.push('    http2 on;');
+    out.push(`    listen ${TUNNEL_PORT};`);
     out.push(`    server_name ${domain};`);
+    out.push('');
+    // Only cloudflared reaches this port (see TUNNEL_PORT), so the header it
+    // sets is the visitor's address. Allowlists and rate limits read
+    // $remote_addr, so they apply to the visitor too.
+    out.push('    set_real_ip_from 0.0.0.0/0;');
+    out.push('    set_real_ip_from ::/0;');
+    out.push('    real_ip_header CF-Connecting-IP;');
+    out.push('');
+    // The ceiling for anything that does not set its own. 32m turned away
+    // a phone video, which is the ordinary thing to send to a file server.
+    out.push('    client_max_body_size 512m;');
     out.push('');
     out.push(...RESOLVER);
     out.push('');
-    out.push('    location /.well-known/acme-challenge/ {');
-    out.push('        root /var/www/certbot;');
-    out.push('        default_type "text/plain";');
-    out.push('    }');
-    out.push('');
-    if (forceHttps) {
-        // $host carries no port, so on a network where the outside reaches this
-        // machine on something other than 443 a bare redirect would send the
-        // visitor to whatever owns 443 out there -- which is precisely the
-        // other machine this arrangement exists to avoid.
-        const suffix = Number(publicHttpsPort) === 443 ? '' : `:${Number(publicHttpsPort)}`;
-        out.push('    location / {');
-        out.push(`        return 301 https://$host${suffix}$request_uri;`);
-        out.push('    }');
-    } else {
-        out.push(...locations());
-    }
+    out.push(...renderLocations(ordered, nodeConfig, { namesOn }));
     out.push('}');
-
-    if (useTls) {
-        out.push('');
-        out.push('server {');
-        out.push(`    listen 443 ssl${useHttp2 ? ' http2' : ''};`);
-        out.push(`    listen [::]:443 ssl${useHttp2 ? ' http2' : ''};`);
-        // Modern http2 directive for plain HTTP vhosts. Omitted when a wRPC
-        // websocket endpoint is on this name, so the WebSocket Upgrade works.
-        if (!anyGrpc && !anyWsRpc) out.push('    http2 on;');
-        out.push(`    server_name ${domain};`);
-        out.push('');
-        out.push(`    ssl_certificate     /etc/letsencrypt/live/${domain}/fullchain.pem;`);
-        out.push(`    ssl_certificate_key /etc/letsencrypt/live/${domain}/privkey.pem;`);
-        out.push('    ssl_protocols TLSv1.2 TLSv1.3;');
-        out.push('    ssl_prefer_server_ciphers off;');
-        out.push('    ssl_session_cache shared:SSL:10m;');
-        out.push('    ssl_session_timeout 1d;');
-        out.push('    add_header Strict-Transport-Security "max-age=31536000" always;');
-        out.push('');
-        // The ceiling for anything that does not set its own. 32m turned away
-        // a phone video, which is the ordinary thing to send to a file server.
-        out.push('    client_max_body_size 512m;');
-        out.push('');
-        out.push(...RESOLVER);
-        out.push('');
-        out.push(...locations());
-        out.push('}');
-    }
 
     for (const proxy of live) {
         if (proxy.customSnippet?.trim()) {
@@ -654,16 +505,8 @@ export function renderDomain(domain, hosts, nodeConfig, { publicHttpsPort = 443,
         }
     }
 
-    // A name whose every service is disabled still needs a file, or nginx would
-    // fall through to the catch-all and answer for it by accident.
-    if (!live.length) return `# Every service on ${domain} is disabled in the control panel.\n`;
-
     return `${out.join('\n')}\n`;
 }
-
-// Its locations reuse the rate-limit zones the 10-<domain>.conf files declare.
-// Order does not matter to nginx, which resolves zones after reading everything.
-const TUNNEL_CONF = '20-cloudflare-tunnel.conf';
 
 export function writeAll(proxies, nodeConfig, options = {}) {
     fs.mkdirSync(NGINX_CONF_D, { recursive: true });
@@ -686,12 +529,6 @@ export function writeAll(proxies, nodeConfig, options = {}) {
         fs.writeFileSync(path.join(NGINX_CONF_D, file), renderDomain(domain, hosts, nodeConfig, options), 'utf8');
     }
 
-    // The Cloudflare Tunnel's names (lib/cloudflare.js), when there are any.
-    if (options.tunnel?.length) {
-        keep.add(TUNNEL_CONF);
-        fs.writeFileSync(path.join(NGINX_CONF_D, TUNNEL_CONF), renderTunnel(options.tunnel, proxies, nodeConfig, options), 'utf8');
-    }
-
     // htpasswd files stay per host: two services on one name can have different
     // passwords, or one and not the other.
     for (const proxy of proxies) {
@@ -703,6 +540,8 @@ export function writeAll(proxies, nodeConfig, options = {}) {
         }
     }
 
+    // Anything else is a file this panel wrote before and no longer wants --
+    // the old per-name 80/443 vhosts and the separate tunnel file among them.
     for (const file of fs.readdirSync(NGINX_CONF_D)) {
         if (file.endsWith('.conf') && !keep.has(file)) fs.rmSync(path.join(NGINX_CONF_D, file));
     }

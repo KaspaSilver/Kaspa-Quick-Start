@@ -7,7 +7,8 @@
 
     Installs Docker Desktop if it is missing, fetches the stack, builds a kaspad
     image from the official rusty-kaspa release and starts the node (always with
-    --utxoindex), the web control panel and an nginx reverse proxy.
+    --utxoindex) and the web control panel. Web addresses on a domain you own go
+    through a Cloudflare Tunnel, switched on from the panel.
 #>
 [CmdletBinding()]
 param(
@@ -16,8 +17,6 @@ param(
     # something else, and a panel sitting there is in the way of the job it
     # exists to do.
     [int]    $GuiPort    = $(if ($env:KASPA_GUI_PORT) { [int]$env:KASPA_GUI_PORT } else { 8420 }),
-    [int]    $HttpPort   = 80,
-    [int]    $HttpsPort  = 443,
     # Loopback by default. The panel ships without a password, and it drives the
     # Docker socket, so binding it anywhere reachable would hand the host to
     # whoever finds the port. -Password is what makes a wider bind reasonable.
@@ -62,7 +61,7 @@ function Test-PortFree {
 }
 
 # The panel is the only host port a base install binds. If it is taken, move it to
-# the next free port (skipping the proxy's http/https) instead of letting Docker
+# the next free port instead of letting Docker
 # dead-end the install with a bare "port is already allocated".
 function Resolve-GuiPort {
     # Our own panel already on this port is not a conflict -- compose recreates it
@@ -74,7 +73,7 @@ function Resolve-GuiPort {
     $original = $script:GuiPort
     $max = $script:GuiPort + 100
     for ($p = $script:GuiPort; $p -le $max; $p++) {
-        if ($p -ne $script:HttpPort -and $p -ne $script:HttpsPort -and (Test-PortFree -Port $p)) {
+        if (Test-PortFree -Port $p) {
             $script:GuiPort = $p
             Warn "Port $original is already in use, so the panel will use $($script:GuiPort) instead."
             return
@@ -384,14 +383,10 @@ function Get-Stack {
     New-Item -ItemType Directory -Force -Path (Join-Path $StackDir 'conf') | Out-Null
     Set-Content -Path (Join-Path $StackDir 'conf\panel-ref') -Value $StackRef -NoNewline -Encoding ascii
 
-    foreach ($sub in @('conf', 'proxy\conf.d', 'proxy\snippets', 'proxy\letsencrypt', 'proxy\webroot')) {
+    # The manager writes nginx's configuration into these as soon as it boots,
+    # which is before the proxy can be switched on.
+    foreach ($sub in @('conf', 'proxy\conf.d', 'proxy\snippets')) {
         New-Item -ItemType Directory -Path (Join-Path $StackDir $sub) -Force | Out-Null
-    }
-    Copy-Item (Join-Path $src 'proxy\nginx-base.conf') (Join-Path $StackDir 'proxy\nginx-base.conf') -Force
-
-    $defaultConf = Join-Path $StackDir 'proxy\conf.d\00-default.conf'
-    if (-not (Test-Path $defaultConf)) {
-        Copy-Item (Join-Path $StackDir 'proxy\nginx-base.conf') $defaultConf -Force
     }
 
     # kaspad reads this the moment it boots, so it has to exist before anyone
@@ -475,16 +470,12 @@ Write-Host ''
 Initialize-Docker
 Get-Stack
 # A re-run adopts what is already in .env for anything not passed explicitly: the panel
-# changes the panel port, its bind, the nginx ports and the kaspad version itself, and a
+# changes the panel port, its bind and the kaspad version itself, and a
 # reinstall must not quietly undo those (kachat-audits KQS-004).
 $envFile = Join-Path $StackDir '.env'
 if (Test-Path $envFile) {
     $v = Read-EnvValue $envFile 'GUI_PORT'
     if ($v -and -not $PSBoundParameters.ContainsKey('GuiPort') -and -not $env:KASPA_GUI_PORT) { $GuiPort = [int]$v }
-    $v = Read-EnvValue $envFile 'HTTP_PORT'
-    if ($v -and -not $PSBoundParameters.ContainsKey('HttpPort')) { $HttpPort = [int]$v }
-    $v = Read-EnvValue $envFile 'HTTPS_PORT'
-    if ($v -and -not $PSBoundParameters.ContainsKey('HttpsPort')) { $HttpsPort = [int]$v }
     $v = Read-EnvValue $envFile 'MANAGER_BIND'
     if ($v -and -not $PSBoundParameters.ContainsKey('Bind')) { $Bind = $v }
     $v = Read-EnvValue $envFile 'KASPAD_VERSION'
@@ -526,8 +517,6 @@ KASPAD_REPO_URL=https://github.com/$UpstreamRepo
 UPSTREAM_REPO=$UpstreamRepo
 GUI_PORT=$GuiPort
 MANAGER_BIND=$Bind
-HTTP_PORT=$HttpPort
-HTTPS_PORT=$HttpsPort
 SESSION_SECRET=$existingSecret
 ADMIN_PASSWORD_HASH=$existingHash
 "@).TrimEnd() + "`n" + (($keptLines -join "`n")) + "`n")
@@ -620,7 +609,10 @@ Write-Host @"
       17110/tcp   wRPC Borsh     (the KaChat indexer reads the chain here)
       18110/tcp   wRPC JSON      (the panel already uses it internally)
       5555/tcp    stratum        (only if you mine, and only for remote miners)
-      80, 443     only if you use the domain / HTTPS features
+
+  Web addresses   A name on a domain you own, like node.example.com, goes
+                  through a Cloudflare Tunnel (Tunnel & domains in the panel).
+                  Nothing to forward for those, and no certificate to renew.
 
   Mining          Open the Mining tab to switch on the stratum bridge and
                   watch hashrate, workers and blocks found. It needs the gRPC

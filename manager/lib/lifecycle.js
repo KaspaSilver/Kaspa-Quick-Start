@@ -136,36 +136,25 @@ export const UNITS = {
         buildable: ['bridge'],
         data: "the bridge's own share and block records",
     },
+    // Tunnel & domains: nginx, which decides what each public name serves, and
+    // cloudflared, which carries those names in from Cloudflare. One app, one
+    // switch: neither does anything without the other.
     proxy: {
-        label: 'Reverse proxy',
+        label: 'Tunnel & domains',
         profile: 'proxy',
-        services: ['proxy'],
-        containers: ['kaspa-node-proxy'],
+        // The connector only once it has a run token (connecting the Cloudflare
+        // account writes one). Started without, it exits and restarts forever.
+        get services() {
+            return cloudflare.hasToken() ? ['proxy', 'cloudflared'] : ['proxy'];
+        },
+        containers: ['kaspa-node-proxy', cloudflare.CONTAINER],
         primary: 'kaspa-node-proxy',
         volumes: [],
-        // nginx is pulled, not built here, and is very likely in use by
-        // something else on this machine. Never removed.
+        // nginx and cloudflared are pulled, not built here, and nginx is very
+        // likely in use by something else on this machine. Never removed.
         images: [],
         buildable: [],
-        data: 'nothing. Your domains and certificates live in the stack directory and are kept',
-    },
-    cloudflare: {
-        label: 'Cloudflare Tunnel',
-        profile: 'cloudflare',
-        services: ['cloudflared'],
-        containers: [cloudflare.CONTAINER],
-        primary: cloudflare.CONTAINER,
-        volumes: [],
-        // Pulled, not built here.
-        images: [],
-        buildable: [],
-        prepare: (onLine, { starting = false } = {}) => {
-            // Installing only creates the container; the token is pasted on its tab, which
-            // opens once it is installed. Started without one, cloudflared exits at once
-            // and restarts forever.
-            if (starting && !cloudflare.hasToken()) throw new Error('Paste the tunnel token on the Cloudflare tab first.');
-        },
-        data: 'nothing. The tunnel token and your hostnames stay in the stack directory',
+        data: 'nothing. Your names, the services on them and the Cloudflare connection live in the stack directory and are kept',
     },
 
     // ---- Testnet-10 stack (runs alongside mainnet) --------------------------

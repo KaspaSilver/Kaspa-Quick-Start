@@ -28,10 +28,9 @@ id_rsa*
 # last-run records.
 /conf/
 
-# nginx vhosts the manager generates, issued certificates, and the ACME
-# webroot. nginx-base.conf is the template and is tracked, so it is kept.
-/proxy/*
-!/proxy/nginx-base.conf
+# nginx vhosts the manager generates (and, from older versions, issued
+# certificates and the ACME webroot).
+/proxy/
 
 # Container data if a volume is ever bound into the checkout.
 /data/

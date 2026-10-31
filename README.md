@@ -167,8 +167,10 @@ Nothing outside `manager/` is mounted, so changes to `docker-compose.yml`,
 | `5555`  | stratum             | only if you mine, and only for miners outside this machine |
 | `3080`  | KaPosts REST API    | only if KaChat clients connect from outside this machine |
 | `8081`  | Nextcloud           | only if you reach Nextcloud without a proxy host |
-| `80`,`443` | reverse proxy    | only if you switch the proxy on for domains / HTTPS |
-| `8420`  | control panel       | bound to `127.0.0.1`, so do not forward it. Deliberately not 8080, which you may want for the proxy |
+| `8420`  | control panel       | bound to `127.0.0.1`, so do not forward it. To reach it from outside, publish it under Tunnel & domains |
+
+Nothing here is ever forwarded for a web address. Names on your own domain go
+through the Cloudflare Tunnel (below), which opens no port at all.
 
 Testnet-10 uses `16211 / 16210 / 17210 / 18210`; the panel switches them for you.
 
@@ -208,37 +210,54 @@ for anything else. It shows the exact command line before you apply it.
 `--utxoindex`, `--appdir` and `--yes` are added by the container entrypoint and
 cannot be switched off from the UI.
 
-**Proxy and domains.** Off by default, because it claims ports 80 and 443 and a
-node with no domains has no use for it. Switch it on and you get what you would
-otherwise hand-write nginx config for:
+**Tunnel and domains.** Your node and apps on a domain you own, like
+`node.yourdomain.com`, through a Cloudflare Tunnel. A small connector
+(`cloudflared`) dials out to Cloudflare and visitors come back in through it,
+so nothing is opened on this machine or forwarded on your router, your home
+address stays out of DNS, and Cloudflare serves HTTPS: there is no certificate
+to renew. It works behind a provider that never gave your connection an
+address of its own. Owning the domain is the point: a free dynamic-DNS name
+pointed at a forwarded port is the setup this replaces, and the less safe one.
 
-- point any domain at the node's wRPC/gRPC ports or at the panel itself
-- free HTTPS from Let's Encrypt, issued and auto-renewed in the background
-- websocket support (required for wRPC), http→https redirect
+You need a domain on a Cloudflare account (the free plan is enough) and one
+Cloudflare API token. Switch on **Network → Tunnel & domains**, then:
+
+1. Make the API token. The tab's **Setup API token** guide walks Cloudflare's
+   form field by field: three permissions (Account · Cloudflare Tunnel · Edit,
+   Zone · DNS · Edit, Zone · Zone · Read) on your domain.
+2. Paste it on **Overview** and press **Connect**. The panel finds or makes the
+   tunnel, starts the connector, and keeps the token in
+   `conf/cloudflare/`, readable by you alone.
+3. Press **Set up** on anything under Public addresses and give it a name, like
+   `node` on your domain. The panel adds the DNS record and the route, switches
+   on whatever the service needs, and writes the proxy configuration.
+
+The panel never replaces a DNS record it did not make: a name already pointing
+somewhere else is somebody's website, mail or verification record, so it stops
+and says what is there. Names are one level deep (`node.example.com`), because
+Cloudflare's free certificate covers nothing deeper. **Disconnect** takes every
+name off and removes their records; your names stay listed, and connecting
+again puts them back.
+
+Behind the tunnel, nginx decides what each name serves, the way you would
+otherwise hand-write it:
+
+- the node's wRPC (websockets included), the KaChat indexer with its chat and
+  push routes, the apps, the panel itself, or any other machine on your network
+- several services on one name, each on its own path
 - optional username/password, IP allow-lists and per-IP rate limits
-- DuckDNS: enter a subdomain and token to keep a free domain pointed here
-
-**Cloudflare Tunnel.** Serves your own domain from this machine with no port
-forwarded on your router and without DNS showing your home IP: `cloudflared`
-dials out to Cloudflare, and visitors reach this machine through it. You need a
-domain on a Cloudflare account (the free plan is enough). Install it under
-**Network → Cloudflare**, then:
-
-1. In the Cloudflare dashboard, **Zero Trust → Networks → Tunnels → Create a
-   tunnel → Cloudflared**. Copy the install command shown for any system (don't
-   run it) and paste it into the Cloudflare tab's token box. The panel keeps
-   only the token, in `conf/cloudflare/tunnel.env`, readable by you alone.
-2. Turn on the Cloudflare switch. The tab shows when it is connected.
-3. In the tunnel, **Add route → Published application** for each name, with the
-   service URL `http://proxy:8081`. Cloudflare creates the DNS record.
-4. On the tab's **Hostnames**, add the name and pick which domain under Proxy &
-   domains it serves the same as. For a name only the tunnel uses, add that
-   domain under Proxy & domains first, without HTTPS: Cloudflare does HTTPS.
 
 Tunnel traffic arrives on the proxy's port 8081, which is never published to
 the host, so nginx there takes each visitor's real address from Cloudflare.
 Rate limits and allow-lists keep working per visitor. Uploads through
-Cloudflare's free plan are capped at 100 MB each.
+Cloudflare's free plan are capped at 100 MB each, and kaspad's gRPC cannot go
+through a tunnel (publish wRPC Borsh instead; wallets and KDX use that).
+
+Upgrading from a version that used DuckDNS: on its first start the panel
+removes every DuckDNS name and the services on it, closes ports 80 and 443,
+and drops the DuckDNS token. A tunnel you made by hand in the Cloudflare
+dashboard keeps running, with its names; connecting an API token from the same
+account takes it over. Remove the 80 and 443 forwarding rules from your router.
 
 **Mining.** Switches on the stratum bridge that ships with rusty-kaspa, so
 ASICs and miners can point at your own node instead of a pool:
@@ -286,8 +305,8 @@ the panel builds it and keeps it running.
 
 It reads the chain from the node already in this stack over wRPC Borsh, so there
 is no second node and no second sync. Upstream's bundled kaspad, Portainer and
-nginx-proxy-manager are not used, since this stack already provides all three and
-a second nginx would collide on ports 80 and 443. Its Postgres does run, as its
+nginx-proxy-manager are not used, since this stack already provides all three
+(publishing through the Cloudflare Tunnel). Its Postgres does run, as its
 own container.
 
 The first build compiles the indexer from Rust source and takes a while; follow
@@ -353,8 +372,8 @@ conf/bridge-ports.yml  generated compose override for stratum ports
 conf/apps.json         KaChat / Nextcloud settings from the panel
 conf/apps-ports.yml    generated compose override for their ports
 conf/*-build.json      which upstream commit each app image was built from
+conf/cloudflare/       the tunnel: its tokens (0600) and which account it is on
 proxy/conf.d/          generated nginx config
-proxy/letsencrypt/     certificates
 kaspad/ manager/       image build contexts
 ```
 
@@ -367,8 +386,8 @@ bind-mounting a RocksDB database into Docker Desktop is painfully slow.
 | --------- | ---------------------------- | ---- |
 | `kaspad`  | built from the release binary | the node |
 | `manager` | Node 22, zero npm deps        | control panel + Docker control plane |
-| `proxy`   | `nginx:1.27-alpine`           | domains, TLS, reverse proxying |
-| `cloudflared` | `cloudflare/cloudflared`  | Cloudflare Tunnel: public names with no open port (only when Cloudflare is on) |
+| `proxy`   | `nginx:1.27-alpine`           | what each public name serves (only when Tunnel & domains is on) |
+| `cloudflared` | `cloudflare/cloudflared`  | the Cloudflare Tunnel: public names with no open port (only when Tunnel & domains is on and connected) |
 | `bridge`  | built from the release binary | stratum server for miners (only when mining is on) |
 | `kachat-app` + `kachat-db` | built from KaChat-Indexer | chat/KaPosts indexer and its Postgres (only when KaChat is on) |
 | `nextcloud` + db/redis/imaginary | `nextcloud:stable` + ffmpeg | private cloud (only when Nextcloud is on) |
@@ -404,8 +423,6 @@ installer warns first, and it takes 30–60 minutes.
 ```
 --dir <path>          install location (default ~/.kaspa-node)
 --gui-port <port>     control panel port (default 8420)
---http-port <port>    nginx http port (default 80)
---https-port <port>   nginx https port (default 443)
 --bind <address>      address the panel listens on (default 127.0.0.1)
 --password <pass>     require a password to open the panel
 --no-password         drop a password set by an earlier run (the panel then asks for a new one)

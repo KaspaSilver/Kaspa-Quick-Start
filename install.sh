@@ -8,7 +8,8 @@
 # from the official rusty-kaspa release, and starts:
 #   kaspad   - the node itself, always with --utxoindex
 #   manager  - the web control panel
-#   proxy    - nginx, for domains / HTTPS / reverse proxying
+#   proxy    - nginx and a Cloudflare Tunnel, for web addresses on a domain
+#              you own (off until you connect Cloudflare in the panel)
 #
 # A stratum bridge for miners is included but stays down until you switch
 # mining on in the panel.
@@ -32,12 +33,8 @@ STACK_DIR="${KASPA_STACK_DIR:-$HOME/.kaspa-node}"
 # Which of the panel-adjustable settings were given explicitly (flag or env). The rest are
 # taken from an existing .env on a re-run, so a reinstall keeps what the panel changed.
 GUI_PORT_SET=$([ -n "${KASPA_GUI_PORT:-}" ] && echo 1 || echo 0)
-HTTP_PORT_SET=$([ -n "${KASPA_HTTP_PORT:-}" ] && echo 1 || echo 0)
-HTTPS_PORT_SET=$([ -n "${KASPA_HTTPS_PORT:-}" ] && echo 1 || echo 0)
 BIND_SET=$([ -n "${KASPA_MANAGER_BIND:-}" ] && echo 1 || echo 0)
 GUI_PORT="${KASPA_GUI_PORT:-8420}"
-HTTP_PORT="${KASPA_HTTP_PORT:-80}"
-HTTPS_PORT="${KASPA_HTTPS_PORT:-443}"
 # Loopback by default. The panel ships without a password, and it drives the
 # Docker socket, so binding it anywhere reachable would hand the host to whoever
 # finds the port. --password is what makes a wider bind reasonable.
@@ -55,8 +52,6 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --dir) STACK_DIR="$2"; shift 2 ;;
         --gui-port) GUI_PORT="$2"; GUI_PORT_SET=1; shift 2 ;;
-        --http-port) HTTP_PORT="$2"; HTTP_PORT_SET=1; shift 2 ;;
-        --https-port) HTTPS_PORT="$2"; HTTPS_PORT_SET=1; shift 2 ;;
         --bind) MANAGER_BIND="$2"; BIND_SET=1; shift 2 ;;
         --password) ADMIN_PASSWORD="$2"; shift 2 ;;
         --no-password) CLEAR_PASSWORD=1; shift ;;
@@ -71,8 +66,6 @@ Usage: install.sh [options]
 
   --dir <path>          Where to install (default: ~/.kaspa-node)
   --gui-port <port>     Web control panel port (default: 8420)
-  --http-port <port>    nginx http port (default: 80)
-  --https-port <port>   nginx https port (default: 443)
   --bind <address>      Address the panel listens on (default: 127.0.0.1)
   --password <pass>     Require this password to open the panel. Needed if you
                         widen --bind or proxy the panel to a domain.
@@ -542,8 +535,8 @@ fetch_stack() {
     fi
 
     # Only these are replaced wholesale on a re-install. conf/ holds generated
-    # state (node.json, proxies.json) and proxy/ holds issued certificates and
-    # generated vhosts -- wiping either would cost the user real work.
+    # state (node.json, proxies.json) and proxy/ the vhosts made from it --
+    # wiping either would cost the user real work.
     for item in docker-compose.yml kaspad manager bridge kachat kassigner nextcloud uninstall.sh uninstall.ps1 README.md; do
         [ -e "$src_dir/$item" ] || continue
         rm -rf "$STACK_DIR/${item:?}"
@@ -560,14 +553,9 @@ fetch_stack() {
     chmod +x "$STACK_DIR/kaspad/entrypoint.sh" "$STACK_DIR/kachat/run-admin.sh" "$STACK_DIR/uninstall.sh" \
              "$STACK_DIR/nextcloud/hooks/apps/10-apps.sh" 2>/dev/null || true
 
-    mkdir -p "$STACK_DIR/conf" "$STACK_DIR/proxy/conf.d" "$STACK_DIR/proxy/snippets" \
-             "$STACK_DIR/proxy/letsencrypt" "$STACK_DIR/proxy/webroot"
-    cp "$src_dir/proxy/nginx-base.conf" "$STACK_DIR/proxy/nginx-base.conf"
-
-    # nginx needs a valid config the moment it starts; the manager regenerates
-    # this file (and the per-host ones) as soon as it boots.
-    [ -f "$STACK_DIR/proxy/conf.d/00-default.conf" ] \
-        || cp "$STACK_DIR/proxy/nginx-base.conf" "$STACK_DIR/proxy/conf.d/00-default.conf"
+    # The manager writes nginx's configuration into these as soon as it boots,
+    # which is before the proxy can be switched on.
+    mkdir -p "$STACK_DIR/conf" "$STACK_DIR/proxy/conf.d" "$STACK_DIR/proxy/snippets"
 
     # kaspad reads this file the moment it boots, so it has to exist before
     # anyone presses Start. Without it the node would come up on kaspad's own
@@ -642,8 +630,8 @@ port_in_use() {
 # The panel is the only thing a base install binds to a host port. If its port is
 # already taken -- a leftover container, another app, a second install -- Docker
 # refuses to start with a bare "port is already allocated" and the whole install
-# dead-ends there. So move the panel to the next free port instead of stopping,
-# skipping the proxy's http/https ports. Runs after Docker is up, so a port held
+# dead-ends there. So move the panel to the next free port instead of stopping.
+# Runs after Docker is up, so a port held
 # by a running container is seen too.
 # True when our own panel container already publishes host port $1. compose
 # recreates it in place on a reinstall, so that is not a conflict -- and treating
@@ -658,7 +646,7 @@ resolve_gui_port() {
     port_in_use "$GUI_PORT" || return 0
     local original="$GUI_PORT" p="$GUI_PORT" max=$((GUI_PORT + 100))
     while [ "$p" -le "$max" ]; do
-        if [ "$p" != "$HTTP_PORT" ] && [ "$p" != "$HTTPS_PORT" ] && ! port_in_use "$p"; then
+        if ! port_in_use "$p"; then
             GUI_PORT="$p"
             warn "Port $original is already in use, so the panel will use $GUI_PORT instead."
             return 0
@@ -669,15 +657,13 @@ resolve_gui_port() {
 }
 
 # A re-run adopts what is already in .env for anything not passed explicitly: the panel
-# changes the panel port, its bind, the nginx ports and the kaspad version itself, and a
+# changes the panel port, its bind and the kaspad version itself, and a
 # reinstall must not quietly undo those (kachat-audits KQS-004).
 adopt_existing_env() {
     local env_file="$STACK_DIR/.env" v
     [ -f "$env_file" ] || return 0
     env_get() { sed -n "s/^$1=//p" "$env_file" | tail -n1; }
     if [ "$GUI_PORT_SET" != 1 ]; then v="$(env_get GUI_PORT)"; [ -n "$v" ] && GUI_PORT="$v"; fi
-    if [ "$HTTP_PORT_SET" != 1 ]; then v="$(env_get HTTP_PORT)"; [ -n "$v" ] && HTTP_PORT="$v"; fi
-    if [ "$HTTPS_PORT_SET" != 1 ]; then v="$(env_get HTTPS_PORT)"; [ -n "$v" ] && HTTPS_PORT="$v"; fi
     if [ "$BIND_SET" != 1 ]; then v="$(env_get MANAGER_BIND)"; [ -n "$v" ] && MANAGER_BIND="$v"; fi
     if [ -z "$KASPAD_VERSION" ]; then v="$(env_get KASPAD_VERSION)"; [ -n "$v" ] && KASPAD_VERSION="$v"; fi
     return 0
@@ -688,7 +674,9 @@ adopt_existing_env() {
 # generated, the testnet settings, the names manifest -- is carried over untouched. Writing
 # a fresh template used to drop them: the panel then generated new database passwords, and
 # the existing Postgres/MariaDB volumes (which only read theirs once, on first start)
-# refused every app.
+# refused every app. HTTP_PORT and HTTPS_PORT are no longer written (nothing binds 80 or 443
+# now that publishing goes through the Cloudflare Tunnel); they stay listed so an older
+# install's lines for them are dropped.
 INSTALLER_ENV_KEYS='STACK_DIR|KASPAD_VERSION|KASPAD_REPO_URL|UPSTREAM_REPO|GUI_PORT|MANAGER_BIND|HTTP_PORT|HTTPS_PORT|SESSION_SECRET|ADMIN_PASSWORD_HASH'
 ENV_HEADER='# Generated by install.sh. Delete this file only if you also remove the stack.'
 
@@ -710,8 +698,6 @@ write_env() {
         printf 'UPSTREAM_REPO=%s\n' "$UPSTREAM_REPO"
         printf 'GUI_PORT=%s\n' "$GUI_PORT"
         printf 'MANAGER_BIND=%s\n' "$MANAGER_BIND"
-        printf 'HTTP_PORT=%s\n' "$HTTP_PORT"
-        printf 'HTTPS_PORT=%s\n' "$HTTPS_PORT"
         printf 'SESSION_SECRET=%s\n' "$existing_secret"
         printf 'ADMIN_PASSWORD_HASH=%s\n' "$existing_hash"
         if [ -f "$env_file" ]; then
@@ -788,15 +774,6 @@ write_env
 # still refused below, because there the panel is exposed before that first-run
 # prompt could ever be answered.
 prompt_for_password() { :; }
-# Docker accepts a duplicate mapping and then fails to start the container, with
-# an error naming neither of the two things fighting over the port.
-if [ "$GUI_PORT" = "$HTTP_PORT" ] || [ "$GUI_PORT" = "$HTTPS_PORT" ]; then
-    die "The panel and the reverse proxy cannot both use port $GUI_PORT. Pass --gui-port with something else."
-fi
-if [ "$HTTP_PORT" = "$HTTPS_PORT" ]; then
-    die "http and https cannot share port $HTTP_PORT."
-fi
-
 prompt_for_password
 
 # Work out the final auth state before building anything, so the warning lands
@@ -886,7 +863,10 @@ cat <<SUMMARY
       17110/tcp   wRPC Borsh     (the KaChat indexer reads the chain here)
       18110/tcp   wRPC JSON      (the panel already uses it internally)
       5555/tcp    stratum        (only if you mine, and only for remote miners)
-      80, 443     only if you use the domain / HTTPS features
+
+  Web addresses   A name on a domain you own, like node.example.com, goes
+                  through a Cloudflare Tunnel (Tunnel & domains in the panel).
+                  Nothing to forward for those, and no certificate to renew.
 
   Mining          Open the Mining tab to switch on the stratum bridge and
                   watch hashrate, workers and blocks found. It needs the gRPC

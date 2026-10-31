@@ -168,7 +168,6 @@ function showApp() {
     loadMining();
     loadApps();
     loadKassigner();
-    loadDuckDns();
     connectJobs();
     connectLogs();
 }
@@ -291,8 +290,8 @@ function selectTab(name) {
     if (name === 'extension') loadExtension().catch(() => {});
     if (name === 'names') loadNames().catch(() => {});
     if (name === 'experimental') loadExperimental().catch(() => {});
-    setCloudflarePolling(name === 'cloudflare');
-    // The machine's LAN address sits beside the title on Proxy & domains.
+    setTunnelPolling(name === 'proxy');
+    // The machine's LAN address sits beside the title on Tunnel & domains.
     $('topbar-lan').hidden = name !== 'proxy';
     if (name === 'proxy') loadLanIp().catch(() => {});
     // On the drawer layout, picking a destination should get out of the way.
@@ -319,7 +318,7 @@ for (const item of document.querySelectorAll('.nav-item, .sys-item')) {
 const CYCLE_KEY = 'kqs-cycle-overviews';
 const CYCLE_MS = 8_000;
 const CYCLE_FADE_MS = 450;
-// Not shown: settings pages, and the Push Service and Proxy & domains screens (owner's choice).
+// Not shown: settings pages, and the Push Service and Tunnel & domains screens (owner's choice).
 // kassigner and desktop are out by request: a hardware flasher and a static web app, with
 // nothing live to glance at.
 const NOT_CYCLED = new Set(['overview', 'logs', 'experimental', 'global', 'support', 'push', 'proxy', 'kassigner', 'desktop', 'extension']);
@@ -596,8 +595,7 @@ const SVC_LOGS = {
             ['nextcloud-imaginary', 'imaginary'],
         ],
     },
-    proxy: { mainnet: [['proxy', 'nginx proxy']] },
-    cloudflare: { mainnet: [['cloudflared', 'cloudflared']] },
+    proxy: { mainnet: [['proxy', 'nginx proxy'], ['cloudflared', 'cloudflared']] },
     global: { mainnet: [['manager', 'control panel']] },
 };
 const SVC_LOG_LINES = 2000;
@@ -702,9 +700,9 @@ document.addEventListener('click', (event) => {
 // parallel *-testnet units, so both networks run side by side from one panel. The
 // choice is remembered across reloads.
 const NET_VIEW_KEY = 'kqs-network-view';
-const TESTNET_TABS = new Set(['overview', 'kaspad', 'mining', 'kachat', 'names', 'proxy', 'cloudflare', 'logs', 'global', 'experimental', 'support']);
+const TESTNET_TABS = new Set(['overview', 'kaspad', 'mining', 'kachat', 'names', 'proxy', 'logs', 'global', 'experimental', 'support']);
 
-// Proxy & domains state (filled by loadPublish). Declared up here because
+// Tunnel & domains state (filled by loadPublish). Declared up here because
 // applyNetworkView runs at load and re-renders it.
 let publishState = { services: [], domains: [] };
 // Which lifecycle unit each shared nav switch drives in the testnet view.
@@ -756,7 +754,7 @@ function applyNetworkView(net) {
     const note = $('net-note');
     if (note) note.hidden = !testnet;
 
-    // Proxy & domains lists the services of the network being viewed.
+    // Tunnel & domains lists the services of the network being viewed.
     if (publishState.services.length) renderPublishServices();
 
     // If the tab you were on is now hidden, fall back to Overview.
@@ -1457,7 +1455,6 @@ const SERVICE_ACTIONS = {
     // No sidebar row: its switch lives on the indexer's Translation tab.
     translate: start('translate'),
     proxy: start('proxy'),
-    cloudflare: start('cloudflare'),
     // Mainnet's unit (the Testnet view maps the switch to kachat-domains-testnet).
     'kachat-domains': start('kachat-domains'),
 };
@@ -1472,8 +1469,7 @@ const SERVICE_NAMES = {
     nextcloud: 'Nextcloud',
     bot: 'the KaChat Bot',
     translate: 'the translation engine',
-    proxy: 'the reverse proxy',
-    cloudflare: 'the Cloudflare Tunnel',
+    proxy: 'Tunnel & domains',
     'kachat-domains': '.kachat Domains',
 };
 
@@ -1510,7 +1506,7 @@ for (const input of document.querySelectorAll('[data-service]')) {
         if (service === 'proxy' && !wanted && panelAccess.viaProxy) {
             const where = panelAccess.directUrl || 'the panel on its own port';
             const proceed = await askConfirm(
-                'You are viewing this panel through the reverse proxy, so stopping it will ' +
+                'You are viewing this panel through the tunnel, so stopping it will ' +
                     'disconnect you and this page will freeze on "Stopping…".\n\n' +
                     `Open the panel directly at ${where} on the machine running the node first, ` +
                     'then stop the proxy from there.\n\nStop it anyway?',
@@ -1987,7 +1983,7 @@ let lastPortsHtml = '';
 
 // --- Unsafe RPC vs RPC that other machines can reach (KQS-024) ---
 // --unsaferpc lets any RPC client shut the node down or ban and add peers, so it must never meet
-// an RPC endpoint published on the network or through Proxy & domains. Not forbidden (an
+// an RPC endpoint published on the network or through Tunnel & domains. Not forbidden (an
 // operator may know their firewall), but confirmed twice and flagged in red while both are true.
 const RPC_PORT_KEYS = new Set(['grpc', 'borsh', 'json']);
 const RPC_PROXY_KINDS = new Set(['borsh', 'json', 'grpc']);
@@ -1999,7 +1995,7 @@ const unsafeRpcOn = () => Boolean(currentConfig?.flags?.unsaferpc);
 function rpcPublishedVia() {
     const out = lastPortMatrix.filter((p) => RPC_PORT_KEYS.has(p.key) && p.public).map((p) => `${p.name} port ${p.port} on the network`);
     for (const p of proxies ?? []) {
-        if (p.enabled !== false && RPC_PROXY_KINDS.has(p.target?.kind)) out.push(`${p.domain} through Proxy & domains`);
+        if (p.enabled !== false && RPC_PROXY_KINDS.has(p.target?.kind)) out.push(`${p.domain} through Tunnel & domains`);
     }
     return out;
 }
@@ -5843,11 +5839,14 @@ let proxies = [];
 // used to carry its own copy in markup, which went stale the moment the apps
 // became targets: editing a Nextcloud host showed an empty "Forwards to".
 let targetKinds = {};
+// The public names a proxy host can be for, with whether each is on the tunnel.
+let proxyNames = [];
 
 async function loadProxies() {
     const r = await api('/api/proxies');
     proxies = r.proxies;
     targetKinds = r.targets ?? {};
+    proxyNames = r.names ?? [];
     renderUnsafeRpcNotice();
 
     // Reflect whether the proxy is running before anything else: with it off,
@@ -5871,12 +5870,13 @@ async function loadProxies() {
     // is to do. It goes back to full width once the settings are under it.
     $('tab-proxy').classList.toggle('alone', !on);
 
-    for (const id of ['proxy-reload', 'proxy-renew', 'dd-now', 'proxy-add']) {
+    for (const id of ['proxy-reload', 'proxy-add']) {
         const button = $(id);
         button.disabled = !on;
-        button.title = on ? '' : 'Turn the reverse proxy on first.';
+        button.title = on ? '' : 'Switch Tunnel & domains on first.';
     }
 
+    $('px-names').innerHTML = proxyNames.map((n) => `<option value="${escapeHtml(n.domain)}"></option>`).join('');
     renderProxyHosts();
 
     // The one table on this page is the service view, which reads the same
@@ -5889,8 +5889,8 @@ async function loadProxies() {
 /**
  * The whole of this page. It asks "what do you want reachable" rather than
  * "what is an upstream", and the wizard behind the Set up button answers every
- * other question -- the name, the DNS record, the certificate, whatever the
- * service needs switched on -- so that nobody has to learn nginx to publish a
+ * other question -- the name, its DNS record, whatever the service needs
+ * switched on -- so that nobody has to learn nginx or Cloudflare to publish a
  * node. The proxy-host dialog is still here for the details, reached from a
  * published row rather than from a screen of its own.
  */
@@ -5899,23 +5899,19 @@ async function loadPublish() {
     try {
         publishState = await api('/api/publish');
         if ($('shared-client-notice')) $('shared-client-notice').hidden = !publishState.sharedClientAddress;
-        if (publishState.publicPorts) {
-            const p = publishState.publicPorts;
-            $('ports-http').value = p.http;
-            $('ports-https').value = p.https;
-            $('ports-bind-http').value = p.bindHttp;
-            $('ports-bind-https').value = p.bindHttps;
-            $('panel-port').value = p.panel;
-            $('panel-port-state').textContent = `This panel answers on port ${p.panel}. The reverse proxy holds ${p.bindHttp} and ${p.bindHttps} on this machine.`;
+        const p = publishState.panel;
+        if (p) {
+            $('panel-port').value = p.port;
+            $('panel-port-state').textContent = `This panel answers on port ${p.port}.`;
             const lan = $('panel-lan');
             if (lan) {
-                lan.checked = Boolean(p.panelLan);
+                lan.checked = Boolean(p.lan);
                 // Never offered without a password: the panel controls Docker.
-                lan.disabled = !p.panelLan && !p.hasPassword;
-                $('panel-lan-state').textContent = p.panelLan
-                    ? `Other machines on your network can open it at this computer's address, port ${p.panel} (bound to ${p.panelBind}).`
+                lan.disabled = !p.lan && !p.hasPassword;
+                $('panel-lan-state').textContent = p.lan
+                    ? `Other machines on your network can open it at this computer's address, port ${p.port} (bound to ${p.bind}).`
                     : p.hasPassword
-                      ? `Only this machine can open it (bound to ${p.panelBind}).`
+                      ? `Only this machine can open it (bound to ${p.bind}).`
                       : `Only this machine can open it. Set an admin password first to open it to your network.`;
             }
         }
@@ -5923,8 +5919,94 @@ async function loadPublish() {
         // The proxy card above already reports anything that is actually wrong.
         return;
     }
+    renderTunnel();
+    renderNames();
     renderPublishServices();
 }
+
+const tunnelConnected = () => publishState.tunnel?.mode === 'connected';
+
+/** The Cloudflare connection: a form to connect, or how the tunnel is doing. */
+function renderTunnel() {
+    const t = publishState.tunnel ?? {};
+    const connected = t.mode === 'connected';
+    $('tunnel-setup').hidden = connected;
+    $('tunnel-live').hidden = !connected;
+    $('tunnel-disconnect-card').hidden = t.mode === 'off';
+    $('tunnel-legacy').hidden = t.mode !== 'legacy';
+    $('tunnel-legacy-id').textContent = t.tunnelId ?? '–';
+
+    if (!connected) return;
+    // Cloudflare's own word for the tunnel when it can be asked; the connector's
+    // view of itself otherwise.
+    const cfStatus = t.cloudflare?.status;
+    const running = t.container?.running;
+    const [word, cls] = !running
+        ? ['connector stopped', 'off']
+        : cfStatus === 'healthy' || t.connection?.ready
+          ? ['healthy', 'ok']
+          : cfStatus === 'degraded'
+            ? ['degraded', 'warn']
+            : ['connecting', 'warn'];
+    $('tunnel-state').textContent = word;
+    $('tunnel-state').className = `tag ${cls}`;
+    $('tunnel-account').textContent = t.accountName || '–';
+    $('tunnel-name').textContent = t.tunnelName || '–';
+    $('tunnel-zones').textContent = (t.zones ?? []).map((z) => z.name).join(', ') || '–';
+}
+
+/** Every name, with whether it is on the tunnel, and a way to retry or remove it. */
+function renderNames() {
+    const list = $('names-list');
+    const domains = publishState.domains ?? [];
+    if (!domains.length) {
+        list.innerHTML = '<p class="muted">No names yet. <strong>Set up</strong> on a service above makes the first one.</p>';
+        return;
+    }
+    list.innerHTML = `<table class="proxies"><tbody>${domains
+        .map((d) => {
+            const state =
+                d.tunnel === 'on'
+                    ? '<span class="tag ok">on the tunnel</span>'
+                    : `<span class="tag warn" title="${escapeHtml(d.problem ?? '')}">not on the tunnel</span>`;
+            const serving = (d.hosts ?? []).map((h) => `${serviceLabel(h.kind)}${h.path === '/' ? '' : ` at ${h.path}`}`).join(', ');
+            const actions = [
+                d.tunnel !== 'on' && tunnelConnected() ? `<button type="button" class="ghost mini" data-name-retry="${escapeHtml(d.id)}">Retry</button>` : '',
+                (d.hosts ?? []).length ? '' : `<button type="button" class="ghost mini danger" data-name-del="${escapeHtml(d.id)}">Remove</button>`,
+            ].join(' ');
+            return `<tr>
+          <td><a href="https://${escapeHtml(d.domain)}/" target="_blank" rel="noreferrer noopener"><strong>${escapeHtml(d.domain)}</strong></a>
+            <small class="service-detail">${serving ? escapeHtml(serving) : 'nothing on it yet'}</small>
+            ${d.tunnel !== 'on' && d.problem ? `<small class="error">${escapeHtml(d.problem)}</small>` : ''}</td>
+          <td>${state}</td>
+          <td class="row-actions">${actions}</td>
+        </tr>`;
+        })
+        .join('')}</tbody></table>`;
+}
+
+$('names-list').addEventListener('click', async (event) => {
+    const { nameRetry, nameDel } = event.target.dataset ?? {};
+    if (nameRetry) {
+        event.target.disabled = true;
+        try {
+            await api(`/api/domains/${nameRetry}/retry`, { method: 'POST' });
+            toast('It is on the tunnel now.', 'good');
+        } catch (e) {
+            toast(e.message, 'bad');
+        }
+        return loadProxies().catch(() => {});
+    }
+    if (!nameDel) return;
+    const record = publishState.domains.find((d) => d.id === nameDel);
+    if (!(await askConfirm(`Remove ${record?.domain}?\n\nNothing is published on it. Its DNS record is removed from Cloudflare too.`))) return;
+    try {
+        await api(`/api/domains/${nameDel}`, { method: 'DELETE' });
+        await loadProxies();
+    } catch (e) {
+        toast(e.message, 'bad');
+    }
+});
 
 /** What a target kind reads as, for "in use by" and for taken-domain options. */
 const serviceLabel = (kind) => publishState.services.find((s) => s.kind === kind)?.label ?? 'another proxy host';
@@ -5956,16 +6038,17 @@ function renderProxyHosts() {
             // A host that is switched off still holds its name, so say so
             // rather than let it look like the others.
             const off = p.enabled === false ? ' <span class="tag off">disabled</span>' : '';
-            const https =
-                p.ssl?.mode === 'letsencrypt'
-                    ? p.certificate
-                        ? '<span class="tag ok">certificate</span>'
-                        : '<span class="tag">requested</span>'
-                    : '<span class="tag off">plain http</span>';
+            const name = proxyNames.find((n) => n.domain === p.domain);
+            const tunnel =
+                p.target?.kind === 'grpc'
+                    ? '<span class="tag off" title="gRPC cannot go through a Cloudflare Tunnel.">not served</span>'
+                    : name?.tunnel === 'on'
+                      ? '<span class="tag ok">on</span>'
+                      : '<span class="tag warn">not yet</span>';
             return `<tr>
                 <td><strong>${escapeHtml(p.domain)}</strong>${path}${off}</td>
                 <td>${target}</td>
-                <td>${https}</td>
+                <td>${tunnel}</td>
                 <td>
                     <button type="button" class="ghost mini" data-edit-proxy="${escapeHtml(p.id)}">Edit</button>
                     <button type="button" class="ghost mini danger" data-del-proxy="${escapeHtml(p.id)}">Remove</button>
@@ -5983,10 +6066,9 @@ $('proxy-body').addEventListener('click', async (event) => {
     if (!delProxy) return;
 
     const proxy = proxies.find((p) => p.id === delProxy);
-    // Removing a host takes a name off the internet, which is not a thing to do
-    // on a mis-click. The certificate is deliberately left on disk: it is still
-    // valid, and putting the name back should not mean asking for another.
-    if (!await askConfirm(`Stop answering for ${proxy?.domain}?\n\nThe nginx configuration for it is removed. Its certificate is kept.`)) {
+    // Removing a host takes a path off the internet, which is not a thing to do
+    // on a mis-click. The name itself stays, on the tunnel, for something else.
+    if (!await askConfirm(`Stop answering for ${proxy?.domain}${(proxy?.path ?? '/') === '/' ? '' : proxy.path}?\n\nThe nginx configuration for it is removed. The name stays on your list.`)) {
         return;
     }
     try {
@@ -6002,17 +6084,14 @@ $('proxy-body').addEventListener('click', async (event) => {
 const publishableInView = (s) => (networkView === 'testnet' ? s.testnet || s.key === 'panel' : !s.testnet);
 
 function renderPublishServices() {
-    const { services, domains } = publishState;
+    const { services } = publishState;
+    const connected = tunnelConnected();
 
     $('publish-body').innerHTML = services
         .filter(publishableInView)
         .map((s) => {
-            // The proxy host behind this row, and the domain record behind
-            // that. Both are read all over the cells below, so they are worked
-            // out once, first: a `const` further down would be in the temporal
-            // dead zone for everything above it, and the row would throw.
             const proxy = proxies.find((p) => p.id === s.proxyId);
-            const record = domains.find((d) => d.domain === s.domain);
+            const name = (publishState.domains ?? []).find((d) => d.domain === s.domain);
 
             // "not running" is a state, not a problem: a domain can be assigned
             // now and answer when the service is started. "unavailable" is the
@@ -6023,36 +6102,27 @@ function renderPublishServices() {
                   ? '<span class="tag ok">ready</span>'
                   : `<span class="tag" title="${escapeHtml(s.reason ?? '')}">not running</span>`;
 
-            // Certificate life is on screen rather than in an e-mail nobody
-            // asked for. Renewal is automatic, so this is a check, not a chore.
-            const days = record?.expiry?.daysLeft;
-            const https = Number.isFinite(days)
-                ? `<span class="tag ${days <= 14 ? 'warn' : 'ok'}" title="The certificate renews automatically about a month before this.">https, ${days}d left</span>`
-                : record?.ssl?.mode === 'letsencrypt'
-                  ? '<span class="tag" title="Not issued yet. Retry HTTPS asks again.">no certificate</span>'
-                  : '';
-
             const address = s.url
                 ? `<a href="${escapeHtml(s.url)}" target="_blank" rel="noreferrer noopener">${escapeHtml(s.domain)}${
                       s.path && s.path !== '/' ? escapeHtml(s.path) : ''
-                  }</a> ${https}${proxy?.auth?.enabled ? ' <span class="tag">password</span>' : ''}${
-                      (proxy?.allowlist || []).length ? ' <span class="tag">ip filter</span>' : ''
-                  }`
+                  }</a>${name && name.tunnel !== 'on' ? ' <span class="tag warn" title="See Your names below.">not on the tunnel</span>' : ''}${
+                      proxy?.auth?.enabled ? ' <span class="tag">password</span>' : ''
+                  }${(proxy?.allowlist || []).length ? ' <span class="tag">ip filter</span>' : ''}`
                 // The button beside this already says "Set up", so repeating
                 // "not published" here would be two answers to one question.
                 : '<span class="muted">–</span>';
 
             // Setting up and moving to another name are the same walk from a
             // different starting point, so one button covers both. Everything
-            // the advanced screen used to offer for a host is on the row that
-            // host belongs to: retry the certificate, open the details, take it
-            // down.
-            const needsCert = proxy?.ssl?.mode === 'letsencrypt' && !proxy.certificate;
-            const actions = s.blocked
-                ? `<button class="ghost" disabled title="${escapeHtml(s.reason)}">Set up</button>`
+            // the advanced screen offers for a host is on the row that host
+            // belongs to: open the details, take it down.
+            const why = s.blocked ? s.reason : connected ? '' : 'Connect your Cloudflare account first, above.';
+            const actions = why
+                ? `<button class="ghost" disabled title="${escapeHtml(why)}">Set up</button>${
+                      s.domain ? ` <button class="ghost danger" data-unpublish="${s.key}">Unpublish</button>` : ''
+                  }`
                 : [
                       `<button class="primary" data-setup="${s.key}">${s.domain ? 'Change' : 'Set up'}</button>`,
-                      needsCert ? `<button class="ghost" data-cert="${s.proxyId}" title="The name has no certificate yet. This asks Let's Encrypt again.">Retry HTTPS</button>` : '',
                       s.proxyId ? `<button class="ghost" data-options="${s.proxyId}" title="Basic auth, IP allowlist, rate limit, custom nginx.">Options</button>` : '',
                       s.domain ? `<button class="ghost danger" data-unpublish="${s.key}">Unpublish</button>` : '',
                   ]
@@ -6067,42 +6137,18 @@ function renderPublishServices() {
     </tr>`;
         })
         .join('');
-
 }
 
-/**
- * Asks Let's Encrypt for a name's certificate with the same progress screen and live log
- * as every other job (the issue runs as a panel job; DuckDNS names wait ~30 s on a TXT
- * record, so a bare toast read as nothing happening). Refreshes the lists afterwards.
- */
-async function requestCertificate(proxyId, domain, body) {
-    await runAction({
-        key: `cert:${proxyId}`,
-        title: `Certificate for ${domain}`,
-        note: "Asking Let's Encrypt. A DuckDNS name is proven with a TXT record (no open ports); other names need port 80 to reach this machine.",
-        request: () => api(`/api/proxies/${proxyId}/certificate`, { method: 'POST', body }),
-    });
-    await loadProxies().catch(() => {});
-    await loadPublish().catch(() => {});
-}
-
-// Everything a published address needs is on its own row: set it up, retry the
-// certificate, open the details, take it down.
+// Everything a published address needs is on its own row: set it up, open the
+// details, take it down.
 $('publish-body').addEventListener('click', async (event) => {
-    const { setup, unpublish, cert, options } = event.target.dataset ?? {};
+    const { setup, unpublish, options } = event.target.dataset ?? {};
     if (setup) return openSetup(setup);
     if (options) return openProxyDialog(proxies.find((p) => p.id === options));
-
-    if (cert) {
-        const proxy = proxies.find((p) => p.id === cert);
-        await requestCertificate(proxy?.id ?? cert, proxy?.domain ?? 'this name', { email: proxy?.ssl?.email });
-        return;
-    }
-
     if (!unpublish) return;
 
     const service = publishState.services.find((s) => s.key === unpublish);
-    if (!await askConfirm(`Stop publishing ${service?.label ?? unpublish} on ${service?.domain}?\n\nThe name stays on your list and the certificate is left alone.`)) {
+    if (!await askConfirm(`Stop publishing ${service?.label ?? unpublish} on ${service?.domain}?\n\nThe name stays on your list, on the tunnel, for something else.`)) {
         return;
     }
     event.target.disabled = true;
@@ -6116,128 +6162,56 @@ $('publish-body').addEventListener('click', async (event) => {
     }
 });
 
-$('ports-save').addEventListener('click', async () => {
-    $('ports-save').disabled = true;
-    try {
-        const r = await api('/api/proxy/ports', {
-            method: 'POST',
-            body: {
-                http: Number($('ports-http').value),
-                https: Number($('ports-https').value),
-                bindHttp: Number($('ports-bind-http').value),
-                bindHttps: Number($('ports-bind-https').value),
-            },
-        });
-        toast(
-            r.jobId
-                ? `Moving the proxy to ports ${r.bindHttp} and ${r.bindHttps}.`
-                : `Addresses will use ${r.http === 80 ? 'the default http port' : `http port ${r.http}`} and ${r.https === 443 ? 'the default https port' : `https port ${r.https}`}.`,
-        );
-        await loadProxies();
-    } catch (e) {
-        toast(e.message, 'bad');
-    } finally {
-        $('ports-save').disabled = false;
-    }
+// --- the Cloudflare connection (lib/cloudflare.js) ---
+
+$('tunnel-connect').addEventListener('click', async () => {
+    const input = $('tunnel-token');
+    const token = input.value.trim();
+    if (!token) return toast('Paste the API token from Cloudflare first.', 'bad');
+    const job = await queueAction({
+        title: 'Connecting Cloudflare',
+        request: (headers) => api('/api/cloudflare/connect', { method: 'POST', body: { token }, headers }),
+    });
+    if (job?.ok) input.value = '';
+    loadProxies().catch(() => {});
 });
 
-/**
- * The reachability check. It reports what this machine does and what the
- * internet can see separately, because those need opposite fixes and look
- * identical from outside: a closed port and a stopped proxy both just fail.
- */
-$('ports-check').addEventListener('click', async () => {
-    const button = $('ports-check');
-    const out = $('ports-check-result');
-    button.disabled = true;
-    button.textContent = 'Checking…';
-    out.hidden = false;
-    out.innerHTML = '<p class="muted">Asking a few places on the internet to connect. This takes a few seconds.</p>';
-
-    try {
-        const r = await api('/api/proxy/portcheck');
-        const line = (ok, text) => `<li class="${ok === null ? '' : ok ? 'ok' : 'bad'}">${escapeHtml(text)}</li>`;
-        const rows = [];
-        const bound = `${r.local.bindHttp} and ${r.local.bindHttps}`;
-
-        rows.push(line(r.local.proxyRunning, r.local.proxyRunning ? 'The reverse proxy is running here.' : 'The reverse proxy is not running, so nothing would answer even on an open port.'));
-        rows.push(line(r.local.publishesHttp && r.local.publishesHttps,
-            r.local.publishesHttp && r.local.publishesHttps
-                ? `It holds ports ${bound} on this machine.`
-                : `It is missing ${[!r.local.publishesHttp && r.local.bindHttp, !r.local.publishesHttps && r.local.bindHttps].filter(Boolean).join(' and ')} on this machine.`));
-        rows.push(line(r.local.servesChallenge, r.local.servesChallenge
-            ? "It serves the file Let's Encrypt asks for."
-            : "It did not serve the file Let's Encrypt asks for, which is the thing to fix first."));
-
-        if (r.outside) {
-            for (const key of ['http', 'https']) {
-                const p = r.outside[key];
-                const port = p.port;
-                // Port 80 is always identified -- the check fetches a file
-                // from this machine. Port 443 only once a certificate exists,
-                // and saying which is which is the difference between "it
-                // works" and "something out there answered".
-                const identified = key === 'http' || p.identified;
-                rows.push(
-                    line(
-                        p.open,
-                        `Port ${port}: ${
-                            p.open
-                                ? identified
-                                    ? 'reaches this machine'
-                                    : 'something accepts connections, which may be your router rather than this machine'
-                                : p.open === null
-                                  ? 'no answer in time'
-                                  : 'does not reach this machine'
-                        } (${p.detail}).`,
-                    ),
-                );
-            }
-        } else {
-            rows.push(line(null, `Could not check from outside: ${r.error ?? 'unknown reason'}.`));
-        }
-
-        // Where the name points, which is the question a subdomain raises and
-        // the one thing here that is not about ports. A name under a DuckDNS
-        // account is not registered anywhere: it either resolves because the
-        // provider answers for names under yours, or it does not resolve at
-        // all, and until a certificate request fails those look identical.
-        if (r.dns) {
-            rows.push(
-                line(
-                    r.dns.error ? false : r.dns.pointsHere,
-                    r.dns.error
-                        ? `${r.dns.domain} does not resolve: ${r.dns.error} Nothing can reach it by name until it does.`
-                        : r.dns.pointsHere
-                          // No addresses here: pointing at this connection means they are its own.
-                          ? `${r.dns.domain} resolves to this connection's public address.`
-                          : `${r.dns.domain} resolves to ${r.dns.addresses.join(', ')}, which is not this connection's public address.`,
-                ),
-            );
-        }
-
-        const bothOpen = r.outside && r.outside.http?.open && r.outside.https?.open;
-        // A DuckDNS name is proved with a TXT record, so a closed http port
-        // costs the ability to serve plain http and nothing else. Reporting
-        // that as a failure would send someone into their router for no reason.
-        const certNote = r.dnsChallenge
-            ? ' Certificates do not depend on any of this: your DuckDNS name is proved with a DNS record.'
-            : " Let's Encrypt validates over port 80, so that one has to reach this machine before a certificate can be issued.";
-
-        const verdict = bothOpen
-            ? `<p class="muted">Both ports reach this machine.${certNote}</p>`
-            : r.outside && r.local.servesChallenge
-              ? `<p class="muted">This machine is set up correctly, so what is missing is the forwarding. Two numbers per rule, and they are not the same one: the outside port is what the internet dials, the forward port is what this machine listens on. On your router, external <strong>${escapeHtml(String(r.outside.http.port))}</strong> to this machine on port <strong>${escapeHtml(String(r.local.bindHttp))}</strong>, and external <strong>${escapeHtml(String(r.outside.https.port))}</strong> to port <strong>${escapeHtml(String(r.local.bindHttps))}</strong>. A rule that forwards ${escapeHtml(String(r.outside.http.port))} to ${escapeHtml(String(r.outside.http.port))} arrives at a port nothing is bound to.${certNote}</p>`
-              : '';
-
-        out.innerHTML = `<ul class="port-result">${rows.join('')}</ul>${verdict}`;
-    } catch (e) {
-        out.innerHTML = `<p class="error">${escapeHtml(e.message)}</p>`;
-    } finally {
-        button.disabled = false;
-        button.textContent = 'Check from outside';
-    }
+$('tunnel-disconnect').addEventListener('click', async () => {
+    const legacy = publishState.tunnel?.mode === 'legacy';
+    const question = legacy
+        ? 'Stop the tunnel from the Cloudflare dashboard?\n\nEvery name it carries stops answering. Its routes and DNS records stay in the dashboard until you remove them there.'
+        : 'Disconnect from Cloudflare?\n\nEvery name stops answering and its DNS record is removed. Your names and the services on them stay listed here, and connecting again puts them back.';
+    if (!(await askConfirm(question))) return;
+    await queueAction({
+        title: 'Disconnecting Cloudflare',
+        request: (headers) => api('/api/cloudflare/disconnect', { method: 'POST', headers }),
+    });
+    loadProxies().catch(() => {});
 });
+
+// A button elsewhere on a page that opens one of its sub-tabs, like the link
+// from the connect form to the Setup API token guide.
+for (const button of document.querySelectorAll('[data-goto-subtab]')) {
+    button.addEventListener('click', () => selectSubtab(button.closest('section'), button.dataset.gotoSubtab));
+}
+
+// The connector comes up a few seconds after connecting, so the tab watches it.
+let tunnelTimer = null;
+function setTunnelPolling(active) {
+    clearInterval(tunnelTimer);
+    tunnelTimer = null;
+    if (!active) return;
+    loadProxies().catch(() => {});
+    tunnelTimer = setInterval(
+        noOverlap(async () => {
+            const t = await api('/api/cloudflare').catch(() => null);
+            if (!t) return;
+            publishState.tunnel = t;
+            renderTunnel();
+        }),
+        5000,
+    );
+}
 
 // -------------------------------------------------------- browser extension ---
 //
@@ -6369,7 +6343,7 @@ const UNINSTALL_COPY = {
     kassigner: 'the downloaded firmware and the record of what was verified. A device you have already flashed is unaffected',
     extension: 'the built extension folders and zips. A browser that already loaded it keeps working until you remove it on its extensions page',
     mining: "the bridge's own share and block records",
-    proxy: 'nothing. Your domains and certificates live in the stack directory and are kept',
+    proxy: 'nothing. Your names, the services on them and the Cloudflare connection live in the stack directory and are kept',
     translate: 'the downloaded language models, which are several gigabytes and have to be fetched again',
     'node-testnet': 'the synced testnet-10 chain. The mainnet node is not touched',
     'mining-testnet': "the testnet bridge's share and block records. Mainnet mining is not touched",
@@ -6591,7 +6565,7 @@ function renderUninstallCards() {
         // One nginx serves both networks: there is no testnet-only proxy to remove.
         const sharedProxy =
             key === 'proxy' && networkView === 'testnet'
-                ? `<div class="notice"><p><strong>Shared with mainnet.</strong> There is one proxy for both networks, so this removes the proxy mainnet uses too: every published mainnet and testnet domain stops answering until it is installed again. Your domains and certificates are kept.</p></div>`
+                ? `<div class="notice"><p><strong>Shared with mainnet.</strong> There is one proxy for both networks, so this removes the proxy mainnet uses too: every published mainnet and testnet name stops answering until it is installed again. Your names and the Cloudflare connection are kept.</p></div>`
                 : '';
         card.innerHTML = `
       <h3>Uninstall ${escapeHtml(state?.label ?? key)}</h3>
@@ -7956,25 +7930,23 @@ $('push-save').addEventListener('click', async () => {
 
 /**
  * The guided path to a public address, which is the only path most people
- * should need. It asks for a DuckDNS name and a token, shows exactly what it is
- * about to change, and then does all of it: the DNS record, whatever the
- * service needs switched on, the vhost, and the certificate.
+ * should need. It asks for a name on one of the Cloudflare account's domains,
+ * shows exactly what it is about to change, and then does all of it: the DNS
+ * record into the tunnel, whatever the service needs switched on, and the vhost.
  *
- * The alternative -- add a domain, pick an upstream, remember to click "get
- * certificate" -- is still there under Domains and Advanced. This is for the
- * person who wants their node reachable and does not want to learn nginx to get
- * there.
+ * The alternative -- pick an upstream by hand -- is still there under Advanced.
+ * This is for the person who wants their node reachable and does not want to
+ * learn nginx to get there.
  */
 let setupState = { key: null, step: 1, plan: null, mode: 'new', domain: null };
 
 async function openSetup(key) {
     const service = publishState.services.find((s) => s.key === key);
-    setupState = { key, step: 1, plan: null, mode: 'new', newKind: 'fresh', domain: null };
+    setupState = { key, step: 1, plan: null, mode: 'new', domain: null };
 
     $('setup-title').textContent = `Publish ${service?.label ?? key}`;
     $('setup-error').hidden = true;
     $('setup-subdomain').value = '';
-    $('setup-token').value = '';
 
     let info;
     try {
@@ -7984,22 +7956,16 @@ async function openSetup(key) {
     }
     setupState.plan = info;
 
-    // The name field starts empty on purpose. In the prefix flow it asks only
-    // for the part that goes in front of a name you already have, so a default
-    // there would be a name to delete rather than a head start.
-    $('setup-token-note').hidden = !info.duckdns?.hasToken;
-    $('setup-token').placeholder = info.duckdns?.hasToken ? 'unchanged' : 'from duckdns.org';
-    // The address is masked until its eye button is pressed (screen-recording safe).
-    $('setup-ip').innerHTML = info.publicIp
-        ? `This connection looks like ${privateValue(info.publicIp)} ${revealButton()} from the outside. DuckDNS will point the name here.`
-        : 'Could not work out this connection\'s public address, which is not fatal: DuckDNS uses the address it sees.';
+    const zones = info.tunnel?.zones ?? [];
+    $('setup-zone').innerHTML = zones.map((z) => `<option value="${escapeHtml(z.id)}">${escapeHtml(z.name)}</option>`).join('');
+    renderSetupPreview();
 
     $('setup-after').textContent = (service?.afterNote ?? '').replace('{domain}', 'that name');
     $('setup-auth').checked = false;
     $('setup-auth-fields').hidden = true;
     $('setup-allowlist').value = '';
 
-    // A second service starts from a list of names rather than from duckdns.org.
+    // A second service starts from a list of names rather than from a blank one.
     renderDomainChoices();
     setupState.step = publishState.domains.length ? 0 : 1;
     renderSetupStep();
@@ -8007,9 +7973,9 @@ async function openSetup(key) {
 }
 
 /**
- * The domain list, which used to be a screen of its own. It only ever answered
- * two questions -- which names do I have, and can I get rid of this one -- and
- * both belong at the point where a name is being chosen.
+ * The names already here, and one more choice: a new one. The list answers the
+ * two questions worth asking at the point a name is chosen -- which names do I
+ * have, and what is on them already.
  */
 function renderDomainChoices() {
     const list = $('setup-domain-list');
@@ -8029,14 +7995,14 @@ function renderDomainChoices() {
                 .join(', ');
 
             const note = blocked
-                ? `${serviceLabel(d.usedBy)} is at the root, so give this one a name in front of it instead`
+                ? `${serviceLabel(d.usedBy)} is at the root, so give this one a name of its own instead`
                 : mine
                   ? `already serving this${mine.path === '/' ? '' : ` at ${mine.path}`}`
                   : others.length
                     ? `shared with ${sharing}, so this joins at ${escapeHtml(service?.sharedPath ?? '/' + setupState.key)}`
-                    : d.certificate
-                      ? 'free, and has an HTTPS certificate'
-                      : 'free, no certificate yet';
+                    : d.tunnel === 'on'
+                      ? 'free, and on the tunnel'
+                      : 'free, not on the tunnel yet';
 
             return `<label class="domain-choice${blocked ? ' taken' : ''}">
         <input type="radio" name="setup-domain" value="${escapeHtml(d.domain)}"${blocked ? ' disabled' : ''}>
@@ -8044,76 +8010,40 @@ function renderDomainChoices() {
           <strong>${escapeHtml(d.domain)}</strong>
           <small>${note}</small>
         </span>
-        ${(d.hosts ?? []).length ? '' : `<button type="button" class="ghost danger" data-domain-del="${d.id}">Remove</button>`}
       </label>`;
         })
         .join('')
-        .concat(
-            (() => {
-                // Two ways to get a name of its own, kept apart because they are
-                // different jobs. A prefix in front of a name you already have --
-                // kqs.kachat.duckdns.org -- needs nothing created at duckdns.org
-                // and reuses the account already kept pointed here. A fresh name
-                // is a brand-new account for something unrelated. With no account
-                // yet only the fresh one makes sense, so that is all that shows.
-                const acct = setupState.plan?.duckdns?.subdomain;
-                const rows = [];
-                if (acct) {
-                    rows.push(`<label class="domain-choice">
-        <input type="radio" name="setup-domain" value="" data-newkind="prefix" checked>
-        <span><strong>Give it a name of its own</strong><small>use <code>${escapeHtml(acct)}.duckdns.org</code> with a name in front, like <code>kqs.${escapeHtml(acct)}.duckdns.org</code>. Nothing to add at duckdns.org.</small></span>
+        .concat(`<label class="domain-choice">
+        <input type="radio" name="setup-domain" value="" checked>
+        <span><strong>Give it a name of its own</strong><small>a new name on your domain, like <code>node.${escapeHtml(
+            setupState.plan?.tunnel?.zones?.[0]?.name ?? 'example.com',
+        )}</code></small></span>
       </label>`);
-                }
-                rows.push(`<label class="domain-choice">
-        <input type="radio" name="setup-domain" value="" data-newkind="fresh"${acct ? '' : ' checked'}>
-        <span><strong>${acct ? 'Add a fresh DuckDNS name' : 'Create a free DuckDNS name'}</strong><small>${
-            acct ? 'a brand-new name for something else, like <code>othername.duckdns.org</code>' : 'free, and kept pointed here for you'
-        }</small></span>
-      </label>`);
-                return rows.join('');
-            })(),
-        );
 }
 
-$('setup-domain-list').addEventListener('click', async (event) => {
-    const id = event.target.dataset?.domainDel;
-    if (!id) return;
-    const record = publishState.domains.find((d) => d.id === id);
-    if (!await askConfirm(`Remove ${record?.domain}?\n\nNothing is published on it, so this only takes the name off the list.`)) return;
-    try {
-        await api(`/api/domains/${id}`, { method: 'DELETE' });
-        await loadPublish();
-        renderDomainChoices();
-    } catch (e) {
-        toast(e.message, 'bad');
-    }
-});
-
-/**
- * The full DuckDNS name being entered, minus the .duckdns.org suffix. The
- * prefix flow's field holds only the part in front, so the account it sits
- * under -- fixed by the choice made on the first step -- is added back here.
- */
+/** The full name the name step would make, or null while it is not a valid one. */
 function enteredName() {
-    const field = $('setup-subdomain').value.trim().toLowerCase().replace(/\.duckdns\.org\.?$/, '');
-    if (setupState.newKind === 'prefix') {
-        const acct = setupState.plan?.duckdns?.subdomain || '';
-        return field && acct ? `${field}.${acct}` : '';
-    }
-    return field;
+    const zone = (setupState.plan?.tunnel?.zones ?? []).find((z) => z.id === $('setup-zone').value);
+    if (!zone) return null;
+    const sub = $('setup-subdomain').value.trim().toLowerCase().replace(/\.+$/, '');
+    if (!sub || sub === '@') return zone.name;
+    if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(sub)) return null;
+    return `${sub}.${zone.name}`;
 }
 
-/**
- * The token step earns its place only when there is no token yet. A name in
- * front of one you already have, or a fresh name under the same account, both
- * ride the token already saved -- asking for it again is a step with one
- * possible answer, "leave it blank".
- */
-const needsToken = () => setupState.mode === 'new' && !setupState.plan?.duckdns?.hasToken;
+function renderSetupPreview() {
+    const name = enteredName();
+    $('setup-preview').textContent = name
+        ? `This publishes on https://${name}`
+        : $('setup-subdomain').value.includes('.')
+          ? 'One word in front of the domain, with no dots.'
+          : 'Letters, numbers and dashes, not starting or ending with a dash.';
+}
+$('setup-subdomain').addEventListener('input', renderSetupPreview);
+$('setup-zone').addEventListener('change', renderSetupPreview);
 
 /** The name this run will publish on, whichever way it was chosen. */
-const setupDomain = () =>
-    setupState.mode === 'existing' ? setupState.domain : `${enteredName()}.duckdns.org`;
+const setupDomain = () => (setupState.mode === 'existing' ? setupState.domain : enteredName());
 
 function renderSetupStep() {
     const { step, plan } = setupState;
@@ -8123,23 +8053,6 @@ function renderSetupStep() {
     $('setup-back').hidden = step === (publishState.domains.length ? 0 : 1);
     $('setup-next').hidden = step === 3;
     $('setup-run').hidden = step !== 3;
-
-    // Step 1 wears two faces: a prefix in front of a name you have, which asks
-    // for just that prefix against a fixed suffix, and a fresh DuckDNS name,
-    // which is the old create-it-first walkthrough.
-    if (step === 1) {
-        const prefix = setupState.newKind === 'prefix';
-        const acct = setupState.plan?.duckdns?.subdomain || '';
-        $('setup-step1-head').textContent = prefix ? 'Name it' : 'Create a free DuckDNS name';
-        $('setup-create-steps').hidden = prefix;
-        $('setup-step1-hint').hidden = prefix;
-        $('setup-name-label').textContent = prefix ? 'Name in front' : 'Your name';
-        $('setup-subdomain').placeholder = prefix ? 'kqs' : 'yournode';
-        $('setup-suffix').textContent = prefix ? `.${acct}.duckdns.org` : '.duckdns.org';
-        $('setup-step1-intro').innerHTML = prefix
-            ? `Put a name in front of <code>${escapeHtml(acct)}.duckdns.org</code>. Type only the part that goes in front: <code>kqs</code> publishes on <code>kqs.${escapeHtml(acct)}.duckdns.org</code>. There is nothing to create at duckdns.org: <code>${escapeHtml(acct)}</code> is the account, and it is already kept pointed here. The certificate is issued over port 80.`
-            : 'DuckDNS gives you a name like <code>yournode.duckdns.org</code> and keeps it pointed at this machine even when your home connection changes address. It is free and needs no card.';
-    }
 
     if (step !== 3) return;
 
@@ -8157,10 +8070,10 @@ function renderSetupStep() {
               .join(', ')} already on that name. Everything below happens in one go:`
         : `${plan.service.label} will answer on ${setupState.address}. Everything below happens in one go:`;
     $('setup-plan').innerHTML = (plan.steps ?? [])
-        // The DNS step belongs to creating a name. Choosing one that is already
-        // here skips it, and listing it anyway would promise work that will not
+        // The DNS step belongs to a name not yet on the tunnel. One that already
+        // is skips it, and listing it anyway would promise work that will not
         // happen.
-        .filter((st) => !(st.key === 'dns' && setupState.mode === 'existing'))
+        .filter((st) => !(st.key === 'dns' && record?.tunnel === 'on'))
         .map(
             (st) => `<li class="${st.done ? 'done' : ''}">
         <strong>${escapeHtml(st.label)}</strong>${st.done ? ' <span class="tag ok">already done</span>' : ''}
@@ -8178,71 +8091,44 @@ $('setup-next').addEventListener('click', () => {
     $('setup-error').hidden = true;
 
     if (step === 0) {
-        const picked = document.querySelector('input[name="setup-domain"]:checked');
-        const chosen = picked?.value ?? '';
+        const chosen = document.querySelector('input[name="setup-domain"]:checked')?.value ?? '';
         if (chosen) {
-            // A name already here needs nothing else: no name to enter, no token
-            // to save, the certificate issued without a contact address.
+            // A name already here needs nothing else.
             setupState.mode = 'existing';
             setupState.domain = chosen;
             setupState.step = 3;
-            renderSetupStep();
-            return;
+        } else {
+            setupState.mode = 'new';
+            setupState.domain = null;
+            $('setup-subdomain').value = '';
+            renderSetupPreview();
+            setupState.step = 1;
         }
-        // The two ways to a name of its own. Either starts from an empty field,
-        // because the prefix flow asks only for the part in front and a default
-        // there is just something to clear.
-        setupState.mode = 'new';
-        setupState.newKind = picked?.dataset.newkind === 'prefix' ? 'prefix' : 'fresh';
-        setupState.domain = null;
-        $('setup-subdomain').value = '';
-        setupState.step = 1;
         renderSetupStep();
         return;
     }
 
     if (step === 1) {
-        // A name under the one you created is allowed: kqs.kachat publishes on
-        // kqs.kachat.duckdns.org. In the prefix flow the field is just the part
-        // in front, so the account is added before the name is checked.
-        const prefix = setupState.newKind === 'prefix';
-        if (prefix && !$('setup-subdomain').value.trim()) {
-            return toast('Type the part that goes in front, like kqs.', 'bad');
-        }
-        if (!/^[a-z0-9-]{1,63}(\.[a-z0-9-]{1,63}){0,3}$/.test(enteredName())) {
-            return toast(
-                prefix ? 'That is not a valid name to put in front.' : 'Enter the name you created at duckdns.org, optionally with a name in front of it.',
-                'bad',
-            );
-        }
-        // The token step only exists when there is no token yet.
-        setupState.step = needsToken() ? 2 : 3;
-        renderSetupStep();
-        return;
-    }
-
-    if (step === 2) {
-        if (!$('setup-token').value.trim() && !setupState.plan?.duckdns?.hasToken) {
-            return toast('Paste the token from duckdns.org.', 'bad');
+        if (!(setupState.plan?.tunnel?.zones ?? []).length) return toast('Your Cloudflare account has no domain the panel can see.', 'bad');
+        const name = enteredName();
+        if (!name) return toast('Use one word in front of the domain: letters, numbers and dashes.', 'bad');
+        // Typing a name that is already here is choosing it.
+        if (publishState.domains.some((d) => d.domain === name)) {
+            setupState.mode = 'existing';
+            setupState.domain = name;
         }
         setupState.step = 3;
         renderSetupStep();
-        return;
     }
 });
 
 $('setup-back').addEventListener('click', () => {
     const { step, mode } = setupState;
-    // Retrace the path forward took: from the plan, back to the token step only
-    // if it was shown, otherwise to the name; an existing name skipped both and
+    // Retrace the path forward took: an existing name skipped the name step and
     // lands on the list it was chosen from.
-    if (step === 3) {
-        setupState.step = mode === 'existing' ? 0 : needsToken() ? 2 : 1;
-    } else if (step === 2) {
-        setupState.step = 1;
-    } else {
-        setupState.step = publishState.domains.length ? 0 : 1;
-    }
+    if (step === 3) setupState.step = mode === 'existing' && publishState.domains.length ? 0 : 1;
+    else setupState.step = publishState.domains.length ? 0 : 1;
+    if (setupState.step === 1) setupState.mode = 'new';
     renderSetupStep();
 });
 
@@ -8254,8 +8140,8 @@ $('setup-run').addEventListener('click', async () => {
     const { key, mode, domain } = setupState;
     const body = {
         domain: mode === 'existing' ? domain : undefined,
-        subdomain: mode === 'existing' ? undefined : enteredName(),
-        token: $('setup-token').value.trim(),
+        subdomain: mode === 'existing' ? undefined : $('setup-subdomain').value.trim(),
+        zoneId: mode === 'existing' ? undefined : $('setup-zone').value,
         auth: $('setup-auth').checked
             ? { enabled: true, user: $('setup-auth-user').value.trim(), password: $('setup-auth-pass').value }
             : { enabled: false },
@@ -8267,7 +8153,7 @@ $('setup-run').addEventListener('click', async () => {
     }
     $('setup-run').disabled = true;
     try {
-        const r = await api(`/api/setup/${key}`, { method: 'POST', body });
+        await api(`/api/setup/${key}`, { method: 'POST', body });
         $('setup-dialog').close();
         // The job console is where every long job in this panel reports, and
         // this one has more to say than a toast can hold.
@@ -8279,9 +8165,6 @@ $('setup-run').addEventListener('click', async () => {
         $('setup-run').disabled = false;
     }
 });
-
-
-
 
 $('proxy-reload').addEventListener('click', async () => {
     try {
@@ -8315,14 +8198,6 @@ $('proxy-restart-btn').addEventListener('click', async () => {
     }
 });
 
-$('proxy-renew').addEventListener('click', async () => {
-    try {
-        await api('/api/proxy/renew', { method: 'POST' });
-    } catch (e) {
-        toast(e.message, 'bad');
-    }
-});
-
 let editingId = null;
 
 function openProxyDialog(proxy) {
@@ -8346,10 +8221,6 @@ function openProxyDialog(proxy) {
     $('px-host').value = proxy?.target?.host ?? '';
     $('px-port').value = proxy?.target?.port ?? '';
     $('px-websocket').checked = proxy?.websocket ?? true;
-    $('px-tls').checked = proxy?.ssl?.mode === 'letsencrypt';
-    $('px-email').value = proxy?.ssl?.email ?? '';
-    $('px-forcehttps').checked = proxy?.ssl?.forceHttps !== false;
-    $('px-staging').checked = false;
     $('px-auth').checked = Boolean(proxy?.auth?.enabled);
     $('px-user').value = proxy?.auth?.user ?? '';
     $('px-pass').value = '';
@@ -8383,11 +8254,6 @@ $('proxy-form').addEventListener('submit', async (event) => {
             host: $('px-host').value.trim(),
             port: Number($('px-port').value) || undefined,
         },
-        ssl: {
-            mode: $('px-tls').checked ? 'letsencrypt' : 'none',
-            email: $('px-email').value.trim(),
-            forceHttps: $('px-forcehttps').checked,
-        },
         auth: {
             enabled: $('px-auth').checked,
             user: $('px-user').value.trim(),
@@ -8407,57 +8273,9 @@ $('proxy-form').addEventListener('submit', async (event) => {
         $('proxy-dialog').close();
         await loadProxies();
         toast('Proxy host saved.', 'good');
-
-        // A brand new https host has no certificate yet; offer to fetch it now.
-        const saved = proxies.find((p) => p.domain === payload.domain);
-        if (saved && payload.ssl.mode === 'letsencrypt' && !saved.certificate) {
-            if (await askConfirm(`Request a Let's Encrypt certificate for ${payload.domain} now?`)) {
-                await requestCertificate(saved.id, payload.domain, { email: payload.ssl.email, staging: $('px-staging').checked });
-            }
-        }
     } catch (e) {
         err.textContent = e.message;
         err.hidden = false;
-    }
-});
-
-// ---------------------------------------------------------------- duckdns ---
-
-/**
- * DuckDNS has no screen of its own any more: the wizard sets the name and the
- * token, and this is the one line that says whether the refresh is alive. The
- * public address it also reports is used on the Kaspad ports page.
- */
-async function loadDuckDns() {
-    const r = await api('/api/duckdns');
-
-    const names = r.duckdns.domains
-        ? r.duckdns.domains
-              .split(',')
-              .filter(Boolean)
-              .map((d) => `${d}.duckdns.org`)
-              .join(', ')
-        : '';
-    const last = r.duckdns.lastRunAt
-        ? `checked ${new Date(r.duckdns.lastRunAt).toLocaleTimeString()}, ${r.duckdns.lastResult}`
-        : 'not checked yet';
-
-    $('duck-status').textContent = r.duckdns.enabled
-        ? `DuckDNS: ${names} (${last}, every ${r.duckdns.intervalMinutes} min)`
-        : 'DuckDNS: nothing set up yet. Set up a service and it is arranged for you.';
-}
-
-$('dd-now').addEventListener('click', async () => {
-    try {
-        const r = await api('/api/duckdns/update', { method: 'POST' });
-        if (r.refused?.length) {
-            toast(`Updated ${r.domains.join(', ')}. DuckDNS refused ${r.refused.join(', ')}: that name is likely on another duckdns.org account (different token).`, 'bad');
-        } else {
-            toast(`Updated ${r.domains.join(', ')}`, 'good');
-        }
-        loadDuckDns();
-    } catch (e) {
-        toast(e.message, 'bad');
     }
 });
 
@@ -8617,7 +8435,7 @@ function connectLogs() {
         // The tiles are about to be replaced, so anything lifted over them is
         // gone too; leaving the scrim would dim the page with nothing on top.
         closeLogOverlay();
-        // The panel's own jobs first: installs, certificates, restarts. It is
+        // The panel's own jobs first: installs, tunnel changes, restarts. It is
         // the log somebody is looking for after something went wrong, and it
         // exists whether or not any container does.
         grid.innerHTML =
@@ -9385,7 +9203,7 @@ $('panel-lan')?.addEventListener('change', async (event) => {
     }
     const ok = await askConfirm(
         lan
-            ? 'Let other machines on your network open this panel?\n\nThe panel restarts; the node and every app keep running (the Update Queue must be empty, since a restart would lose it). The panel speaks plain HTTP, so your password crosses the network unencrypted: only do this on a network you trust, and never on a server whose port faces the internet. For remote access use Proxy & domains (HTTPS) or an SSH tunnel.'
+            ? 'Let other machines on your network open this panel?\n\nThe panel restarts; the node and every app keep running (the Update Queue must be empty, since a restart would lose it). The panel speaks plain HTTP, so your password crosses the network unencrypted: only do this on a network you trust, and never on a server whose port faces the internet. For remote access use Tunnel & domains (HTTPS) or an SSH tunnel.'
             : 'Limit the panel to this machine only?\n\nIt restarts. Afterwards it opens only at http://localhost on the server itself.',
     );
     if (!ok) {
@@ -9700,7 +9518,7 @@ for (const button of document.querySelectorAll('[data-cache-clean]')) {
     });
 }
 
-// --- Proxy & domains: this machine's LAN address beside the title ---
+// --- Tunnel & domains: this machine's LAN address beside the title ---
 
 async function loadLanIp() {
     const code = $('topbar-lan-ip');
@@ -9717,131 +9535,6 @@ async function loadLanIp() {
         button.disabled = true;
     }
 }
-
-// --- Cloudflare Tunnel (lib/cloudflare.js) ---
-//
-// The container installs and switches like any other unit; this tab holds the
-// token and the public hostnames, each pointed at a domain under Proxy & domains.
-
-let cloudflareTimer = null;
-
-function setCloudflarePolling(active) {
-    clearInterval(cloudflareTimer);
-    cloudflareTimer = null;
-    if (active) {
-        loadCloudflare().catch(() => {});
-        // The connection comes up a few seconds after the switch, so it is worth watching.
-        cloudflareTimer = setInterval(noOverlap(() => loadCloudflare().catch(() => {})), 5000);
-    }
-}
-
-async function loadCloudflare() {
-    const d = await api('/api/cloudflare');
-
-    const tag = $('cf-state');
-    const conn = d.connection;
-    if (!d.state?.installed) {
-        tag.textContent = 'not installed';
-        tag.className = 'tag off';
-    } else if (!d.state.running) {
-        tag.textContent = 'off';
-        tag.className = 'tag off';
-    } else if (conn?.ready) {
-        tag.textContent = 'connected';
-        tag.className = 'tag ok';
-    } else {
-        tag.textContent = 'connecting';
-        tag.className = 'tag warn';
-    }
-    setNavHealth('cloudflare', !d.state?.installed ? 'absent' : !d.state.running ? 'bad' : conn?.ready ? 'ok' : 'warn');
-
-    $('cf-connection').textContent = !d.state?.running
-        ? 'stopped'
-        : conn?.ready
-          ? `connected (${conn.connections} link${conn.connections === 1 ? '' : 's'})`
-          : 'not connected yet';
-    $('cf-tunnel-id').textContent = d.token?.tunnelId ?? 'no token';
-    $('cf-proxy').textContent = d.proxyRunning ? 'running' : 'off';
-    $('cf-proxy-note').hidden = d.proxyRunning;
-
-    $('cf-token-note').textContent = d.token
-        ? `Saved for tunnel ${d.token.tunnelId}. Paste a new one to replace it.`
-        : 'No token saved yet.';
-    $('cf-token-forget').hidden = !d.token;
-
-    // The whole URL, http:// included: the dashboard takes it as one field.
-    $('cf-origin').textContent = d.origin;
-    $('cf-origin-copy').dataset.copy = d.origin;
-
-    // Left alone while somebody has it open, or the poll would close it under them.
-    const select = $('cf-serves');
-    if (document.activeElement !== select) {
-        const picked = select.value;
-        select.innerHTML = d.domains.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('');
-        if (d.domains.includes(picked)) select.value = picked;
-    }
-    $('cf-serves-note').hidden = d.domains.length > 0;
-    $('cf-host-add').disabled = d.domains.length === 0;
-
-    $('cf-hosts-body').innerHTML = d.hostnames.length
-        ? d.hostnames
-              .map(
-                  (h) => `<tr>
-          <td><a href="https://${escapeHtml(h.hostname)}/" target="_blank" rel="noopener">${escapeHtml(h.hostname)}</a></td>
-          <td>${escapeHtml(h.serves)}${h.servesMissing ? ' <span class="tag warn">not under Proxy &amp; domains</span>' : ''}</td>
-          <td><button type="button" class="ghost mini" data-cf-remove="${escapeHtml(h.id)}" data-cf-name="${escapeHtml(h.hostname)}">Remove</button></td>
-        </tr>`,
-              )
-              .join('')
-        : '<tr><td colspan="3" class="muted">No names on the tunnel yet.</td></tr>';
-}
-
-$('cf-token-save').addEventListener('click', async () => {
-    const input = $('cf-token');
-    if (!input.value.trim()) return toast('Paste the tunnel token first.', 'bad');
-    const job = await queueAction({
-        title: 'Saving the Cloudflare tunnel token',
-        request: (headers) => api('/api/cloudflare/token', { method: 'PUT', body: { token: input.value }, headers }),
-    });
-    if (job?.ok) input.value = '';
-    loadCloudflare().catch(() => {});
-});
-
-$('cf-token-forget').addEventListener('click', async () => {
-    if (!(await askConfirm('Forget the tunnel token? The tunnel cannot start again until you paste one.'))) return;
-    try {
-        await api('/api/cloudflare/token', { method: 'DELETE' });
-        toast('Token forgotten.');
-    } catch (e) {
-        toast(e.message, 'bad');
-    }
-    loadCloudflare().catch(() => {});
-});
-
-$('cf-host-add').addEventListener('click', async () => {
-    const hostname = $('cf-host').value.trim();
-    if (!hostname) return toast('Type the public hostname first.', 'bad');
-    try {
-        await api('/api/cloudflare/hostnames', { method: 'POST', body: { hostname, serves: $('cf-serves').value } });
-        $('cf-host').value = '';
-        toast(`${hostname} is on the tunnel.`, 'good');
-    } catch (e) {
-        toast(e.message, 'bad');
-    }
-    loadCloudflare().catch(() => {});
-});
-
-$('cf-hosts-body').addEventListener('click', async (event) => {
-    const button = event.target.closest('[data-cf-remove]');
-    if (!button) return;
-    if (!(await askConfirm(`Take ${button.dataset.cfName} off the tunnel? Remove its route in the Cloudflare dashboard too.`))) return;
-    try {
-        await api(`/api/cloudflare/hostnames/${button.dataset.cfRemove}`, { method: 'DELETE' });
-    } catch (e) {
-        toast(e.message, 'bad');
-    }
-    loadCloudflare().catch(() => {});
-});
 
 // --- .kachat → Rules: the rules of the registry contract that is running ---
 //

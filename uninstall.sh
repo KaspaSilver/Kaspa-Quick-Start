@@ -43,7 +43,7 @@ Usage: uninstall.sh [options]
                         synced). Without this, uninstall removes everything.
   --delete-data         Full wipe (the default): also removes the chain, the data
                         volumes and the install directory. Accepted for clarity.
-  --keep-base-images    Keep nginx / node / alpine / certbot images
+  --keep-base-images    Keep nginx / cloudflared / node / alpine images
   --yes, -y             Do not ask for confirmation
 USAGE
             exit 0 ;;
@@ -145,7 +145,7 @@ else
     if [ "$KEEP_BASE_IMAGES" = "0" ]; then
         # Base images the stack pulled. These may be shared with other projects,
         # so a refusal here is expected and harmless.
-        for image in nginx:1.27-alpine certbot/certbot:latest node:22-alpine alpine:3.21 \
+        for image in nginx:1.27-alpine cloudflare/cloudflared:2026.10.2 certbot/certbot:latest node:22-alpine alpine:3.21 \
                      postgres:17-alpine mariadb:10.11 redis:7-alpine \
                      nextcloud/aio-imaginary:latest nextcloud:stable; do
             d rmi "$image" >/dev/null 2>&1 && ok "removed image $image" || true

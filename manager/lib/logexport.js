@@ -1,9 +1,11 @@
 import fs from 'node:fs';
+import path from 'node:path';
 
 import { CommandError, containerState, docker, logSource, stripAnsi } from './dockerctl.js';
 import { ENV_FILE as BOT_ENV_FILE } from './bot.js';
 import { BOTS_FILE } from './bots.js';
 import { loadManagerConfig, readEnvFile } from './store.js';
+import { CONF_DIR } from './paths.js';
 
 /**
  * "Download logs" on the Logs page (handoff docs/DOWNLOAD-LOGS.md, from the KaChat Desktop
@@ -71,12 +73,18 @@ function collectSecrets() {
     } catch {
         /* no .env yet */
     }
-    for (const file of [BOT_ENV_FILE]) {
+    for (const file of [BOT_ENV_FILE, path.join(CONF_DIR, 'cloudflare', 'tunnel.env')]) {
         try {
             fromEnvText(fs.readFileSync(file, 'utf8'));
         } catch {
             /* not installed */
         }
+    }
+    // The Cloudflare API token is the whole file, no NAME= in front of it.
+    try {
+        add(fs.readFileSync(path.join(CONF_DIR, 'cloudflare', 'api-token'), 'utf8'));
+    } catch {
+        /* not connected */
     }
     try {
         walk(JSON.parse(fs.readFileSync(BOTS_FILE, 'utf8')));

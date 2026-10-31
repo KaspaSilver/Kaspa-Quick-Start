@@ -1,12 +1,11 @@
 import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import dns from 'node:dns/promises';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { CONF_DIR, DOMAINS_FILE, ensureDirs, KASPAD_ARGS_FILE, NAMES_DIR, NODE_CONFIG_FILE, PROXIES_FILE, STACK_HOST } from './lib/paths.js';
+import { COMPOSE_FILE, CONF_DIR, DOMAINS_FILE, ensureDirs, KASPAD_ARGS_FILE, NAMES_DIR, NODE_CONFIG_FILE, PROXIES_FILE, STACK_HOST } from './lib/paths.js';
 import {
     DEFAULT_NODE_CONFIG,
     NETWORKS,
@@ -23,12 +22,11 @@ import {
     saveNodeConfig,
     saveProxies,
     saveTestnetNodeConfig,
+    writeJson,
 } from './lib/store.js';
 import { buildArgs, portMatrix, ports, publicPorts, renderPortsOverride, renderTestnetPortsOverride, setPortState, writeArgsFile, writeTestnetArgsFile } from './lib/kaspad-args.js';
 import * as dockerctl from './lib/dockerctl.js';
 import * as nginx from './lib/nginx.js';
-import * as certbot from './lib/certbot.js';
-import * as duckdns from './lib/duckdns.js';
 import * as updater from './lib/updater.js';
 import * as bridge from './lib/bridge.js';
 import * as price from './lib/price.js';
@@ -764,7 +762,7 @@ route('POST', /^\/api\/kachat\/backup\/restore$/, async (req, res) => {
 
 /** This connection's public address, for the "Use current IP" button. */
 route('GET', /^\/api\/node\/external-ip$/, async (req, res) => {
-    const ip = await duckdns.publicIp();
+    const ip = await network.publicIp();
     if (!ip) return fail(res, 502, 'Could not work out this connection\'s public address.');
     sendJson(res, 200, { ip });
 });
@@ -803,7 +801,7 @@ function scheduleExternalIpWatch(log = () => {}) {
     const tick = async () => {
         const cfg = loadNodeConfig();
         if (!cfg.peering?.externalipAuto) return;
-        const ip = await duckdns.publicIp().catch(() => null);
+        const ip = await network.publicIp().catch(() => null);
         if (!ip || ip === cfg.peering.externalip) return;
         // Something else is mid-job. Persist nothing and leave the difference in
         // place, so the next tick sees it still needs doing and retries.
@@ -1242,10 +1240,11 @@ route('GET', /^\/api\/proxies$/, async (req, res) => {
     const list = loadProxies().map((p) => ({
         ...p,
         auth: p.auth ? { ...p.auth, htpasswd: undefined, hasPassword: Boolean(p.auth.htpasswd) } : undefined,
-        certificate: nginx.hasCertificate(p.domain),
     }));
     sendJson(res, 200, {
         proxies: list,
+        // The public names a host can be for: only those reach this proxy.
+        names: loadDomains().map((d) => ({ domain: d.domain, tunnel: d.tunnel ?? 'pending' })),
         targets: nginx.TARGET_KINDS,
         enabled: proxyEnabled(),
         container: await dockerctl.containerState(dockerctl.PROXY_CONTAINER),
@@ -1277,7 +1276,7 @@ route('POST', /^\/api\/proxies$/, async (req, res) => {
         domain: String(body.proxy?.domain || '').trim().toLowerCase(),
     };
 
-    const errors = nginx.validateProxy(proxy, { existing: list, panelHasPassword: authConfigured() });
+    const errors = nginx.validateProxy(proxy, { existing: list, panelHasPassword: authConfigured(), names: domainNames() });
     if (errors.length) return fail(res, 400, 'The proxy host has problems.', { details: errors });
 
     nginx.storeBasicAuth(proxy);
@@ -1309,7 +1308,7 @@ route('PUT', /^\/api\/proxies\/([a-f0-9]{12})$/, async (req, res, match) => {
         auth: { ...previous.auth, ...body.proxy?.auth },
     };
 
-    const errors = nginx.validateProxy(proxy, { existing: list, panelHasPassword: authConfigured() });
+    const errors = nginx.validateProxy(proxy, { existing: list, panelHasPassword: authConfigured(), names: domainNames() });
     if (errors.length) return fail(res, 400, 'The proxy host has problems.', { details: errors });
 
     nginx.storeBasicAuth(proxy);
@@ -1334,49 +1333,6 @@ route('DELETE', /^\/api\/proxies\/([a-f0-9]{12})$/, async (req, res, match) => {
     sendJson(res, 200, { ok: true });
 });
 
-route('POST', /^\/api\/proxies\/([a-f0-9]{12})\/certificate$/, async (req, res, match) => {
-    const body = await readBody(req);
-    const list = loadProxies();
-    const proxy = list.find((p) => p.id === match[1]);
-    if (!proxy) return fail(res, 404, 'No such proxy host.');
-
-    const email = String(body.email || proxy.ssl?.email || '').trim();
-    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return fail(res, 400, `"${email}" is not an e-mail address.`);
-    // Let's Encrypt proves the domain by fetching a file over port 80, which
-    // nginx serves. Without it running the request can only fail.
-    if (!proxyEnabled()) {
-        return fail(res, 409, 'Turn the reverse proxy on first.', {
-            details: ["Certificates are issued by answering a request on port 80, which needs the proxy running."],
-        });
-    }
-
-    const job = jobs.start(`Issue certificate for ${proxy.domain}`, async (onLine) => {
-        const viaDns = duckdnsFor(proxy.domain);
-        onLine(`Requesting a certificate for ${viaDns?.wildcard ?? proxy.domain} from Let's Encrypt.`);
-        onLine(
-            viaDns
-                ? 'Proving the name with a DuckDNS TXT record, so no ports need to be open.'
-                : 'This needs port 80 reachable from the internet for that domain.',
-        );
-        await certbot.issue(proxy.domain, email, {
-            staging: Boolean(body.staging),
-            onLine,
-            duckdns: viaDns,
-        });
-
-        const current = loadProxies();
-        const target = current.find((p) => p.id === proxy.id);
-        if (target) {
-            target.ssl = { ...target.ssl, mode: 'letsencrypt', email, forceHttps: target.ssl?.forceHttps !== false };
-            saveProxies(current);
-            nginx.writeAll(current, loadNodeConfig(), renderOptions());
-            await nginx.reload();
-            onLine('HTTPS is now enabled for this host.');
-        }
-    });
-    sendJson(res, 202, { ok: true, jobId: job.id });
-});
-
 route('POST', /^\/api\/proxy\/enabled$/, async (req, res) => {
     const body = await readBody(req);
     const enabled = Boolean(body.enabled);
@@ -1386,77 +1342,6 @@ route('POST', /^\/api\/proxy\/enabled$/, async (req, res) => {
         applyProxyState(enabled, onLine),
     );
     sendJson(res, 202, { ok: true, jobId: job.id });
-});
-
-/**
- * Whether 80 and 443 actually reach this machine from the internet.
- *
- * Deliberately not run on page load: it asks a third party to connect back, so
- * it happens when somebody presses the button and not before.
- */
-/**
- * The ports the outside world reaches this machine on, which a router decides
- * and nginx cannot know. Saved rather than detected: the check can tell you
- * whether a port arrives, but not which one a visitor should type.
- */
-route('POST', /^\/api\/proxy\/ports$/, async (req, res) => {
-    const body = await readBody(req);
-    const port = (value, fallback) => {
-        const n = Number(value);
-        return Number.isInteger(n) && n >= 1 && n <= 65535 ? n : fallback;
-    };
-
-    const env = readEnvFile();
-    const bindHttp = port(body.bindHttp, Number(env.HTTP_PORT) || 80);
-    const bindHttps = port(body.bindHttps, Number(env.HTTPS_PORT) || 443);
-    const guiPort = Number(env.GUI_PORT) || 8080;
-
-    // Docker accepts the mapping and then fails to start the container, so the
-    // clash is caught here where it can be explained. The panel's own port is
-    // the one that bites: 8080 is both a common panel default and the first
-    // port anyone reaches for as an alternative to 80.
-    if (bindHttp === guiPort || bindHttps === guiPort) {
-        return fail(res, 409, `Port ${guiPort} is this panel's own port, so the proxy cannot take it.`, {
-            details: ['Move the panel first, under Global settings, or give the proxy a different port.'],
-        });
-    }
-    if (bindHttp === bindHttps) return fail(res, 400, 'http and https cannot share one port on this machine.');
-
-    const cfg = loadManagerConfig();
-    cfg.proxy.publicHttpPort = port(body.http, 80);
-    cfg.proxy.publicHttpsPort = port(body.https, 443);
-    saveManagerConfig(cfg);
-
-    const rebind = bindHttp !== (Number(env.HTTP_PORT) || 80) || bindHttps !== (Number(env.HTTPS_PORT) || 443);
-    if (rebind) updateEnvFile({ HTTP_PORT: String(bindHttp), HTTPS_PORT: String(bindHttps) });
-
-    // Redirects embed the https port, so every vhost is rewritten.
-    nginx.writeAll(loadProxies(), loadNodeConfig(), renderOptions());
-
-    if (rebind && proxyEnabled()) {
-        // A published port is fixed when a container is created, so this is a
-        // recreate rather than a reload. Only the proxy changes; the node and
-        // every app keep running.
-        const job = jobs.start(`Move the proxy to ports ${bindHttp} and ${bindHttps}`, async (onLine) => {
-            onLine(`Recreating the reverse proxy on ports ${bindHttp} and ${bindHttps}.`);
-            await dockerctl.compose(['up', '-d', '--force-recreate', 'proxy'], {
-                onLine,
-                profile: 'proxy',
-                timeoutMs: 5 * 60_000,
-            });
-        });
-        return sendJson(res, 202, {
-            ok: true,
-            jobId: job.id,
-            http: cfg.proxy.publicHttpPort,
-            https: cfg.proxy.publicHttpsPort,
-            bindHttp,
-            bindHttps,
-        });
-    }
-
-    if (proxyEnabled()) await nginx.reload().catch(() => {});
-    sendJson(res, 200, { ok: true, http: cfg.proxy.publicHttpPort, https: cfg.proxy.publicHttpsPort, bindHttp, bindHttps });
 });
 
 /**
@@ -1491,9 +1376,6 @@ route('POST', /^\/api\/panel\/port$/, async (req, res) => {
     if (!Number.isInteger(wanted) || wanted < 1 || wanted > 65535) return fail(res, 400, 'That is not a port number.');
 
     const env = readEnvFile();
-    if (wanted === (Number(env.HTTP_PORT) || 80) || wanted === (Number(env.HTTPS_PORT) || 443)) {
-        return fail(res, 409, `Port ${wanted} belongs to the reverse proxy.`);
-    }
     if (wanted === (Number(env.GUI_PORT) || 8080)) return sendJson(res, 200, { ok: true, unchanged: true });
     if (refuseWhileQueueBusy(res, 'Changing the panel port')) return;
 
@@ -1522,25 +1404,6 @@ route('POST', /^\/api\/panel\/bind$/, async (req, res) => {
     sendJson(res, 202, { ok: true, restarting: true, bind: wanted });
 });
 
-route('GET', /^\/api\/proxy\/portcheck$/, async (req, res) => {
-    const domain = loadDomains()[0]?.domain ?? null;
-    const mgr = loadManagerConfig().proxy;
-    const env = readEnvFile();
-    sendJson(
-        res,
-        200,
-        await portcheck.check(domain, {
-            httpPort: mgr.publicHttpPort ?? 80,
-            httpsPort: mgr.publicHttpsPort ?? 443,
-            bindHttp: Number(env.HTTP_PORT) || 80,
-            bindHttps: Number(env.HTTPS_PORT) || 443,
-            // A DuckDNS name proves itself with a TXT record, so nothing here
-            // is required for a certificate -- only for serving.
-            dnsChallenge: Boolean(domain && duckdnsFor(domain)),
-        }),
-    );
-});
-
 route('POST', /^\/api\/proxy\/reload$/, async (req, res) => {
     if (!proxyEnabled()) return fail(res, 409, 'The reverse proxy is switched off.');
     try {
@@ -1552,24 +1415,8 @@ route('POST', /^\/api\/proxy\/reload$/, async (req, res) => {
     }
 });
 
-route('POST', /^\/api\/proxy\/renew$/, async (req, res) => {
-    const job = jobs.start('Renew certificates', async (onLine) => {
-        await certbot.renew({ onLine, duckdns: anyDuckdnsCredentials() });
-        await nginx.reload();
-    });
-    sendJson(res, 202, { ok: true, jobId: job.id });
-});
-
 // ------------------------------------------------------- domains & publishing --
 
-/**
- * The service-first view of the reverse proxy: what can be published, what it
- * is published on, and every domain available to publish it on.
- *
- * The proxy-host endpoints below still exist and still own the detail -- basic
- * auth, allowlists, custom snippets, certificates. This is the same data asked
- * a friendlier question.
- */
 /**
  * Docker Desktop (macOS, Windows) hands every client to nginx from one gateway address, so a
  * per-IP limit there is one bucket shared by everyone (kachat-audits KQS-021). On such a host
@@ -1585,16 +1432,33 @@ async function applySharedClientLimits() {
     if (readEnvFile().WEBSERVER_RATE_LIMIT !== want) updateEnvFile({ WEBSERVER_RATE_LIMIT: want });
 }
 
+/** Every public name on this panel. Only these reach the proxy, through the tunnel. */
+const domainNames = () => loadDomains().map((d) => d.domain);
+
+/**
+ * The service-first view of Tunnel & domains: what can be published, what it
+ * is published on, every name available to publish it on, and the tunnel that
+ * carries them.
+ *
+ * The proxy-host endpoints above still exist and still own the detail -- basic
+ * auth, allowlists, rate limits, custom snippets. This is the same data asked a
+ * friendlier question.
+ */
 route('GET', /^\/api\/publish$/, async (req, res) => {
     const proxies = loadProxies();
     sendJson(res, 200, {
         services: publish.overview({ proxies, panelHasPassword: authConfigured() }),
         domains: loadDomains().map((d) => ({
-            ...d,
-            certificate: nginx.hasCertificate(d.domain),
-            expiry: nginx.certificateExpiry(d.domain),
+            id: d.id,
+            domain: d.domain,
+            addedAt: d.addedAt,
+            // 'on': its DNS record and route send it into the tunnel. 'pending': not
+            // yet, and `problem` says why (another account's domain, a record
+            // something else made, the account not connected).
+            tunnel: d.tunnel ?? 'pending',
+            problem: d.problem ?? null,
             // Which services are on this name, and where. A name carries
-            // several now, so the wizard shows what it would be joining.
+            // several, so the wizard shows what it would be joining.
             usedBy: proxies.find((p) => p.domain === d.domain && (p.path ?? '/') === '/')?.target?.kind ?? null,
             hosts: proxies
                 .filter((p) => p.domain === d.domain)
@@ -1602,64 +1466,61 @@ route('GET', /^\/api\/publish$/, async (req, res) => {
             rootFree: !proxies.some((p) => p.domain === d.domain && (p.path ?? '/') === '/'),
         })),
         enabled: proxyEnabled(),
+        tunnel: await cloudflare.status(),
         // Docker Desktop: every client looks like one address to nginx (KQS-021).
         sharedClientAddress,
-        publicPorts: {
-            http: loadManagerConfig().proxy.publicHttpPort ?? 80,
-            https: loadManagerConfig().proxy.publicHttpsPort ?? 443,
-            // What nginx binds here, which is what a router rule points at.
-            bindHttp: Number(readEnvFile().HTTP_PORT) || 80,
-            bindHttps: Number(readEnvFile().HTTPS_PORT) || 443,
-            panel: Number(readEnvFile().GUI_PORT) || 8080,
+        panel: {
+            port: Number(readEnvFile().GUI_PORT) || 8080,
             // Where the panel's port is published: 127.0.0.1 (this machine) or 0.0.0.0
             // (other machines on the network too).
-            panelBind: managerBind(),
-            panelLan: !isLoopbackBind(),
+            bind: managerBind(),
+            lan: !isLoopbackBind(),
             hasPassword: authConfigured(),
         },
         container: await dockerctl.containerState(dockerctl.PROXY_CONTAINER),
     });
 });
 
-route('POST', /^\/api\/domains$/, async (req, res) => {
-    const body = await readBody(req);
-    const { domain, error } = nginx.validateDomainName(body.domain);
-    if (error) return fail(res, 400, error);
-
-    const list = loadDomains();
-    if (list.some((d) => d.domain === domain)) return fail(res, 400, `${domain} is already on the list.`);
-
-    const mode = body.ssl?.mode === 'letsencrypt' ? 'letsencrypt' : 'none';
-    const email = String(body.ssl?.email || '').trim();
-    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return fail(res, 400, `"${email}" is not an e-mail address.`);
-
-    const record = { id: nginx.newId(), domain, ssl: { mode, email }, addedAt: new Date().toISOString() };
-    list.push(record);
-    saveDomains(list);
-    sendJson(res, 201, { ok: true, domain: record });
-});
-
+/**
+ * Takes a name off: its route and the DNS record that sends it into the tunnel.
+ * A name that a service still answers on is refused, so a vhost never points at
+ * a name the panel no longer knows about.
+ */
 route('DELETE', /^\/api\/domains\/([a-f0-9]{12})$/, async (req, res, match) => {
     const list = loadDomains();
     const record = list.find((d) => d.id === match[1]);
     if (!record) return fail(res, 404, 'No such domain.');
 
-    // Removing a name that something answers on would leave a vhost pointing at
-    // a domain the panel no longer knows about, so the assignment goes first.
     const inUse = loadProxies().find((p) => p.domain === record.domain);
     if (inUse) {
         const service = publish.SERVICES.find((sv) => sv.kind === inUse.target?.kind);
         return fail(res, 409, `${record.domain} is still publishing ${service?.label ?? 'a proxy host'}.`, {
-            details: ['Set that service back to "not published" first, then remove the domain.'],
+            details: ['Set that service back to "not published" first, then remove the name.'],
         });
     }
 
-    saveDomains(list.filter((d) => d.id !== record.id));
-    sendJson(res, 200, { ok: true });
+    const notes = [];
+    try {
+        await cloudflare.removeName(record, (line) => notes.push(line));
+    } catch (err) {
+        return fail(res, err.status ?? 502, `Cloudflare did not take ${record.domain} off the tunnel: ${err.message}`);
+    }
+    saveDomains(loadDomains().filter((d) => d.id !== record.id));
+    sendJson(res, 200, { ok: true, notes });
+});
+
+/** Tries a name that could not go on the tunnel again, once whatever was in the way is gone. */
+route('POST', /^\/api\/domains\/([a-f0-9]{12})\/retry$/, async (req, res, match) => {
+    try {
+        const record = await cloudflare.retryName(match[1]);
+        sendJson(res, 200, { ok: true, domain: record });
+    } catch (err) {
+        fail(res, err.status ?? 502, err.message);
+    }
 });
 
 /**
- * Points a service at one of the stored domains, or at none of them.
+ * Points a service at one of the stored names, or at none of them.
  *
  * Everything here funnels into the same proxy-host list the advanced screen
  * edits, so a service published from this screen can be opened there and given
@@ -1682,14 +1543,9 @@ route('POST', /^\/api\/publish\/([a-z][a-z-]*)$/, async (req, res, match) => {
         return sendJson(res, 200, { ok: true, domain: null, was: removed.domain });
     }
 
-    const record = loadDomains().find((d) => d.domain === wanted);
-    if (!record) return fail(res, 400, `${wanted} is not one of your domains.`, { details: ['Set it up from a service first.'] });
-
-    // The domain owns the certificate settings: a certificate is issued for a
-    // name, not for whatever happens to sit behind it this week.
-    const ssl = { mode: record.ssl?.mode ?? 'none', email: record.ssl?.email ?? '' };
+    if (!domainNames().includes(wanted)) return fail(res, 400, `${wanted} is not one of your names.`, { details: ['Set it up from a service first.'] });
     try {
-        const proxy = await attachDomain(service, wanted, ssl);
+        const proxy = await attachDomain(service, wanted);
         sendJson(res, 200, { ok: true, domain: wanted, proxyId: proxy.id });
     } catch (err) {
         fail(res, 400, err.message, err.details ? { details: err.details } : undefined);
@@ -1697,11 +1553,11 @@ route('POST', /^\/api\/publish\/([a-z][a-z-]*)$/, async (req, res, match) => {
 });
 
 /**
- * Attaches a domain to a service, creating the proxy host if there is not one.
+ * Attaches a name to a service, creating the proxy host if there is not one.
  * Shared by the dropdown on the services page and by the setup wizard, so both
  * produce exactly the same proxy host.
  */
-async function attachDomain(service, domain, ssl, extras = null) {
+async function attachDomain(service, domain, extras = null) {
     const list = loadProxies();
     const index = list.findIndex((p) => p.target?.kind === service.kind);
     // Where it sits on that name depends on what is already there. Throws with
@@ -1709,7 +1565,7 @@ async function attachDomain(service, domain, ssl, extras = null) {
     const { path } = publish.pathFor(service, domain, index >= 0 ? list.filter((_, i) => i !== index) : list);
     const proxy =
         index >= 0
-            ? { ...list[index], domain, ssl, path }
+            ? { ...list[index], domain, path }
             : {
                   path,
                   id: nginx.newId(),
@@ -1721,13 +1577,11 @@ async function attachDomain(service, domain, ssl, extras = null) {
                   auth: { enabled: false },
                   domain,
                   target: { kind: service.kind },
-                  ssl,
               };
 
-    // Basic auth and an allowlist used to be reachable only from the advanced
-    // screen. They are the two protections worth offering at the moment someone
-    // puts a service on the internet, so the wizard asks for them there and
-    // passes them through here.
+    // Basic auth and an allowlist are the two protections worth offering at the
+    // moment someone puts a service on the internet, so the wizard asks for them
+    // there and passes them through here.
     if (extras) {
         if (extras.auth?.enabled) {
             proxy.auth = { enabled: true, user: extras.auth.user, password: extras.auth.password, htpasswd: proxy.auth?.htpasswd };
@@ -1737,7 +1591,7 @@ async function attachDomain(service, domain, ssl, extras = null) {
         if (Array.isArray(extras.allowlist)) proxy.allowlist = extras.allowlist.filter(Boolean);
     }
 
-    const errors = nginx.validateProxy(proxy, { existing: list, panelHasPassword: authConfigured() });
+    const errors = nginx.validateProxy(proxy, { existing: list, panelHasPassword: authConfigured(), names: domainNames() });
     if (errors.length) {
         const err = new Error(`${service.label} cannot be published on ${domain}.`);
         err.details = errors;
@@ -1763,66 +1617,84 @@ async function attachDomain(service, domain, ssl, extras = null) {
     return proxy;
 }
 
+// ------------------------------------------------------- cloudflare tunnel --
+// lib/cloudflare.js: one API token, and the panel makes the tunnel, its routes
+// and the DNS records. The connector rides with the reverse proxy: the Tunnel &
+// domains switch starts and stops both.
+
+route('GET', /^\/api\/cloudflare$/, async (req, res) => sendJson(res, 200, await cloudflare.status()));
+
+route('POST', /^\/api\/cloudflare\/connect$/, async (req, res) => {
+    const body = await readBody(req);
+    const token = String(body.token ?? '').trim();
+    if (!token) return fail(res, 400, 'Paste the API token from Cloudflare first.');
+    const job = jobs.start('Connect Cloudflare', async (onLine) => {
+        // The tunnel delivers every request to nginx, so it has to be there to answer.
+        if (!proxyEnabled()) {
+            onLine('Starting the reverse proxy, which answers for every name on the tunnel.');
+            await applyProxyState(true, onLine);
+        }
+        await cloudflare.connect(token, onLine);
+        mergeProxyConfig();
+        await reloadProxyIfRunning(onLine);
+    });
+    sendJson(res, 202, { ok: true, jobId: job.id });
+});
+
+route('POST', /^\/api\/cloudflare\/disconnect$/, async (req, res) => {
+    const job = jobs.start('Disconnect Cloudflare', (onLine) => cloudflare.disconnect(onLine));
+    sendJson(res, 202, { ok: true, jobId: job.id });
+});
+
+/** nginx's files from what is saved; for after something changed the names. */
+function mergeProxyConfig() {
+    nginx.writeAll(loadProxies(), loadNodeConfig(), renderOptions());
+}
+
 // ----------------------------------------------------------- setup wizard --
 
 route('GET', /^\/api\/setup\/([a-z][a-z-]*)$/, async (req, res, match) => {
-    const plan = publish.setupPlan(match[1], { panelHasPassword: authConfigured(), proxyOn: proxyEnabled() });
-    if (!plan) return fail(res, 404, 'No such service.');
-
-    const dd = loadManagerConfig().duckdns;
-    sendJson(res, 200, {
-        ...plan,
-        duckdns: { subdomain: duckdns.normalizeDomains(dd.domains)[0] ?? '', hasToken: Boolean(dd.token) },
-        publicIp: await duckdns.publicIp(),
+    const tunnel = await cloudflare.status();
+    const plan = publish.setupPlan(match[1], {
+        panelHasPassword: authConfigured(),
+        proxyOn: proxyEnabled(),
+        tunnelOn: Boolean(tunnel.container?.running),
     });
+    if (!plan) return fail(res, 404, 'No such service.');
+    sendJson(res, 200, { ...plan, tunnel: { mode: tunnel.mode, zones: tunnel.zones, accountName: tunnel.accountName } });
 });
 
 /**
- * The whole setup, done once: name, DNS, whatever the service needs switched
- * on, the vhost, and the certificate. Every step narrates itself into the job
- * console, because "it did not work" is unanswerable when the failure could
- * have been any one of six things.
+ * The whole setup, done once: the name and its DNS record into the tunnel,
+ * whatever the service needs switched on, and the vhost. Every step narrates
+ * itself into the job console, because "it did not work" is unanswerable when
+ * the failure could have been any one of several things.
  */
 route('POST', /^\/api\/setup\/([a-z][a-z-]*)$/, async (req, res, match) => {
     const key = match[1];
     const plan = publish.setupPlan(key, { panelHasPassword: authConfigured(), proxyOn: proxyEnabled() });
     if (!plan) return fail(res, 404, 'No such service.');
     if (plan.blocked) return fail(res, 409, plan.blocked);
+    if (cloudflare.mode() !== 'connected') {
+        return fail(res, 409, 'Connect your Cloudflare account first, under Tunnel & domains, Overview.');
+    }
 
     const body = await readBody(req);
 
-    // Two ways in: a name that already exists on this panel, or a new DuckDNS
-    // one to create. Only the second needs a token, and only the second touches
-    // the DNS record.
+    // Two ways in: a name that is already on this panel, or a new one on one of
+    // the account's domains.
     const existing = body.domain ? loadDomains().find((d) => d.domain === String(body.domain).trim().toLowerCase()) : null;
-    if (body.domain && !existing) return fail(res, 400, `${body.domain} is not one of your domains.`);
-
-    // The name being published and the DuckDNS account behind it are no longer
-    // the same thing. "mining.yournode" publishes on mining.yournode.duckdns.org
-    // while the account that gets refreshed, and that holds the token, is
-    // "yournode" -- a name under an account is not registered anywhere.
-    const wanted = String(body.subdomain || '')
-        .trim()
-        .toLowerCase()
-        .replace(/\.duckdns\.org\.?$/, '');
-    // From the full name, not the stripped one: accountLabel treats a bare
-    // "panel.kachat" as some other provider's hostname and returns nothing,
-    // whereas "panel.kachat.duckdns.org" is unambiguously the account "kachat"
-    // with a name in front. Publishing a prefix in front of an existing name
-    // depends on getting "kachat" here, so the right account is refreshed.
-    const subdomain = existing ? null : duckdns.accountLabel(`${wanted}.duckdns.org`);
-    if (!existing && !/^[a-z0-9-]{1,63}(\.[a-z0-9-]{1,63}){0,3}$/.test(wanted)) {
-        return fail(res, 400, 'Enter the DuckDNS name you created, without the .duckdns.org.');
+    if (body.domain && !existing) return fail(res, 400, `${body.domain} is not one of your names.`);
+    let wanted = existing?.domain ?? null;
+    if (!existing) {
+        const zone = cloudflare.loadConfig().zones.find((z) => z.id === body.zoneId);
+        if (!zone) return fail(res, 400, 'Pick one of your domains.');
+        try {
+            wanted = cloudflare.hostnameFor(body.subdomain, zone);
+        } catch (err) {
+            return fail(res, 400, err.message);
+        }
     }
-
-    const storedToken = loadManagerConfig().duckdns.token;
-    const token = String(body.token || '').trim();
-    if (!existing && !token && !storedToken) return fail(res, 400, 'Enter your DuckDNS token.');
-
-    // No contact address is asked for or required: the ACME account registers
-    // without one, and the panel shows the expiry date itself.
-    const email = String(body.email || existing?.ssl?.email || '').trim();
-    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return fail(res, 400, `"${email}" is not an e-mail address.`);
 
     const extras = {
         auth: body.auth?.enabled
@@ -1834,65 +1706,24 @@ route('POST', /^\/api\/setup\/([a-z][a-z-]*)$/, async (req, res, match) => {
             .filter(Boolean),
     };
 
-    const domain = existing ? existing.domain : `${wanted}.duckdns.org`;
-
-    const job = jobs.start(`Publish ${plan.service.label} on ${domain}`, async (onLine) => {
+    const job = jobs.start(`Publish ${plan.service.label} on ${wanted}`, async (onLine) => {
         // --- the name -------------------------------------------------------
-        if (existing) {
-            onLine(`Using ${domain}, which is already on this panel.`);
+        let record = existing;
+        if (record?.tunnel === 'on') {
+            onLine(`Using ${wanted}, which is already on the tunnel.`);
+        } else if (record) {
+            await cloudflare.retryName(record.id, onLine);
         } else {
-            onLine(`Saving ${domain} and telling DuckDNS where this machine is.`);
-            if (wanted !== subdomain) {
-                onLine(
-                    `${domain} is a name under ${subdomain}.duckdns.org. There is nothing to create for it at ` +
-                        `duckdns.org -- the account is what gets refreshed, and names under it follow.`,
-                );
-            }
-            const mgr = loadManagerConfig();
-            // DuckDNS refreshes every name on the account in one call, so a
-            // second service on a second name adds to the list rather than
-            // replacing it.
-            const names = new Set(duckdns.normalizeDomains(mgr.duckdns.domains));
-            names.add(subdomain);
-            const domains = [...names].join(',');
-
-            // Ask DuckDNS first; save the names (and a newly typed token) only once it has
-            // accepted them. Saving first meant a mistyped token replaced the good one, and
-            // every refresh after that failed with "KO".
-            const update = await duckdns.update({ domains, token: token || storedToken });
-            onLine(`DuckDNS: ${update.body.split('\n').join(' ').trim()}`);
-            const saved = loadManagerConfig();
-            saved.duckdns.domains = domains;
-            if (token) saved.duckdns.token = token;
-            saved.duckdns.enabled = true;
-            saveManagerConfig(saved);
-            duckdns.scheduleFromConfig(log);
-            if (update.refused.length) {
-                // The name being published must be refreshable; others refused only warn.
-                if (update.refused.includes(`${subdomain}.duckdns.org`)) {
-                    throw new Error(duckdns.refusedNote([`${subdomain}.duckdns.org`]));
-                }
-                onLine(`! ${duckdns.refusedNote(update.refused)}`);
-            }
-        }
-
-        // --- does the name actually arrive here -----------------------------
-        const [resolved, publicIp] = await Promise.all([
-            dns.resolve4(domain).catch(() => []),
-            duckdns.publicIp(),
-        ]);
-        if (!resolved.length) {
-            onLine(`${domain} does not resolve yet. DNS can take a minute; the certificate step will say if it is still not there.`);
-        } else if (publicIp && !resolved.includes(publicIp)) {
-            onLine(`Careful: ${domain} resolves to ${resolved.join(', ')} but this connection looks like ${publicIp}.`);
-        } else {
-            onLine(`${domain} resolves to ${resolved.join(', ')}.`);
+            record = await cloudflare.addName({ subdomain: body.subdomain, zoneId: body.zoneId }, onLine);
         }
 
         // --- whatever this service needs before it can answer ---------------
         if (!proxyEnabled()) {
-            onLine('Starting the reverse proxy, which serves every domain.');
+            onLine('Starting the reverse proxy and the tunnel connector.');
             await applyProxyState(true, onLine);
+        } else if (!(await dockerctl.containerState(cloudflare.CONTAINER)).running) {
+            onLine('Starting the tunnel connector.');
+            await cloudflare.startConnector(onLine);
         }
 
         if (key === 'kaspad') {
@@ -1900,17 +1731,6 @@ route('POST', /^\/api\/setup\/([a-z][a-z-]*)$/, async (req, res, match) => {
             // args match before it comes up so a dependent service never starts
             // against a node that is not listening for it.
             await ensureNodeListeners(onLine);
-        }
-
-        if (key === 'mining') {
-            const mining = bridge.loadBridgeConfig();
-            if (!mining.enabled || !mining.publishDashboard) {
-                onLine('Switching mining and the bridge dashboard on.');
-                mining.enabled = true;
-                mining.publishDashboard = true;
-                bridge.saveBridgeConfig(mining);
-                await applyMiningConfig(mining, onLine);
-            }
         }
 
         if (['kachat', 'desktop', 'nextcloud'].includes(key)) {
@@ -1923,90 +1743,17 @@ route('POST', /^\/api\/setup\/([a-z][a-z-]*)$/, async (req, res, match) => {
             }
         }
 
-        // --- the name becomes one of ours, and the service answers on it ----
-        const domains = loadDomains();
-        const ssl = { mode: 'letsencrypt', email };
-        // Not `existing`: that name belongs to the domain record this job was
-        // started for, declared outside this closure. Shadowing it here put the
-        // outer one in the temporal dead zone for the whole job, so the very
-        // first line that read it threw before anything ran.
-        const record = domains.find((d) => d.domain === domain);
-        if (record) {
-            record.ssl = ssl;
-        } else {
-            domains.push({ id: nginx.newId(), domain, ssl, addedAt: new Date().toISOString() });
-        }
-        saveDomains(domains);
-
-        onLine(`Publishing ${plan.service.label} on ${domain}.`);
+        // --- the service answers on it --------------------------------------
+        onLine(`Publishing ${plan.service.label} on ${record.domain}.`);
         if (extras.auth.enabled) onLine(`It will ask for a username and password (${extras.auth.user}).`);
         if (extras.allowlist.length) onLine(`Only these addresses will be let through: ${extras.allowlist.join(', ')}.`);
-        await attachDomain(plan.service, domain, ssl, extras);
+        await attachDomain(plan.service, record.domain, extras);
 
-        // --- https ----------------------------------------------------------
-        if (nginx.hasCertificate(domain)) {
-            onLine(`${domain} already has a certificate, so it is left alone.`);
-        } else {
-            const viaDns = duckdnsFor(domain);
-            if (viaDns?.wildcard) {
-                onLine(
-                    `${domain} is a name under ${duckdnsAccountFor(domain)}.duckdns.org, so this asks for ${viaDns.wildcard}, ` +
-                        'which DuckDNS can prove with a TXT record on the account. It covers this name and any other under it.',
-                );
-            }
-            onLine(
-                viaDns
-                    ? "Asking Let's Encrypt for a certificate, proving the name with a DuckDNS TXT record. This needs no open ports."
-                    : "Asking Let's Encrypt for a certificate. This needs port 80 open from the internet.",
-            );
-            try {
-                await certbot.issue(domain, email, { onLine, duckdns: viaDns, staging: Boolean(body.staging) });
-            } catch (err) {
-                // Everything else is done and the address works over http, so
-                // this is the one outstanding step rather than a failed job.
-                // certbot cannot say why a challenge failed, so say it here:
-                // the answer is almost always the route in, and the checks
-                // below are what distinguish that from a broken vhost.
-                onLine('');
-                onLine('Let\'s Encrypt could not verify the name, so there is no certificate yet.');
-
-                const [reachable, resolvedNow, ip] = await Promise.all([
-                    certbot.selfTest(domain),
-                    dns.resolve4(domain).catch(() => []),
-                    duckdns.publicIp(),
-                ]);
-
-                onLine(
-                    reachable.ok
-                        ? `  - This machine serves the challenge correctly: nginx answered for ${domain} over the internal network.`
-                        : `  - This machine did not serve the challenge: ${reachable.error ?? 'nginx did not return it'}. That is the thing to fix first.`,
-                );
-                onLine(
-                    resolvedNow.length
-                        ? `  - ${domain} resolves to ${resolvedNow.join(', ')}${ip ? `, and this connection looks like ${ip} from outside` : ''}.`
-                        : `  - ${domain} does not resolve yet. DNS can take a few minutes to spread.`,
-                );
-                if (reachable.ok && ip && resolvedNow.includes(ip)) {
-                    onLine('  - So the name points here and this machine answers. What is missing is the route from the');
-                    onLine('    internet to it: forward TCP port 80 (and 443) on your router to this machine, then press');
-                    onLine('    "Retry HTTPS" on the service. Some ISPs block port 80 on home connections, which looks the same.');
-                }
-
-                onLine('');
-                onLine(`${plan.service.label} is live on http://${domain} in the meantime.`);
-                return { domain, url: `http://${domain}`, certificate: false };
-            }
-        }
-        // The vhost is rendered without a 443 block until the certificate is on
-        // disk, so it has to be written again now that it is.
-        nginx.writeAll(loadProxies(), loadNodeConfig(), renderOptions());
-        await nginx.reload();
-
-        onLine(`Done. https://${domain} is live.`);
-        return { domain, url: `https://${domain}`, certificate: true };
+        onLine(`Done. https://${record.domain} is live. Cloudflare serves the HTTPS; it can take a minute for a brand-new name to resolve everywhere.`);
+        return { domain: record.domain, url: `https://${record.domain}` };
     });
 
-    sendJson(res, 202, { ok: true, jobId: job.id, domain });
+    sendJson(res, 202, { ok: true, jobId: job.id, domain: wanted });
 });
 
 // ------------------------------------------------------------------- mining --
@@ -2107,7 +1854,7 @@ async function testnetMiningStatus() {
         version: await dockerctl.imageVersion(BRIDGE_TESTNET_CONTAINER).catch(() => null),
         blockers: [],
         readiness: { ready: !reason, reason },
-        publicIp: await duckdns.publicIp(),
+        publicIp: await network.publicIp(),
         lan: await network.primaryLanAddress(),
         extraSubnets: loadManagerConfig().scan.extraSubnets,
     };
@@ -2156,7 +1903,7 @@ route('GET', /^\/api\/mining$/, async (req, res, match, url) => {
         readiness: await nodeReadiness(),
         // Both addresses: a miner on the same network wants the LAN one, and
         // anything outside wants the public one through a forwarded port.
-        publicIp: await duckdns.publicIp(),
+        publicIp: await network.publicIp(),
         lan: await network.primaryLanAddress(),
         extraSubnets: loadManagerConfig().scan.extraSubnets,
         ...(await miningEconomics(stats)),
@@ -2190,13 +1937,15 @@ async function applyProxyState(enabled, onLine = () => {}) {
     saveManagerConfig(mgr);
 
     if (!enabled) {
-        onLine('Stopping the reverse proxy and releasing ports 80 and 443.');
-        await dockerctl.compose(['rm', '-sf', 'proxy'], { onLine, profile: 'proxy', timeoutMs: 5 * 60_000 });
+        onLine('Stopping the reverse proxy and the tunnel connector. Every public name stops answering.');
+        await dockerctl.compose(['rm', '-sf', 'proxy', 'cloudflared'], { onLine, profile: 'proxy', timeoutMs: 5 * 60_000 });
         return;
     }
     nginx.writeAll(loadProxies(), loadNodeConfig(), renderOptions());
-    onLine('Starting the reverse proxy on ports 80 and 443.');
-    await dockerctl.compose(['up', '-d', 'proxy'], { onLine, profile: 'proxy', timeoutMs: 5 * 60_000 });
+    // The connector only with a run token; connecting the Cloudflare account writes one.
+    const services = lifecycle.UNITS.proxy.services;
+    onLine(services.includes('cloudflared') ? 'Starting the reverse proxy and the tunnel connector.' : 'Starting the reverse proxy. The tunnel connector starts once Cloudflare is connected.');
+    await dockerctl.compose(['up', '-d', '--no-deps', ...services], { onLine, profile: 'proxy', timeoutMs: 5 * 60_000 });
 }
 
 /**
@@ -3501,113 +3250,13 @@ route('POST', /^\/api\/apps\/(kachat|desktop|nextcloud)\/(start|stop|restart)$/,
     sendJson(res, 202, { ok: true, jobId: job.id });
 });
 
-// ------------------------------------------------------------------ duckdns --
-
-route('GET', /^\/api\/duckdns$/, async (req, res) => {
-    const cfg = loadManagerConfig();
-    sendJson(res, 200, {
-        duckdns: {
-            ...cfg.duckdns,
-            token: cfg.duckdns.token ? '********' : '',
-            // Derived, not read back: a config saved before refreshing became
-            // automatic can hold enabled:false while both fields are filled in,
-            // and the scheduler goes by the fields.
-            enabled: duckdns.isConfigured(cfg.duckdns),
-        },
-        publicIp: await duckdns.publicIp(),
-    });
-});
-
-route('PUT', /^\/api\/duckdns$/, async (req, res) => {
-    const body = await readBody(req);
-    const cfg = loadManagerConfig();
-    const domains = duckdns.normalizeDomains(body.domains ?? cfg.duckdns.domains);
-
-    for (const d of domains) {
-        if (!/^[a-z0-9-]{1,63}$/.test(d)) return fail(res, 400, `"${d}" is not a valid DuckDNS subdomain.`);
-    }
-
-    cfg.duckdns.domains = domains.join(',');
-    // An unchanged masked token must not overwrite the stored one.
-    if (typeof body.token === 'string' && body.token && !/^\*+$/.test(body.token)) cfg.duckdns.token = body.token.trim();
-    cfg.duckdns.intervalMinutes = Math.max(5, Number(body.intervalMinutes) || 5);
-
-    // Refreshing is not opt-in -- filling both fields in is the decision. Half
-    // a pair is a mistake worth naming, rather than a silent no-op to save.
-    if (domains.length && !cfg.duckdns.token) return fail(res, 400, 'A DuckDNS token is required.');
-    if (!domains.length && cfg.duckdns.token) return fail(res, 400, 'Enter at least one DuckDNS subdomain.');
-    cfg.duckdns.enabled = duckdns.isConfigured(cfg.duckdns);
-
-    saveManagerConfig(cfg);
-    duckdns.scheduleFromConfig(log);
-    sendJson(res, 200, { ok: true, domains: domains.map((d) => `${d}.duckdns.org`) });
-});
-
 // -------------------------------------------------------- admin password --
 
-/**
- * What the renderer needs to know about the world outside this machine.
- *
- * Only the ports so far, and only because a redirect has to name one: nginx
- * knows what it binds, but not what a router put in front of it.
- */
+/** What the renderer needs besides the proxy hosts. */
 const renderOptions = () => ({
-    publicHttpsPort: loadManagerConfig().proxy.publicHttpsPort ?? 443,
     // The indexer names whose names paths go to that network's .kachat Domains server.
     namesOn: { kachat: kachatDomains.routed('mainnet'), 'kachat-testnet': kachatDomains.routed('testnet') },
-    // The Cloudflare Tunnel's names, each serving a copy of one of the domains.
-    tunnel: cloudflare.loadConfig().hostnames,
 });
-
-/**
- * The DuckDNS credentials for a name, when it is one and the panel holds the
- * token.
- *
- * A DuckDNS name is exactly the case where DNS-01 is both possible and worth
- * preferring: it proves the name with a TXT record instead of an inbound
- * request, so it works on a network where port 80 already belongs to something
- * else, and it keeps working if that ever changes.
- */
-/**
- * The DuckDNS credentials for proving ownership of a name over DNS, or null
- * when that cannot be done for this name.
- *
- * It cannot be done for a name *under* an account. DuckDNS's API sets the TXT
- * record on the account itself, so the challenge for sub.testing.duckdns.org
- * would be answered at _acme-challenge.testing.duckdns.org while Let's Encrypt
- * asks at _acme-challenge.sub.testing.duckdns.org. That is not a wildcard
- * question or a timing one: the record is put in the wrong place, and every
- * such request would fail after burning a rate limit. Those names prove
- * themselves over port 80 instead.
- */
-function duckdnsFor(domain) {
-    const label = duckdns.accountLabel(domain);
-    if (!label || !String(domain || '').toLowerCase().endsWith('.duckdns.org')) return null;
-    const token = loadManagerConfig().duckdns.token;
-    if (!token) return null;
-    // A name under an account (desktop.testing.duckdns.org): DuckDNS can only set the TXT
-    // record on the account, which is exactly where Let's Encrypt looks for a *wildcard*
-    // (_acme-challenge.testing.duckdns.org for *.testing.duckdns.org). So these get a
-    // wildcard certificate over DNS-01 -- no port 80 needed, which matters when 80/443 on
-    // the router belong to another machine.
-    if (duckdns.isSubdomain(domain)) return { subdomain: label, token, wildcard: `*.${label}.duckdns.org` };
-    return { subdomain: label, token };
-}
-
-/** The account behind a name, whether or not DNS-01 is possible for it. */
-const duckdnsAccountFor = (domain) =>
-    String(domain || '').toLowerCase().endsWith('.duckdns.org') ? duckdns.accountLabel(domain) : null;
-
-/**
- * Renewal runs over every certificate at once, so it needs the credentials if
- * any of them was issued against a DuckDNS name. One token covers them all.
- */
-const anyDuckdnsCredentials = () => {
-    const dd = loadManagerConfig().duckdns;
-    // Only the token is passed. The hook takes the name from certbot, so one
-    // token covers every DuckDNS certificate on the account.
-    return dd.token ? { subdomain: duckdns.normalizeDomains(dd.domains)[0] ?? '', token: dd.token } : null;
-};
 
 /** Where the panel's own port is published, which .env records. */
 const managerBind = () => (readEnvFile().MANAGER_BIND || '0.0.0.0').trim();
@@ -3845,93 +3494,11 @@ route('POST', /^\/api\/services\/([a-z0-9-]+)\/uninstall$/, async (req, res, mat
             const mgr = loadManagerConfig();
             mgr.proxy.enabled = false;
             saveManagerConfig(mgr);
-            onLine('The proxy is switched off. Your domains and certificates are untouched.');
+            onLine('Tunnel & domains is switched off. Your names, the services on them and the Cloudflare connection are untouched.');
         }
         return removed;
     });
     sendJson(res, 202, { ok: true, jobId: job.id });
-});
-
-// ------------------------------------------------------- cloudflare tunnel --
-// lib/cloudflare.js: the token, the public hostnames and what each one serves.
-// The container itself installs, starts and stops through /api/services like
-// every other unit.
-
-/** The domains a tunnel name can serve: every name under Proxy & domains with something on it. */
-const publishedDomains = () => [...new Set(loadProxies().map((p) => p.domain))].sort();
-
-route('GET', /^\/api\/cloudflare$/, async (req, res) => {
-    const state = await lifecycle.status('cloudflare');
-    const domains = publishedDomains();
-    sendJson(res, 200, {
-        state,
-        token: cloudflare.tokenInfo(),
-        origin: cloudflare.TUNNEL_ORIGIN,
-        connection: state?.running ? await cloudflare.connection() : null,
-        proxyRunning: proxyEnabled() && (await dockerctl.containerState(dockerctl.PROXY_CONTAINER)).running,
-        domains,
-        hostnames: cloudflare.loadConfig().hostnames.map((h) => ({ ...h, servesMissing: !domains.includes(h.serves) })),
-    });
-});
-
-route('PUT', /^\/api\/cloudflare\/token$/, async (req, res) => {
-    const body = await readBody(req);
-    let info;
-    try {
-        info = cloudflare.saveToken(body.token);
-    } catch (err) {
-        return fail(res, 400, err.message);
-    }
-    // compose reads the token when it creates the container, so a running tunnel
-    // only picks up a new one by being recreated.
-    if (!(await lifecycle.status('cloudflare'))?.running) {
-        return sendJson(res, 200, { ok: true, message: 'Token saved. The switch in the sidebar starts the tunnel.', token: info });
-    }
-    const job = jobs.start('Use the new Cloudflare tunnel token', async (onLine) => {
-        onLine(`Token saved for tunnel ${info.tunnelId}. Recreating cloudflared so it uses it.`);
-        await dockerctl.compose(['up', '-d', '--no-deps', '--force-recreate', 'cloudflared'], {
-            onLine,
-            profile: 'cloudflare',
-            timeoutMs: 5 * 60_000,
-        });
-    });
-    sendJson(res, 202, { ok: true, jobId: job.id });
-});
-
-route('DELETE', /^\/api\/cloudflare\/token$/, async (req, res) => {
-    if ((await lifecycle.status('cloudflare'))?.running) return fail(res, 409, 'Stop the tunnel first: its switch is in the sidebar.');
-    cloudflare.forgetToken();
-    sendJson(res, 200, { ok: true });
-});
-
-/** Rewrites nginx for the tunnel's names and reloads it when it is running. */
-async function applyTunnelNames() {
-    nginx.writeAll(loadProxies(), loadNodeConfig(), renderOptions());
-    if (proxyEnabled()) await nginx.reload();
-}
-
-route('POST', /^\/api\/cloudflare\/hostnames$/, async (req, res) => {
-    const body = await readBody(req);
-    let entry;
-    try {
-        entry = cloudflare.addHostname({ hostname: body.hostname, serves: body.serves }, publishedDomains());
-    } catch (err) {
-        return fail(res, 400, err.message);
-    }
-    try {
-        await applyTunnelNames();
-    } catch (err) {
-        cloudflare.removeHostname(entry.id);
-        nginx.writeAll(loadProxies(), loadNodeConfig(), renderOptions());
-        return fail(res, 400, `nginx rejected the configuration: ${err.message}`);
-    }
-    sendJson(res, 200, { ok: true, hostname: entry });
-});
-
-route('DELETE', /^\/api\/cloudflare\/hostnames\/([a-f0-9]{12})$/, async (req, res, match) => {
-    if (!cloudflare.removeHostname(match[1])) return fail(res, 404, 'No such hostname.');
-    await applyTunnelNames();
-    sendJson(res, 200, { ok: true });
 });
 
 // --------------------------------------------------------- .kachat names ----
@@ -4808,21 +4375,13 @@ route('POST', /^\/api\/system\/teardown$/, async (req, res) => {
     }
 });
 
-route('POST', /^\/api\/duckdns\/update$/, async (req, res) => {
-    try {
-        sendJson(res, 200, await duckdns.update());
-    } catch (err) {
-        fail(res, 400, err.message);
-    }
-});
-
 // --------------------------------------------------------------- port check --
 
 route('GET', /^\/api\/portcheck$/, async (req, res, match, url) => {
     const port = Number(url.searchParams.get('port'));
     if (!Number.isInteger(port) || port < 1 || port > 65535) return fail(res, 400, 'Invalid port.');
 
-    const ip = url.searchParams.get('ip') || (await duckdns.publicIp());
+    const ip = url.searchParams.get('ip') || (await network.publicIp());
     if (!ip) return fail(res, 502, 'Could not determine this machine\'s public IP address.');
 
     const open = await new Promise((resolve) => {
@@ -4868,7 +4427,7 @@ route('POST', /^\/api\/node\/public-check$/, async (req, res) => {
     const port = ports(cfg).p2p;
     const exposed = Boolean(cfg.expose.p2p);
 
-    const ip = await duckdns.publicIp();
+    const ip = await network.publicIp();
     if (!ip) return fail(res, 502, 'Could not work out this connection\'s public address.');
 
     const [probe, geo, snapshot] = await Promise.all([
@@ -5020,6 +4579,91 @@ function migrateExposeModel(cfg) {
     }
 }
 
+/**
+ * Publishing used to mean a free DuckDNS name kept pointed at the house, ports
+ * 80 and 443 forwarded on the router, and a Let's Encrypt certificate. Now it
+ * is a Cloudflare Tunnel on a domain you own, and nothing else (lib/cloudflare.js).
+ * Run once, on the first start of this version:
+ *
+ *  - A name that was on the tunnel as a copy of another domain ("serves the same
+ *    as kachat.duckdns.org") becomes a name of its own, with those services on it.
+ *  - Every DuckDNS name goes, with the services on it. Nothing can reach one any
+ *    more: the proxy no longer listens on 80 or 443.
+ *  - A name of your own that was served over 80/443 stays on the list, waiting
+ *    to be put on the tunnel when the Cloudflare account is connected.
+ *  - The DuckDNS token and the port settings are dropped from manager.json:
+ *    they can hold a token for a feature that no longer exists.
+ *
+ * Certificates and old configuration stay on disk under proxy/. Recreating the
+ * proxy so it lets go of 80 and 443 happens once the stack is up (closeOldPorts).
+ */
+function migrateToTunnel() {
+    const mgr = loadManagerConfig();
+    if (mgr.publishing === 'tunnel') return;
+
+    let proxies = loadProxies();
+    let domains = loadDomains();
+
+    const tunnelCfg = cloudflare.loadConfig();
+    for (const h of tunnelCfg.hostnames ?? []) {
+        if (!domains.some((d) => d.domain === h.hostname)) {
+            // Made in the dashboard: its route and DNS record already send it into the tunnel.
+            domains.push({ id: nginx.newId(), domain: h.hostname, tunnel: 'on', addedAt: h.addedAt ?? new Date().toISOString() });
+        }
+        if (!proxies.some((p) => p.domain === h.hostname)) {
+            for (const p of proxies.filter((x) => x.domain === h.serves)) proxies.push({ ...structuredClone(p), id: nginx.newId(), domain: h.hostname });
+        }
+        log(`publishing: ${h.hostname} now has the services of ${h.serves} on it`);
+    }
+    if (tunnelCfg.hostnames) {
+        delete tunnelCfg.hostnames;
+        writeJson(cloudflare.CONFIG_FILE, tunnelCfg, { mode: 0o600 });
+    }
+
+    const duck = (name) => /(^|\.)duckdns\.org$/i.test(String(name ?? ''));
+    for (const d of domains.filter((x) => duck(x.domain))) log(`publishing: removed ${d.domain} (DuckDNS)`);
+    domains = domains.filter((d) => !duck(d.domain)).map(({ ssl, ...d }) => ({ ...d, tunnel: d.tunnel ?? 'pending' }));
+    // A host whose htpasswd file nginx.writeAll will now remove, for a name that is gone.
+    proxies = proxies.filter((p) => !duck(p.domain)).map(({ ssl, ...p }) => p);
+
+    saveDomains(domains);
+    saveProxies(proxies);
+
+    delete mgr.duckdns;
+    if (mgr.proxy) mgr.proxy = { enabled: mgr.proxy.enabled ?? null };
+    mgr.publishing = 'tunnel';
+    saveManagerConfig(mgr);
+    const env = readEnvFile();
+    if (env.HTTP_PORT !== undefined || env.HTTPS_PORT !== undefined) updateEnvFile({ HTTP_PORT: '', HTTPS_PORT: '' });
+    log('publishing: Cloudflare Tunnel only (DuckDNS, ports 80/443 and Let\'s Encrypt are gone)');
+}
+
+/**
+ * The proxy container of an older version still holds ports 80 and 443: a
+ * published port is fixed when a container is created, and the compose file no
+ * longer asks for them. Recreated once, here, so the ports close. Its configs
+ * have already been rewritten for the tunnel listener, so it comes back serving.
+ */
+async function closeOldPorts() {
+    const published = await dockerctl.publishedPorts(dockerctl.PROXY_CONTAINER).catch(() => []);
+    if (!published.length) return;
+    // The stack's compose file is what a recreate reads. One from before this version still
+    // publishes 80 and 443, and recreating from it would change nothing, on every start.
+    if (/HTTPS?_PORT/.test(fs.readFileSync(COMPOSE_FILE, 'utf8'))) {
+        log('publishing: the stack\'s docker-compose.yml still publishes 80 and 443; the proxy keeps them until it is updated');
+        return;
+    }
+    jobs.start('Close ports 80 and 443 (the tunnel replaces them)', async (onLine) => {
+        onLine('This version publishes only through the Cloudflare Tunnel, so the reverse proxy no longer needs ports 80 and 443.');
+        await dockerctl.compose(['up', '-d', '--no-deps', '--force-recreate', ...lifecycle.UNITS.proxy.services], {
+            onLine,
+            profile: 'proxy',
+            timeoutMs: 5 * 60_000,
+        });
+        onLine('Done. You can remove the 80 and 443 forwarding rules from your router.');
+    });
+}
+
 async function bootstrap() {
     ensureDirs();
     protectManagerConfig();
@@ -5035,16 +4679,13 @@ async function bootstrap() {
         const seeded = [];
         for (const proxy of loadProxies()) {
             if (seeded.some((d) => d.domain === proxy.domain)) continue;
-            seeded.push({
-                id: nginx.newId(),
-                domain: proxy.domain,
-                ssl: { mode: proxy.ssl?.mode ?? 'none', email: proxy.ssl?.email ?? '' },
-                addedAt: new Date().toISOString(),
-            });
+            seeded.push({ id: nginx.newId(), domain: proxy.domain, tunnel: 'pending', addedAt: new Date().toISOString() });
         }
         saveDomains(seeded);
         if (seeded.length) log(`domains: adopted ${seeded.length} from existing proxy hosts`);
     }
+
+    migrateToTunnel();
 
     const cfg = loadNodeConfig();
     migrateExposeModel(cfg);
@@ -5104,7 +4745,7 @@ async function bootstrap() {
 
     // Decide the proxy's state once, for installs that predate it being
     // optional: if it is already running or there are hosts configured, it was
-    // wanted. Otherwise it stays off and leaves ports 80 and 443 alone.
+    // wanted. Otherwise it stays off until a name is published.
     const mgr = loadManagerConfig();
     if (mgr.proxy.enabled === null) {
         const proxyState = await dockerctl.containerState(dockerctl.PROXY_CONTAINER);
@@ -5113,9 +4754,10 @@ async function bootstrap() {
         log(`reverse proxy: ${mgr.proxy.enabled ? 'on (already in use)' : 'off (nothing configured)'}`);
     }
 
+    if (mgr.proxy.enabled) await closeOldPorts().catch((e) => log('could not close the old proxy ports:', e.message));
+
     syncProgress.start(log);
     testnetSync.start(log);
-    duckdns.scheduleFromConfig(log);
     scheduleExternalIpWatch(log);
     backup.scheduleBackup(log);
     startHashrateWatch();
@@ -5128,20 +4770,6 @@ async function bootstrap() {
     // .kachat offer refund keeper: every 6 h per network with a running names server.
     refundKeeper.start({ alert: (text) => botSendMessage(text), log });
 
-    // Certificates are valid for 90 days; a daily attempt is what certbot's own
-    // packaging recommends and is a no-op until one is close to expiry.
-    const renewTimer = setInterval(
-        () => {
-            if (jobs.busy) return;
-            if (!loadProxies().some((p) => p.ssl?.mode === 'letsencrypt')) return;
-            jobs.start('Automatic certificate renewal', async (onLine) => {
-                await certbot.renew({ onLine, duckdns: anyDuckdnsCredentials() });
-                await nginx.reload().catch(() => {});
-            });
-        },
-        24 * 60 * 60 * 1000,
-    );
-    renewTimer.unref?.();
 }
 
 bootstrap()

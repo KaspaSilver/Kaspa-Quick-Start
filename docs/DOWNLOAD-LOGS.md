@@ -57,7 +57,7 @@ Containers: kaspa-node-kachat  image=<image@digest>  status=Up 3 hours  restarts
 Replace values with `[redacted]`, keeping the key name, for:
 
 - every `.env` value the panel knows is secret: `KACHAT_PUSH_SECRET` / `INTERNAL_PUSH_SECRET`,
-  `KACHAT_WEBPUSH_VAPID_PRIVATE_KEY`, `CHANGENOW_API_KEY`, database passwords, DuckDNS token,
+  `KACHAT_WEBPUSH_VAPID_PRIVATE_KEY`, `CHANGENOW_API_KEY`, database passwords, Cloudflare tokens,
   panel password hashes, the KasSigner / bot keys — match by **value** (the literal secret
   strings from `.env` and the store), not only by name, so a secret echoed in any line is caught;
 - `x-internal-secret:` and `Authorization:` header values, `Bearer …` tokens, JWT-looking strings;

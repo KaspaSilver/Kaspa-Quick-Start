@@ -63,7 +63,6 @@ copy_stack_items() {
         rm -rf "${STACK_DIR:?}/${item:?}"
         cp -R "$REPO/$item" "$STACK_DIR/$item"
     done
-    cp "$REPO/proxy/nginx-base.conf" "$STACK_DIR/proxy/nginx-base.conf" 2>/dev/null || true
 }
 
 link_repo() {

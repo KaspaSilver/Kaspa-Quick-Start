@@ -913,6 +913,20 @@ table.instances td:last-child { width: 40px; text-align: right; }
 .proxy-tools { align-items: center; gap: 8px; }
 .proxy-tools .spacer { flex: 1; }
 
+/* Tunnel & domains: the name step (a word, a dot, one of your domains), the
+   names list, and the Setup API token guide, which is followed side by side
+   with Cloudflare's own form, so its steps get room. */
+.setup-name { align-items: center; gap: 6px; flex-wrap: nowrap; }
+.setup-name input { flex: 1 1 8em; min-width: 0; }
+.setup-name select { flex: 1 1 10em; min-width: 0; }
+#names-list small.error { display: block; margin: 2px 0 0; }
+#tab-proxy h3.sub { margin: 18px 0 4px; font-size: 13px; }
+.guide .steps li { margin: 9px 0; line-height: 1.5; }
+.guide p { margin: 6px 0; }
+.perm-table { border-collapse: collapse; margin: 8px 0 6px; font-size: 13px; }
+.perm-table td { padding: 4px 14px 4px 0; border-bottom: 1px solid var(--line); }
+.perm-table td:last-child { color: var(--accent); font-weight: 600; }
+
 /* The one thing the panel cannot do for you, said before the table rather than
    after an hour of building. */
 .notice {
@@ -1047,11 +1061,6 @@ button.big { font-size: 15px; padding: 11px 22px; }
 .node-banner { margin-bottom: 16px; }
 .node-banner p:last-child { margin-bottom: 0; }
 
-.port-result { margin: 10px 0 0; font-size: 13px; }
-.port-result li { margin: 3px 0; list-style: none; }
-.port-result li::before { content: '· '; color: var(--muted); }
-.port-result li.ok::before { content: '✓ '; color: var(--ok); }
-.port-result li.bad::before { content: '✗ '; color: var(--danger); }
 
 /* ----------------------------------------------------------- port toggles */
 
@@ -1112,8 +1121,6 @@ button.big { font-size: 15px; padding: 11px 22px; }
 table.ports td.toggle { width: 56px; }
 table.ports td.note { color: var(--muted); font-size: 12.5px; font-family: inherit; }
 /* Cloudflare hostnames: names, not port numbers, so the first column takes what it needs. */
-table.cf-hosts td:first-child { width: auto; }
-table.cf-hosts td:last-child { width: 1%; white-space: nowrap; }
 
 /* ------------------------------------------------------------ sync detail */
 
@@ -2497,7 +2504,7 @@ body:not(.testnet-view) [data-testnet-only]:not(.nav-item):not(.nav-row) { displ
 .ask-detail:empty { display: none; }
 .ask-actions { justify-content: flex-end; }
 
-/* Proxy & domains: the LAN address beside the page title. */
+/* Tunnel & domains: the LAN address beside the page title. */
 .topbar-lan {
     display: inline-flex;
     align-items: center;

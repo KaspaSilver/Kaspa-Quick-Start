@@ -12,8 +12,7 @@ import { jobContext } from './jobcontext.js';
 const LIVE = new Set();
 
 /**
- * Ends the processes a job started. SIGTERM, because docker and certbot both
- * clean up on it; a build that is killed leaves its finished layers in the
+ * Ends the processes a job started. SIGTERM, because docker cleans up on it; a build that is killed leaves its finished layers in the
  * cache, so starting again picks up where this left off rather than at the
  * beginning.
  */

@@ -233,24 +233,13 @@
 
       <p class="nav-group-title">Network</p>
       <div class="nav-row">
-        <button class="nav-item" data-tab="proxy" title="Proxy &amp; domains">
+        <button class="nav-item" data-tab="proxy" title="Tunnel &amp; domains">
           <span class="nav-dot" data-health="proxy"></span>
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 010 18a15 15 0 010-18z"/></svg>
-          <span class="label">Proxy &amp; domains</span>
+          <span class="label">Tunnel &amp; domains</span>
         </button>
-        <label class="switch mini" title="Start or stop the reverse proxy">
-          <input type="checkbox" data-service="proxy" aria-label="Start or stop the reverse proxy">
-          <span class="track"></span>
-        </label>
-      </div>
-      <div class="nav-row">
-        <button class="nav-item" data-tab="cloudflare" title="Cloudflare">
-          <span class="nav-dot" data-health="cloudflare"></span>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18.5a4.5 4.5 0 01-.7-8.95 6 6 0 0111.5 1.1A3.9 3.9 0 0117.5 18.5z"/><path d="M9.5 14l2 2 3.5-3.5"/></svg>
-          <span class="label">Cloudflare</span>
-        </button>
-        <label class="switch mini" title="Start or stop the Cloudflare Tunnel">
-          <input type="checkbox" data-service="cloudflare" aria-label="Start or stop the Cloudflare Tunnel">
+        <label class="switch mini" title="Start or stop the reverse proxy and the tunnel">
+          <input type="checkbox" data-service="proxy" aria-label="Start or stop the reverse proxy and the tunnel">
           <span class="track"></span>
         </label>
       </div>
@@ -271,7 +260,7 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
       </button>
       <h1 id="page-title">Dashboard</h1>
-      <!-- Proxy & domains only: the address other machines on the network reach this one at. -->
+      <!-- Tunnel & domains only: the address other machines on the network reach this one at. -->
       <span class="topbar-lan" id="topbar-lan" hidden>
         <span class="muted">Local IP</span>
         <code id="topbar-lan-ip">…</code>
@@ -507,7 +496,7 @@
               <span class="pill">recommended</span>
             </label>
             <label class="check"><input type="checkbox" id="cfg-flag-archival"> Archival node <span class="muted">(keeps all history, large disk)</span></label>
-            <label class="check" title="Passes --unsaferpc. kaspad then accepts its operator-only RPC calls (shut the node down, ban, unban and add peers) from any RPC client. Only for a node whose RPC is never reachable from other machines: do not combine it with publishing gRPC or wRPC on the network or through Proxy &amp; domains.">
+            <label class="check" title="Passes --unsaferpc. kaspad then accepts its operator-only RPC calls (shut the node down, ban, unban and add peers) from any RPC client. Only for a node whose RPC is never reachable from other machines: do not combine it with publishing gRPC or wRPC on the network or through Tunnel &amp; domains.">
               <input type="checkbox" id="cfg-flag-unsaferpc"> Enable unsafe RPC calls
               <span class="pill bad">unsafe</span>
             </label>
@@ -1710,7 +1699,7 @@
               The APIs already work for anything running alongside them here. Only
               publish this if you have apps connecting from another machine. The chat
               indexer API is not offered here: its raw port also carries maintenance
-              routes. To reach chat from outside, use Proxy &amp; domains, which
+              routes. To reach chat from outside, use Tunnel &amp; domains, which
               forwards only the public routes.
             </p>
             <label class="check"><input type="checkbox" id="kachat-pub-api"> KaPosts REST API on 3080</label>
@@ -2450,9 +2439,17 @@
 </section>
 
     <!-- ----------------------------------------------------------- proxy -->
+    <!--
+      Tunnel & domains (lib/cloudflare.js, lib/nginx.js): the only way anything here
+      goes on the internet. A Cloudflare Tunnel carries names on a domain you own
+      in to the reverse proxy, which decides what each one serves. No port is
+      opened on this machine or forwarded on the router, and there is no
+      certificate to look after: Cloudflare serves HTTPS.
+    -->
     <section id="tab-proxy" class="tab">
-      <nav class="subnav" aria-label="Proxy and domains">
+      <nav class="subnav" aria-label="Tunnel and domains">
         <button class="subtab-btn active" data-subtab="proxy-overview">Overview</button>
+        <button class="subtab-btn" data-subtab="proxy-token">Setup API token</button>
         <button class="subtab-btn" data-subtab="proxy-advanced">Advanced</button>
         <button class="subtab-btn" data-subtab="proxy-restart">Restart</button>
         <button class="subtab-btn" data-subtab="proxy-log">Log</button>
@@ -2475,76 +2472,77 @@
       <article class="card proxy-intro">
         <div class="toggle-row">
           <div class="toggle-text">
-            <strong>Proxy and domains</strong>
+            <strong>Tunnel and domains</strong>
             <span class="muted">
-              Gives your node a proper web address instead of an IP and a port
-              number, with free HTTPS.
+              Gives your node and apps addresses on a domain you own, like
+              <code>node.yourdomain.com</code>, with HTTPS.
             </span>
           </div>
           <span id="proxy-state" class="tag">off</span>
         </div>
         <p class="hint">
-          It takes ports 80 and 443 on this machine, so it stays off until you
-          ask for it. Leave it off if something else here already uses them.
-          Switch it on to add domains and certificates.
+          A Cloudflare Tunnel carries them in: a small connector here dials out to
+          Cloudflare, and visitors come back through it. Nothing is opened on this
+          machine or forwarded on your router, your home address stays out of DNS,
+          and Cloudflare serves HTTPS, so there is no certificate to renew. Switch
+          it on to connect your Cloudflare account.
         </p>
         <p class="error" id="proxy-error" hidden></p>
       </article>
 
       <p class="verdict bad" id="unsafe-rpc-notice-proxy" hidden></p>
       <div class="grid" id="proxy-config">
+        <!-- Before an account is connected: what this needs. How to make it is the next tab. -->
+        <article class="card span2" id="tunnel-setup" hidden>
+          <h3>Connect your Cloudflare account</h3>
+          <p class="muted">
+            You need a domain on Cloudflare (the free plan is enough) and an API token that
+            lets this panel create the tunnel and a DNS record for each name you publish.
+          </p>
+          <div class="notice" id="tunnel-legacy" hidden>
+            <p>
+              <strong>Your tunnel from the Cloudflare dashboard is still running</strong>
+              (<code id="tunnel-legacy-id">–</code>), and the names it already carries keep working.
+              Connect an API token from the same account and the panel takes that tunnel over, so
+              names can be added and removed here instead of in the dashboard.
+            </p>
+          </div>
+          <div class="row">
+            <button type="button" class="ghost" data-goto-subtab="proxy-token">How to make the API token</button>
+          </div>
+          <label class="inline">API token
+            <input id="tunnel-token" type="password" size="44" autocomplete="off" spellcheck="false" placeholder="paste it here">
+          </label>
+          <div class="row">
+            <button type="button" id="tunnel-connect" class="primary">Connect</button>
+          </div>
+          <p class="hint">
+            The token stays on this machine, readable only by this panel. It is used to set
+            up the tunnel and the DNS record for each name you publish, and nothing else.
+          </p>
+        </article>
+
+        <!-- Once connected: the tunnel's health. -->
+        <article class="card span2" id="tunnel-live" hidden>
+          <div class="node-head">
+            <h3>Cloudflare Tunnel</h3>
+            <span id="tunnel-state" class="tag">–</span>
+          </div>
+          <dl class="kv">
+            <div><dt>Cloudflare account</dt><dd id="tunnel-account">–</dd></div>
+            <div><dt>Tunnel</dt><dd id="tunnel-name" class="mono">–</dd></div>
+            <div class="wide"><dt>Domains</dt><dd id="tunnel-zones">–</dd></div>
+          </dl>
+        </article>
+
         <article class="card span2">
           <h3>Public addresses</h3>
           <p class="muted">
-            Everything here can have a web address of its own.
-            <strong>Set up</strong> walks the whole thing: a free DuckDNS name,
-            whatever the service needs switched on, the nginx configuration, and
-            an HTTPS certificate. One name serves one service.
+            Everything here can have an address of its own on your domain.
+            <strong>Set up</strong> walks the whole thing: the name and its DNS record,
+            whatever the service needs switched on, and the proxy configuration. Several
+            services can share one name, each on its own path.
           </p>
-          <!--
-            The one requirement nothing here can arrange for you, and the reason
-            most setups fail at the certificate. It is stated before the table
-            rather than in the failure, because by then an hour of build has
-            gone by.
-          -->
-          <div class="notice" id="ports-notice">
-            <p>
-              <strong>The outside has to reach this machine somewhere.</strong>
-              By default that means forwarding ports 80 and 443 to it on your
-              router. Nothing outside your network can open these addresses
-              until something does.
-            </p>
-            <p>
-              If 80 and 443 already belong to something else, forward two other
-              outside ports to this machine instead and set them here. The check
-              below then tests those rather than 80 and 443. Certificates work
-              either way: a DuckDNS name is proved with a DNS record rather than
-              an inbound request, so it needs no open port at all. Addresses
-              then carry the port, as
-              <code>https://yourname.duckdns.org:8443</code>.
-            </p>
-            <div class="row">
-              <label class="inline">Outside http <input type="number" id="ports-http" min="1" max="65535" value="80" size="5"></label>
-              <label class="inline">Outside https <input type="number" id="ports-https" min="1" max="65535" value="443" size="5"></label>
-              <span class="muted">what the internet dials</span>
-            </div>
-            <div class="row">
-              <label class="inline">On this machine <input type="number" id="ports-bind-http" min="1" max="65535" value="80" size="5"></label>
-              <label class="inline">and <input type="number" id="ports-bind-https" min="1" max="65535" value="443" size="5"></label>
-              <span class="muted">what nginx binds here, and what a forwarding rule points at</span>
-              <button id="ports-save" class="ghost">Save ports</button>
-            </div>
-            <p class="hint">
-              Usually the same numbers on both rows. They differ when a router
-              maps one to the other, and when it cannot, set this row to match
-              the rule. Changing what nginx binds restarts the proxy.
-            </p>
-            <div class="row">
-              <button id="ports-check" class="ghost">Check from outside</button>
-              <span class="muted" id="ports-check-note">Asks check-host.net to try connecting to your address. It sees your public IP.</span>
-            </div>
-            <div id="ports-check-result" hidden></div>
-          </div>
           <table class="proxies publish-table">
             <thead>
               <tr><th>Service</th><th>Status</th><th>Public address</th><th></th></tr>
@@ -2552,19 +2550,122 @@
             <tbody id="publish-body"></tbody>
           </table>
           <p class="hint">
-            A service that is switched off can still be given an address: nginx
-            serves it either way and it starts answering the moment the service
-            does.
+            A service that is switched off can still be given an address: the proxy
+            serves it either way and it starts answering the moment the service does.
           </p>
+        </article>
+
+        <article class="card span2">
+          <h3>Your names</h3>
+          <p class="muted">
+            Every name on your domain this machine answers for. A name that could not be
+            put on the tunnel says why; fix that in Cloudflare and press <strong>Retry</strong>.
+          </p>
+          <div id="names-list"></div>
           <div class="row proxy-tools">
-            <span class="muted" id="duck-status">–</span>
             <span class="spacer"></span>
-            <button id="dd-now" class="ghost" title="Tell DuckDNS this machine's address right now, rather than waiting for the next check.">Refresh DNS</button>
-            <button id="proxy-renew" class="ghost" title="Renew every Let's Encrypt certificate that is close to expiring.">Renew certificates</button>
-            <button id="proxy-reload" class="ghost" title="Rewrite every vhost from the saved configuration and reload nginx.">Re-apply nginx config</button>
+            <button id="proxy-reload" class="ghost" title="Rewrite every name's configuration from the saved settings and reload nginx.">Re-apply nginx config</button>
+          </div>
+        </article>
+
+        <article class="card span2 danger-zone" id="tunnel-disconnect-card" hidden>
+          <h3>Disconnect</h3>
+          <p class="muted">
+            Takes every name off the internet, removes their DNS records, stops the connector
+            and forgets the token. Your names and the services on them stay listed here, and
+            the tunnel stays in your Cloudflare account, empty: connecting again puts it all back.
+          </p>
+          <div class="row">
+            <button type="button" id="tunnel-disconnect" class="danger">Disconnect from Cloudflare</button>
           </div>
         </article>
       </div>
+      </div>
+
+      <!-- How to make the API token, in the order the fields appear on
+           Cloudflare's form. Kept on its own tab so it can be followed side by
+           side with that form, and found again when a token needs replacing. -->
+      <div id="sub-proxy-token" class="subtab">
+        <div class="grid">
+          <article class="card span2 guide">
+            <h3>Setup API token</h3>
+            <p class="muted">
+              The panel needs a Cloudflare API token to create the tunnel and the DNS
+              record for each name you publish. Making one takes a couple of minutes.
+            </p>
+
+            <h3 class="sub">Before you start</h3>
+            <p>
+              Your domain must be on Cloudflare and show as <strong>Active</strong>. If you
+              bought it somewhere else, add it at
+              <a href="https://dash.cloudflare.com/" target="_blank" rel="noreferrer noopener">dash.cloudflare.com ↗</a>
+              and change its nameservers to the ones Cloudflare gives you.
+            </p>
+
+            <h3 class="sub">Open the form</h3>
+            <ol class="steps">
+              <li>Go to <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noreferrer noopener">dash.cloudflare.com/profile/api-tokens ↗</a>.</li>
+              <li>Select <strong>Create Token</strong>.</li>
+              <li>Under <strong>Custom token</strong>, select <strong>Get started</strong>.</li>
+            </ol>
+            <p class="hint">
+              Do not use the <strong>Global API Key</strong> further down the same page. It
+              controls your whole Cloudflare account, and the panel cannot use it.
+            </p>
+
+            <h3 class="sub">Fill in the form</h3>
+            <ol class="steps">
+              <li>
+                <strong>Token name</strong>: any name, for example <code>kaspa-quick-start</code>.
+              </li>
+              <li>
+                <strong>Permissions</strong>: add these three rows. The first row is already
+                there; select <strong>+ Add more</strong> for each of the others.
+                <table class="perm-table">
+                  <tr><td>Account</td><td>Cloudflare Tunnel</td><td>Edit</td></tr>
+                  <tr><td>Zone</td><td>DNS</td><td>Edit</td></tr>
+                  <tr><td>Zone</td><td>Zone</td><td>Read</td></tr>
+                </table>
+                Type in the middle box to search. If <strong>Cloudflare Tunnel</strong> is not
+                listed, choose <strong>Cloudflare One Connector: cloudflared</strong>.
+              </li>
+              <li>
+                <strong>Account Resources</strong>: <strong>Include</strong>, then
+                <strong>All accounts</strong>, or your own account.
+              </li>
+              <li>
+                <strong>Zone Resources</strong>: this section appears after you add the first
+                <strong>Zone</strong> row. Set it to <strong>Include</strong>, then
+                <strong>Specific zone</strong>, then your domain.
+              </li>
+              <li>
+                <strong>Token expiration</strong>: <strong>No expiration</strong>, or
+                <strong>1 year</strong>. When a token expires, names already published keep
+                working. Adding or removing names needs a new token.
+              </li>
+              <li>
+                <strong>Client IP address filtering</strong>: leave it empty. A filter stops
+                the token working if your home internet address changes.
+              </li>
+            </ol>
+
+            <h3 class="sub">Create and copy</h3>
+            <ol class="steps">
+              <li>Select <strong>Continue to summary</strong>. Check that it lists the three permissions above.</li>
+              <li>Select <strong>Create Token</strong>.</li>
+              <li>
+                Copy the token with its copy button. Copy only the token, not the
+                <code>curl</code> command under it. Cloudflare shows the token once.
+              </li>
+              <li>Open the <strong>Overview</strong> tab, paste the token, and select <strong>Connect</strong>.</li>
+            </ol>
+            <p class="hint">
+              A token is about 40 characters or more, with upper and lower case letters and
+              numbers. If yours contains only <code>0–9</code> and <code>a–f</code>, it is the
+              Global API Key or a token ID, not a token.
+            </p>
+          </article>
+        </div>
       </div>
 
       <!--
@@ -2578,13 +2679,13 @@
           <article class="card span2">
             <h3>Proxy hosts</h3>
             <p class="muted">
-              Every name this machine answers for, and what it forwards each one
-              to. The ones Public addresses set up appear here too. This is the
-              same list, with the details it does not ask about.
+              What each of your names forwards to, path by path. The ones Public addresses
+              set up appear here too. This is the same list, with the details it does not
+              ask about: passwords, address filters, rate limits and custom nginx.
             </p>
             <table class="proxies">
               <thead>
-                <tr><th>Address</th><th>Forwards to</th><th>HTTPS</th><th></th></tr>
+                <tr><th>Address</th><th>Forwards to</th><th>Tunnel</th><th></th></tr>
               </thead>
               <tbody id="proxy-body"></tbody>
             </table>
@@ -2593,18 +2694,11 @@
             </div>
             <div class="notice">
               <p>
-                <strong>Another machine can sit behind this one.</strong> Only one
-                machine on your network can hold port 443, but it does not have to
-                be the machine running the service. Choose
-                <strong>Custom host:port</strong> and give this proxy the other
-                machine's address on your network, and it will forward that name
-                to it, certificate and all, handled here.
-              </p>
-              <p>
-                So a second machine running something else needs no proxy, no
-                certificate and no forwarded port of its own. It serves plain http
-                on your network, this machine terminates HTTPS in front of it, and
-                each name goes where it belongs.
+                <strong>Another machine can sit behind this one.</strong> Choose
+                <strong>Custom host:port</strong> and give the other machine's address on your
+                network, and the name forwards to it through this tunnel. That machine needs
+                no tunnel, no certificate and no forwarded port of its own: it serves plain
+                http on your network, and Cloudflare serves HTTPS in front of it.
               </p>
             </div>
           </article>
@@ -2616,14 +2710,14 @@
           <article class="card span2">
             <h3>Restart all domains</h3>
             <p class="muted">
-              Rewrites the nginx configuration for every domain from your saved
+              Rewrites the nginx configuration for every name from your saved
               settings and reloads it. Use this after a panel update so the new
-              settings actually take effect on your live domains. Otherwise a
-              domain keeps serving the configuration it was last saved with.
+              settings actually take effect on your live names. Otherwise a
+              name keeps serving the configuration it was last saved with.
             </p>
             <p class="muted">
-              It is safe to run any time: your domains, certificates and settings
-              are untouched, and there is no downtime: nginx reloads in place.
+              It is safe to run any time: your names and settings are untouched,
+              and there is no downtime: nginx reloads in place.
             </p>
             <p class="error" id="proxy-restart-error" hidden></p>
             <div class="row">
@@ -2640,124 +2734,6 @@
       <div id="sub-proxy-uninstall" class="subtab">
         <div class="grid">
           <article class="card span2 uninstall-card" data-uninstall="proxy"></article>
-        </div>
-      </div>
-    </section>
-
-    <!-- ------------------------------------------------------ cloudflare -->
-    <!--
-      Cloudflare Tunnel (lib/cloudflare.js): public names on your own domain with no
-      port forwarded and without DNS showing this network's address. The tunnel and
-      its routes are made in the Cloudflare dashboard; this tab holds the token and
-      decides what each name serves, by pointing it at a domain under Proxy & domains.
-    -->
-    <section id="tab-cloudflare" class="tab">
-      <nav class="subnav" aria-label="Cloudflare">
-        <button class="subtab-btn active" data-subtab="cf-tunnel">Tunnel</button>
-        <button class="subtab-btn" data-subtab="cf-hostnames">Hostnames</button>
-        <button class="subtab-btn" data-subtab="cf-log">Log</button>
-        <button class="subtab-btn" data-subtab="cf-uninstall">Uninstall</button>
-      </nav>
-
-      <div id="sub-cf-tunnel" class="subtab active">
-        <div class="grid">
-          <article class="card span2">
-            <div class="node-head">
-              <h3>Cloudflare Tunnel</h3>
-              <span id="cf-state" class="tag off">off</span>
-            </div>
-            <p class="muted">
-              Serves your own domain from this machine with no port forwarded on your router, and
-              without DNS showing your home IP: visitors reach Cloudflare, and Cloudflare reaches
-              this machine through a connection it opened itself. You need a domain on a Cloudflare
-              account (the free plan is enough).
-            </p>
-            <dl class="kv">
-              <div><dt>Connection</dt><dd id="cf-connection">–</dd></div>
-              <div><dt>Tunnel</dt><dd id="cf-tunnel-id">–</dd></div>
-              <div><dt>Reverse proxy</dt><dd id="cf-proxy">–</dd></div>
-            </dl>
-            <p class="verdict bad" id="cf-proxy-note" hidden>
-              The tunnel delivers every request to the reverse proxy, which is off. Switch on
-              <strong>Proxy &amp; domains</strong> in the sidebar.
-            </p>
-          </article>
-
-          <article class="card span2">
-            <h3>1. Create the tunnel</h3>
-            <ol class="howto-steps">
-              <li>In the <a href="https://one.dash.cloudflare.com/" target="_blank" rel="noopener">Cloudflare dashboard</a>, open <strong>Zero Trust</strong>, then <strong>Networks</strong>, <strong>Tunnels</strong>, and <strong>Create a tunnel</strong>. Choose <strong>Cloudflared</strong> and give it a name.</li>
-              <li>On <strong>Install and run a connector</strong>, copy the command shown for any system. Don't run it: paste it below, and the panel takes the token out of it.</li>
-            </ol>
-            <label class="stack">Tunnel token
-              <span class="row">
-                <input id="cf-token" type="password" placeholder="eyJhIjoi... or the whole command" size="60" autocomplete="off" spellcheck="false">
-                <button type="button" class="primary" id="cf-token-save">Save</button>
-              </span>
-            </label>
-            <p class="hint" id="cf-token-note">No token saved yet.</p>
-            <div class="row">
-              <button type="button" class="ghost" id="cf-token-forget" hidden>Forget the token</button>
-            </div>
-          </article>
-
-          <article class="card span2">
-            <h3>2. Route your names to this machine</h3>
-            <p class="muted">
-              In the same tunnel, add a route for each name (<strong>Add route</strong>, then
-              <strong>Published application</strong>). Every route points at the same place:
-            </p>
-            <dl class="kv vertical">
-              <div><dt>Service URL</dt><dd><code id="cf-origin">http://proxy:8081</code> <button type="button" class="copy-btn" id="cf-origin-copy" data-copy="http://proxy:8081">Copy</button></dd></div>
-            </dl>
-            <p class="hint">
-              Cloudflare creates the DNS record for the name itself. Then add the name under
-              <strong>Hostnames</strong> here and pick what it serves.
-            </p>
-          </article>
-        </div>
-      </div>
-
-      <div id="sub-cf-hostnames" class="subtab">
-        <div class="grid">
-          <article class="card span2">
-            <h3>Hostnames</h3>
-            <p class="muted">
-              Each name on the tunnel serves the same as one of your domains under
-              <strong>Proxy &amp; domains</strong>: the same services, paths, passwords, allowlists and
-              limits. Both keep working side by side, so apps can move from one name to the other
-              at their own pace. For a name only the tunnel uses, add it under Proxy &amp; domains
-              without HTTPS: Cloudflare provides the certificate.
-            </p>
-            <div class="row">
-              <label class="stack">Public hostname
-                <input id="cf-host" placeholder="api.example.com" size="30" autocomplete="off" spellcheck="false">
-              </label>
-              <label class="stack">Serves the same as
-                <select id="cf-serves"></select>
-              </label>
-              <button type="button" class="primary" id="cf-host-add">Add</button>
-            </div>
-            <p class="hint" id="cf-serves-note" hidden>
-              Nothing is published under Proxy &amp; domains yet. Add a domain there first.
-            </p>
-            <div class="scroll-x">
-              <table class="ports cf-hosts">
-                <thead><tr><th>Hostname</th><th>Serves the same as</th><th></th></tr></thead>
-                <tbody id="cf-hosts-body"></tbody>
-              </table>
-            </div>
-          </article>
-        </div>
-      </div>
-
-      <div id="sub-cf-log" class="subtab">
-        <div class="svclog" data-svclog="cloudflare"></div>
-      </div>
-
-      <div id="sub-cf-uninstall" class="subtab">
-        <div class="grid">
-          <article class="card span2 uninstall-card" data-uninstall="cloudflare"></article>
         </div>
       </div>
     </section>
@@ -3004,10 +2980,9 @@
             <button id="panel-port-save" class="ghost">Move the panel</button>
           </div>
           <p class="hint">
-            Worth moving if you want the reverse proxy on this port instead:
-            8080 is the usual second choice for plain http, and only one thing
-            can hold it. The panel restarts and this page follows it to the new
-            address; nothing else is affected.
+            Worth moving if something else on this machine wants this port. The
+            panel restarts and this page follows it to the new address; nothing
+            else is affected.
           </p>
           <p class="hint" id="panel-port-result" hidden></p>
           <label class="check">
@@ -3028,7 +3003,7 @@
           <p class="muted">
             This updates the panel itself, not the node. It downloads the latest
             files, rebuilds the panel image and restarts it. Your settings,
-            certificates and chain data are untouched, and the node keeps
+            names and chain data are untouched, and the node keeps
             running throughout.
           </p>
           <dl class="kv">
@@ -3240,43 +3215,21 @@
 
     <!-- 1: the name ------------------------------------------------------- -->
     <section class="setup-step" data-step="1">
-      <p class="step-head"><span class="step-num">1</span> <span id="setup-step1-head">Name it</span></p>
-      <p class="muted" id="setup-step1-intro">
-        DuckDNS gives you a name like <code>yournode.duckdns.org</code> and keeps
-        it pointed at this machine even when your home connection changes
-        address. It is free and needs no card.
-      </p>
-      <ol class="steps" id="setup-create-steps">
-        <li>Open <a href="https://www.duckdns.org/" target="_blank" rel="noreferrer noopener">duckdns.org ↗</a> and sign in with an account you already have.</li>
-        <li>Type a name into the <strong>domain</strong> box and press <strong>add domain</strong>.</li>
-        <li>Copy the <strong>token</strong> shown at the top of that page. It is the password for the name.</li>
-      </ol>
-      <label class="inline">
-        <span id="setup-name-label">Your name</span>
-        <input id="setup-subdomain" placeholder="yournode" size="24" autocomplete="off">
-        <span class="suffix" id="setup-suffix">.duckdns.org</span>
-      </label>
-      <p class="hint" id="setup-step1-hint">
-        A name in front of it works too: <code>mining.yournode</code> publishes on
-        <code>mining.yournode.duckdns.org</code>. There is nothing to add at
-        duckdns.org for one of those -- only <code>yournode</code> is an account,
-        and it is what gets kept pointed at this machine. Certificates for those
-        names are issued over port 80, because DuckDNS can only put the record
-        DNS validation needs on the account itself.
-      </p>
-      <p class="hint" id="setup-ip">–</p>
-    </section>
-
-    <!-- 2: the token ------------------------------------------------------ -->
-    <section class="setup-step" data-step="2" hidden>
-      <p class="step-head"><span class="step-num">2</span> Paste the token</p>
+      <p class="step-head"><span class="step-num">1</span> Name it</p>
       <p class="muted">
-        The panel keeps the name current from here on, so this is the only time
-        you need it. It is stored on this machine and never leaves it except to
-        talk to DuckDNS.
+        A name on one of your domains. Type the part in front, like <code>node</code>, or
+        leave it empty to use the domain itself. The panel adds the DNS record for it.
       </p>
-      <label class="inline" id="setup-token-row">Token <input id="setup-token" type="password" size="32" autocomplete="off" placeholder="from duckdns.org"></label>
-      <p class="hint" id="setup-token-note" hidden>A token is already saved. Leave this blank to keep it.</p>
+      <div class="row setup-name">
+        <input id="setup-subdomain" placeholder="node" size="16" autocomplete="off" spellcheck="false" autocapitalize="off">
+        <span class="suffix">.</span>
+        <select id="setup-zone" aria-label="Domain"></select>
+      </div>
+      <p class="hint" id="setup-preview">–</p>
+      <p class="hint">
+        One word in front of the domain: Cloudflare's free certificate covers
+        <code>node.example.com</code> but nothing deeper, like <code>a.node.example.com</code>.
+      </p>
     </section>
 
     <!-- 3: what it will do ------------------------------------------------ -->
@@ -3328,8 +3281,9 @@
       <button value="cancel" class="dialog-close" formnovalidate aria-label="Close">&times;</button>
     </div>
 
-    <label>Domain
-      <input id="px-domain" placeholder="mynode.duckdns.org" required>
+    <label>Name
+      <input id="px-domain" placeholder="node.example.com" list="px-names" required autocomplete="off" spellcheck="false">
+      <datalist id="px-names"></datalist>
     </label>
 
     <label>Forwards to
@@ -3340,18 +3294,10 @@
       <label>Scheme
         <select id="px-scheme"><option>http</option><option>https</option></select>
       </label>
-      <label>Host <input id="px-host" placeholder="127.0.0.1"></label>
+      <label>Host <input id="px-host" placeholder="192.168.1.20"></label>
       <label>Port <input id="px-port" type="number" min="1" max="65535"></label>
       <label class="check"><input type="checkbox" id="px-websocket"> websocket</label>
     </div>
-
-    <fieldset>
-      <legend>HTTPS</legend>
-      <label class="check"><input type="checkbox" id="px-tls"> Get a free certificate from Let's Encrypt</label>
-      <label class="inline">Contact e-mail <input id="px-email" type="email" placeholder="you@example.com"></label>
-      <label class="check"><input type="checkbox" id="px-forcehttps" checked> Redirect http → https</label>
-      <label class="check"><input type="checkbox" id="px-staging"> Use the staging CA (for testing)</label>
-    </fieldset>
 
     <fieldset>
       <legend>Access control</legend>

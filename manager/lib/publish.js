@@ -1,5 +1,5 @@
 import { APPS, loadAppsConfig } from './apps.js';
-import { loadManagerConfig, loadNodeConfig, loadProxies } from './store.js';
+import { loadNodeConfig, loadProxies } from './store.js';
 import { TARGET_KINDS } from './nginx.js';
 
 /**
@@ -29,7 +29,7 @@ export const SERVICES = [
         sharedPath: '/borsh',
         label: 'Kaspa node',
         detail: 'wRPC Borsh, the endpoint wallets and KDX connect to.',
-        afterNote: 'Wallets and KDX connect to wss://{domain}. The certificate is what makes that a wss and not a ws.',
+        afterNote: 'Wallets and KDX connect to wss://{domain}. Cloudflare serves the HTTPS, which is what makes that a wss and not a ws.',
     },
     {
         key: 'kachat',
@@ -115,9 +115,9 @@ export const serviceFor = (key) => SERVICES.find((s) => s.key === key) ?? null;
 /**
  * Where a service should sit on a name, given what is already there.
  *
- * One free DuckDNS name is all most people will have, and a node and an indexer
- * on it is the pairing this stack was built for, so sharing has to be the easy
- * case rather than the clever one. The first service on a name takes the root;
+ * A node and an indexer on one name is the pairing this stack was built for, so
+ * sharing has to be the easy case rather than the clever one. The first service
+ * on a name takes the root;
  * anything joining it moves to its own prefix, which nginx strips before the
  * request arrives.
  */
@@ -209,13 +209,6 @@ export function readiness({ nodeCfg = loadNodeConfig(), appsCfg = loadAppsConfig
 /** The service view: every publishable thing, with the domain it answers on. */
 export function overview({ proxies = loadProxies(), panelHasPassword = true } = {}) {
     const ready = readiness({ panelHasPassword });
-    // The address someone can paste into a browser, which is not the same as
-    // the name when a router put a different port in front of this machine.
-    const mgr = loadManagerConfig().proxy;
-    const portFor = (scheme) => {
-        const port = scheme === 'https' ? (mgr.publicHttpsPort ?? 443) : (mgr.publicHttpPort ?? 80);
-        return Number(port) === (scheme === 'https' ? 443 : 80) ? '' : `:${Number(port)}`;
-    };
 
     return SERVICES.map((service) => {
         // The proxy host this service owns, if one has been assigned. Matching
@@ -228,11 +221,8 @@ export function overview({ proxies = loadProxies(), panelHasPassword = true } = 
             domain: proxy?.domain ?? null,
             proxyId: proxy?.id ?? null,
             path: proxy?.path ?? null,
-            url: proxy
-                ? `${proxy.ssl?.mode === 'letsencrypt' ? 'https' : 'http'}://${proxy.domain}${portFor(
-                      proxy.ssl?.mode === 'letsencrypt' ? 'https' : 'http',
-                  )}${(proxy.path ?? '/') === '/' ? '' : proxy.path}`
-                : null,
+            // Always https: Cloudflare serves it at the edge, for every name on the tunnel.
+            url: proxy ? `https://${proxy.domain}${(proxy.path ?? '/') === '/' ? '' : proxy.path}` : null,
             ...ready[service.key],
         };
     });
@@ -244,24 +234,27 @@ export function overview({ proxies = loadProxies(), panelHasPassword = true } = 
  *
  * This is deliberately a plan rather than a checklist: someone setting up a
  * public address should not have to know that the KaChat indexer needs its
- * containers running, that a Borsh listener has to be bound, or that a
- * certificate cannot be issued before nginx is up. They should say "publish
+ * containers running, that a Borsh listener has to be bound, or that the name
+ * needs a DNS record into the tunnel. They should say "publish
  * this on that name" once, see what that entails, and agree to it.
  *
  * Steps already satisfied are returned with `done: true` rather than dropped,
  * so the wizard can show the whole shape of the job and tick off the parts that
  * are already in place.
  */
-export function setupPlan(key, { nodeCfg = loadNodeConfig(), appsCfg = loadAppsConfig(), panelHasPassword = true, proxyOn = false } = {}) {
+export function setupPlan(
+    key,
+    { nodeCfg = loadNodeConfig(), appsCfg = loadAppsConfig(), panelHasPassword = true, proxyOn = false, tunnelOn = false } = {},
+) {
     const service = serviceFor(key);
     if (!service) return null;
 
     const steps = [
         {
             key: 'proxy',
-            label: 'Start the reverse proxy',
-            detail: 'It takes ports 80 and 443 on this machine and serves every domain you publish.',
-            done: proxyOn,
+            label: 'Start the reverse proxy and the tunnel connector',
+            detail: 'Both run on this machine and open no port on it: the connector dials out to Cloudflare, and the proxy answers what comes back.',
+            done: proxyOn && tunnelOn,
         },
     ];
 
@@ -288,8 +281,8 @@ export function setupPlan(key, { nodeCfg = loadNodeConfig(), appsCfg = loadAppsC
 
     steps.push({
         key: 'dns',
-        label: 'Point the DuckDNS name at this machine',
-        detail: "Saves the subdomain and token, then tells DuckDNS this connection's address. It keeps itself current from then on.",
+        label: 'Point the name into the tunnel',
+        detail: 'Adds a proxied DNS record for it in your Cloudflare account and a route on the tunnel. A record already there that something else made is never replaced.',
         done: false,
     });
     steps.push({
@@ -299,12 +292,6 @@ export function setupPlan(key, { nodeCfg = loadNodeConfig(), appsCfg = loadAppsC
             key === 'kachat'
                 ? 'Writes the vhost, including the chat and push routes on their own port and a 404 for the endpoints that must stay private.'
                 : 'Writes the nginx vhost for the domain.',
-        done: false,
-    });
-    steps.push({
-        key: 'certificate',
-        label: "Get an HTTPS certificate from Let's Encrypt",
-        detail: 'Needs the name to resolve here and port 80 open from the internet. Renewal is automatic afterwards.',
         done: false,
     });
 

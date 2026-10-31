@@ -240,8 +240,6 @@ export function reservedHostPorts() {
     const panel = Number(process.env.PORT || 8080);
     const ports = new Map([
         [panel, 'this control panel'],
-        [80, 'the reverse proxy'],
-        [443, 'the reverse proxy'],
         [5555, 'the stratum bridge'],
     ]);
     for (const [name, net] of Object.entries(NETWORKS)) {
