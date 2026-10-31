@@ -1462,7 +1462,14 @@ route('GET', /^\/api\/publish$/, async (req, res) => {
             usedBy: proxies.find((p) => p.domain === d.domain && (p.path ?? '/') === '/')?.target?.kind ?? null,
             hosts: proxies
                 .filter((p) => p.domain === d.domain)
-                .map((p) => ({ kind: p.target?.kind ?? null, path: p.path ?? '/' })),
+                .map((p) => ({
+                    id: p.id,
+                    kind: p.target?.kind ?? null,
+                    path: p.path ?? '/',
+                    enabled: p.enabled !== false,
+                    // Where a host for something else on the network forwards to.
+                    target: p.target?.kind === 'custom' ? `${p.target.scheme ?? 'http'}://${p.target.host}:${p.target.port}` : null,
+                })),
             rootFree: !proxies.some((p) => p.domain === d.domain && (p.path ?? '/') === '/'),
         })),
         enabled: proxyEnabled(),
@@ -1559,7 +1566,8 @@ route('POST', /^\/api\/publish\/([a-z][a-z-]*)$/, async (req, res, match) => {
  */
 async function attachDomain(service, domain, extras = null) {
     const list = loadProxies();
-    const index = list.findIndex((p) => p.target?.kind === service.kind);
+    // A service published many times (something else on the network) adds a host each time.
+    const index = service.multiple ? -1 : list.findIndex((p) => p.target?.kind === service.kind);
     // Where it sits on that name depends on what is already there. Throws with
     // an explanation when the service can only live at a root that is taken.
     const { path } = publish.pathFor(service, domain, index >= 0 ? list.filter((_, i) => i !== index) : list);
@@ -1576,7 +1584,7 @@ async function attachDomain(service, domain, extras = null) {
                   customSnippet: '',
                   auth: { enabled: false },
                   domain,
-                  target: { kind: service.kind },
+                  target: extras?.target ?? { kind: service.kind },
               };
 
     // Basic auth and an allowlist are the two protections worth offering at the
@@ -1653,6 +1661,31 @@ function mergeProxyConfig() {
 
 // ----------------------------------------------------------- setup wizard --
 
+/**
+ * The address of "something else on your network", checked: scheme, host and
+ * port, as someone would type it into a browser at home. No path (a name opens
+ * at the top of the site), and never localhost, which inside the proxy's
+ * container is the proxy.
+ */
+function customTarget(raw) {
+    let url;
+    try {
+        url = new URL(String(raw ?? '').trim());
+    } catch {
+        throw new Error('Enter the address the way you would open it in a browser at home, like http://192.168.1.20:8123.');
+    }
+    if (!['http:', 'https:'].includes(url.protocol)) throw new Error('The address has to start with http:// or https://.');
+    if (url.pathname !== '/' || url.search || url.hash) {
+        throw new Error('Leave the path off: a public name always opens at the top of the site, so enter just the address and port.');
+    }
+    const host = url.hostname.replace(/^\[|\]$/g, '');
+    if (['localhost', '127.0.0.1', '::1'].includes(host.toLowerCase())) {
+        throw new Error("Use this machine's network address, like 192.168.1.20, not localhost. The proxy runs in its own container, where localhost is the proxy.");
+    }
+    const scheme = url.protocol.slice(0, -1);
+    return { kind: 'custom', scheme, host, port: Number(url.port) || (scheme === 'https' ? 443 : 80) };
+}
+
 route('GET', /^\/api\/setup\/([a-z][a-z-]*)$/, async (req, res, match) => {
     const tunnel = await cloudflare.status();
     const plan = publish.setupPlan(match[1], {
@@ -1696,7 +1729,19 @@ route('POST', /^\/api\/setup\/([a-z][a-z-]*)$/, async (req, res, match) => {
         }
     }
 
+    // Something else on the network: where it is, as a browser at home would open it.
+    let target = null;
+    if (key === 'custom') {
+        try {
+            target = customTarget(body.origin);
+        } catch (err) {
+            return fail(res, 400, err.message);
+        }
+    }
+    const what = target ? `${target.scheme}://${target.host}:${target.port}` : what;
+
     const extras = {
+        target,
         auth: body.auth?.enabled
             ? { enabled: true, user: String(body.auth.user || '').trim(), password: String(body.auth.password || '') }
             : { enabled: false },
@@ -1706,7 +1751,7 @@ route('POST', /^\/api\/setup\/([a-z][a-z-]*)$/, async (req, res, match) => {
             .filter(Boolean),
     };
 
-    const job = jobs.start(`Publish ${plan.service.label} on ${wanted}`, async (onLine) => {
+    const job = jobs.start(`Publish ${what} on ${wanted}`, async (onLine) => {
         // --- the name -------------------------------------------------------
         let record = existing;
         if (record?.tunnel === 'on') {
@@ -1744,7 +1789,7 @@ route('POST', /^\/api\/setup\/([a-z][a-z-]*)$/, async (req, res, match) => {
         }
 
         // --- the service answers on it --------------------------------------
-        onLine(`Publishing ${plan.service.label} on ${record.domain}.`);
+        onLine(`Publishing ${what} on ${record.domain}.`);
         if (extras.auth.enabled) onLine(`It will ask for a username and password (${extras.auth.user}).`);
         if (extras.allowlist.length) onLine(`Only these addresses will be let through: ${extras.allowlist.join(', ')}.`);
         await attachDomain(plan.service, record.domain, extras);

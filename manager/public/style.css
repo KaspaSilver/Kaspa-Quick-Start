@@ -572,6 +572,7 @@ input, select, textarea {
 label.inline input, label.inline select { margin-top: 0; width: auto; flex: 1; min-width: 60px; }
 
 /* Password field with a show/hide eye inside it. */
+.login-card .pw-field { display: flex; margin-top: 4px; }
 .pw-field { position: relative; display: inline-flex; align-items: center; flex: 1; min-width: 60px; }
 .pw-field input,
 label.inline .pw-field input { width: 100%; flex: 1; margin-top: 0; padding-right: 36px; }
@@ -920,6 +921,8 @@ table.instances td:last-child { width: 40px; text-align: right; }
 .setup-name input { flex: 1 1 8em; min-width: 0; }
 .setup-name select { flex: 1 1 10em; min-width: 0; }
 #names-list small.error { display: block; margin: 2px 0 0; }
+#names-list .name-host { display: block; margin: 3px 0 0; }
+#names-list .name-host .mini { margin-left: 6px; }
 #tab-proxy h3.sub { margin: 18px 0 4px; font-size: 13px; }
 .guide .steps li { margin: 9px 0; line-height: 1.5; }
 .guide p { margin: 6px 0; }

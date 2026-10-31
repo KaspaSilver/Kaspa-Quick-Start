@@ -33,7 +33,7 @@
     <p class="muted">Sign in to manage this node.</p>
     <label>
       Admin password
-      <input type="password" id="login-password" autocomplete="current-password" required>
+      <span class="pw-field"><input type="password" id="login-password" autocomplete="current-password" required><button type="button" class="pw-eye" data-pw-toggle="login-password" aria-label="Show password" aria-pressed="false" title="Show password"></button></span>
     </label>
     <button type="submit" class="primary">Sign in</button>
     <p class="error" id="login-error" hidden></p>
@@ -53,11 +53,11 @@
     </p>
     <label>
       New password
-      <input type="password" id="firstrun-password" autocomplete="new-password" minlength="8" required>
+      <span class="pw-field"><input type="password" id="firstrun-password" autocomplete="new-password" minlength="8" required><button type="button" class="pw-eye" data-pw-toggle="firstrun-password" aria-label="Show password" aria-pressed="false" title="Show password"></button></span>
     </label>
     <label>
       Repeat it
-      <input type="password" id="firstrun-repeat" autocomplete="new-password" minlength="8" required>
+      <span class="pw-field"><input type="password" id="firstrun-repeat" autocomplete="new-password" minlength="8" required><button type="button" class="pw-eye" data-pw-toggle="firstrun-repeat" aria-label="Show password" aria-pressed="false" title="Show password"></button></span>
     </label>
     <button type="submit" class="primary">Set password &amp; continue</button>
     <p class="error" id="firstrun-error" hidden></p>
@@ -2450,7 +2450,6 @@
       <nav class="subnav" aria-label="Tunnel and domains">
         <button class="subtab-btn active" data-subtab="proxy-overview">Overview</button>
         <button class="subtab-btn" data-subtab="proxy-token">Setup API token</button>
-        <button class="subtab-btn" data-subtab="proxy-advanced">Advanced</button>
         <button class="subtab-btn" data-subtab="proxy-restart">Restart</button>
         <button class="subtab-btn" data-subtab="proxy-log">Log</button>
         <button class="subtab-btn" data-subtab="proxy-uninstall">Uninstall</button>
@@ -2558,8 +2557,10 @@
         <article class="card span2">
           <h3>Your names</h3>
           <p class="muted">
-            Every name on your domain this machine answers for. A name that could not be
-            put on the tunnel says why; fix that in Cloudflare and press <strong>Retry</strong>.
+            Every name on your domain this machine answers for, and what is on it. Things
+            from your network published with <strong>Something else on your network</strong>
+            are changed or taken off here. A name that could not be put on the tunnel says
+            why; fix that in Cloudflare and press <strong>Retry</strong>.
           </p>
           <div id="names-list"></div>
           <div class="row proxy-tools">
@@ -2664,43 +2665,6 @@
               numbers. If yours contains only <code>0–9</code> and <code>a–f</code>, it is the
               Global API Key or a token ID, not a token.
             </p>
-          </article>
-        </div>
-      </div>
-
-      <!--
-        The service view answers "what can this panel publish", which is the
-        right question for the apps it runs and the wrong one for anything it
-        does not. Only a raw host can point somewhere else entirely, and only
-        this list can show that one does.
-      -->
-      <div id="sub-proxy-advanced" class="subtab">
-        <div class="grid">
-          <article class="card span2">
-            <h3>Proxy hosts</h3>
-            <p class="muted">
-              What each of your names forwards to, path by path. The ones Public addresses
-              set up appear here too. This is the same list, with the details it does not
-              ask about: passwords, address filters, rate limits and custom nginx.
-            </p>
-            <table class="proxies">
-              <thead>
-                <tr><th>Address</th><th>Forwards to</th><th>Tunnel</th><th></th></tr>
-              </thead>
-              <tbody id="proxy-body"></tbody>
-            </table>
-            <div class="row">
-              <button type="button" id="proxy-add" class="primary">Add proxy host</button>
-            </div>
-            <div class="notice">
-              <p>
-                <strong>Another machine can sit behind this one.</strong> Choose
-                <strong>Custom host:port</strong> and give the other machine's address on your
-                network, and the name forwards to it through this tunnel. That machine needs
-                no tunnel, no certificate and no forwarded port of its own: it serves plain
-                http on your network, and Cloudflare serves HTTPS in front of it.
-              </p>
-            </div>
           </article>
         </div>
       </div>
@@ -3235,6 +3199,10 @@
     <!-- 3: what it will do ------------------------------------------------ -->
     <section class="setup-step" data-step="3" hidden>
       <p class="step-head"><span class="step-num">3</span> What this will do</p>
+      <label class="stack" id="setup-origin-row" hidden>Its address on your network
+        <input id="setup-origin" placeholder="http://192.168.1.20:8123" autocomplete="off" spellcheck="false" autocapitalize="off">
+        <small class="muted">The way you would open it in a browser at home: http or https, the machine's address, and the port. Not localhost: the proxy runs in its own container.</small>
+      </label>
       <p class="muted" id="setup-summary">–</p>
       <ul class="plan" id="setup-plan"></ul>
 

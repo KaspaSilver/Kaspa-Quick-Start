@@ -179,6 +179,8 @@ $('login-form').addEventListener('submit', async (event) => {
     try {
         await api('/api/login', { method: 'POST', body: { password: $('login-password').value } });
         $('login-password').value = '';
+        // Shown with the eye, it would still be shown at the next sign-in.
+        hidePasswords();
         showApp();
     } catch (e) {
         // 409: no password is set yet (e.g. it was cleared from .env), so set one instead.
@@ -5870,14 +5872,13 @@ async function loadProxies() {
     // is to do. It goes back to full width once the settings are under it.
     $('tab-proxy').classList.toggle('alone', !on);
 
-    for (const id of ['proxy-reload', 'proxy-add']) {
+    for (const id of ['proxy-reload']) {
         const button = $(id);
         button.disabled = !on;
         button.title = on ? '' : 'Switch Tunnel & domains on first.';
     }
 
     $('px-names').innerHTML = proxyNames.map((n) => `<option value="${escapeHtml(n.domain)}"></option>`).join('');
-    renderProxyHosts();
 
     // The one table on this page is the service view, which reads the same
     // proxy list back from its own endpoint.
@@ -5955,7 +5956,21 @@ function renderTunnel() {
     $('tunnel-zones').textContent = (t.zones ?? []).map((z) => z.name).join(', ') || '–';
 }
 
-/** Every name, with whether it is on the tunnel, and a way to retry or remove it. */
+/**
+ * A host that no row under Public addresses owns: something else on the network,
+ * or a kind the rows do not offer (one made by hand before, say). It is changed
+ * and taken off here, since nowhere else shows it.
+ */
+const isExtraHost = (h) => h.kind === 'custom' || !publishState.services.some((s) => s.kind === h.kind);
+
+/** What one host on a name is, in words. */
+function hostWords(h) {
+    const what = h.target ? h.target : serviceLabel(h.kind);
+    const where = h.path === '/' ? '' : ` at ${h.path}`;
+    return `${what}${where}${h.enabled ? '' : ' (disabled)'}`;
+}
+
+/** Every name, what is on it, whether it is on the tunnel, and a way to retry, change or remove. */
 function renderNames() {
     const list = $('names-list');
     const domains = publishState.domains ?? [];
@@ -5969,14 +5984,25 @@ function renderNames() {
                 d.tunnel === 'on'
                     ? '<span class="tag ok">on the tunnel</span>'
                     : `<span class="tag warn" title="${escapeHtml(d.problem ?? '')}">not on the tunnel</span>`;
-            const serving = (d.hosts ?? []).map((h) => `${serviceLabel(h.kind)}${h.path === '/' ? '' : ` at ${h.path}`}`).join(', ');
+            const hosts = d.hosts ?? [];
+            const serving = hosts.length
+                ? hosts
+                      .map((h) =>
+                          isExtraHost(h)
+                              ? `<span class="name-host">${escapeHtml(hostWords(h))}
+                    <button type="button" class="ghost mini" data-host-options="${escapeHtml(h.id)}" title="Password, IP allowlist, rate limit, custom nginx.">Options</button>
+                    <button type="button" class="ghost mini danger" data-host-off="${escapeHtml(h.id)}">Take off</button></span>`
+                              : `<span class="name-host">${escapeHtml(hostWords(h))}</span>`,
+                      )
+                      .join('')
+                : '<span class="name-host muted">nothing on it yet</span>';
             const actions = [
                 d.tunnel !== 'on' && tunnelConnected() ? `<button type="button" class="ghost mini" data-name-retry="${escapeHtml(d.id)}">Retry</button>` : '',
-                (d.hosts ?? []).length ? '' : `<button type="button" class="ghost mini danger" data-name-del="${escapeHtml(d.id)}">Remove</button>`,
+                hosts.length ? '' : `<button type="button" class="ghost mini danger" data-name-del="${escapeHtml(d.id)}">Remove</button>`,
             ].join(' ');
             return `<tr>
           <td><a href="https://${escapeHtml(d.domain)}/" target="_blank" rel="noreferrer noopener"><strong>${escapeHtml(d.domain)}</strong></a>
-            <small class="service-detail">${serving ? escapeHtml(serving) : 'nothing on it yet'}</small>
+            <small class="service-detail">${serving}</small>
             ${d.tunnel !== 'on' && d.problem ? `<small class="error">${escapeHtml(d.problem)}</small>` : ''}</td>
           <td>${state}</td>
           <td class="row-actions">${actions}</td>
@@ -5986,7 +6012,20 @@ function renderNames() {
 }
 
 $('names-list').addEventListener('click', async (event) => {
-    const { nameRetry, nameDel } = event.target.dataset ?? {};
+    const { nameRetry, nameDel, hostOptions, hostOff } = event.target.dataset ?? {};
+    if (hostOptions) return openProxyDialog(proxies.find((p) => p.id === hostOptions));
+    if (hostOff) {
+        const proxy = proxies.find((p) => p.id === hostOff);
+        const where = `${proxy?.domain ?? 'that name'}${(proxy?.path ?? '/') === '/' ? '' : proxy.path}`;
+        if (!(await askConfirm(`Stop publishing it on ${where}?\n\nThe name stays on your list, on the tunnel, for something else.`))) return;
+        try {
+            await api(`/api/proxies/${hostOff}`, { method: 'DELETE' });
+            toast(`${where} is no longer published.`);
+        } catch (e) {
+            toast(e.message, 'bad');
+        }
+        return loadProxies().catch(() => {});
+    }
     if (nameRetry) {
         event.target.disabled = true;
         try {
@@ -6011,74 +6050,6 @@ $('names-list').addEventListener('click', async (event) => {
 /** What a target kind reads as, for "in use by" and for taken-domain options. */
 const serviceLabel = (kind) => publishState.services.find((s) => s.kind === kind)?.label ?? 'another proxy host';
 
-/**
- * Every proxy host as it actually is, rather than as a service.
- *
- * Public addresses answers "what can this panel publish", which is the right
- * question for the apps it runs and the wrong one for anything it does not:
- * only a raw host can point at another machine on the network, and only this
- * list can show that one does.
- */
-function renderProxyHosts() {
-    const body = $('proxy-body');
-    if (!body) return;
-
-    if (!proxies.length) {
-        body.innerHTML = '<tr><td colspan="4" class="muted">No proxy hosts yet.</td></tr>';
-        return;
-    }
-
-    body.innerHTML = proxies
-        .map((p) => {
-            const path = (p.path ?? '/') === '/' ? '' : ` ${escapeHtml(p.path)}`;
-            const target =
-                p.target?.kind === 'custom'
-                    ? `${escapeHtml(p.target.scheme ?? 'http')}://${escapeHtml(p.target.host ?? '?')}:${escapeHtml(String(p.target.port ?? '?'))}`
-                    : escapeHtml(targetKinds[p.target?.kind]?.label ?? p.target?.kind ?? 'unknown');
-            // A host that is switched off still holds its name, so say so
-            // rather than let it look like the others.
-            const off = p.enabled === false ? ' <span class="tag off">disabled</span>' : '';
-            const name = proxyNames.find((n) => n.domain === p.domain);
-            const tunnel =
-                p.target?.kind === 'grpc'
-                    ? '<span class="tag off" title="gRPC cannot go through a Cloudflare Tunnel.">not served</span>'
-                    : name?.tunnel === 'on'
-                      ? '<span class="tag ok">on</span>'
-                      : '<span class="tag warn">not yet</span>';
-            return `<tr>
-                <td><strong>${escapeHtml(p.domain)}</strong>${path}${off}</td>
-                <td>${target}</td>
-                <td>${tunnel}</td>
-                <td>
-                    <button type="button" class="ghost mini" data-edit-proxy="${escapeHtml(p.id)}">Edit</button>
-                    <button type="button" class="ghost mini danger" data-del-proxy="${escapeHtml(p.id)}">Remove</button>
-                </td>
-            </tr>`;
-        })
-        .join('');
-}
-
-$('proxy-add').addEventListener('click', () => openProxyDialog(null));
-
-$('proxy-body').addEventListener('click', async (event) => {
-    const { editProxy, delProxy } = event.target.dataset ?? {};
-    if (editProxy) return openProxyDialog(proxies.find((p) => p.id === editProxy));
-    if (!delProxy) return;
-
-    const proxy = proxies.find((p) => p.id === delProxy);
-    // Removing a host takes a path off the internet, which is not a thing to do
-    // on a mis-click. The name itself stays, on the tunnel, for something else.
-    if (!await askConfirm(`Stop answering for ${proxy?.domain}${(proxy?.path ?? '/') === '/' ? '' : proxy.path}?\n\nThe nginx configuration for it is removed. The name stays on your list.`)) {
-        return;
-    }
-    try {
-        await api(`/api/proxies/${delProxy}`, { method: 'DELETE' });
-        await loadProxies();
-    } catch (e) {
-        toast(e.message, 'bad');
-    }
-});
-
 // What each network view offers to publish: the testnet view is the testnet indexer
 // (plus this panel, which serves both); mainnet is everything else.
 const publishableInView = (s) => (networkView === 'testnet' ? s.testnet || s.key === 'panel' : !s.testnet);
@@ -6102,7 +6073,11 @@ function renderPublishServices() {
                   ? '<span class="tag ok">ready</span>'
                   : `<span class="tag" title="${escapeHtml(s.reason ?? '')}">not running</span>`;
 
-            const address = s.url
+            const address = s.multiple
+                ? s.count
+                    ? `<span class="muted">${s.count} published, under Your names</span>`
+                    : '<span class="muted">–</span>'
+                : s.url
                 ? `<a href="${escapeHtml(s.url)}" target="_blank" rel="noreferrer noopener">${escapeHtml(s.domain)}${
                       s.path && s.path !== '/' ? escapeHtml(s.path) : ''
                   }</a>${name && name.tunnel !== 'on' ? ' <span class="tag warn" title="See Your names below.">not on the tunnel</span>' : ''}${
@@ -6122,7 +6097,7 @@ function renderPublishServices() {
                       s.domain ? ` <button class="ghost danger" data-unpublish="${s.key}">Unpublish</button>` : ''
                   }`
                 : [
-                      `<button class="primary" data-setup="${s.key}">${s.domain ? 'Change' : 'Set up'}</button>`,
+                      `<button class="primary" data-setup="${s.key}">${s.domain ? 'Change' : s.multiple && s.count ? 'Add another' : 'Set up'}</button>`,
                       s.proxyId ? `<button class="ghost" data-options="${s.proxyId}" title="Basic auth, IP allowlist, rate limit, custom nginx.">Options</button>` : '',
                       s.domain ? `<button class="ghost danger" data-unpublish="${s.key}">Unpublish</button>` : '',
                   ]
@@ -7964,6 +7939,9 @@ async function openSetup(key) {
     $('setup-auth').checked = false;
     $('setup-auth-fields').hidden = true;
     $('setup-allowlist').value = '';
+    // Something else on the network: the one thing the panel cannot know is where it is.
+    $('setup-origin-row').hidden = !service?.multiple;
+    $('setup-origin').value = '';
 
     // A second service starts from a list of names rather than from a blank one.
     renderDomainChoices();
@@ -7983,16 +7961,16 @@ function renderDomainChoices() {
 
     list.innerHTML = publishState.domains
         .map((d) => {
-            const others = (d.hosts ?? []).filter((h) => h.kind !== service?.kind);
-            const mine = (d.hosts ?? []).find((h) => h.kind === service?.kind);
+            // One of many (something else on the network) is never already on a
+            // name: every host there, its own kind included, is somebody else.
+            const others = (d.hosts ?? []).filter((h) => service?.multiple || h.kind !== service?.kind);
+            const mine = service?.multiple ? null : (d.hosts ?? []).find((h) => h.kind === service?.kind);
 
             // A name can carry several services, so "in use" is information
             // rather than a refusal. The one arrangement that cannot work is a
             // service that must own the root joining a name whose root is taken.
             const blocked = service?.rootOnly && !d.rootFree && !mine;
-            const sharing = others
-                .map((h) => `${serviceLabel(h.kind)}${h.path === '/' ? '' : ` at ${h.path}`}`)
-                .join(', ');
+            const sharing = others.map(hostWords).join(', ');
 
             const note = blocked
                 ? `${serviceLabel(d.usedBy)} is at the root, so give this one a name of its own instead`
@@ -8058,17 +8036,18 @@ function renderSetupStep() {
 
     const domain = setupDomain();
     const record = publishState.domains.find((d) => d.domain === domain);
-    const joining = (record?.hosts ?? []).filter((h) => h.kind !== plan.service.kind);
+    const joining = (record?.hosts ?? []).filter((h) => plan.service.multiple || h.kind !== plan.service.kind);
     // The address is the name plus wherever this service lands on it, which is
     // not always the root once a name is shared.
     const path = joining.some((h) => h.path === '/') ? (plan.service.sharedPath ?? `/${setupState.key}`) : '';
     setupState.address = `https://${domain}${path}`;
 
+    const what = plan.service.multiple ? 'It' : plan.service.label;
     $('setup-summary').textContent = joining.length
-        ? `${plan.service.label} will answer on ${setupState.address}, alongside ${joining
-              .map((h) => serviceLabel(h.kind))
+        ? `${what} will answer on ${setupState.address}, alongside ${joining
+              .map(hostWords)
               .join(', ')} already on that name. Everything below happens in one go:`
-        : `${plan.service.label} will answer on ${setupState.address}. Everything below happens in one go:`;
+        : `${what} will answer on ${setupState.address}. Everything below happens in one go:`;
     $('setup-plan').innerHTML = (plan.steps ?? [])
         // The DNS step belongs to a name not yet on the tunnel. One that already
         // is skips it, and listing it anyway would promise work that will not
@@ -8146,7 +8125,14 @@ $('setup-run').addEventListener('click', async () => {
             ? { enabled: true, user: $('setup-auth-user').value.trim(), password: $('setup-auth-pass').value }
             : { enabled: false },
         allowlist: $('setup-allowlist').value,
+        origin: $('setup-origin').value.trim() || undefined,
     };
+    if (!$('setup-origin-row').hidden && !body.origin) {
+        const box = $('setup-error');
+        box.textContent = 'Enter its address on your network, like http://192.168.1.20:8123.';
+        box.hidden = false;
+        return;
+    }
 
     if (key === 'kaspad' && unsafeRpcOn()) {
         if (!await confirmUnsafeRpc("Publish the node's RPC (wRPC Borsh) while unsafe RPC calls are on?")) return;
@@ -9121,6 +9107,9 @@ document.addEventListener('click', (event) => {
     btn.setAttribute('aria-label', label);
     btn.setAttribute('aria-pressed', show ? 'true' : 'false');
     btn.title = label;
+    // A mouse click hands the typing back to the field, so Enter still submits the
+    // form rather than pressing the eye again. From the keyboard, focus stays put.
+    if (event.detail > 0) input.focus();
 });
 
 // Hide every revealed password again once it has been used, so it is not left on screen.

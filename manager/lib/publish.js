@@ -108,6 +108,21 @@ export const SERVICES = [
         detail: 'Everything on this page, from anywhere. Needs a name of its own.',
         afterNote: 'This panel is at https://{domain}. It drives the Docker daemon, so keep the admin password somewhere safe.',
     },
+    {
+        // Anything else with a web page that this machine can reach: another
+        // machine on the network, a router page, a service this list does not
+        // know. Unlike the rows above it is not one thing, so it never "has" a
+        // name: each Set up adds another, and they are listed under Your names.
+        key: 'custom',
+        kind: 'custom',
+        multiple: true,
+        // A page served under a prefix it does not know about loads its assets
+        // from the root, which is somebody else's. Each one gets a name of its own.
+        rootOnly: true,
+        label: 'Something else on your network',
+        detail: 'Any web page this machine can reach, by its address and port. Each one gets a name of its own.',
+        afterNote: 'https://{domain} now shows it. It is listed under Your names, where it can be changed or taken off.',
+    },
 ];
 
 export const serviceFor = (key) => SERVICES.find((s) => s.key === key) ?? null;
@@ -122,7 +137,9 @@ export const serviceFor = (key) => SERVICES.find((s) => s.key === key) ?? null;
  * request arrives.
  */
 export function pathFor(service, domain, proxies) {
-    const others = proxies.filter((p) => p.domain === domain && p.target?.kind !== service.kind);
+    // Its own earlier host on the name is the one being moved, unless it is one
+    // of many: then every host already there is somebody else.
+    const others = proxies.filter((p) => p.domain === domain && (service.multiple || p.target?.kind !== service.kind));
     // Nothing else there: take the root, whoever you are.
     if (!others.length) return { path: '/', sharedWith: [] };
 
@@ -191,6 +208,9 @@ export function readiness({ nodeCfg = loadNodeConfig(), appsCfg = loadAppsConfig
         };
     }
 
+    // Whether the other machine answers is not something this one can know.
+    state.custom = { ready: true };
+
     // The panel is the one service where publishing is refused rather than
     // merely unready: without a password, a domain would hand the Docker daemon
     // to anyone who found it. nginx.validateProxy enforces this too; saying it
@@ -214,8 +234,11 @@ export function overview({ proxies = loadProxies(), panelHasPassword = true } = 
         // The proxy host this service owns, if one has been assigned. Matching
         // on the target kind is what makes the two screens the same data: a
         // host added by hand on the advanced screen shows up here too.
-        const proxy = proxies.find((p) => p.target?.kind === service.kind) ?? null;
+        // One that can be published many times owns no single name; its hosts
+        // are counted here and listed under Your names.
+        const proxy = service.multiple ? null : (proxies.find((p) => p.target?.kind === service.kind) ?? null);
         return {
+            count: service.multiple ? proxies.filter((p) => p.target?.kind === service.kind).length : undefined,
             ...service,
             upstreamLabel: TARGET_KINDS[service.kind]?.label ?? service.kind,
             domain: proxy?.domain ?? null,
