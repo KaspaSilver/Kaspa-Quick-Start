@@ -1368,6 +1368,19 @@
             <h3>Tournaments</h3>
             <div id="chess-tournament-board"><p class="muted">Loading…</p></div>
           </article>
+          <!-- KaPlay's bot games: each player's fewest moves to checkmate each bot level. -->
+          <article class="card span2">
+            <div class="node-head">
+              <h3>Against the bots</h3>
+              <select id="chess-bots-period" style="margin-left:auto; width:auto" aria-label="Period">
+                <option value="all">All time</option>
+                <option value="month">This month</option>
+              </select>
+            </div>
+            <p class="muted">Fewest of their own moves each player needed to checkmate each bot.</p>
+            <p class="error" id="chess-bots-error" hidden></p>
+            <div id="chess-bot-boards"><p class="muted">Loading…</p></div>
+          </article>
         </div>
       </div>
 

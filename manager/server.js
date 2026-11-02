@@ -3006,36 +3006,47 @@ route('GET', /^\/api\/kachat\/translate$/, async (req, res) => {
 
 // Chess Tournaments (5.1) stats. The indexer replays the #chess-arena broadcast channel and
 // serves the leaderboard on its content API (kachat-app:3080); the panel just fetches and
-// displays it. Read-only: nothing here changes the stack.
+// displays it. The bot boards come from #chess-bots (KaChat-Indexer
+// docs/CHESS_BOT_LEADERBOARD.md). Read-only: nothing here changes the stack.
 const CHESS_ORIGIN = process.env.KACHAT_CONTENT_ORIGIN || 'http://kachat-app:3080';
 const CHESS_TESTNET_ORIGIN = 'http://kachat-app-testnet:3080';
 route('GET', /^\/api\/chess$/, async (req, res, match, url) => {
     // ?net=testnet reads the testnet-10 indexer's chess-arena instead.
     const testnet = url.searchParams.get('net') === 'testnet';
     const origin = testnet ? CHESS_TESTNET_ORIGIN : CHESS_ORIGIN;
+    // ?period= is the bot boards' only: this month or all time.
+    const period = url.searchParams.get('period') === 'month' ? 'month' : 'all';
     const state = await dockerctl.containerState(testnet ? 'kaspa-node-kachat-testnet' : 'kaspa-node-kachat');
     if (!state.exists) {
-        return sendJson(res, 200, { installed: false, running: false, leaderboard: [], tournaments: [] });
+        return sendJson(res, 200, { installed: false, running: false, leaderboard: [], tournaments: [], bots: [], period });
     }
     let leaderboard = [];
     let tournaments = [];
+    let bots = [];
     let error = null;
+    let botsError = null;
     try {
-        const [lb, ts] = await Promise.all([
+        const [lb, ts, bb] = await Promise.all([
             fetch(`${origin}/chess/leaderboard?limit=100`, { signal: AbortSignal.timeout(6000) }),
             fetch(`${origin}/chess/tournaments?limit=200`, { signal: AbortSignal.timeout(6000) }),
+            fetch(`${origin}/chess/bots/leaderboard?period=${period}&limit=100`, { signal: AbortSignal.timeout(6000) }),
         ]);
         if (lb.ok) leaderboard = (await lb.json()).players ?? [];
         if (ts.ok) tournaments = (await ts.json()).tournaments ?? [];
+        if (bb.ok) bots = (await bb.json()).bots ?? [];
         if (!lb.ok && !ts.ok) {
             error = 'The indexer answered but not on /chess. Update KaChat-Indexer to a build with chess support.';
+        } else if (bb.status === 404) {
+            botsError = 'The indexer answered but not on /chess/bots/leaderboard. Update KaChat-Indexer to a build with bot leaderboards.';
+        } else if (!bb.ok) {
+            botsError = `The indexer answered ${bb.status} for the bot boards.`;
         }
     } catch {
         error = state.running
             ? 'Could not reach the KaChat indexer. It may still be starting.'
             : 'The KaChat indexer is not running.';
     }
-    sendJson(res, 200, { installed: true, running: state.running, leaderboard, tournaments, error });
+    sendJson(res, 200, { installed: true, running: state.running, leaderboard, tournaments, bots, period, error, botsError });
 });
 
 // Address profiles: the avatar / banner / bio / Linktree links people stamp to their own
