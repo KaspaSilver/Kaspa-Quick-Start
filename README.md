@@ -348,7 +348,7 @@ page is open. Both follow KaChat-NFC's latest release, so a new release there
 needs no change here. The panel never asks for a PIN or a seed, and the card's
 new admin key is shown once and never kept. Its **Updates** tab compares the
 card software on the card with KaChat-NFC's main branch, and **Reset this card**
-there erases a card's backup and PIN and loads the card software fresh. The
+on Setup erases a card's backup and PIN and loads the card software fresh. The
 **Helper** tab checks the helper against KaChat-NFC's releases and updates the
 one on this server. None of this waits for a panel update.
 

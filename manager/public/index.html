@@ -2893,6 +2893,27 @@
             </div>
           </article>
 
+          <article class="card span2" id="nfc-reset-card" hidden>
+            <h3>Reset this card</h3>
+            <p class="muted">
+              Erases everything KaChat-NFC keeps on the card, its backup and its PIN, and loads the
+              card software fresh from your helper, as if the card were new. Use it to start over,
+              when the PIN is forgotten or blocked, or to move to newer card software.
+            </p>
+            <p class="verdict bad">
+              The backup on the card is gone for good. Have your seed phrase and passphrase on paper
+              before you reset.
+            </p>
+            <p class="hint">
+              A secured card keeps its admin key, and resetting it asks for the key you saved. Without
+              that key the card can't be reset.
+            </p>
+            <p class="muted" id="nfc-reset-note"></p>
+            <div class="row">
+              <button type="button" class="danger" id="nfc-reset" disabled>Reset this card</button>
+            </div>
+          </article>
+
           <article class="card span2">
             <h3>What you need</h3>
             <p class="muted">
@@ -2927,29 +2948,8 @@
             </div>
             <p class="hint">
               New card software never loads by itself. Loading it erases the card's PIN and backup,
-              so it is done with Reset this card, below, when you're ready.
+              so it is done with Reset this card on Setup, when you're ready.
             </p>
-          </article>
-
-          <article class="card span2">
-            <h3>Reset this card</h3>
-            <p class="muted">
-              Erases everything KaChat-NFC keeps on the card, its backup and its PIN, and loads the
-              card software fresh from your helper, as if the card were new. Use it to start over,
-              to clear a blocked PIN, or to move to newer card software.
-            </p>
-            <p class="verdict bad">
-              The backup on the card is gone for good. Have your seed phrase and passphrase on paper
-              before you reset.
-            </p>
-            <p class="hint">
-              A secured card keeps its admin key, and resetting it asks for the key you saved. Without
-              that key the card can't be reset.
-            </p>
-            <p class="muted" id="nfc-reset-note"></p>
-            <div class="row">
-              <button type="button" class="danger" id="nfc-reset" disabled>Reset this card</button>
-            </div>
           </article>
         </div>
       </div>

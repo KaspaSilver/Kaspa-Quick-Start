@@ -10611,14 +10611,14 @@ function renderNfcCardSoftware() {
         return setUpdateStatus(
             status,
             'available',
-            `Card software ${mainV} is out (this card has ${cardV}). Loading it erases this card's backup, so have your seed phrase ready first, then use Reset this card.`,
+            `Card software ${mainV} is out (this card has ${cardV}). Loading it erases this card's backup, so have your seed phrase ready first, then use Reset this card on Setup.`,
         );
     }
     if (release?.appletVersion && nfcVer(release.appletVersion, mainV) >= 0) {
         return setUpdateStatus(
             status,
             'available',
-            `Card software ${mainV} is out in ${release.tag} (this card has ${cardV}). Update the helper first (Helper tab), then use Reset this card. Loading it erases this card's backup.`,
+            `Card software ${mainV} is out in ${release.tag} (this card has ${cardV}). Update the helper first (Helper tab), then use Reset this card on Setup. Loading it erases this card's backup.`,
         );
     }
     setUpdateStatus(status, 'info', `Main has card software ${mainV}, newer than this card's ${cardV}, but it isn't in a release yet. It can be loaded once KaChat-NFC publishes one.`);
@@ -10679,9 +10679,10 @@ function renderNfcHelper() {
     update.disabled = nfc.busy || nfc.starting;
 }
 
-/** Reset is offered only for a card that holds KaChat-NFC, through a helper that answers. */
+/** Reset shows on Setup only while a card that holds KaChat-NFC is in, through a helper that answers. */
 function renderNfcReset() {
     const card = nfcCard();
+    $('nfc-reset-card').hidden = !nfc.via || !card?.supported || card.state !== 'loaded';
     const note = !nfc.via
         ? 'Start the helper on Setup first.'
         : !card
@@ -10719,7 +10720,7 @@ $('nfc-server-update').addEventListener('click', () => {
 
 $('nfc-reset').addEventListener('click', () => {
     if ($('nfc-reset').disabled) return;
-    // The progress, any admin key prompt and the result all show on Setup.
-    selectSubtab($('tab-nfc'), 'nfc-setup');
+    // The progress, any admin key prompt and the result show above, with the card.
+    $('nfc-card-now').scrollIntoView({ block: 'center' });
     nfcLoad({ reset: true });
 });
