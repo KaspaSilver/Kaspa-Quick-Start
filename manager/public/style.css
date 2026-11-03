@@ -2882,3 +2882,21 @@ body.dag-fullscreen { overflow: hidden; }
 
 /* The Chess view's bot boards: one small table per bot level. */
 .chess-bot h4 { margin: 4px 0 8px; }
+
+/* NFC Card: a command to copy, and the admin key shown once. */
+.nfc-command { display: flex; align-items: flex-start; gap: 8px; margin: 10px 0; }
+.nfc-command pre {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    padding: 10px 12px;
+    background: var(--panel-2);
+    border-radius: 8px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-size: 13px;
+}
+#nfc-key { font-size: 16px; letter-spacing: 0.06em; }
+.nfc-buy { margin: 8px 0 0; padding-left: 18px; }
+.nfc-buy li { margin: 4px 0; }
+#nfc-ask { margin-top: 12px; }

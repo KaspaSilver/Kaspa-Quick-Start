@@ -206,6 +206,13 @@
           <span class="track"></span>
         </label>
       </div>
+      <div class="nav-row">
+        <button class="nav-item" data-tab="nfc" title="NFC Card">
+          <span class="nav-dot" data-health="nfc"></span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><rect x="6.5" y="9" width="4" height="4" rx="0.8"/><path d="M14.5 9.5a3 3 0 010 3M16.8 8a5.5 5.5 0 010 6"/></svg>
+          <span class="label">NFC Card</span>
+        </button>
+      </div>
       <p class="nav-group-title">Apps</p>
       <div class="nav-row">
         <button class="nav-item" data-tab="nextcloud" title="Nextcloud">
@@ -2793,6 +2800,178 @@
       the firmware is fetched and checked once, and the rest of this page writes
       it to a board over USB and gets out of the way.
     -->
+    <!--
+      NFC Card (github.com/KaspaSilver/KaChat-NFC): loads the KaChat-NFC applet onto a Java Card so
+      KaChat can back up a seed phrase to it. The card work is done by a small helper: on the
+      computer the browser is on, or (Linux servers) in a container here. A tool, not a service.
+    -->
+    <section id="tab-nfc" class="tab">
+      <nav class="subnav" aria-label="NFC Card">
+        <button class="subtab-btn active" data-subtab="nfc-setup">Setup</button>
+        <button class="subtab-btn" data-subtab="nfc-updates">Updates</button>
+        <button class="subtab-btn" data-subtab="nfc-uninstall">Uninstall</button>
+      </nav>
+
+      <div id="sub-nfc-setup" class="subtab active">
+        <article class="card toggle-bar">
+          <div class="toggle-row">
+            <div class="toggle-text">
+              <strong>NFC Card</strong>
+              <span class="muted">
+                Back up a seed phrase you already have to an NFC card, encrypted and protected by a
+                PIN. The card never creates keys. This isn't cold storage, so keep your seed phrase
+                on paper too.
+              </span>
+            </div>
+            <span id="nfc-state" class="tag">checking</span>
+          </div>
+          <p class="hint">
+            This page loads the open source KaChat-NFC software onto the card. The backup itself,
+            the PIN and the seed phrase stay in KaChat: nothing here asks for them.
+          </p>
+        </article>
+
+        <div class="grid">
+          <!-- What is in the reader right now, in plain words. Filled from the helper's status. -->
+          <article class="card span2" id="nfc-card-now">
+            <div class="node-head">
+              <h3 id="nfc-now-title">Looking for the helper</h3>
+              <span id="nfc-via" class="tag" hidden></span>
+            </div>
+            <div id="nfc-now"><p class="muted">One moment...</p></div>
+            <!-- Kept apart from the 2-second redraw above, so typing here is not wiped. -->
+            <div id="nfc-ask" hidden></div>
+            <div id="nfc-result" class="verdict" hidden></div>
+          </article>
+
+          <!-- No helper answered: the one setup step on a Mac or Windows computer. -->
+          <article class="card span2" id="nfc-setup-step" hidden>
+            <h3 id="nfc-setup-title">Install the NFC helper on this computer</h3>
+            <p class="muted" id="nfc-setup-lead">
+              Card readers plug into the computer you are using now, and a small helper program
+              there lets this page reach it. It installs for your user only, with no password or
+              admin prompt, and starts at login. Run this in <span id="nfc-shell-name">a terminal</span>:
+            </p>
+            <div class="nfc-command">
+              <pre id="nfc-install-cmd"></pre>
+              <button type="button" class="copy-btn" id="nfc-install-copy">Copy</button>
+            </div>
+            <p class="hint" id="nfc-origin-note" hidden></p>
+            <p class="hint" id="nfc-safari-note" hidden>
+              Safari can block a secure (https) page from reaching the helper. If this page doesn't
+              move on after the helper is installed, open the panel at http://localhost on this
+              computer, or use another browser.
+            </p>
+            <p class="muted" id="nfc-other-os"></p>
+            <p class="hint" id="nfc-moves-on">This page moves on by itself as soon as the helper answers.</p>
+          </article>
+
+          <!-- Linux servers only: the reader plugged into the machine running Quick Start. -->
+          <article class="card span2" id="nfc-server-step" hidden>
+            <h3>Or use a reader plugged into this server</h3>
+            <p class="muted">
+              This server can reach USB, so the helper can run here instead, while this page is
+              open. Plug the reader into the machine running Kaspa Quick Start, not the one you are
+              browsing from. The first time, it downloads and builds the helper, which takes a
+              minute.
+            </p>
+            <p class="hint">
+              This path is experimental: a reader plugged in after the helper started may not be
+              seen. Use <strong>Restart the helper</strong> if that happens.
+            </p>
+            <div class="row">
+              <button type="button" class="primary" id="nfc-server-use">Use the reader on this server</button>
+              <button type="button" class="ghost" id="nfc-server-restart" hidden>Restart the helper</button>
+              <button type="button" class="ghost" id="nfc-server-leave" hidden>Stop using it</button>
+            </div>
+          </article>
+
+          <!-- The new admin key, shown once and never kept. -->
+          <article class="card span2" id="nfc-key-card" hidden>
+            <h3>Save this card's admin key</h3>
+            <p id="nfc-key-message" class="verdict bad" hidden></p>
+            <p class="muted">
+              This is the only copy. Store it somewhere safe, like a password manager. Without it
+              the card keeps working, but its software can never be updated or replaced.
+            </p>
+            <div class="nfc-command">
+              <pre id="nfc-key" class="mono"></pre>
+              <button type="button" class="copy-btn" id="nfc-key-copy">Copy</button>
+            </div>
+            <label class="check"><input type="checkbox" id="nfc-key-saved"> I saved it</label>
+            <div class="row">
+              <button type="button" class="primary" id="nfc-key-done" disabled>Done</button>
+            </div>
+          </article>
+
+          <article class="card span2">
+            <h3>What you need</h3>
+            <p class="muted">
+              These are the exact items KaChat-NFC was tested with. Any PC/SC contact reader should
+              work, but only this one has been tried. The card must be a J3R180.
+            </p>
+            <ul class="nfc-buy">
+              <li><a href="https://www.amazon.com/dp/B0CFFCJ9W1" target="_blank" rel="noopener">Card: J3R180 JCOP4</a> (must be this chip)</li>
+              <li><a href="https://www.amazon.com/dp/B075TBYBR8" target="_blank" rel="noopener">Reader: ACS ACR39U-UF</a> (USB-C)</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+
+      <div id="sub-nfc-updates" class="subtab">
+        <div class="grid">
+          <article class="card span2">
+            <h3>Updates</h3>
+            <dl class="kv vertical">
+              <div><dt>Your helper</dt><dd id="nfc-have">not found</dd></div>
+              <div><dt>Latest release</dt><dd id="nfc-latest">-</dd></div>
+              <div><dt>Card software in your helper</dt><dd id="nfc-applet">-</dd></div>
+            </dl>
+            <div id="nfc-update-status" class="update-status">Not checked yet.</div>
+            <div class="row">
+              <button type="button" id="nfc-check" class="ghost">Check for updates</button>
+            </div>
+            <div id="nfc-update-how" hidden>
+              <p class="muted">To update the helper, run the install command again:</p>
+              <div class="nfc-command">
+                <pre id="nfc-update-cmd"></pre>
+                <button type="button" class="copy-btn" id="nfc-update-copy">Copy</button>
+              </div>
+            </div>
+            <p class="hint">
+              Updating the helper doesn't change any card. A newer version of the card software is
+              different: loading it erases that card's PIN and backup, so it is never offered as a
+              routine update.
+            </p>
+          </article>
+        </div>
+      </div>
+
+      <div id="sub-nfc-uninstall" class="subtab">
+        <div class="grid">
+          <article class="card span2">
+            <h3>Remove the helper from your computer</h3>
+            <p class="muted">Removing the helper doesn't change any card. Run:</p>
+            <div class="nfc-command">
+              <pre id="nfc-uninstall-cmd"></pre>
+              <button type="button" class="copy-btn" id="nfc-uninstall-copy">Copy</button>
+            </div>
+            <p class="muted" id="nfc-uninstall-other"></p>
+          </article>
+          <article class="card span2" id="nfc-server-remove-card" hidden>
+            <h3>Remove the helper from this server</h3>
+            <p class="muted">
+              Stops the helper here and deletes its image. It is built again the next time you use
+              a reader on this server. No card is changed.
+            </p>
+            <div class="row">
+              <button type="button" class="danger" id="nfc-server-remove">Remove it</button>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
     <section id="tab-kassigner" class="tab">
       <nav class="subnav" aria-label="KasSigner">
         <button class="subtab-btn active" data-subtab="kassigner-setup">Setup</button>

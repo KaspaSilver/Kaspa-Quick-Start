@@ -39,6 +39,7 @@ import * as network from './lib/network.js';
 import * as emission from './lib/emission.js';
 import * as pruning from './lib/pruning.js';
 import * as kassigner from './lib/kassigner.js';
+import * as kachatNfc from './lib/kachat-nfc.js';
 import * as extension from './lib/extension.js';
 import * as selfservice from './lib/selfservice.js';
 import * as kachatDomains from './lib/kachat-domains.js';
@@ -2225,6 +2226,60 @@ async function applyAppConfig(name, cfg, onLine = () => {}) {
 
     onLine(`${app.label} is up.`);
     return { enabled: true };
+}
+
+// ----------------------------------------------------------------- NFC Card --
+
+// Loads the KaChat-NFC applet onto a Java Card (lib/kachat-nfc.js). Usually the page talks to the
+// helper on the user's own computer and nothing passes through here. These routes are the other
+// path: the reader plugged into this server, when it is a Linux host that can reach USB.
+route('GET', /^\/api\/kachat-nfc$/, async (req, res, match, url) => {
+    const [host, server, latest] = await Promise.all([
+        kachatNfc.hostKind(),
+        kachatNfc.serverState(),
+        kachatNfc.latestRelease({ force: url.searchParams.get('force') === '1' }).catch((e) => ({ error: e.message })),
+    ]);
+    sendJson(res, 200, { repo: kachatNfc.REPO, host, server, latest });
+});
+
+route('POST', /^\/api\/kachat-nfc\/server\/start$/, async (req, res) => {
+    if ((await kachatNfc.hostKind()) !== 'linux') {
+        return fail(res, 409, 'This server runs Docker Desktop, which cannot reach USB. Install the helper on your computer instead.');
+    }
+    const job = jobs.start('Start the NFC helper', (onLine) => kachatNfc.startServerHelper(onLine));
+    sendJson(res, 202, { ok: true, jobId: job.id });
+});
+
+route('POST', /^\/api\/kachat-nfc\/server\/stop$/, async (req, res) => {
+    await kachatNfc.stopServerHelper();
+    sendJson(res, 200, { ok: true });
+});
+
+route('POST', /^\/api\/kachat-nfc\/server\/remove$/, async (req, res) => {
+    const job = jobs.start('Remove the NFC helper', (onLine) => kachatNfc.removeServerHelper(onLine));
+    sendJson(res, 202, { ok: true, jobId: job.id });
+});
+
+// The helper's three calls, passed through unchanged. A secure answers with the card's new admin
+// key, so nothing here logs or keeps a request or a response. Never on Docker Desktop: there the
+// page talks to the helper on the computer directly, and a key must not cross this server.
+route('GET', /^\/api\/kachat-nfc\/v1\/status$/, async (req, res) => helperCall(req, res, 'GET', '/v1/status'));
+route('POST', /^\/api\/kachat-nfc\/v1\/card\/(load|secure)$/, async (req, res, match) =>
+    helperCall(req, res, 'POST', `/v1/card/${match[1]}`),
+);
+async function helperCall(req, res, method, path) {
+    if ((await kachatNfc.hostKind()) !== 'linux') return fail(res, 409, 'There is no NFC helper on this server.');
+    let body = null;
+    if (method === 'POST') {
+        try {
+            body = JSON.stringify(await readBody(req, 16 * 1024));
+        } catch {
+            return fail(res, 400, 'Bad request.');
+        }
+    }
+    const answer = await kachatNfc.proxy(method, path, body);
+    res.writeHead(answer.status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(answer.body);
 }
 
 // -------------------------------------------------------- browser extension --
@@ -4875,6 +4930,8 @@ async function bootstrap() {
     startLowBalanceWatch();
     startMiningStatsPersist();
     startPanelUpdateCheck();
+    // The NFC helper runs only while its page is open; one left from before a restart goes.
+    kachatNfc.stopServerHelper().catch(() => {});
 
     // The names paths follow whether each .kachat Domains server is really running (KQS-013).
     reconcileNamesRoutes().catch((e) => log('names route', e));

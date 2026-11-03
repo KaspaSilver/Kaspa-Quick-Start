@@ -291,6 +291,8 @@ function selectTab(name) {
     if (name === 'bot') loadBot().catch(() => {});
     if (name === 'push') loadPush().catch(() => {});
     if (name === 'extension') loadExtension().catch(() => {});
+    // NFC Card asks its helper every 2 seconds, only while it is on screen.
+    setNfcPolling(name === 'nfc');
     if (name === 'names') loadNames().catch(() => {});
     if (name === 'experimental') loadExperimental().catch(() => {});
     setTunnelPolling(name === 'proxy');
@@ -10012,5 +10014,568 @@ $('exp-leave-btn')?.addEventListener('click', async () => {
         await switchPanelTo('main');
     } catch (e) {
         await askConfirm(`Could not start the update: ${e.message}`);
+    }
+});
+
+// ----------------------------------------------------------------- NFC Card ---
+
+/**
+ * Loads the KaChat-NFC applet onto a Java Card (github.com/KaspaSilver/KaChat-NFC, whose
+ * docs/HELPER-API.md is the contract). The card work is done by the `kachat-nfc` helper:
+ *
+ *   'local'   the helper on the computer this browser is on, called directly at 127.0.0.1:18421.
+ *             Tried first, every poll. Nothing passes through the panel's server.
+ *   'server'  on a Linux server, the helper in a container there, through /api/kachat-nfc.
+ *             Only once the user has chosen it (it needs the reader plugged into the server).
+ *
+ * Rules: a load or secure only ever starts from a click and is never retried by itself; an admin
+ * key is shown once and never stored, logged or kept in this page longer than it is on screen.
+ */
+const NFC_LOCAL = 'http://127.0.0.1:18421';
+const NFC_RELEASES = 'https://github.com/KaspaSilver/KaChat-NFC/releases/latest/download';
+const NFC_SERVER_KEY = 'kqs.nfcServerReader';
+const nfc = {
+    timer: null,
+    via: null, // 'local' | 'server' | null
+    info: null, // GET /api/kachat-nfc
+    status: null, // the helper's last /v1/status
+    reader: '', // the reader picked when several hold a card
+    busy: false, // a load or secure is running: the poll leaves the card alone
+    starting: false,
+    autoStarted: false, // the server helper is started by itself at most once per visit
+    skippedSecure: false,
+    lastHtml: '',
+};
+
+const nfcIsLoopback = () => ['localhost', '127.0.0.1', '[::1]', '::1'].includes(location.hostname);
+
+function nfcOs() {
+    const p = String(navigator.userAgentData?.platform || navigator.platform || '').toLowerCase();
+    if (p.includes('win')) return 'windows';
+    if (p.includes('mac')) return 'mac';
+    return 'linux';
+}
+
+function nfcCommands() {
+    const origin = nfcIsLoopback() ? '' : location.origin;
+    return {
+        mac: origin
+            ? `curl -fsSL ${NFC_RELEASES}/install-helper.sh | KACHAT_NFC_ORIGIN="${origin}" sh`
+            : `curl -fsSL ${NFC_RELEASES}/install-helper.sh | sh`,
+        windows: origin
+            ? `$env:KACHAT_NFC_ORIGIN = "${origin}"; irm ${NFC_RELEASES}/install-helper.ps1 | iex`
+            : `irm ${NFC_RELEASES}/install-helper.ps1 | iex`,
+        macRemove: `curl -fsSL ${NFC_RELEASES}/uninstall-helper.sh | sh`,
+        windowsRemove: `irm ${NFC_RELEASES}/uninstall-helper.ps1 | iex`,
+    };
+}
+
+let nfcServerChosen = false;
+try {
+    nfcServerChosen = localStorage.getItem(NFC_SERVER_KEY) === '1';
+} catch {
+    /* storage blocked: the choice lasts for this page only */
+}
+function nfcRememberServer(on) {
+    nfcServerChosen = on;
+    try {
+        if (on) localStorage.setItem(NFC_SERVER_KEY, '1');
+        else localStorage.removeItem(NFC_SERVER_KEY);
+    } catch {
+        /* nothing to remember it in */
+    }
+}
+
+/** One helper call, on whichever path is in use. Never throws: a failure comes back as an error. */
+async function nfcCall(method, path, body, via = nfc.via) {
+    const url = via === 'local' ? `${NFC_LOCAL}${path}` : `/api/kachat-nfc${path}`;
+    try {
+        const res = await fetch(url, {
+            method,
+            headers: body ? { 'Content-Type': 'application/json' } : {},
+            body: body ? JSON.stringify(body) : undefined,
+            signal: AbortSignal.timeout(method === 'GET' ? (via === 'local' ? 1500 : 8000) : 200_000),
+            cache: 'no-store',
+            ...(via === 'local' ? { credentials: 'omit' } : {}),
+        });
+        let data = {};
+        try {
+            data = await res.json();
+        } catch {
+            /* empty */
+        }
+        return { ok: res.ok, status: res.status, data };
+    } catch {
+        return { ok: false, status: 0, data: { error: { code: 'helper_down', message: 'The helper stopped answering.' } } };
+    }
+}
+
+function setNfcPolling(active) {
+    clearInterval(nfc.timer);
+    nfc.timer = null;
+    if (!active) return;
+    nfc.autoStarted = false;
+    loadNfcInfo().catch(() => {});
+    nfcPoll();
+    nfc.timer = setInterval(nfcPoll, 2000);
+}
+// A hidden page stops asking; coming back starts again if the tab is still NFC Card.
+document.addEventListener('visibilitychange', () => {
+    const onTab = $('tab-nfc')?.classList.contains('active');
+    if (document.hidden) setNfcPolling(false);
+    else if (onTab && !nfc.timer) setNfcPolling(true);
+});
+
+async function loadNfcInfo({ force = false } = {}) {
+    nfc.info = await api(`/api/kachat-nfc${force ? '?force=1' : ''}`);
+    $('nfc-server-remove-card').hidden = nfc.info.host !== 'linux' || !nfc.info.server.image;
+    renderNfcUpdates();
+}
+
+let nfcPolling = false;
+async function nfcPoll() {
+    if (nfc.busy || nfcPolling) return;
+    nfcPolling = true;
+    try {
+        // The helper on this computer wins whenever it answers.
+        const local = await nfcCall('GET', '/v1/status', null, 'local');
+        if (local.ok) {
+            nfc.via = 'local';
+            return renderNfc(local.data);
+        }
+        if (nfc.info?.host === 'linux' && nfcServerChosen) {
+            const server = await nfcCall('GET', '/v1/status', null, 'server');
+            if (server.ok) {
+                nfc.via = 'server';
+                return renderNfc(server.data);
+            }
+            nfc.via = null;
+            if (nfc.starting) return renderNfcWaiting('Starting the helper on this server...');
+            if (!nfc.autoStarted) {
+                nfc.autoStarted = true;
+                startNfcServer();
+                return renderNfcWaiting('Starting the helper on this server...');
+            }
+            return renderNfcWaiting('The helper on this server isn\'t answering yet. If this lasts, press Restart the helper.');
+        }
+        nfc.via = null;
+        renderNfcSetup();
+    } finally {
+        nfcPolling = false;
+    }
+}
+
+async function startNfcServer() {
+    nfc.starting = true;
+    const job = await queueAction({
+        title: 'Start the NFC helper',
+        request: (headers) => api('/api/kachat-nfc/server/start', { method: 'POST', headers }),
+    });
+    nfc.starting = false;
+    loadNfcInfo().catch(() => {});
+    if (!job.ok) {
+        // Not again by itself: the person chooses to try once more.
+        nfcRememberServer(false);
+        toast('The NFC helper did not start on this server. See the Update Queue for why.', 'bad');
+    }
+}
+
+function nfcTag(text, cls) {
+    const tag = $('nfc-state');
+    tag.textContent = text;
+    tag.className = `tag ${cls || ''}`.trim();
+}
+
+function setNfcNow(title, html) {
+    $('nfc-now-title').textContent = title;
+    // Redrawn every 2 seconds; only touched when something changed, so a button under the
+    // pointer is not replaced mid-click.
+    if (html !== nfc.lastHtml) {
+        $('nfc-now').innerHTML = html;
+        nfc.lastHtml = html;
+    }
+}
+
+function renderNfcWaiting(text) {
+    $('nfc-setup-step').hidden = true;
+    $('nfc-server-step').hidden = nfc.info?.host !== 'linux';
+    syncNfcServerButtons();
+    $('nfc-via').hidden = true;
+    nfcTag('starting', 'warn');
+    setNfcNow('Getting ready', `<p class="muted">${escapeHtml(text)}</p>`);
+}
+
+function syncNfcServerButtons() {
+    $('nfc-server-use').hidden = nfcServerChosen;
+    $('nfc-server-restart').hidden = !nfcServerChosen;
+    $('nfc-server-leave').hidden = !nfcServerChosen;
+}
+
+/** No helper answered: the setup step for this computer, and the server path where there is one. */
+function renderNfcSetup() {
+    const os = nfcOs();
+    const cmd = nfcCommands();
+    const linuxServer = nfc.info?.host === 'linux';
+    $('nfc-via').hidden = true;
+    nfcTag('no helper', 'off');
+    setNfcNow('No helper found', '<p class="muted">This page needs the NFC helper to reach a card reader.</p>');
+
+    $('nfc-setup-step').hidden = false;
+    if (os === 'linux') {
+        // The helper's installer is for macOS and Windows. A Linux computer uses the server path.
+        $('nfc-setup-title').textContent = 'The helper is for Mac and Windows computers';
+        $('nfc-setup-lead').hidden = true;
+        $('nfc-install-cmd').textContent = cmd.mac;
+        $('nfc-install-cmd').closest('.nfc-command').hidden = true;
+        $('nfc-other-os').textContent = linuxServer
+            ? 'The helper installs on macOS and Windows. On a Linux computer, plug the reader into the machine running Kaspa Quick Start and use it from there (below).'
+            : 'The helper installs on macOS and Windows. Open this page on one of those, with the reader plugged into it.';
+        $('nfc-origin-note').hidden = true;
+        $('nfc-safari-note').hidden = true;
+        $('nfc-moves-on').hidden = true;
+    } else {
+        $('nfc-setup-title').textContent = 'Install the NFC helper on this computer';
+        $('nfc-setup-lead').hidden = false;
+        $('nfc-install-cmd').closest('.nfc-command').hidden = false;
+        $('nfc-moves-on').hidden = false;
+        $('nfc-shell-name').textContent = os === 'windows' ? 'PowerShell' : 'Terminal';
+        $('nfc-install-cmd').textContent = os === 'windows' ? cmd.windows : cmd.mac;
+        $('nfc-other-os').innerHTML =
+            os === 'windows'
+                ? `On a Mac, run this in Terminal instead: <code>${escapeHtml(cmd.mac)}</code>`
+                : `On Windows, run this in PowerShell instead: <code>${escapeHtml(cmd.windows)}</code>`;
+        const origin = !nfcIsLoopback();
+        $('nfc-origin-note').hidden = !origin;
+        if (origin) {
+            $('nfc-origin-note').textContent =
+                `The command includes this panel's address (${location.origin}), because the helper only answers pages it was told about.`;
+        }
+        const safari = /safari/i.test(navigator.userAgent) && !/chrome|chromium|edg|crios|fxios/i.test(navigator.userAgent);
+        $('nfc-safari-note').hidden = !(safari && location.protocol === 'https:');
+    }
+
+    $('nfc-server-step').hidden = !linuxServer;
+    syncNfcServerButtons();
+    renderNfcUpdates();
+}
+
+const nfcBytes = (n) => (Number(n) > 0 ? `${Math.round(Number(n) / 1024)} KB free` : '');
+
+/** The helper answered: say what is in the reader, in plain words. */
+function renderNfc(st) {
+    nfc.status = st;
+    $('nfc-setup-step').hidden = true;
+    // The server choice stays visible while it is the path in use, for Restart and Stop.
+    $('nfc-server-step').hidden = !(nfc.via === 'server');
+    syncNfcServerButtons();
+    $('nfc-via').hidden = false;
+    $('nfc-via').textContent = nfc.via === 'server' ? 'reader on this server' : 'reader on this computer';
+    renderNfcUpdates();
+
+    const readers = Array.isArray(st.readers) ? st.readers : [];
+    if (!readers.length) {
+        nfcTag('no reader', 'off');
+        return setNfcNow('Plug in your card reader', '<p class="muted">Plug in your card reader. The tested reader is listed under What you need, below.</p>');
+    }
+    const withCard = readers.filter((r) => r.card);
+    if (!withCard.length) {
+        nfcTag('no card', 'off');
+        return setNfcNow('Insert your card', '<p class="muted">Insert your card, chip side up and chip first.</p>');
+    }
+
+    // Several cards in: the person picks one, and its name goes with every call.
+    if (!withCard.some((r) => r.name === nfc.reader)) nfc.reader = withCard[0].name;
+    const picker =
+        withCard.length > 1
+            ? `<label class="inline">Card in <select id="nfc-reader">${withCard
+                  .map((r) => `<option${r.name === nfc.reader ? ' selected' : ''}>${escapeHtml(r.name)}</option>`)
+                  .join('')}</select></label>`
+            : '';
+    const reader = withCard.find((r) => r.name === nfc.reader);
+    const card = reader.card;
+    const facts = [card.chip, nfcBytes(card.freeMemoryBytes)].filter(Boolean).map(escapeHtml).join(' · ');
+    const factsLine = `<p class="hint">${escapeHtml(reader.name)}${facts ? ` · ${facts}` : ''}</p>`;
+
+    if (card.state === 'unreadable') {
+        nfcTag('unreadable', 'off');
+        return setNfcNow('This card can\'t be read', `${picker}<p class="muted">This card can't be read. Check it's inserted the right way.</p>${factsLine}`);
+    }
+    if (!card.supported) {
+        nfcTag('untested card', 'off');
+        return setNfcNow(
+            'This card can\'t be loaded',
+            `${picker}<p class="muted">KaChat-NFC has only been tested on J3R180 cards, so this one can't be loaded.</p>${factsLine}`,
+        );
+    }
+    if (card.state === 'blank') {
+        nfcTag('blank card', 'warn');
+        return setNfcNow(
+            'Ready to load',
+            `${picker}<p class="muted">This card doesn't have the KaChat-NFC software yet. Loading writes it and checks it answers.
+             Anything else already on the card is left alone.</p>${factsLine}
+             <div class="row"><button type="button" class="primary" data-nfc-load>Load</button></div>`,
+        );
+    }
+
+    // Loaded.
+    const applet = card.applet || {};
+    const version = card.appletVersion || applet.version || '';
+    const newer =
+        st.appletVersion && version && st.appletVersion !== version
+            ? `<p class="verdict">A newer version of the card software is available. Loading it erases this card's backup, so have your seed phrase ready first.</p>`
+            : '';
+    const loadedFacts = `<p class="hint">${escapeHtml(reader.name)} · KaChat-NFC ${escapeHtml(version || '?')}${
+        applet.hasBackup ? ' · holds a backup' : ''
+    }${facts ? ` · ${facts}` : ''}</p>`;
+
+    if (applet.pinBlocked) {
+        nfcTag('PIN blocked', 'off');
+        return setNfcNow(
+            'PIN blocked',
+            `${picker}<p class="verdict bad">This card's PIN is blocked after too many wrong tries. Any backup on it can no longer be read.</p>
+             <p class="muted">Loading the software again is the only way to use this card again. It erases the card.</p>${loadedFacts}
+             <div class="row"><button type="button" class="ghost" data-nfc-load>Load again</button></div>`,
+        );
+    }
+    if (!card.adminKeysChanged) {
+        nfcTag('loaded', 'warn');
+        const lead = nfc.skippedSecure
+            ? '<p class="verdict bad">This card is still on its public admin keys, which anyone could use to replace its software.</p>'
+            : `<p class="muted">Loaded. One step left: <strong>secure this card</strong>. Its admin keys are the public ones it
+               shipped with, which anyone could use to replace the card's software. Securing replaces them with a new random
+               key, shown to you once to save.</p>`;
+        return setNfcNow(
+            'Loaded, not secured yet',
+            `${picker}${lead}${loadedFacts}${newer}
+             <div class="row"><button type="button" class="primary" data-nfc-secure>Secure this card</button>${
+                 nfc.skippedSecure ? '' : '<button type="button" class="ghost" data-nfc-skip>Skip for now</button>'
+             }</div>`,
+        );
+    }
+    nfcTag('ready', 'ok');
+    setNfcNow(
+        'Ready',
+        `${picker}<p class="verdict ok">Ready. Open KaChat and back up by tapping this card.</p>${loadedFacts}${newer}`,
+    );
+}
+
+function nfcResult(text, bad = false) {
+    const el = $('nfc-result');
+    el.hidden = !text;
+    el.textContent = text || '';
+    el.className = `verdict${bad ? ' bad' : ''}`;
+}
+
+/**
+ * Asks for the admin key saved when this card was secured, and runs `what` again with it. A yes
+ * to erasing, given before the key was asked for, goes with it rather than being asked twice.
+ */
+function nfcAskKey(what, message, { confirmErase = false } = {}) {
+    const box = $('nfc-ask');
+    box.hidden = false;
+    box.innerHTML = `
+      <p class="muted">${escapeHtml(message || 'This card\'s admin key was changed.')} Paste the admin key you saved when it was secured.</p>
+      <div class="row">
+        <input type="password" id="nfc-ask-key" size="36" maxlength="32" autocomplete="off" spellcheck="false" placeholder="32 hex characters">
+        <button type="button" class="primary" id="nfc-ask-go">${what === 'load' ? 'Load' : 'Secure'} with this key</button>
+        <button type="button" class="ghost" id="nfc-ask-cancel">Cancel</button>
+      </div>`;
+    $('nfc-ask-key').focus();
+    $('nfc-ask-cancel').addEventListener('click', nfcClearAsk);
+    $('nfc-ask-go').addEventListener('click', () => {
+        const key = $('nfc-ask-key').value.trim();
+        if (!/^[0-9a-fA-F]{32}$/.test(key)) return toast('The admin key is 32 hex characters.', 'bad');
+        nfcClearAsk();
+        if (what === 'load') nfcLoad({ adminKey: key, confirmErase });
+        else nfcSecure({ adminKey: key, asked: true });
+    });
+}
+function nfcClearAsk() {
+    $('nfc-ask').innerHTML = '';
+    $('nfc-ask').hidden = true;
+}
+
+function nfcSetBusy(on, text) {
+    nfc.busy = on;
+    for (const b of document.querySelectorAll('#nfc-now button, #nfc-now select')) b.disabled = on;
+    if (on) nfcResult(text);
+}
+
+async function nfcLoad({ confirmErase = false, adminKey = '' } = {}) {
+    if (nfc.busy || !nfc.via) return;
+    nfcClearAsk();
+    nfcSetBusy(true, 'Loading the KaChat-NFC software. This takes about 20 seconds. Don\'t remove the card.');
+    const body = { reader: nfc.reader, confirmErase, ...(adminKey ? { adminKey } : {}) };
+    const r = await nfcCall('POST', '/v1/card/load', body);
+    nfcSetBusy(false);
+    nfc.lastHtml = '';
+    if (r.ok) {
+        nfc.skippedSecure = false;
+        nfcResult(`Loaded KaChat-NFC ${r.data.appletVersion || ''} and confirmed it answers.`.replace('  ', ' '));
+        return nfcPoll();
+    }
+    const err = r.data?.error || {};
+    nfcResult('');
+    switch (err.code) {
+        case 'would_erase':
+            // Only ever sent with confirmErase after the person says yes here.
+            if (await askConfirm(err.message || 'Loading again erases this card\'s PIN and backup.')) {
+                return nfcLoad({ confirmErase: true, adminKey });
+            }
+            return;
+        case 'wrong_admin_key':
+        case 'login_refused':
+            return nfcAskKey('load', err.message, { confirmErase });
+        case 'card_removed':
+            return nfcResult('The card was removed while it was loading. Put it back and press Load again.', true);
+        default:
+            return nfcResult(err.message || 'The card could not be loaded.', true);
+    }
+}
+
+async function nfcSecure({ adminKey = '', asked = false } = {}) {
+    if (nfc.busy || !nfc.via) return;
+    nfcClearAsk();
+    if (
+        !asked &&
+        !(await askConfirm(
+            'Secure this card?\n\nIts admin keys are the public ones it shipped with, which anyone could use to replace the card\'s software. This replaces them with a new random key.\n\nYou\'ll be shown the new key once. Without it the card keeps working, but its software can never be updated or replaced.',
+        ))
+    ) {
+        return;
+    }
+    nfcSetBusy(true, 'Securing the card. Don\'t remove it.');
+    const r = await nfcCall('POST', '/v1/card/secure', { reader: nfc.reader, ...(adminKey ? { adminKey } : {}) });
+    nfcSetBusy(false);
+    nfc.lastHtml = '';
+    nfcResult('');
+    if (r.ok && r.data?.adminKey) return nfcShowKey(r.data.adminKey);
+    const err = r.data?.error || {};
+    if (err.code === 'secure_uncertain' && err.adminKey) return nfcShowKey(err.adminKey, err.message);
+    if (err.code === 'wrong_admin_key' || err.code === 'login_refused') return nfcAskKey('secure', err.message);
+    if (err.code === 'card_removed') return nfcResult('The card was removed. Put it back and check what it says before trying again.', true);
+    nfcResult(err.message || 'The card could not be secured.', true);
+}
+
+/** The new admin key, on screen once. Done clears it from the page. */
+function nfcShowKey(key, message) {
+    $('nfc-key').textContent = key;
+    $('nfc-key-message').hidden = !message;
+    $('nfc-key-message').textContent = message || '';
+    $('nfc-key-saved').checked = false;
+    $('nfc-key-done').disabled = true;
+    $('nfc-key-card').hidden = false;
+    $('nfc-key-card').scrollIntoView({ block: 'center' });
+    nfcPoll();
+}
+
+$('nfc-key-saved').addEventListener('change', (e) => ($('nfc-key-done').disabled = !e.target.checked));
+$('nfc-key-done').addEventListener('click', () => {
+    $('nfc-key').textContent = '';
+    $('nfc-key-card').hidden = true;
+});
+$('nfc-key-copy').addEventListener('click', async () => {
+    toast((await copyText($('nfc-key').textContent)) ? 'Copied. Store it somewhere safe.' : 'Copy failed. Select it and copy by hand.');
+});
+
+$('nfc-now').addEventListener('click', (event) => {
+    if (event.target.closest('[data-nfc-load]')) nfcLoad();
+    else if (event.target.closest('[data-nfc-secure]')) nfcSecure();
+    else if (event.target.closest('[data-nfc-skip]')) {
+        nfc.skippedSecure = true;
+        nfc.lastHtml = '';
+        if (nfc.status) renderNfc(nfc.status);
+    }
+});
+$('nfc-now').addEventListener('change', (event) => {
+    if (event.target.id !== 'nfc-reader') return;
+    nfc.reader = event.target.value;
+    nfc.lastHtml = '';
+    nfcResult('');
+    if (nfc.status) renderNfc(nfc.status);
+});
+
+for (const [button, source] of [
+    ['nfc-install-copy', 'nfc-install-cmd'],
+    ['nfc-update-copy', 'nfc-update-cmd'],
+    ['nfc-uninstall-copy', 'nfc-uninstall-cmd'],
+]) {
+    $(button).addEventListener('click', async () => {
+        toast((await copyText($(source).textContent)) ? 'Copied.' : 'Copy failed. Select it and copy by hand.');
+    });
+}
+
+$('nfc-server-use').addEventListener('click', () => {
+    nfcRememberServer(true);
+    nfc.autoStarted = false;
+    syncNfcServerButtons();
+    nfcPoll();
+});
+$('nfc-server-restart').addEventListener('click', () => {
+    if (nfc.busy || nfc.starting) return;
+    nfc.via = null;
+    startNfcServer();
+});
+$('nfc-server-leave').addEventListener('click', async () => {
+    nfcRememberServer(false);
+    nfc.via = null;
+    await api('/api/kachat-nfc/server/stop', { method: 'POST' }).catch(() => {});
+    nfc.lastHtml = '';
+    nfcPoll();
+});
+$('nfc-server-remove').addEventListener('click', async () => {
+    if (!(await askConfirm('Remove the NFC helper from this server?\n\nIts image is deleted and built again next time. No card is changed.'))) return;
+    nfcRememberServer(false);
+    await queueAction({
+        title: 'Remove the NFC helper',
+        request: (headers) => api('/api/kachat-nfc/server/remove', { method: 'POST', headers }),
+    });
+    loadNfcInfo().catch(() => {});
+});
+
+// --- updates and uninstall ---
+
+function renderNfcUpdates() {
+    const os = nfcOs();
+    const cmd = nfcCommands();
+    const have = nfc.status?.helperVersion || '';
+    const latest = nfc.info?.latest?.tag || '';
+    $('nfc-have').textContent = have
+        ? `${have}${nfc.via === 'server' ? ' (on this server)' : ''}`
+        : 'not found (the helper isn\'t answering)';
+    $('nfc-latest').textContent = latest || (nfc.info?.latest?.error ? `unknown: ${nfc.info.latest.error}` : '-');
+    $('nfc-applet').textContent = nfc.status?.appletVersion ? `KaChat-NFC ${nfc.status.appletVersion}` : '-';
+
+    const status = $('nfc-update-status');
+    const how = $('nfc-update-how');
+    how.hidden = true;
+    if (!have || !latest) {
+        setUpdateStatus(status, 'info', have ? 'Could not look up the latest release.' : 'Open Setup with the helper running to see its version.');
+    } else if (have === latest) {
+        setUpdateStatus(status, 'current', `Up to date: ${have}.`);
+    } else if (nfc.via === 'server') {
+        setUpdateStatus(status, 'info', `${latest} is out. The helper on this server is pinned to ${have} and moves with Kaspa Quick Start updates.`);
+    } else {
+        setUpdateStatus(status, 'available', `${latest} is out (you have ${have}).`);
+        how.hidden = os === 'linux';
+        $('nfc-update-cmd').textContent = os === 'windows' ? cmd.windows : cmd.mac;
+    }
+
+    $('nfc-uninstall-cmd').textContent = os === 'windows' ? cmd.windowsRemove : cmd.macRemove;
+    $('nfc-uninstall-other').innerHTML =
+        os === 'windows'
+            ? `On a Mac: <code>${escapeHtml(cmd.macRemove)}</code>`
+            : `On Windows (PowerShell): <code>${escapeHtml(cmd.windowsRemove)}</code>`;
+}
+
+$('nfc-check').addEventListener('click', async () => {
+    const button = $('nfc-check');
+    button.disabled = true;
+    try {
+        await loadNfcInfo({ force: true });
+    } catch (e) {
+        toast(e.message, 'bad');
+    } finally {
+        button.disabled = false;
     }
 });
