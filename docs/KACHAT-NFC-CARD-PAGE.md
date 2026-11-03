@@ -10,11 +10,12 @@ this file is a request. The card software and the helper live in a new public re
 
 ## Status of KaChat-NFC
 
-- Builds in GitHub Actions for macOS, Windows and Linux.
-- **No release has been published yet, and no card has been loaded with it yet.** The installer URLs
-  below return 404 until the iPhone session has tested a card and tagged `v0.1.0`. Build against
-  [docs/HELPER-API.md](https://github.com/KaspaSilver/KaChat-NFC/blob/main/docs/HELPER-API.md), and
-  use a small mock of it until then.
+- [v0.1.0](https://github.com/KaspaSilver/KaChat-NFC/releases/tag/v0.1.0) is published, so the
+  installer URLs below work. It builds for macOS, Windows and Linux in GitHub Actions.
+- **No card has been loaded with it yet.** The owner wants the first real load to go through this
+  page, so this page is also how the helper and applet get their first real test. Use a test card
+  with no real seed, and report anything the helper or `docs/HELPER-API.md` gets wrong. Don't patch
+  around it here: the owner will pass it to the iPhone session, which owns KaChat-NFC.
 - `docs/HELPER-API.md` is the contract. If it and this file disagree, it wins.
 
 ## 1. What the owner gets
