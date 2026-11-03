@@ -68,9 +68,9 @@ Please update KaChat-NFC's `docs/PROTOCOL.md`:
   get the seed words, because a 6-digit PIN can be guessed offline. The passphrase is what still
   protects the account. A forgotten passphrase now also makes the backup useless.
 - `SET PIN` can keep accepting 6 to 16 bytes. KaChat only sends 6 digits.
-- Say that changing the PIN means re-encrypting the backup, since the PIN derives its key. KaChat now
-  has a Change PIN option that writes the re-encrypted backup, then sends `SET PIN`. The applet needs
-  no change for this.
+- KaChat has no way to change a card's PIN, by the owner's choice. Someone who forgets it reloads the
+  card, which erases the backup. The PIN derives the backup's key, so any future PIN change would have
+  to re-encrypt the backup as well.
 
 On the NFC Card page:
 
