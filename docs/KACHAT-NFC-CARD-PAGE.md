@@ -96,7 +96,7 @@ In `KaChatNFCApplet.java`, change `wipe()` so it also clears the PIN:
   reload.
 
 Then update `docs/PROTOCOL.md`'s `WIPE` row and the backup section, bump the applet version, and
-publish a release. Move this page's helper to it the same way as v0.1.1.
+publish a release. The server helper follows the latest release, so it needs no pin change here.
 
 **Cards already loaded keep their PIN when erased.** Only a reload gets them the new software, and
 reloading erases the card and, once secured, needs its saved admin key. Follow section 8 for how to
