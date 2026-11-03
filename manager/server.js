@@ -4930,8 +4930,9 @@ async function bootstrap() {
     startLowBalanceWatch();
     startMiningStatsPersist();
     startPanelUpdateCheck();
-    // The NFC helper runs only while its page is open; one left from before a restart goes.
-    kachatNfc.stopServerHelper().catch(() => {});
+    // The NFC helper runs only while its page is open; one left from before a restart goes, and
+    // so does any image built for an older release.
+    kachatNfc.stopServerHelper().then(() => kachatNfc.removeOldImages()).catch(() => {});
 
     // The names paths follow whether each .kachat Domains server is really running (KQS-013).
     reconcileNamesRoutes().catch((e) => log('names route', e));

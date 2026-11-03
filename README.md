@@ -336,6 +336,16 @@ builds it, and its tab shows the folder to pick under **Load unpacked** (or a
 zip to download for another computer), with Update and Rebuild for newer
 commits on `main`.
 
+**NFC Card.** Loads the open source
+[KaChat-NFC](https://github.com/KaspaSilver/KaChat-NFC) software onto a J3R180
+Java Card and secures its admin keys, so KaChat can back up a seed phrase you
+already have to the card. A small helper on your Mac or Windows computer reaches
+the reader, and the page shows the one command that installs it. On a Linux
+server the reader can plug into the server instead, and the helper runs there in
+a container while the page is open. Both follow KaChat-NFC's latest release, so
+a new release there needs no change here. The panel never asks for a PIN or a
+seed, and the card's new admin key is shown once and never kept.
+
 **Nextcloud.** Your own cloud for the files, photos and video KaChat shares and
 backs up. The official `nextcloud:stable` image with ffmpeg added, and previews
 switched on for you: photos and iPhone HEIC through a separate Imaginary

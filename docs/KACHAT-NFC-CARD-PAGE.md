@@ -23,6 +23,12 @@ this file is a request. The card software and the helper live in a new public re
 
 ## To do now: move to v0.1.1
 
+> **Done, 2026-11-03.** The page is on `main` (no Experimental branch), and the server helper now
+> builds from KaChat-NFC's latest release instead of a pinned tag, so a new release there reaches
+> the panel with no Kaspa-Quick-Start change. Images for older releases are removed when the
+> helper starts, when the panel starts, and by Remove. The v0.1.1 image itself still hasn't been
+> built or run against a real reader.
+
 `manager/lib/kachat-nfc.js` on the `nfc-card` branch still pins `TAG = 'v0.1.0'`. **Change it to
 `v0.1.1`.** On Linux, v0.1.0 can't see any reader, so this page can't work there until this changes.
 

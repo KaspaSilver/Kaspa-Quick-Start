@@ -25,18 +25,20 @@ import { machine } from './host.js';
  */
 
 export const REPO = 'KaspaSilver/KaChat-NFC';
-// The release the server-side helper is built from. The browser-side helper is installed by the
-// user from releases/latest, and the Updates tab says when that is newer than what they run.
-export const TAG = 'v0.1.0';
-const IMAGE = `kaspa-quick-start/kachat-nfc:${TAG}`;
+// The server-side helper is built from KaChat-NFC's latest release, like the browser-side one the
+// user installs from releases/latest, so a new release there reaches the panel with no change
+// here. Each release gets its own image, tagged with the release.
+const IMAGE_NAME = 'kaspa-quick-start/kachat-nfc';
 export const CONTAINER = 'kaspa-node-kachat-nfc';
 const NETWORK = 'kaspa-node-net';
 const HELPER_PORT = 18421;
 // Where the server helper answers; the override is for testing the panel against a stand-in.
 const [HELPER_HOST, HELPER_HOST_PORT] = (process.env.KACHAT_NFC_HELPER || `${CONTAINER}:${HELPER_PORT}`).split(':');
-// The helper's own Dockerfile, used as the whole build context (it downloads the release binary
-// and checks it against SHA256SUMS). Pinned to the tag, so the image is exactly that release.
-const DOCKERFILE_URL = `https://raw.githubusercontent.com/${REPO}/${TAG}/docker/Dockerfile`;
+// A release tag goes into a docker tag and a URL, so only plain ones are used.
+const TAG_RE = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$/;
+// The helper's own Dockerfile at a release, used as the whole build context (it downloads that
+// release's binary and checks it against SHA256SUMS), so the image is exactly that release.
+const dockerfileUrl = (tag) => `https://raw.githubusercontent.com/${REPO}/${tag}/docker/Dockerfile`;
 
 /** Where the reader can be: 'linux' (a container here can reach USB) or 'desktop' (it cannot). */
 export async function hostKind() {
@@ -49,57 +51,95 @@ export async function hostKind() {
     return 'linux';
 }
 
-async function imageExists() {
+/** Release tags of the helper images built here, newest first. */
+async function builtTags() {
     try {
-        await docker(['image', 'inspect', IMAGE], { timeoutMs: 30_000 });
-        return true;
+        const { stdout } = await docker(['image', 'ls', '--format', '{{.Repository}}:{{.Tag}}', IMAGE_NAME], { timeoutMs: 30_000 });
+        return stdout
+            .split('\n')
+            .map((l) => l.trim())
+            .filter((l) => l.startsWith(`${IMAGE_NAME}:`))
+            .map((l) => l.slice(IMAGE_NAME.length + 1))
+            .filter((t) => TAG_RE.test(t))
+            .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
     } catch {
-        return false;
+        return [];
     }
 }
 
-async function containerRunning() {
+/** The latest release's tag, or null when GitHub can't be reached. */
+async function latestTag() {
+    const tag = (await latestRelease().catch(() => null))?.tag;
+    return tag && TAG_RE.test(tag) ? tag : null;
+}
+
+/** The release the running helper was built from, or null when none runs. */
+async function runningTag() {
     try {
-        const { stdout } = await docker(['inspect', '-f', '{{.State.Running}}', CONTAINER], { timeoutMs: 15_000 });
-        return stdout.trim() === 'true';
+        const { stdout } = await docker(['inspect', '-f', '{{.State.Running}}|{{.Config.Image}}', CONTAINER], { timeoutMs: 15_000 });
+        const [running, image] = stdout.trim().split('|');
+        if (running !== 'true') return null;
+        return image.startsWith(`${IMAGE_NAME}:`) ? image.slice(IMAGE_NAME.length + 1) : '';
     } catch {
-        return false;
+        return null;
     }
 }
 
 export async function serverState() {
-    const [image, running] = await Promise.all([imageExists(), containerRunning()]);
-    return { tag: TAG, image, running };
+    const [tags, running, latest] = await Promise.all([builtTags(), runningTag(), latestTag()]);
+    // `tag` is what a start would run: the latest release, or the newest image here when GitHub
+    // can't be reached.
+    return { tag: latest || tags[0] || null, image: tags.length > 0, running: running !== null, runningTag: running || null };
 }
 
-/** Builds the helper image once, pinned to TAG. */
-async function ensureImage(onLine) {
-    if (await imageExists()) return;
-    onLine(`Building the NFC helper ${TAG} (once). It downloads the release and checks its hash.`);
-    await docker(['build', '--build-arg', `VERSION=${TAG}`, '-t', IMAGE, DOCKERFILE_URL], {
+/** Removes helper images, all of them or all but one release's. */
+async function removeImages(keep = null) {
+    const old = (await builtTags()).filter((t) => t !== keep);
+    for (const t of old) await docker(['image', 'rm', '-f', `${IMAGE_NAME}:${t}`], { timeoutMs: 60_000 }).catch(() => {});
+    return old;
+}
+
+/** Removes images built for releases older than the latest. Does nothing while GitHub is out of reach. */
+export async function removeOldImages() {
+    const latest = await latestTag();
+    return latest ? removeImages(latest) : [];
+}
+
+/** Builds the helper image for a release, once. */
+async function ensureImage(tag, onLine) {
+    if ((await builtTags()).includes(tag)) return;
+    onLine(`Building the NFC helper ${tag} (once per release). It downloads the release and checks its hash.`);
+    await docker(['build', '--build-arg', `VERSION=${tag}`, '-t', `${IMAGE_NAME}:${tag}`, dockerfileUrl(tag)], {
         onLine,
         timeoutMs: 15 * 60_000,
     });
 }
 
 /**
- * Starts the helper here, with the USB bus passed in. A reader plugged in after the container
- * started may not be seen, so starting again always replaces a running one.
+ * Starts the helper here, built from the latest release, with the USB bus passed in. A reader
+ * plugged in after the container started may not be seen, so starting again always replaces a
+ * running one.
  */
 export async function startServerHelper(onLine = () => {}) {
     if ((await hostKind()) !== 'linux') {
         throw new Error('This server runs Docker Desktop, which cannot reach USB. Use the helper on your computer.');
     }
-    await ensureImage(onLine);
+    const latest = await latestTag();
+    const tag = latest || (await builtTags())[0];
+    if (!tag) throw new Error(`Could not reach GitHub to find the latest ${REPO} release. Try again shortly.`);
+    if (!latest) onLine(`GitHub can't be reached, so this starts the helper already here (${tag}).`);
+    await ensureImage(tag, onLine);
     await docker(['rm', '-f', CONTAINER], { timeoutMs: 30_000 }).catch(() => {});
-    onLine('Starting the NFC helper with access to USB...');
+    const old = latest ? await removeImages(tag) : [];
+    if (old.length) onLine(`Removed the older NFC helper image${old.length > 1 ? 's' : ''} (${old.join(', ')}).`);
+    onLine(`Starting the NFC helper ${tag} with access to USB...`);
     await docker(
         [
             'run', '--detach', '--rm',
             '--name', CONTAINER,
             '--network', NETWORK,
             '--device', '/dev/bus/usb',
-            IMAGE,
+            `${IMAGE_NAME}:${tag}`,
         ],
         { timeoutMs: 60_000 },
     );
@@ -118,7 +158,7 @@ export async function stopServerHelper() {
 export async function removeServerHelper(onLine = () => {}) {
     await stopServerHelper();
     onLine('Removing the NFC helper image...');
-    await docker(['image', 'rm', '-f', IMAGE], { timeoutMs: 60_000 }).catch(() => {});
+    await removeImages();
     onLine('Removed. Cards you loaded are not affected.');
 }
 

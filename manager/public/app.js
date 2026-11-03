@@ -10554,7 +10554,7 @@ function renderNfcUpdates() {
     } else if (have === latest) {
         setUpdateStatus(status, 'current', `Up to date: ${have}.`);
     } else if (nfc.via === 'server') {
-        setUpdateStatus(status, 'info', `${latest} is out. The helper on this server is pinned to ${have} and moves with Kaspa Quick Start updates.`);
+        setUpdateStatus(status, 'available', `${latest} is out (this server runs ${have}). Use Restart the helper on Setup to move to it; it also moves the next time the helper starts.`);
     } else {
         setUpdateStatus(status, 'available', `${latest} is out (you have ${have}).`);
         how.hidden = os === 'linux';

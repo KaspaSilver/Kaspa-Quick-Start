@@ -1,6 +1,0 @@
-{
-  "title": "NFC Card, for KaChat-NFC",
-  "summary": "An NFC Card page under KaChat: load the open source KaChat-NFC software onto a J3R180 Java Card and secure its admin keys, so KaChat can back up a seed phrase you already have to the card. A small helper on your Mac or Windows computer reaches the reader; on a Linux server the reader can plug into the server instead (experimental). The panel never asks for a PIN or seed.",
-  "apps": [],
-  "items": []
-}
