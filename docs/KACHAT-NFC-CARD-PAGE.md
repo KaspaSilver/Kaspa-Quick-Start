@@ -10,13 +10,49 @@ this file is a request. The card software and the helper live in a new public re
 
 ## Status of KaChat-NFC
 
-- [v0.1.0](https://github.com/KaspaSilver/KaChat-NFC/releases/tag/v0.1.0) is published, so the
+- [v0.1.1](https://github.com/KaspaSilver/KaChat-NFC/releases/tag/v0.1.1) is published, so the
   installer URLs below work. It builds for macOS, Windows and Linux in GitHub Actions.
 - **No card has been loaded with it yet.** The owner wants the first real load to go through this
   page, so this page is also how the helper and applet get their first real test. Use a test card
-  with no real seed, and report anything the helper or `docs/HELPER-API.md` gets wrong. Don't patch
-  around it here: the owner will pass it to the iPhone session, which owns KaChat-NFC.
+  with no real seed.
+- **This session now handles KaChat-NFC fixes.** The owner decided this on 2026-11-03, replacing the
+  earlier note that sent them to the iPhone session. The local checkout is at
+  `/Users/restosaved/Everything KaChat iPhone/KaChat-NFC`. Fix problems in that repo rather than
+  patching around them here. The iPhone session keeps KaChat's own NFC screens.
 - `docs/HELPER-API.md` is the contract. If it and this file disagree, it wins.
+
+## To do now: move to v0.1.1
+
+`manager/lib/kachat-nfc.js` on the `nfc-card` branch still pins `TAG = 'v0.1.0'`. **Change it to
+`v0.1.1`.** On Linux, v0.1.0 can't see any reader, so this page can't work there until this changes.
+
+The image name includes the tag, so the new image builds by itself. The old
+`kaspa-quick-start/kachat-nfc:v0.1.0` image stays behind and nothing removes it, because the Remove
+action only knows the current tag. Please clean it up as part of this change.
+
+**What went wrong.** The owner tried this on Linux Mint with a reader plugged in, and nothing was
+detected. The PC listed the reader (`072f:b100`, ACR39U) and the container had its device node, but
+the v0.1.0 Dockerfile ran `pcscd --disable-polkit`. Debian 12's pcscd 1.9.9 has no such option, so
+it exited at once. v0.1.1 only removes that option.
+
+**Not verified yet.**
+- The v0.1.1 image hasn't been built or run. Its CI doesn't build the Docker image.
+- It isn't known yet whether pcscd finds the reader once it stays up. The owner was given a manual
+  test for that, and the result hasn't been reported.
+
+## Known gaps in KaChat-NFC
+
+Yours to fix or leave, now that this session handles the repo. None of them need doing before the
+version change above.
+
+- **A dead pcscd looks like an empty reader.** The Dockerfile backgrounds pcscd, so if it exits, the
+  helper keeps running and reports no readers. That's what hid this bug, and the page gave the owner
+  no sign of it.
+- **CI never builds or runs `docker/Dockerfile`.** A check that pcscd is still up in the built image
+  would have caught this.
+- **The CAP file isn't reproducible.** Two builds of the same source gave different hashes
+  (`f57f33a0...` and `fec7a913...`). Fix that before claiming anyone can verify the card software
+  independently.
 
 ## 1. What the owner gets
 
