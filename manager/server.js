@@ -2234,12 +2234,12 @@ async function applyAppConfig(name, cfg, onLine = () => {}) {
 // helper on the user's own computer and nothing passes through here. These routes are the other
 // path: the reader plugged into this server, when it is a Linux host that can reach USB.
 route('GET', /^\/api\/kachat-nfc$/, async (req, res, match, url) => {
-    const [host, server, latest] = await Promise.all([
-        kachatNfc.hostKind(),
-        kachatNfc.serverState(),
-        kachatNfc.latestRelease({ force: url.searchParams.get('force') === '1' }).catch((e) => ({ error: e.message })),
-    ]);
-    sendJson(res, 200, { repo: kachatNfc.REPO, host, server, latest });
+    const force = url.searchParams.get('force') === '1';
+    // GitHub first, so the server helper's state below is judged against the same release.
+    const github = await kachatNfc.githubState({ force }).catch((e) => ({ error: e.message }));
+    const [host, server] = await Promise.all([kachatNfc.hostKind(), kachatNfc.serverState()]);
+    const latest = github.release || (await kachatNfc.latestRelease().catch((e) => ({ error: e.message })));
+    sendJson(res, 200, { repo: kachatNfc.REPO, host, server, latest, github });
 });
 
 route('POST', /^\/api\/kachat-nfc\/server\/start$/, async (req, res) => {

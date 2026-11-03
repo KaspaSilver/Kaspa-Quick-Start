@@ -89,7 +89,13 @@ export async function serverState() {
     const [tags, running, latest] = await Promise.all([builtTags(), runningTag(), latestTag()]);
     // `tag` is what a start would run: the latest release, or the newest image here when GitHub
     // can't be reached.
-    return { tag: latest || tags[0] || null, image: tags.length > 0, running: running !== null, runningTag: running || null };
+    return {
+        tag: latest || tags[0] || null,
+        image: tags.length > 0,
+        built: tags[0] || null,
+        running: running !== null,
+        runningTag: running || null,
+    };
 }
 
 /** Removes helper images, all of them or all but one release's. */
@@ -248,5 +254,65 @@ export async function latestRelease({ force = false } = {}) {
     const r = await res.json();
     const value = { tag: String(r.tag_name || ''), url: r.html_url, publishedAt: r.published_at };
     releaseCache = { at: Date.now(), value };
+    return value;
+}
+
+// The applet's version is in its source, so reading it at a ref says which card software that
+// ref would put on a card. raw.githubusercontent.com isn't counted against the API limit.
+const APPLET_SOURCE = 'applet/src/app/kachat/nfc/KaChatNFCApplet.java';
+
+async function appletVersionAt(ref) {
+    const res = await fetch(`https://raw.githubusercontent.com/${REPO}/${ref}/${APPLET_SOURCE}`, {
+        headers: { 'user-agent': 'kaspa-quick-start' },
+        signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) throw new Error(`GitHub returned ${res.status} for the card software at ${ref}`);
+    const text = await res.text();
+    const major = text.match(/APPLET_VERSION_MAJOR\s*=\s*(\d+)/)?.[1];
+    const minor = text.match(/APPLET_VERSION_MINOR\s*=\s*(\d+)/)?.[1];
+    if (major === undefined || minor === undefined) throw new Error(`The card software at ${ref} has no version the panel can read`);
+    return `${major}.${minor}`;
+}
+
+async function githubApi(path) {
+    const res = await fetch(`https://api.github.com/repos/${REPO}${path}`, {
+        headers: { accept: 'application/vnd.github+json', 'user-agent': 'kaspa-quick-start' },
+        signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) {
+        const hint = res.status === 403 ? ' (GitHub API rate limit, try again shortly)' : '';
+        throw new Error(`GitHub returned ${res.status} for ${REPO}${hint}`);
+    }
+    return res.json();
+}
+
+let githubCache = { at: 0, value: null };
+
+/**
+ * KaChat-NFC on GitHub: its latest release and its main branch, with the card software version
+ * each one carries, and how far main has moved past the release. Cached for 10 minutes.
+ */
+export async function githubState({ force = false } = {}) {
+    if (!force && githubCache.value && Date.now() - githubCache.at < 10 * 60_000) return githubCache.value;
+    const [release, head] = await Promise.all([latestRelease({ force }), githubApi('/commits/main')]);
+    const sha = String(head.sha || '');
+    const [releaseApplet, mainApplet, compare] = await Promise.all([
+        TAG_RE.test(release.tag) ? appletVersionAt(release.tag).catch(() => null) : null,
+        appletVersionAt(sha),
+        TAG_RE.test(release.tag) ? githubApi(`/compare/${release.tag}...${sha}`).catch(() => null) : null,
+    ]);
+    const value = {
+        release: { ...release, appletVersion: releaseApplet },
+        main: {
+            sha,
+            shortSha: sha.slice(0, 7),
+            message: String(head.commit?.message || '').split('\n')[0],
+            date: head.commit?.committer?.date || null,
+            url: head.html_url || `https://github.com/${REPO}/commits/main`,
+            appletVersion: mainApplet,
+            aheadOfRelease: compare ? Number(compare.ahead_by) || 0 : null,
+        },
+    };
+    githubCache = { at: Date.now(), value };
     return value;
 }

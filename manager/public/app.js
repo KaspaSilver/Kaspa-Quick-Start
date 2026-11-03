@@ -10197,12 +10197,14 @@ function setNfcNow(title, html) {
 }
 
 function renderNfcWaiting(text) {
+    nfc.status = null;
     $('nfc-setup-step').hidden = true;
     $('nfc-server-step').hidden = nfc.info?.host !== 'linux';
     syncNfcServerButtons();
     $('nfc-via').hidden = true;
     nfcTag('starting', 'warn');
     setNfcNow('Getting ready', `<p class="muted">${escapeHtml(text)}</p>`);
+    renderNfcUpdates();
 }
 
 function syncNfcServerButtons() {
@@ -10216,6 +10218,7 @@ function renderNfcSetup() {
     const os = nfcOs();
     const cmd = nfcCommands();
     const linuxServer = nfc.info?.host === 'linux';
+    nfc.status = null;
     $('nfc-via').hidden = true;
     nfcTag('no helper', 'off');
     setNfcNow('No helper found', '<p class="muted">This page needs the NFC helper to reach a card reader.</p>');
@@ -10370,14 +10373,14 @@ function nfcResult(text, bad = false) {
  * Asks for the admin key saved when this card was secured, and runs `what` again with it. A yes
  * to erasing, given before the key was asked for, goes with it rather than being asked twice.
  */
-function nfcAskKey(what, message, { confirmErase = false } = {}) {
+function nfcAskKey(what, message, { confirmErase = false, reset = false } = {}) {
     const box = $('nfc-ask');
     box.hidden = false;
     box.innerHTML = `
       <p class="muted">${escapeHtml(message || 'This card\'s admin key was changed.')} Paste the admin key you saved when it was secured.</p>
       <div class="row">
         <input type="password" id="nfc-ask-key" size="36" maxlength="32" autocomplete="off" spellcheck="false" placeholder="32 hex characters">
-        <button type="button" class="primary" id="nfc-ask-go">${what === 'load' ? 'Load' : 'Secure'} with this key</button>
+        <button type="button" class="primary" id="nfc-ask-go">${what === 'load' ? (reset ? 'Reset' : 'Load') : 'Secure'} with this key</button>
         <button type="button" class="ghost" id="nfc-ask-cancel">Cancel</button>
       </div>`;
     $('nfc-ask-key').focus();
@@ -10386,7 +10389,7 @@ function nfcAskKey(what, message, { confirmErase = false } = {}) {
         const key = $('nfc-ask-key').value.trim();
         if (!/^[0-9a-fA-F]{32}$/.test(key)) return toast('The admin key is 32 hex characters.', 'bad');
         nfcClearAsk();
-        if (what === 'load') nfcLoad({ adminKey: key, confirmErase });
+        if (what === 'load') nfcLoad({ adminKey: key, confirmErase, reset });
         else nfcSecure({ adminKey: key, asked: true });
     });
 }
@@ -10399,19 +10402,27 @@ function nfcSetBusy(on, text) {
     nfc.busy = on;
     for (const b of document.querySelectorAll('#nfc-now button, #nfc-now select')) b.disabled = on;
     if (on) nfcResult(text);
+    renderNfcUpdates();
 }
 
-async function nfcLoad({ confirmErase = false, adminKey = '' } = {}) {
+async function nfcLoad({ confirmErase = false, adminKey = '', reset = false } = {}) {
     if (nfc.busy || !nfc.via) return;
     nfcClearAsk();
-    nfcSetBusy(true, 'Loading the KaChat-NFC software. This takes about 20 seconds. Don\'t remove the card.');
+    nfcSetBusy(
+        true,
+        `${reset ? 'Resetting the card and loading' : 'Loading'} the KaChat-NFC software. This takes about 20 seconds. Don't remove the card.`,
+    );
     const body = { reader: nfc.reader, confirmErase, ...(adminKey ? { adminKey } : {}) };
     const r = await nfcCall('POST', '/v1/card/load', body);
     nfcSetBusy(false);
     nfc.lastHtml = '';
     if (r.ok) {
         nfc.skippedSecure = false;
-        nfcResult(`Loaded KaChat-NFC ${r.data.appletVersion || ''} and confirmed it answers.`.replace('  ', ' '));
+        nfcResult(
+            reset
+                ? `Reset. KaChat-NFC ${r.data.appletVersion || ''} is loaded fresh, with no backup and no PIN. KaChat sets a new PIN when you back up.`.replace('  ', ' ')
+                : `Loaded KaChat-NFC ${r.data.appletVersion || ''} and confirmed it answers.`.replace('  ', ' '),
+        );
         return nfcPoll();
     }
     const err = r.data?.error || {};
@@ -10419,13 +10430,19 @@ async function nfcLoad({ confirmErase = false, adminKey = '' } = {}) {
     switch (err.code) {
         case 'would_erase':
             // Only ever sent with confirmErase after the person says yes here.
-            if (await askConfirm(err.message || 'Loading again erases this card\'s PIN and backup.')) {
-                return nfcLoad({ confirmErase: true, adminKey });
+            if (
+                await askConfirm(
+                    reset
+                        ? `Reset this card?\n\nIts backup and PIN are erased for good, and the card software is loaded fresh. Have your seed phrase and passphrase on paper first.\n\n${err.message || ''}`.trim()
+                        : err.message || 'Loading again erases this card\'s PIN and backup.',
+                )
+            ) {
+                return nfcLoad({ confirmErase: true, adminKey, reset });
             }
             return;
         case 'wrong_admin_key':
         case 'login_refused':
-            return nfcAskKey('load', err.message, { confirmErase });
+            return nfcAskKey('load', err.message, { confirmErase, reset });
         case 'card_removed':
             return nfcResult('The card was removed while it was loading. Put it back and press Load again.', true);
         default:
@@ -10533,34 +10550,23 @@ $('nfc-server-remove').addEventListener('click', async () => {
     loadNfcInfo().catch(() => {});
 });
 
-// --- updates and uninstall ---
+// --- updates, helper and uninstall ---
+
+const nfcVer = (a, b) => String(a).localeCompare(String(b), undefined, { numeric: true });
+
+/** The card in the picked reader, or null. */
+function nfcCard() {
+    const readers = Array.isArray(nfc.status?.readers) ? nfc.status.readers : [];
+    return readers.find((r) => r.card && r.name === nfc.reader)?.card || readers.find((r) => r.card)?.card || null;
+}
+const nfcCardVersion = (card) => (card?.state === 'loaded' ? card.appletVersion || card.applet?.version || '' : '');
 
 function renderNfcUpdates() {
+    renderNfcCardSoftware();
+    renderNfcHelper();
+    renderNfcReset();
     const os = nfcOs();
     const cmd = nfcCommands();
-    const have = nfc.status?.helperVersion || '';
-    const latest = nfc.info?.latest?.tag || '';
-    $('nfc-have').textContent = have
-        ? `${have}${nfc.via === 'server' ? ' (on this server)' : ''}`
-        : 'not found (the helper isn\'t answering)';
-    $('nfc-latest').textContent = latest || (nfc.info?.latest?.error ? `unknown: ${nfc.info.latest.error}` : '-');
-    $('nfc-applet').textContent = nfc.status?.appletVersion ? `KaChat-NFC ${nfc.status.appletVersion}` : '-';
-
-    const status = $('nfc-update-status');
-    const how = $('nfc-update-how');
-    how.hidden = true;
-    if (!have || !latest) {
-        setUpdateStatus(status, 'info', have ? 'Could not look up the latest release.' : 'Open Setup with the helper running to see its version.');
-    } else if (have === latest) {
-        setUpdateStatus(status, 'current', `Up to date: ${have}.`);
-    } else if (nfc.via === 'server') {
-        setUpdateStatus(status, 'available', `${latest} is out (this server runs ${have}). Use Restart the helper on Setup to move to it; it also moves the next time the helper starts.`);
-    } else {
-        setUpdateStatus(status, 'available', `${latest} is out (you have ${have}).`);
-        how.hidden = os === 'linux';
-        $('nfc-update-cmd').textContent = os === 'windows' ? cmd.windows : cmd.mac;
-    }
-
     $('nfc-uninstall-cmd').textContent = os === 'windows' ? cmd.windowsRemove : cmd.macRemove;
     $('nfc-uninstall-other').innerHTML =
         os === 'windows'
@@ -10568,8 +10574,130 @@ function renderNfcUpdates() {
             : `On Windows (PowerShell): <code>${escapeHtml(cmd.windowsRemove)}</code>`;
 }
 
-$('nfc-check').addEventListener('click', async () => {
-    const button = $('nfc-check');
+/** Updates: the card software on the card against KaChat-NFC's main branch. */
+function renderNfcCardSoftware() {
+    const gh = nfc.info?.github;
+    const main = gh?.main;
+    const release = gh?.release;
+    const card = nfcCard();
+    const cardV = nfcCardVersion(card);
+    const helperV = nfc.status?.appletVersion || '';
+    $('nfc-card-has').textContent = cardV
+        ? `KaChat-NFC ${cardV}`
+        : !nfc.via
+          ? 'unknown (the helper isn\'t answering)'
+          : !card
+            ? 'no card in the reader'
+            : card.state === 'blank'
+              ? 'no KaChat-NFC software yet'
+              : 'unknown (the card can\'t be read)';
+    $('nfc-helper-applet').textContent = helperV ? `KaChat-NFC ${helperV}` : '-';
+    $('nfc-release-applet').textContent = release?.appletVersion ? `KaChat-NFC ${release.appletVersion} (${release.tag})` : release?.tag || '-';
+    $('nfc-main-applet').textContent = main?.appletVersion ? `KaChat-NFC ${main.appletVersion} (${main.shortSha})` : '-';
+
+    const status = $('nfc-card-update-status');
+    if (!nfc.info) return setUpdateStatus(status, 'info', 'Checking GitHub...');
+    if (gh?.error || !main?.appletVersion) return setUpdateStatus(status, 'error', `Could not check GitHub: ${gh?.error || 'no answer'}`);
+    const mainV = main.appletVersion;
+    if (!cardV) {
+        return setUpdateStatus(
+            status,
+            'info',
+            `Main has card software ${mainV}. ${nfc.via ? 'Insert a card with KaChat-NFC on it to compare.' : 'Start the helper on Setup and insert a card to compare.'}`,
+        );
+    }
+    if (nfcVer(cardV, mainV) >= 0) return setUpdateStatus(status, 'current', `Up to date with main: this card has card software ${cardV}.`);
+    if (helperV && nfcVer(helperV, mainV) >= 0) {
+        return setUpdateStatus(
+            status,
+            'available',
+            `Card software ${mainV} is out (this card has ${cardV}). Loading it erases this card's backup, so have your seed phrase ready first, then use Reset this card.`,
+        );
+    }
+    if (release?.appletVersion && nfcVer(release.appletVersion, mainV) >= 0) {
+        return setUpdateStatus(
+            status,
+            'available',
+            `Card software ${mainV} is out in ${release.tag} (this card has ${cardV}). Update the helper first (Helper tab), then use Reset this card. Loading it erases this card's backup.`,
+        );
+    }
+    setUpdateStatus(status, 'info', `Main has card software ${mainV}, newer than this card's ${cardV}, but it isn't in a release yet. It can be loaded once KaChat-NFC publishes one.`);
+}
+
+/** Helper: the helper answering now, and the one on this server, against the latest release. */
+function renderNfcHelper() {
+    const os = nfcOs();
+    const cmd = nfcCommands();
+    const gh = nfc.info?.github;
+    const have = nfc.status?.helperVersion || '';
+    const latest = nfc.info?.latest?.tag || '';
+    const ahead = gh?.main?.aheadOfRelease;
+    $('nfc-have').textContent = have
+        ? `${have} (${nfc.via === 'server' ? 'on this server' : 'on this computer'})`
+        : 'not found (the helper isn\'t answering)';
+    $('nfc-latest').textContent = latest || (nfc.info?.latest?.error ? `unknown: ${nfc.info.latest.error}` : '-');
+    $('nfc-main-line').textContent = gh?.main
+        ? `${gh.main.shortSha}, ${gh.main.message}${
+              ahead ? ` (${ahead} commit${ahead === 1 ? '' : 's'} not in a release yet)` : ahead === 0 ? ' (all released)' : ''
+          }`
+        : '-';
+
+    const unreleased = ahead ? ` Main has ${ahead} newer commit${ahead === 1 ? '' : 's'} that aren't released yet; the helper gets them with KaChat-NFC's next release.` : '';
+    const status = $('nfc-update-status');
+    const how = $('nfc-update-how');
+    how.hidden = true;
+    if (!have || !latest) {
+        setUpdateStatus(status, 'info', have ? 'Could not look up the latest release.' : 'Open Setup with the helper running to see its version.');
+    } else if (nfcVer(have, latest) >= 0) {
+        setUpdateStatus(status, 'current', `Up to date: ${have}.${unreleased}`);
+    } else if (nfc.via === 'server') {
+        setUpdateStatus(status, 'available', `${latest} is out (this server runs ${have}). Use Update the server helper, below.`);
+    } else {
+        setUpdateStatus(status, 'available', `${latest} is out (you have ${have}).`);
+        how.hidden = os === 'linux';
+        $('nfc-update-cmd').textContent = os === 'windows' ? cmd.windows : cmd.mac;
+    }
+
+    const server = nfc.info?.server;
+    $('nfc-server-helper-card').hidden = nfc.info?.host !== 'linux';
+    if (nfc.info?.host !== 'linux') return;
+    $('nfc-server-built').textContent = server?.built || 'not built yet';
+    $('nfc-server-running').textContent = server?.running ? server.runningTag || 'yes' : 'no';
+    const serverStatus = $('nfc-server-update-status');
+    const update = $('nfc-server-update');
+    update.hidden = true;
+    if (!server?.built) {
+        serverStatus.hidden = true;
+    } else if (!latest) {
+        setUpdateStatus(serverStatus, 'info', 'Could not look up the latest release.');
+    } else if (nfcVer(server.built, latest) >= 0) {
+        setUpdateStatus(serverStatus, 'current', `Up to date: ${server.built}.`);
+    } else {
+        setUpdateStatus(serverStatus, 'available', `${latest} is out (built here: ${server.built}).`);
+        update.hidden = false;
+    }
+    update.disabled = nfc.busy || nfc.starting;
+}
+
+/** Reset is offered only for a card that holds KaChat-NFC, through a helper that answers. */
+function renderNfcReset() {
+    const card = nfcCard();
+    const note = !nfc.via
+        ? 'Start the helper on Setup first.'
+        : !card
+          ? 'Insert the card to reset.'
+          : !card.supported
+            ? 'KaChat-NFC has only been tested on J3R180 cards, so this one can\'t be reset here.'
+            : card.state === 'blank'
+              ? 'This card has no KaChat-NFC software, so there is nothing to reset. Load it on Setup.'
+              : card.state !== 'loaded'
+                ? 'This card can\'t be read. Check it\'s inserted the right way.'
+                : `Resetting loads KaChat-NFC ${nfc.status?.appletVersion || ''} from your helper.`.replace('  ', ' ');
+    $('nfc-reset-note').textContent = note;
+    $('nfc-reset').disabled = nfc.busy || !nfc.via || !card?.supported || card.state !== 'loaded';
+}
+
+async function nfcCheckUpdates(button) {
     button.disabled = true;
     try {
         await loadNfcInfo({ force: true });
@@ -10578,4 +10706,20 @@ $('nfc-check').addEventListener('click', async () => {
     } finally {
         button.disabled = false;
     }
+}
+$('nfc-check').addEventListener('click', () => nfcCheckUpdates($('nfc-check')));
+$('nfc-helper-check').addEventListener('click', () => nfcCheckUpdates($('nfc-helper-check')));
+
+$('nfc-server-update').addEventListener('click', () => {
+    if (nfc.busy || nfc.starting) return;
+    $('nfc-server-update').disabled = true;
+    if (nfc.via === 'server') nfc.via = null;
+    startNfcServer();
+});
+
+$('nfc-reset').addEventListener('click', () => {
+    if ($('nfc-reset').disabled) return;
+    // The progress, any admin key prompt and the result all show on Setup.
+    selectSubtab($('tab-nfc'), 'nfc-setup');
+    nfcLoad({ reset: true });
 });

@@ -2797,6 +2797,7 @@
       <nav class="subnav" aria-label="NFC Card">
         <button class="subtab-btn active" data-subtab="nfc-setup">Setup</button>
         <button class="subtab-btn" data-subtab="nfc-updates">Updates</button>
+        <button class="subtab-btn" data-subtab="nfc-helper">Helper</button>
         <button class="subtab-btn" data-subtab="nfc-uninstall">Uninstall</button>
       </nav>
 
@@ -2909,27 +2910,91 @@
       <div id="sub-nfc-updates" class="subtab">
         <div class="grid">
           <article class="card span2">
-            <h3>Updates</h3>
+            <h3>Card software</h3>
+            <p class="muted">
+              The KaChat-NFC software on the card, compared with KaChat-NFC's main branch on
+              GitHub. It changes only when KaChat-NFC changes it; panel updates don't touch it.
+            </p>
             <dl class="kv vertical">
-              <div><dt>Your helper</dt><dd id="nfc-have">not found</dd></div>
-              <div><dt>Latest release</dt><dd id="nfc-latest">-</dd></div>
-              <div><dt>Card software in your helper</dt><dd id="nfc-applet">-</dd></div>
+              <div><dt>On this card</dt><dd id="nfc-card-has">-</dd></div>
+              <div><dt>Your helper loads</dt><dd id="nfc-helper-applet">-</dd></div>
+              <div><dt>Latest release</dt><dd id="nfc-release-applet">-</dd></div>
+              <div><dt>GitHub main</dt><dd id="nfc-main-applet">-</dd></div>
             </dl>
-            <div id="nfc-update-status" class="update-status">Not checked yet.</div>
+            <div id="nfc-card-update-status" class="update-status">Not checked yet.</div>
             <div class="row">
               <button type="button" id="nfc-check" class="ghost">Check for updates</button>
             </div>
+            <p class="hint">
+              New card software never loads by itself. Loading it erases the card's PIN and backup,
+              so it is done with Reset this card, below, when you're ready.
+            </p>
+          </article>
+
+          <article class="card span2">
+            <h3>Reset this card</h3>
+            <p class="muted">
+              Erases everything KaChat-NFC keeps on the card, its backup and its PIN, and loads the
+              card software fresh from your helper, as if the card were new. Use it to start over,
+              to clear a blocked PIN, or to move to newer card software.
+            </p>
+            <p class="verdict bad">
+              The backup on the card is gone for good. Have your seed phrase and passphrase on paper
+              before you reset.
+            </p>
+            <p class="hint">
+              A secured card keeps its admin key, and resetting it asks for the key you saved. Without
+              that key the card can't be reset.
+            </p>
+            <p class="muted" id="nfc-reset-note"></p>
+            <div class="row">
+              <button type="button" class="danger" id="nfc-reset" disabled>Reset this card</button>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <div id="sub-nfc-helper" class="subtab">
+        <div class="grid">
+          <article class="card span2">
+            <h3>Helper</h3>
+            <p class="muted">
+              The small program that reaches the card reader. It comes from KaChat-NFC's releases,
+              not from panel updates.
+            </p>
+            <dl class="kv vertical">
+              <div><dt>Helper answering now</dt><dd id="nfc-have">not found</dd></div>
+              <div><dt>Latest release</dt><dd id="nfc-latest">-</dd></div>
+              <div><dt>GitHub main</dt><dd id="nfc-main-line">-</dd></div>
+            </dl>
+            <div id="nfc-update-status" class="update-status">Not checked yet.</div>
+            <div class="row">
+              <button type="button" id="nfc-helper-check" class="ghost">Check for updates</button>
+            </div>
             <div id="nfc-update-how" hidden>
-              <p class="muted">To update the helper, run the install command again:</p>
+              <p class="muted">To update the helper on your computer, run the install command again:</p>
               <div class="nfc-command">
                 <pre id="nfc-update-cmd"></pre>
                 <button type="button" class="copy-btn" id="nfc-update-copy">Copy</button>
               </div>
             </div>
+            <p class="hint">Updating the helper doesn't change any card.</p>
+          </article>
+
+          <!-- Linux servers only: the helper that runs here for a reader plugged into this server. -->
+          <article class="card span2" id="nfc-server-helper-card" hidden>
+            <h3>Helper on this server</h3>
+            <dl class="kv vertical">
+              <div><dt>Built here</dt><dd id="nfc-server-built">-</dd></div>
+              <div><dt>Running</dt><dd id="nfc-server-running">-</dd></div>
+            </dl>
+            <div id="nfc-server-update-status" class="update-status" hidden></div>
+            <div class="row">
+              <button type="button" id="nfc-server-update" class="primary" hidden>Update the server helper</button>
+            </div>
             <p class="hint">
-              Updating the helper doesn't change any card. A newer version of the card software is
-              different: loading it erases that card's PIN and backup, so it is never offered as a
-              routine update.
+              It builds from the latest release the next time it starts. Updating builds it now and
+              restarts it. No card is changed.
             </p>
           </article>
         </div>
