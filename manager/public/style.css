@@ -678,6 +678,25 @@ table.proxies td:last-child { text-align: right; white-space: nowrap; }
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent), 0 0 28px -6px var(--accent-glow);
     animation: update-pulse 2.4s ease-in-out infinite;
 }
+/* The same look as an update waiting on the Updates tab, across the top of every page. */
+.panel-update-banner {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px 12px;
+    margin-bottom: 16px;
+    padding: 11px 13px;
+    border-radius: 8px;
+    font-size: 14px;
+    color: var(--text);
+    border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+    background: color-mix(in srgb, var(--accent) 11%, var(--panel-2));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent), 0 0 28px -6px var(--accent-glow);
+}
+.panel-update-banner[hidden] { display: none; }
+.panel-update-banner .text { flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
+.panel-update-banner strong { color: var(--accent-glow); }
+
 .update-status.current {
     color: var(--ok);
     border-color: color-mix(in srgb, var(--ok) 45%, transparent);

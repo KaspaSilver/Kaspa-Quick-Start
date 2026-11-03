@@ -342,16 +342,30 @@ function Write-TextFile {
 function Get-Stack {
     $scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { $null }
 
+    $sha = ''
     if ($scriptDir -and (Test-Path (Join-Path $scriptDir 'docker-compose.yml'))) {
         Say "Using the stack files next to this script ($scriptDir)"
         $src = $scriptDir
         $tmp = $null
     } else {
-        Say "Downloading the stack from $StackRepo@$StackRef"
+        # The exact commit, so the panel knows which version it runs and can tell when a
+        # newer one is out. Downloaded by that commit, so the two cannot differ. Without it
+        # (GitHub's API unreachable) the branch is downloaded as before.
+        try {
+            $sha = [string](Invoke-RestMethod -Uri "https://api.github.com/repos/$StackRepo/commits/$StackRef" `
+                -Headers @{ Accept = 'application/vnd.github.sha' } -UseBasicParsing)
+            $sha = $sha.Trim()
+        } catch {
+            $sha = ''
+        }
+        if ($sha -notmatch '^[0-9a-f]{40}$') { $sha = '' }
+        $what = if ($sha) { "$StackRepo@$StackRef ($($sha.Substring(0, 7)))" } else { "$StackRepo@$StackRef" }
+        Say "Downloading the stack from $what"
         $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("kaspa-" + [guid]::NewGuid().ToString('N'))
         New-Item -ItemType Directory -Path $tmp -Force | Out-Null
         $archive = Join-Path $tmp 'stack.tar.gz'
-        Invoke-WebRequest -Uri "https://codeload.github.com/$StackRepo/tar.gz/$StackRef" -OutFile $archive -UseBasicParsing
+        $download = if ($sha) { $sha } else { $StackRef }
+        Invoke-WebRequest -Uri "https://codeload.github.com/$StackRepo/tar.gz/$download" -OutFile $archive -UseBasicParsing
         # bsdtar ships with Windows 10 1803 and later. Via Invoke-Native because
         # tar reports through stderr, which would abort under 'Stop'.
         Invoke-Native { & tar -xzf $archive -C $tmp }
@@ -382,6 +396,15 @@ function Get-Stack {
     if (Test-Path (Join-Path $src 'EXPERIMENTAL.json')) { Copy-Item (Join-Path $src 'EXPERIMENTAL.json') $exp -Force }
     New-Item -ItemType Directory -Force -Path (Join-Path $StackDir 'conf') | Out-Null
     Set-Content -Path (Join-Path $StackDir 'conf\panel-ref') -Value $StackRef -NoNewline -Encoding ascii
+    # The commit just installed, for the panel's own update check. Unknown (a local
+    # checkout, or GitHub's API unreachable) means no update is ever claimed.
+    $installed = Join-Path $StackDir 'conf\panel-installed'
+    if ($sha) {
+        # LF line endings: the panel reads it on Linux.
+        [System.IO.File]::WriteAllText($installed, "repo=$StackRepo`nref=$StackRef`nsha=$sha`n")
+    } elseif (Test-Path $installed) {
+        Remove-Item $installed -Force
+    }
 
     # The manager writes nginx's configuration into these as soon as it boots,
     # which is before the proxy can be switched on.

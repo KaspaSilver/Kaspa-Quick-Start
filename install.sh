@@ -502,17 +502,24 @@ dc() { $DOCKER_SUDO docker compose -f "$STACK_DIR/docker-compose.yml" -f "$STACK
 # ------------------------------------------------------------------ stack ----
 
 fetch_stack() {
-    local src_dir="" tmp
+    local src_dir="" tmp sha=""
     # Running from a checkout? Use the files next to this script.
     if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "$(dirname "${BASH_SOURCE[0]}")/docker-compose.yml" ]; then
         src_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
         say "Using the stack files next to this script ($src_dir)"
     else
         tmp="$(mktemp -d)"
-        say "Downloading the stack from $STACK_REPO@$STACK_REF"
+        # The exact commit, so the panel knows which version it runs and can tell when a
+        # newer one is out. Downloaded by that commit, so the two cannot differ. Without
+        # it (GitHub's API unreachable) the branch is downloaded as before.
+        sha="$(curl -fsSL -H 'Accept: application/vnd.github.sha' \
+            "https://api.github.com/repos/$STACK_REPO/commits/$STACK_REF" 2>/dev/null || true)"
+        case "$sha" in *[!0-9a-f]* | "") sha="" ;; esac
+        [ "${#sha}" -eq 40 ] || sha=""
+        say "Downloading the stack from $STACK_REPO@$STACK_REF${sha:+ (${sha:0:7})}"
         # GitHub wraps the archive in a <repo>-<ref>/ directory; --strip-components
         # peels it off so the stack lands directly in $tmp.
-        curl -fsSL "https://codeload.github.com/$STACK_REPO/tar.gz/$STACK_REF" \
+        curl -fsSL "https://codeload.github.com/$STACK_REPO/tar.gz/${sha:-$STACK_REF}" \
             | tar -xz -C "$tmp" --strip-components=1 \
             || die "Could not download the stack from $STACK_REPO@$STACK_REF."
         src_dir="$tmp"
@@ -548,6 +555,13 @@ fetch_stack() {
     [ -f "$src_dir/EXPERIMENTAL.json" ] && cp "$src_dir/EXPERIMENTAL.json" "$STACK_DIR/EXPERIMENTAL.json"
     mkdir -p "$STACK_DIR/conf"
     printf '%s\n' "$STACK_REF" > "$STACK_DIR/conf/panel-ref"
+    # The commit just installed, for the panel's own update check. Unknown (a local
+    # checkout, or GitHub's API unreachable) means no update is ever claimed.
+    if [ -n "$sha" ]; then
+        printf 'repo=%s\nref=%s\nsha=%s\n' "$STACK_REPO" "$STACK_REF" "$sha" > "$STACK_DIR/conf/panel-installed"
+    else
+        rm -f "$STACK_DIR/conf/panel-installed"
+    fi
     # The Nextcloud hook is skipped silently by that image's entrypoint if it is
     # not executable, so it is not left to whatever the copy preserved.
     chmod +x "$STACK_DIR/kaspad/entrypoint.sh" "$STACK_DIR/kachat/run-admin.sh" "$STACK_DIR/uninstall.sh" \

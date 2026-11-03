@@ -299,6 +299,17 @@
 
     <main>
 
+    <!-- On every page when the panel's own background check (Global settings > Updates) has
+         found a newer panel. Only the panel: nothing else is checked on its own. -->
+    <div class="panel-update-banner" id="panel-update-banner" role="status" hidden>
+      <span class="text">
+        <strong>A Kaspa Quick Start update is out.</strong>
+        <span id="panel-update-banner-what"></span>
+      </span>
+      <button type="button" class="primary" id="panel-update-banner-open">See the update</button>
+      <button type="button" class="ghost" id="panel-update-banner-dismiss">Not now</button>
+    </div>
+
     <!-- -------------------------------------------------------- overview -->
     <!--
       The machine, not the node. Disk and memory first because they are the two
@@ -2997,7 +3008,15 @@
             <button id="global-check-btn" class="ghost">Check for update</button>
             <button id="global-update-btn" class="primary">Update the panel</button>
           </div>
-          <p class="update-status" id="global-check-status">Checked against GitHub when you ask, never on its own.</p>
+          <p class="update-status" id="global-check-status">Not checked yet on this page.</p>
+          <label class="check">
+            <input type="checkbox" id="global-autocheck">
+            Check for panel updates on its own every six hours, and show a banner when one is out
+          </label>
+          <p class="hint">
+            Only the panel is checked on its own. The node, the indexer and the apps
+            are checked when you press their Check buttons.
+          </p>
           <p class="hint">
             The panel goes offline for a minute or two while it rebuilds. This
             page will say so and come back on its own.

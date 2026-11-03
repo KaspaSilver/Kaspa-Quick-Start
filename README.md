@@ -55,6 +55,16 @@ It is what wallets and explorers ask a node for, and building it later costs
 more than having it from the beginning, so it is a checkbox you can clear rather
 than a default you have to find.
 
+### Panel updates
+
+Every six hours the panel asks GitHub whether a newer version of itself is out, and when one
+is, a banner across the top of every page says so. **See the update** opens **Global
+settings, Updates**, where **Update the panel** installs it. **Not now** hides the banner
+until the next version. The check can be switched off in that same place.
+
+Only the panel checks on its own. The node, the indexer and the apps are checked when you
+press their **Check** buttons.
+
 ### Experimental apps, and getting back to main
 
 New apps are tested on their own branch before they reach everyone. **System, Experimental**

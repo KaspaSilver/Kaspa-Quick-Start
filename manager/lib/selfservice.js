@@ -88,6 +88,28 @@ export async function listExperiments({ repo = 'KaspaSilver/Kaspa-Quick-Start', 
     return out;
 }
 
+/**
+ * The commit the panel is running: conf/panel-installed, written by the installers and by a
+ * panel update once it has built (repo=, ref=, sha= lines). An install from before that file
+ * existed falls back to its last successful update. A failed update's sha is never used: the
+ * old panel is still the one running.
+ */
+const INSTALLED_LOCAL = path.join(STACK_LOCAL, 'conf', 'panel-installed');
+export function installedCommit() {
+    try {
+        const out = {};
+        for (const line of fs.readFileSync(INSTALLED_LOCAL, 'utf8').split('\n')) {
+            const at = line.indexOf('=');
+            if (at > 0) out[line.slice(0, at).trim()] = line.slice(at + 1).trim();
+        }
+        if (/^[0-9a-f]{40}$/.test(out.sha || '')) return { repo: out.repo || null, ref: out.ref || null, sha: out.sha };
+    } catch {
+        /* not written yet */
+    }
+    const last = lastUpdate();
+    return last?.ok && /^[0-9a-f]{40}$/.test(last.sha || '') ? { repo: last.repo, ref: last.ref, sha: last.sha } : null;
+}
+
 export function lastUpdate() {
     let raw;
     try {
@@ -369,6 +391,8 @@ step "Rebuilding the panel image"
 ${compose} build manager || fail "The panel image did not build. The old panel is still running."
 # The branch the panel now runs (System > Experimental), recorded only once it has built.
 mkdir -p "${STACK_LOCAL}/conf" && printf '%s\n' "${ref}" > "${STACK_LOCAL}/conf/panel-ref"
+# And the exact commit, which the panel's own update check compares against.
+${head?.sha ? `printf 'repo=%s\\nref=%s\\nsha=%s\\n' "${repo}" "${ref}" "${head.sha}" > "${STACK_LOCAL}/conf/panel-installed"` : `rm -f "${STACK_LOCAL}/conf/panel-installed"`}
 
 step "Restarting the panel"
 echo "result=ok" >> "$S"

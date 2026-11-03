@@ -4218,9 +4218,9 @@ route('GET', /^\/api\/system\/panel-latest$/, async (req, res, match, url) => {
     const ref = (url.searchParams.get('ref') || 'main').trim();
     try {
         const latest = await selfservice.latestCommit({ repo, ref });
-        const installed = selfservice.lastUpdate();
-        // Only meaningful once something has recorded which commit is installed,
-        // which is the first time this panel updates itself.
+        const installed = selfservice.installedCommit();
+        // Only meaningful once something has recorded which commit is installed: the
+        // installer, or this panel's first update of itself.
         const known = installed?.repo === repo ? installed.sha : null;
         sendJson(res, 200, {
             latest,
@@ -4231,6 +4231,61 @@ route('GET', /^\/api\/system\/panel-latest$/, async (req, res, match, url) => {
     } catch (err) {
         fail(res, 400, err.message);
     }
+});
+
+// The panel's own update check, in the background. Only the panel: the node, the indexer and
+// the apps are still checked when someone asks, so a release can be fixed before anyone is
+// told about it. One GitHub call (two when behind) every six hours, well inside the 60 an
+// hour GitHub allows without a token. The answer is kept here; the page only reads it.
+const PANEL_CHECK_EVERY_MS = 6 * 60 * 60_000;
+let panelCheck = { checkedAt: null, latest: null, behind: null, available: false, error: null };
+async function checkPanelUpdate() {
+    const installed = selfservice.installedCommit();
+    const repo = installed?.repo || 'KaspaSilver/Kaspa-Quick-Start';
+    const ref = selfservice.panelRef();
+    try {
+        const latest = await selfservice.latestCommit({ repo, ref });
+        // With nothing recorded to compare against, an update is never claimed.
+        const available = Boolean(installed?.sha && installed.repo === repo && installed.sha !== latest.sha);
+        const compare = available ? await selfservice.compareToInstalled({ repo, base: installed.sha, head: latest.sha }) : null;
+        // GitHub's compare also says when the installed commit is ahead (a local experiment).
+        const behind = compare?.behind ?? null;
+        panelCheck = {
+            checkedAt: new Date().toISOString(),
+            repo,
+            ref,
+            latest,
+            behind,
+            available: available && compare?.status !== 'behind' && behind !== 0,
+            error: null,
+        };
+    } catch (err) {
+        panelCheck = { ...panelCheck, checkedAt: new Date().toISOString(), error: err.message };
+    }
+    return panelCheck;
+}
+function startPanelUpdateCheck() {
+    const tick = () => {
+        if (loadManagerConfig().panelUpdates.autoCheck === false) return;
+        checkPanelUpdate().catch(() => {});
+    };
+    // A minute in, so a panel that just updated itself is settled first.
+    setTimeout(tick, 60_000).unref?.();
+    setInterval(tick, PANEL_CHECK_EVERY_MS).unref?.();
+}
+
+route('GET', /^\/api\/system\/panel-notice$/, async (req, res) => {
+    const autoCheck = loadManagerConfig().panelUpdates.autoCheck !== false;
+    sendJson(res, 200, { autoCheck, ...panelCheck, available: autoCheck && panelCheck.available });
+});
+
+route('POST', /^\/api\/system\/panel-autocheck$/, async (req, res) => {
+    const body = await readBody(req);
+    const cfg = loadManagerConfig();
+    cfg.panelUpdates.autoCheck = Boolean(body.enabled);
+    saveManagerConfig(cfg);
+    if (cfg.panelUpdates.autoCheck) await checkPanelUpdate().catch(() => {});
+    sendJson(res, 200, { autoCheck: cfg.panelUpdates.autoCheck, ...panelCheck, available: cfg.panelUpdates.autoCheck && panelCheck.available });
 });
 
 route('POST', /^\/api\/system\/panel-update$/, async (req, res) => {
@@ -4819,6 +4874,7 @@ async function bootstrap() {
     startHashrateWatch();
     startLowBalanceWatch();
     startMiningStatsPersist();
+    startPanelUpdateCheck();
 
     // The names paths follow whether each .kachat Domains server is really running (KQS-013).
     reconcileNamesRoutes().catch((e) => log('names route', e));

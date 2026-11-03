@@ -170,6 +170,7 @@ function showApp() {
     loadKassigner();
     connectJobs();
     connectLogs();
+    startPanelNotice();
 }
 
 $('login-form').addEventListener('submit', async (event) => {
@@ -9306,6 +9307,76 @@ $('panel-lan')?.addEventListener('change', async (event) => {
 
 // -------------------------------------------------------- global settings ---
 
+// The banner every page shows once the background check has found a newer panel. "Not now"
+// hides it for that commit only, so the next update brings it back.
+const PANEL_DISMISS_KEY = 'kqs.panelUpdateDismissed';
+let panelNotice = null;
+let panelNoticeTimer = null;
+
+function startPanelNotice() {
+    loadPanelNotice();
+    // The server checks GitHub; this only reads what it found, so it is cheap.
+    if (!panelNoticeTimer) panelNoticeTimer = setInterval(loadPanelNotice, 30 * 60_000);
+}
+
+async function loadPanelNotice() {
+    try {
+        renderPanelNotice(await api('/api/system/panel-notice'));
+    } catch {
+        /* signed out or restarting: the banner stays as it was */
+    }
+}
+
+function renderPanelNotice(n) {
+    panelNotice = n;
+    $('global-autocheck').checked = n.autoCheck;
+    let dismissed = null;
+    try {
+        dismissed = localStorage.getItem(PANEL_DISMISS_KEY);
+    } catch {
+        /* storage blocked: the banner just cannot be put off */
+    }
+    const show = Boolean(n.available && n.latest && dismissed !== n.latest.sha);
+    $('panel-update-banner').hidden = !show;
+    if (!show) return;
+    const behind = n.behind ? `${n.behind} change${n.behind === 1 ? '' : 's'} newer than yours. ` : '';
+    $('panel-update-banner-what').textContent = `${behind}Latest: ${n.latest.message}`;
+}
+
+$('panel-update-banner-open').addEventListener('click', () => {
+    selectTab('global');
+    selectSubtab($('tab-global'), 'global-update');
+    // Check the branch the banner was about, so the Updates tab shows the same answer.
+    if (panelNotice?.repo && !$('global-repo').dataset.touched) $('global-repo').value = panelNotice.repo;
+    if (panelNotice?.ref && !$('global-ref').dataset.touched) $('global-ref').value = panelNotice.ref;
+    $('global-check-btn').click();
+    $('global-check-status').scrollIntoView({ block: 'center' });
+});
+
+$('panel-update-banner-dismiss').addEventListener('click', () => {
+    try {
+        if (panelNotice?.latest?.sha) localStorage.setItem(PANEL_DISMISS_KEY, panelNotice.latest.sha);
+    } catch {
+        /* nothing to remember it in */
+    }
+    $('panel-update-banner').hidden = true;
+});
+
+$('global-autocheck').addEventListener('change', async (event) => {
+    const box = event.target;
+    box.disabled = true;
+    try {
+        const n = await api('/api/system/panel-autocheck', { method: 'POST', body: { enabled: box.checked } });
+        renderPanelNotice(n);
+        toast(n.autoCheck ? 'The panel checks for its own updates every six hours.' : 'The panel no longer checks for updates on its own.');
+    } catch (e) {
+        box.checked = !box.checked;
+        toast(e.message, 'bad');
+    } finally {
+        box.disabled = false;
+    }
+});
+
 /**
  * Both actions here replace or delete the container serving this page, so
  * neither reports back the way every other job does. The panel does not get to
@@ -9333,9 +9404,9 @@ async function loadGlobal() {
 }
 
 /**
- * Nothing here polls GitHub in the background. A control panel that phones home
- * on a timer is a surprise, and the answer is only interesting at the moment
- * somebody is thinking about updating.
+ * The panel's own update check is the one thing that runs in the background (every six
+ * hours, server side, switchable below). The page only reads its answer, and this button
+ * asks GitHub there and then.
  */
 $('global-check-btn').addEventListener('click', async () => {
     const button = $('global-check-btn');

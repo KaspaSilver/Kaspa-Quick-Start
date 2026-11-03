@@ -91,6 +91,9 @@ export const DEFAULT_MANAGER_CONFIG = {
     // & domains). null means "not decided yet" and is resolved once, on first
     // boot, from whether the stack is already using it.
     proxy: { enabled: null },
+    // The panel's own update check (Global settings > Update the control panel): every few
+    // hours, and a banner when one is out. Nothing else is checked on its own.
+    panelUpdates: { autoCheck: true },
 };
 
 // ------------------------------------------------------------------- io ----
