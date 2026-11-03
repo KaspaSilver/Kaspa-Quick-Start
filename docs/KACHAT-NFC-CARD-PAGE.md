@@ -46,6 +46,36 @@ it exited at once. v0.1.1 only removes that option.
 - It isn't known yet whether pcscd finds the reader once it stays up. The owner was given a manual
   test for that, and the result hasn't been reported.
 
+## To do: KaChat changed how it uses the card
+
+The owner simplified KaChat's card backup on 2026-11-03. The applet, helper and card commands don't
+change, and **no new card load or release is needed for this**. Only the docs and this page's wording
+need to match.
+
+What KaChat now does:
+
+- **Only accounts with a BIP39 passphrase can back up.** Without one, the option doesn't appear.
+- **The passphrase is never on the card.** Restoring takes the PIN and then the typed passphrase.
+- **One 6-digit PIN, no separate password.** The PIN also derives the backup's encryption key.
+- **The payload is now version 2.** `passphrase` is gone, and `chattingAddress` is added so a restore
+  can catch a mistyped passphrase. The other fields are unchanged.
+
+Please update KaChat-NFC's `docs/PROTOCOL.md`:
+
+- In the key derivation text, the input is now the card's PIN rather than a password.
+- In the payload section, make the changes above.
+- Rewrite the threat table. Someone who records the NFC traffic, or extracts the chip's memory, can
+  get the seed words, because a 6-digit PIN can be guessed offline. The passphrase is what still
+  protects the account. A forgotten passphrase now also makes the backup useless.
+- `SET PIN` can keep accepting 6 to 16 bytes. KaChat only sends 6 digits.
+
+On the NFC Card page:
+
+- Change the intro from section 6 to: "Back up the seed phrase of an account that has a passphrase to
+  an NFC card, behind a 6-digit PIN. The passphrase is never saved to the card. The card never creates
+  keys. This isn't cold storage, so keep your seed phrase and passphrase on paper too."
+- On the "Ready" row in section 3, add that the account being backed up needs a passphrase.
+
 ## Known gaps in KaChat-NFC
 
 Yours to fix or leave, now that this session handles the repo. None of them need doing before the
