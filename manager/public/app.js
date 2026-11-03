@@ -6254,7 +6254,7 @@ async function loadExtension() {
     $('extension-rebuild').disabled = !b;
 }
 
-for (const target of ['chromium', 'firefox']) {
+for (const target of ['chromium']) {
     $(`extension-dl-${target}`).addEventListener('click', () => {
         location.href = `/api/extension/download/${target}`;
     });
@@ -10355,7 +10355,7 @@ function renderNfc(st) {
     nfcTag('ready', 'ok');
     setNfcNow(
         'Ready',
-        `${picker}<p class="verdict ok">Ready. Open KaChat and back up by tapping this card.</p>${loadedFacts}${newer}`,
+        `${picker}<p class="verdict ok">Ready. Open KaChat and back up by tapping this card. The account you back up needs a BIP39 passphrase.</p>${loadedFacts}${newer}`,
     );
 }
 

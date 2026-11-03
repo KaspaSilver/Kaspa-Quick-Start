@@ -328,8 +328,8 @@ a browser app, so accounts and settings live in the browser you open it with,
 and it talks to whichever node and indexer you point it at from inside the app.
 It does not wait for this node to sync, because it does not have to.
 
-**KaPay Extension.** KaChat's wallet for Chrome, Brave,
-Edge and Firefox, built here from
+**KaPay Extension.** KaChat's wallet for Chrome, Brave
+and Edge (it doesn't support Firefox), built here from
 [KaPay-Browser-Extension](https://github.com/KaspaSilver/KaPay-Browser-Extension)
 so you can load it in developer mode. Nothing runs on this machine: Install
 builds it, and its tab shows the folder to pick under **Load unpacked** (or a
@@ -338,13 +338,15 @@ commits on `main`.
 
 **NFC Card.** Loads the open source
 [KaChat-NFC](https://github.com/KaspaSilver/KaChat-NFC) software onto a J3R180
-Java Card and secures its admin keys, so KaChat can back up a seed phrase you
-already have to the card. A small helper on your Mac or Windows computer reaches
-the reader, and the page shows the one command that installs it. On a Linux
-server the reader can plug into the server instead, and the helper runs there in
-a container while the page is open. Both follow KaChat-NFC's latest release, so
-a new release there needs no change here. The panel never asks for a PIN or a
-seed, and the card's new admin key is shown once and never kept.
+Java Card and secures its admin keys, so KaChat can back up the seed phrase of
+an account that has a passphrase to the card, behind a 6-digit PIN. The
+passphrase is never saved to the card, so keep it and the seed phrase on paper
+too. A small helper on your Mac or Windows computer reaches the reader, and the
+page shows the one command that installs it. On a Linux server the reader can
+plug into the server instead, and the helper runs there in a container while the
+page is open. Both follow KaChat-NFC's latest release, so a new release there
+needs no change here. The panel never asks for a PIN or a seed, and the card's
+new admin key is shown once and never kept.
 
 **Nextcloud.** Your own cloud for the files, photos and video KaChat shares and
 backs up. The official `nextcloud:stable` image with ffmpeg added, and previews

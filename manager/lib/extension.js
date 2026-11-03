@@ -4,12 +4,13 @@ import { CONF_DIR, hostPath } from './paths.js';
 import { docker } from './dockerctl.js';
 
 /**
- * The KaPay browser extension (KaChat's wallet for Chrome, Brave, Edge and Firefox).
+ * The KaPay browser extension (KaChat's wallet for Chrome, Brave and Edge; it doesn't support
+ * Firefox).
  *
  * Nothing runs here. Installing it builds the extension from its repository the way its
  * README does (`npm run package`) in a throwaway Node container, and leaves the result on
- * this machine: an unpacked folder per browser, which developer mode loads as it is ("Load
- * unpacked" in Chrome or Brave), and the same folders zipped for loading it on another
+ * this machine: an unpacked folder, which developer mode loads as it is ("Load
+ * unpacked" in Chrome, Brave or Edge), and the same folder zipped for loading it on another
  * computer. A build that fails leaves the previous one in place.
  */
 
@@ -22,10 +23,10 @@ const CURRENT = path.join(DIR, 'current');
 const NEXT = path.join(DIR, 'next');
 const BUILD_FILE = path.join(CURRENT, 'build.json');
 
-/** The two builds, by the name the download route takes. */
+/** The builds, by the name the download route takes. Its repo also makes a Firefox build, which
+ * isn't offered: the extension doesn't support Firefox. */
 export const TARGETS = {
     chromium: { folder: 'chromium', label: 'Chrome, Brave and Edge' },
-    firefox: { folder: 'firefox', label: 'Firefox' },
 };
 
 export const isInstalled = () => fs.existsSync(path.join(CURRENT, 'chromium', 'manifest.json'));
@@ -82,7 +83,6 @@ npm run package
 rm -rf /out/next
 mkdir -p /out/next
 cp -r dist /out/next/chromium
-cp -r dist-firefox /out/next/firefox
 cp -r packages /out/next/packages
 git rev-parse HEAD > /out/next/commit
 chown -R "$(stat -c %u:%g /out)" /out/next

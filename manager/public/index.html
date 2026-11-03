@@ -2040,18 +2040,6 @@
             </div>
           </article>
 
-          <article class="card span2">
-            <h3>Firefox</h3>
-            <ol class="steps">
-              <li>Open <code>about:debugging#/runtime/this-firefox</code>.</li>
-              <li>Press <strong>Load Temporary Add-on</strong> and pick <code>manifest.json</code> inside the folder below.</li>
-            </ol>
-            <pre class="logview" id="extension-folder-firefox">-</pre>
-            <p class="hint">Firefox drops a temporary add-on when it closes, so it has to be loaded again after a restart.</p>
-            <div class="row">
-              <button type="button" id="extension-dl-firefox" class="ghost" disabled>Download for Firefox</button>
-            </div>
-          </article>
         </div>
       </div>
 
@@ -2818,9 +2806,9 @@
             <div class="toggle-text">
               <strong>NFC Card</strong>
               <span class="muted">
-                Back up a seed phrase you already have to an NFC card, encrypted and protected by a
-                PIN. The card never creates keys. This isn't cold storage, so keep your seed phrase
-                on paper too.
+                Back up the seed phrase of an account that has a passphrase to an NFC card, behind
+                a 6-digit PIN. The passphrase is never saved to the card. The card never creates
+                keys. This isn't cold storage, so keep your seed phrase and passphrase on paper too.
               </span>
             </div>
             <span id="nfc-state" class="tag">checking</span>
