@@ -64,6 +64,7 @@ import {
     hashPassword,
     passwordUnusable,
     isAuthenticated,
+    refreshedCookie,
     issueSession,
     revokeAllSessions,
     sessionCookie,
@@ -462,21 +463,30 @@ const panelDirectUrl = () => `http://localhost:${process.env.GUI_PORT || '8080'}
 route(
     'GET',
     /^\/api\/session$/,
-    async (req, res) =>
-        sendJson(res, 200, {
-            // A password is always required (KQS-001). `needsSetup`: none is set
-            // yet, so the panel shows only its set-password screen.
-            required: true,
-            needsSetup: !authConfigured(),
-            authenticated: authConfigured() && isAuthenticated(req),
-            // A stored hash that cannot be verified would otherwise present as
-            // "your password is wrong", forever.
-            passwordUnusable: passwordUnusable(),
-            panelVersion: PANEL_VERSION,
-            // So the UI can warn before stopping the proxy would disconnect it.
-            viaProxy: reachedViaProxy(req),
-            directUrl: panelDirectUrl(),
-        }),
+    async (req, res) => {
+        // Opening the panel renews the sign-in cookie, so the browser never drops it.
+        const secure = (req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
+        const cookie = authConfigured() ? refreshedCookie(req, { secure }) : null;
+        sendJson(
+            res,
+            200,
+            {
+                // A password is always required (KQS-001). `needsSetup`: none is set
+                // yet, so the panel shows only its set-password screen.
+                required: true,
+                needsSetup: !authConfigured(),
+                authenticated: Boolean(cookie),
+                // A stored hash that cannot be verified would otherwise present as
+                // "your password is wrong", forever.
+                passwordUnusable: passwordUnusable(),
+                panelVersion: PANEL_VERSION,
+                // So the UI can warn before stopping the proxy would disconnect it.
+                viaProxy: reachedViaProxy(req),
+                directUrl: panelDirectUrl(),
+            },
+            cookie ? { 'Set-Cookie': cookie } : {},
+        );
+    },
     { auth: false },
 );
 

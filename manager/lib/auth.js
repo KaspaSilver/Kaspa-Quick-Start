@@ -6,7 +6,10 @@ import path from 'node:path';
 import { CONF_DIR } from './paths.js';
 import { readEnvFile, updateEnvFile } from './store.js';
 
-const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+// A sign-in never runs out: it ends only on Sign out, Sign out everywhere or a new
+// password. Browsers keep a cookie at most about 400 days, so the panel sends it
+// again each time it is opened (see refreshedCookie).
+const COOKIE_MAX_AGE_S = 400 * 24 * 60 * 60;
 const COOKIE_NAME = 'kaspa_node_session';
 const SCRYPT_KEYLEN = 32;
 
@@ -92,10 +95,10 @@ const sign = (payload) =>
     crypto.createHmac('sha256', SESSION_SECRET).update(`${payload}.${sessionEpoch()}`).digest('hex');
 
 export function issueSession() {
-    const expires = Date.now() + SESSION_TTL_MS;
+    const issued = Date.now();
     const nonce = crypto.randomBytes(16).toString('hex');
-    const payload = `${expires}.${nonce}`;
-    return { token: `${payload}.${sign(payload)}`, expires };
+    const payload = `${issued}.${nonce}`;
+    return { token: `${payload}.${sign(payload)}` };
 }
 
 /** End every session, this one included (a new one is issued to the caller separately). */
@@ -107,13 +110,14 @@ export function validateSession(token) {
     if (!token) return false;
     const parts = token.split('.');
     if (parts.length !== 3) return false;
-    const [expires, nonce, sig] = parts;
+    const [issued, nonce, sig] = parts;
     if (!/^[0-9a-f]+$/.test(sig)) return false;
-    const expected = sign(`${expires}.${nonce}`);
+    // No time check: the signature alone decides. Sign out everywhere and a new
+    // password change the epoch the signature is bound to, which ends it.
+    const expected = sign(`${issued}.${nonce}`);
     const a = Buffer.from(sig, 'hex');
     const b = Buffer.from(expected, 'hex');
-    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return false;
-    return Number(expires) > Date.now();
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
 export function parseCookies(header = '') {
@@ -141,7 +145,7 @@ export function sessionCookie(token, { secure }) {
         'Path=/',
         'HttpOnly',
         'SameSite=Strict',
-        `Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`,
+        `Max-Age=${COOKIE_MAX_AGE_S}`,
     ];
     if (secure) attrs.push('Secure');
     return attrs.join('; ');
@@ -149,7 +153,12 @@ export function sessionCookie(token, { secure }) {
 
 export const clearCookie = () => `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`;
 
-export const isAuthenticated = (req) => validateSession(parseCookies(req.headers.cookie || '')[COOKIE_NAME]);
+const requestToken = (req) => parseCookies(req.headers.cookie || '')[COOKIE_NAME];
+export const isAuthenticated = (req) => validateSession(requestToken(req));
+
+/** The caller's own valid session cookie sent again with a fresh lifetime, or null. */
+export const refreshedCookie = (req, { secure }) =>
+    validateSession(requestToken(req)) ? sessionCookie(requestToken(req), { secure }) : null;
 
 export { COOKIE_NAME };
 
