@@ -2960,6 +2960,22 @@ body.dag-fullscreen { overflow: hidden; }
     background: var(--panel);
 }
 .nc-thumb-voice { display: grid; place-items: center; color: var(--muted); font-size: 20px; }
+.nc-files { display: grid; gap: 8px; margin: 10px 0; }
+.nc-dir {
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 4px 10px;
+}
+.nc-dir > summary { cursor: pointer; padding: 6px 0; }
+.nc-file {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0;
+    border-top: 1px solid var(--line);
+}
+.nc-file .nc-row-main { flex: 1 1 0; min-width: 0; }
 @media (max-width: 560px) {
     .nc-media-item { flex-wrap: wrap; }
     .nc-media-item > button { margin-left: 68px; }

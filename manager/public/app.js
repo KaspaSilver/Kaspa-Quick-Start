@@ -4335,8 +4335,10 @@ function renderNextcloud() {
     };
     pick('nc-account-pick');
     pick('nc-media-pick');
+    pick('nc-files-pick');
     $('nc-account-pick-row').hidden = accounts.length < 2;
     $('nc-media-pick-row').hidden = accounts.length < 2;
+    $('nc-files-pick-row').hidden = accounts.length < 2;
 
     $('nc-server').textContent = k.server ?? 'publish it on a name first';
     $('nc-server-copy').innerHTML = k.server ? ncCopy(k.server) : '';
@@ -4443,6 +4445,79 @@ $('nc-media').addEventListener(
     true,
 );
 
+// What a file is, in the words of the apps that wrote it. Anything else is
+// shown by its name alone.
+function ncFileNote(f) {
+    if (/(^|\/)kachat-contacts\.json$/i.test(f.path)) return 'Contacts backup, shared by KaChat and KaPay. Encrypted with your wallet seed.';
+    if (/(^|\/)kachat-backup\.json$/i.test(f.path)) return 'KaChat backup.';
+    if (/portfolio/i.test(f.path) && /\.json$/i.test(f.path)) return 'KaPay portfolio. Not encrypted: readable on this server.';
+    if (/^KaChat\/Media\//.test(f.path)) return f.shared ? 'Sent media, its link is open.' : 'Sent media, no open link.';
+    return '';
+}
+
+async function loadNextcloudFiles() {
+    const user = $('nc-files-pick').value || ncAccount;
+    const box = $('nc-files');
+    if (!user || !ncState?.running) {
+        box.innerHTML = '<p class="muted">Nothing to show while it is stopped or has no account.</p>';
+        $('nc-files-count').textContent = '–';
+        return;
+    }
+    box.innerHTML = '<p class="muted">Reading the folder…</p>';
+    let out;
+    try {
+        out = await api(`/api/nextcloud/accounts/${encodeURIComponent(user)}/files`);
+    } catch (e) {
+        box.innerHTML = `<p class="verdict bad">${escapeHtml(e.message)}</p>`;
+        return;
+    }
+    const files = out.files.filter((f) => !f.folder);
+    const total = files.reduce((n, f) => n + f.size, 0);
+    $('nc-files-count').textContent = `${files.length} file${files.length === 1 ? '' : 's'} · ${fmtSize(total)}`;
+    if (!files.length) {
+        box.innerHTML = '<p class="muted">Nothing backed up yet. Once KaChat or KaPay is signed in to this account, its backups and sent media show up here.</p>';
+        return;
+    }
+    // Grouped by the folder each file sits in, the KaChat folder first and
+    // its media last, newest first inside each.
+    const groups = new Map();
+    for (const f of files) {
+        const dir = f.path.includes('/') ? f.path.slice(0, f.path.lastIndexOf('/')) : '';
+        if (!groups.has(dir)) groups.set(dir, []);
+        groups.get(dir).push(f);
+    }
+    const rank = (d) => (d === 'KaChat' ? 0 : d.startsWith('KaChat/Media') ? 2 : 1);
+    const dirs = [...groups.keys()].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+    const href = (f) => `/api/nextcloud/accounts/${encodeURIComponent(user)}/file?path=${encodeURIComponent(f.path)}`;
+    box.innerHTML =
+        dirs
+            .map((dir) => {
+                const list = groups.get(dir).sort((a, b) => String(b.modified).localeCompare(String(a.modified)));
+                const size = list.reduce((n, f) => n + f.size, 0);
+                const rows = list
+                    .map((f) => {
+                        const note = ncFileNote(f);
+                        return `<div class="nc-file">
+                            <div class="nc-row-main">
+                                <span class="nc-row-title">${escapeHtml(f.name)}</span>
+                                <span class="muted">${fmtSize(f.size)}${f.modified ? ` · ${ncAgo(f.modified)}` : ''}${note ? ` · ${escapeHtml(note)}` : ''}</span>
+                            </div>
+                            <button type="button" class="ghost" data-nc-download="${escapeHtml(href(f))}">Download</button>
+                        </div>`;
+                    })
+                    .join('');
+                return `<details class="nc-dir" ${list.length <= 30 ? 'open' : ''}>
+                    <summary><strong>${escapeHtml(dir ? `${dir}/` : 'Top level')}</strong> <span class="muted">${list.length} file${list.length === 1 ? '' : 's'} · ${fmtSize(size)}</span></summary>
+                    ${rows}
+                </details>`;
+            })
+            .join('') + (out.truncated ? '<p class="hint">Only the first 5,000 entries are shown.</p>' : '');
+}
+
+document.querySelector('[data-subtab="nc-files"]').addEventListener('click', loadNextcloudFiles);
+$('nc-files-refresh').addEventListener('click', loadNextcloudFiles);
+$('nc-files-pick').addEventListener('change', loadNextcloudFiles);
+
 document.querySelector('[data-subtab="nc-media"]').addEventListener('click', loadNextcloudMedia);
 $('nc-media-refresh').addEventListener('click', loadNextcloudMedia);
 $('nc-media-pick').addEventListener('change', loadNextcloudMedia);
@@ -4470,6 +4545,12 @@ $('tab-nextcloud').addEventListener('click', async (event) => {
             toast(e.message, 'bad');
         }
         return loadNextcloud();
+    }
+    const download = event.target.closest('[data-nc-download]');
+    if (download) {
+        // The panel answers it as an attachment, so this saves and stays put.
+        Object.assign(document.createElement('a'), { href: download.dataset.ncDownload, download: '' }).click();
+        return;
     }
     const unshare = event.target.closest('[data-nc-unshare]');
     if (unshare) {

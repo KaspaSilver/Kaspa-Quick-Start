@@ -227,6 +227,11 @@ async function configure(onLine = () => {}) {
         onLine(`Could not set up Talk, so KaChat calls are off for now (${err.message}). It is tried again on the next start.`);
     }
 
+    // New accounts start empty, not with Nextcloud's sample files: the
+    // folder page should show only what KaChat and KaPay put there.
+    await occ(['config:system:set', 'skeletondirectory', '--value', '']).catch(() => {});
+    await occ(['config:system:set', 'templatedirectory', '--value', '']).catch(() => {});
+
     // Public links on, nothing else shared from here.
     await occ(['config:app:set', 'core', 'shareapi_allow_links', '--value', 'yes']).catch(() => {});
     await occ(['config:app:set', 'core', 'shareapi_allow_public_upload', '--value', 'no']).catch(() => {});
@@ -452,6 +457,109 @@ export async function preview(username, fileId) {
     // own origin, so anything else here would be a page the panel vouched for.
     if (!res.ok || !/^image\/(png|jpeg|gif|webp)$/.test(type)) throw new NextcloudError('No preview.', res.ok ? 502 : res.status);
     return { type, body: Buffer.from(await res.arrayBuffer()) };
+}
+
+// ---------------------------------------------------------------- folder ---
+
+// A path inside the account, as the apps name it: "KaChat/Media/a.jpg".
+// Nothing that climbs out of the account, nothing absolute.
+function checkPath(rel) {
+    const parts = String(rel ?? '').split('/').filter(Boolean);
+    if (!parts.length || parts.some((p) => p === '.' || p === '..' || /[\0\\]/.test(p))) throw new NextcloudError('No such file.', 404);
+    return parts;
+}
+
+const davUrl = (user, parts) => `${INTERNAL}/remote.php/dav/files/${encodeURIComponent(user)}${parts.map((p) => `/${encodeURIComponent(p)}`).join('')}`;
+
+const PROPFIND = `<?xml version="1.0"?>
+<d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">
+  <d:prop><d:getlastmodified/><d:getcontentlength/><d:getcontenttype/><d:resourcetype/><oc:fileid/><oc:size/></d:prop>
+</d:propfind>`;
+
+const xmlText = (block, tag) => {
+    const m = block.match(new RegExp(`<[a-z]+:${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</[a-z]+:${tag}>`, 'i'));
+    return m ? m[1].replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&') : null;
+};
+
+/** One folder's direct contents. */
+async function listFolder(user, parts) {
+    const token = await ensurePanelToken(user);
+    const res = await deps.fetch(`${davUrl(user, parts)}/`, {
+        method: 'PROPFIND',
+        headers: { Authorization: basicAuth(user, token), Depth: '1', 'Content-Type': 'application/xml' },
+        body: PROPFIND,
+        signal: AbortSignal.timeout(30_000),
+    });
+    if (res.status === 404) return null;
+    if (res.status !== 207) throw new NextcloudError(`Nextcloud answered ${res.status}.`, 502);
+    const prefix = `/remote.php/dav/files/${user}/`;
+    const out = [];
+    for (const block of (await res.text()).split(/<[a-z]+:response>/i).slice(1)) {
+        const href = decodeURIComponent(xmlText(block, 'href') ?? '');
+        const at = href.indexOf(prefix);
+        if (at < 0) continue;
+        const rel = href.slice(at + prefix.length).replace(/\/$/, '');
+        // The folder itself comes back first.
+        if (rel === parts.join('/')) continue;
+        const folder = /<[a-z]+:collection\s*\/>/i.test(xmlText(block, 'resourcetype') ?? '');
+        const modified = xmlText(block, 'getlastmodified');
+        out.push({
+            path: rel,
+            name: rel.split('/').pop(),
+            folder,
+            size: Number(folder ? xmlText(block, 'size') : xmlText(block, 'getcontentlength')) || 0,
+            mime: folder ? null : xmlText(block, 'getcontenttype'),
+            fileId: xmlText(block, 'fileid'),
+            modified: modified ? new Date(modified).toISOString() : null,
+        });
+    }
+    return out;
+}
+
+const FOLDER_LIMIT = 5000;
+
+/**
+ * Everything in the account, read live from Nextcloud, folder by folder (it
+ * turns away a whole-tree listing). In this Nextcloud that is only what KaChat
+ * and KaPay backed up: their folders, their contacts and portfolio files, and
+ * the media sent as links.
+ */
+export async function folder(username) {
+    const user = checkUsername(username);
+    const files = [];
+    const queue = [[]];
+    let truncated = false;
+    while (queue.length) {
+        const parts = queue.shift();
+        const items = await listFolder(user, parts);
+        for (const item of items ?? []) {
+            if (files.length >= FOLDER_LIMIT) {
+                truncated = true;
+                break;
+            }
+            files.push(item);
+            if (item.folder) queue.push(item.path.split('/'));
+        }
+        if (truncated) break;
+    }
+    // Which files are out as links, so the list can say so.
+    const shared = new Set((await shares(user).catch(() => [])).map((s) => String(s.path ?? '').replace(/^\//, '')));
+    for (const f of files) f.shared = shared.has(f.path);
+    files.sort((a, b) => a.path.localeCompare(b.path));
+    return { files, truncated };
+}
+
+/** One file's content, for a download. The caller streams it. */
+export async function download(username, rel) {
+    const user = checkUsername(username);
+    const parts = checkPath(rel);
+    const token = await ensurePanelToken(user);
+    const res = await deps.fetch(davUrl(user, parts), {
+        headers: { Authorization: basicAuth(user, token) },
+        signal: AbortSignal.timeout(10 * 60_000),
+    });
+    if (!res.ok) throw new NextcloudError(res.status === 404 ? 'No such file.' : `Nextcloud answered ${res.status}.`, res.status === 404 ? 404 : 502);
+    return { name: parts.at(-1), length: res.headers.get('content-length'), body: res.body };
 }
 
 // ----------------------------------------------------------------- status ---

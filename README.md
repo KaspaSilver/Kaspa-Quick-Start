@@ -367,12 +367,15 @@ does everything, so Nextcloud's own pages are never needed:
   KaPay, with copy buttons, and app passwords made (shown once) and revoked.
 - **Shared media**: every link an account has made, with thumbnails, and Stop
   sharing, which KaChat itself cannot do.
+- **KaChat folder**: every file the two apps have backed up (contacts and
+  portfolio backups, sent media), read live, each one downloadable.
 - **Accounts**: one per person, each with its own space.
 - **Calls**: Talk is installed and given public STUN servers, so calls connect
   with no port opened anywhere. A TURN relay is not set up.
 
 The first time its switch starts it, it sets itself up (Talk, previews for
-photos, iPhone HEIC and video, public links) and makes an account called
+photos, iPhone HEIC and video, public links, new accounts empty of
+Nextcloud's sample files) and makes an account called
 `kachat`. It has no port on the machine: publish it on a name of its own under
 Tunnel & domains, and that name only lets through what KaChat and KaPay use
 (their files, share links and calls). Nextcloud's web login and pages are not

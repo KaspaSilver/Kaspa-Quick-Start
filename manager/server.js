@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 
 import { COMPOSE_FILE, CONF_DIR, DOMAINS_FILE, ensureDirs, KASPAD_ARGS_FILE, NAMES_DIR, NODE_CONFIG_FILE, PROXIES_FILE, STACK_HOST } from './lib/paths.js';
@@ -3437,6 +3438,27 @@ route('GET', /^\/api\/nextcloud\/accounts\/([a-z0-9._-]+)\/preview\/(\d+)$/, asy
         res.writeHead(err.status === 404 ? 404 : 502);
         res.end();
     }
+});
+
+route('GET', /^\/api\/nextcloud\/accounts\/([a-z0-9._-]+)\/files$/, nextcloudTry(async (req, res, m) => nextcloud.folder(m[1])));
+
+// Always a download, never shown in the panel's page: a file an app put in
+// the account is not something the panel's own origin should render.
+route('GET', /^\/api\/nextcloud\/accounts\/([a-z0-9._-]+)\/file$/, async (req, res, m, url) => {
+    let file;
+    try {
+        file = await nextcloud.download(m[1], url.searchParams.get('path'));
+    } catch (err) {
+        return fail(res, err.status && err.status < 600 ? err.status : 500, err.message);
+    }
+    res.writeHead(200, {
+        'Content-Type': 'application/octet-stream',
+        'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+        'X-Content-Type-Options': 'nosniff',
+        'Cache-Control': 'no-store',
+        ...(file.length ? { 'Content-Length': file.length } : {}),
+    });
+    Readable.fromWeb(file.body).on('error', () => res.destroy()).pipe(res);
 });
 
 // -------------------------------------------------------- admin password --
