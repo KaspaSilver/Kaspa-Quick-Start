@@ -41,6 +41,7 @@ export const fileProblem = (filePath) =>
 const secretEnv = () => ({ ...process.env, KACHAT_INTERNAL_SECRET: readEnvFile().KACHAT_PUSH_SECRET || '' });
 
 let running = false;
+let restoring = false;
 let timer = null;
 let progress = null; // { step, of, label } while a backup is in flight; null when idle
 
@@ -50,8 +51,11 @@ export function loadConfig() {
 
 export function status() {
     const c = loadConfig();
-    return { enabled: c.enabled, dest: c.dest, keep: c.keep, last: c.last, running, progress };
+    return { enabled: c.enabled, dest: c.dest, keep: c.keep, last: c.last, running, restoring, progress };
 }
+
+/** A backup or a restore is in flight (a panel restart now would cut it off). */
+export const busy = () => running || restoring;
 
 export function saveConfig(patch) {
     const cfg = { ...loadConfig(), ...patch };
@@ -105,22 +109,46 @@ function spawnP(cmd, args, { env } = {}) {
     });
 }
 
-/** `docker exec DB pg_dump` (local, no password) piped into a helper that writes to the HDD stage. */
-function dumpDbToStage(mount, stage) {
+/**
+ * `docker <from>` piped into `docker <to>`. Resolves only when both exit 0, so a dump that
+ * died halfway is never taken for a good one. A side that quits early breaks the pipe
+ * (EPIPE); that is caught here, because unhandled it takes the whole panel down.
+ */
+function pipeP(fromArgs, toArgs, what) {
     return new Promise((resolve, reject) => {
-        const dump = spawn('docker', ['exec', DB, 'pg_dump', '-U', 'kachat', '-Fc', 'kachat']);
-        const write = spawn('docker', ['run', '--rm', '-i', '-v', mount, IMG, 'sh', '-c', 'umask 077 && cat > "$1/kaposts.dump"', 'sh', stage]);
+        const from = spawn('docker', fromArgs);
+        const to = spawn('docker', toArgs);
         let err = '';
-        dump.stderr.on('data', (d) => (err += d));
-        write.stderr.on('data', (d) => (err += d));
-        dump.on('error', reject);
-        write.on('error', reject);
-        dump.stdout.pipe(write.stdin);
-        write.on('close', (code) =>
-            code === 0 ? resolve() : reject(new Error('pg_dump → stage failed: ' + err.trim().slice(0, 600))),
-        );
+        const codes = [];
+        const keep = (d) => { if (err.length < 4000) err += d.toString(); };
+        from.stderr.on('data', keep);
+        to.stderr.on('data', keep);
+        for (const s of [from.stdout, to.stdin]) s.on('error', () => {});
+        from.on('error', reject);
+        to.on('error', reject);
+        from.stdout.pipe(to.stdin);
+        const done = (code) => {
+            codes.push(code);
+            if (codes.length < 2) return;
+            if (codes.every((c) => c === 0)) resolve();
+            else reject(new Error(`${what} failed: ${err.trim().slice(0, 600)}`));
+        };
+        from.on('close', done);
+        // The reader gone means nothing will drain the writer; stop it rather than wait forever.
+        to.on('close', (code) => {
+            if (from.exitCode === null) from.kill();
+            done(code);
+        });
     });
 }
+
+/** `docker exec DB pg_dump` (local, no password) piped into a helper that writes to the HDD stage. */
+const dumpDbToStage = (mount, stage) =>
+    pipeP(
+        ['exec', DB, 'pg_dump', '-U', 'kachat', '-Fc', 'kachat'],
+        ['run', '--rm', '-i', '-v', mount, IMG, 'sh', '-c', 'umask 077 && cat > "$1/kaposts.dump"', 'sh', stage],
+        'pg_dump → stage',
+    );
 
 /** Build one combined backup file (DB + chat store) on the configured host destination. */
 export async function runBackup(log = () => {}) {
@@ -129,6 +157,7 @@ export async function runBackup(log = () => {}) {
     const bad = destProblem(cfg.dest);
     if (bad) throw new Error(bad);
     if (running) throw new Error('A backup is already running.');
+    if (restoring) throw new Error('A restore is running. Back up once it has finished.');
     running = true;
     const started = Date.now();
     const stamp = new Date().toISOString().replace(/:/g, '').replace('T', '-').slice(0, 15); // 20260927-0400
@@ -158,7 +187,9 @@ export async function runBackup(log = () => {}) {
         progress = { step: 3, of: 3, label: 'Compressing into one file…' };
         await spawnP('docker', [
             'run', '--rm', '-v', mount, IMG, 'sh', '-c',
-            'umask 077 && tar -czf "/w/$1" -C "$2" kaposts.dump chat-store.export && chmod 600 "/w/$1" && rm -rf "$2" && ' +
+            // An empty part means its export failed quietly: no file then, rather than a bad one.
+            'test -s "$2/kaposts.dump" && test -s "$2/chat-store.export" && ' +
+                'umask 077 && tar -czf "/w/$1" -C "$2" kaposts.dump chat-store.export && chmod 600 "/w/$1" && rm -rf "$2" && ' +
                 'ls -t /w/kachat-backup-*.tar.gz 2>/dev/null | tail -n +"$3" | xargs -r rm -f',
             'sh', name, stage, String(keep + 1),
         ]);
@@ -187,6 +218,8 @@ export async function restoreBackup(filePath, log = () => {}) {
     const file = path.basename(filePath);
     const mount = `${dir}:/w`;
     const stage = `/w/.krestore-${Date.now()}`;
+    if (running || restoring) throw new Error('A backup or restore is already running.');
+    restoring = true;
     try {
         log(`[restore] extracting ${file}`);
         await spawnP('docker', [
@@ -196,18 +229,12 @@ export async function restoreBackup(filePath, log = () => {}) {
         ]);
         // DB: helper cats the dump → local pg_restore in the DB container (no password)
         log('[restore] restoring KaPosts database');
-        await new Promise((resolve, reject) => {
-            const cat = spawn('docker', ['run', '--rm', '-v', mount, IMG, 'cat', `${stage}/kaposts.dump`]);
-            const restore = spawn('docker', ['exec', '-i', DB, 'pg_restore', '-U', 'kachat', '-d', 'kachat', '--clean', '--if-exists']);
-            let err = '';
-            cat.stderr.on('data', (d) => (err += d));
-            restore.stderr.on('data', (d) => (err += d));
-            cat.on('error', reject);
-            restore.on('error', reject);
-            cat.stdout.pipe(restore.stdin);
-            // pg_restore --clean warns noisily on a fresh DB; only a non-zero exit is fatal.
-            restore.on('close', (code) => (code === 0 ? resolve() : reject(new Error('pg_restore failed: ' + err.trim().slice(0, 600)))));
-        });
+        // pg_restore --clean warns noisily on a fresh DB; only a non-zero exit is fatal.
+        await pipeP(
+            ['run', '--rm', '-v', mount, IMG, 'cat', `${stage}/kaposts.dump`],
+            ['exec', '-i', DB, 'pg_restore', '-U', 'kachat', '-d', 'kachat', '--clean', '--if-exists'],
+            'pg_restore',
+        );
         // Chat store: POST the export back to the indexer's /import-file
         log('[restore] restoring chat store');
         await spawnP(
@@ -226,15 +253,21 @@ export async function restoreBackup(filePath, log = () => {}) {
     } catch (e) {
         await spawnP('docker', ['run', '--rm', '-v', mount, IMG, 'sh', '-c', 'rm -rf "$1"', 'sh', stage]).catch(() => {});
         throw e;
+    } finally {
+        restoring = false;
     }
 }
 
-/** Start the nightly scheduler: fire in the local 00:00 hour once per day (with missed-night catch-up). */
-export function scheduleBackup(log = () => {}) {
+/**
+ * Start the nightly scheduler: fire in the local 00:00 hour once per day (with missed-night
+ * catch-up). `deferWhile` holds it off while something else may recreate the database (an
+ * indexer update in the Update Queue); the next tick tries again.
+ */
+export function scheduleBackup(log = () => {}, { deferWhile = () => false } = {}) {
     if (timer) clearInterval(timer);
     const tick = async () => {
         const cfg = loadConfig();
-        if (!cfg.enabled || !cfg.dest || running) return;
+        if (!cfg.enabled || !cfg.dest || running || restoring || deferWhile()) return;
         const now = new Date();
         const today = now.toISOString().slice(0, 10);
         const alreadyToday = cfg.last && cfg.last.ok && cfg.last.date === today;

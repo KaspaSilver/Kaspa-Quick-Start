@@ -213,3 +213,10 @@ export function updateEnvFile(updates) {
     for (const [key, value] of remaining) next.push(`${key}=${value}`);
     fs.writeFileSync(ENV_FILE, `${next.join('\n').replace(/\n+$/, '')}\n`, 'utf8');
 }
+
+/**
+ * The image tag for a branch or tag. A git ref may hold "/" (feature/push) and a Docker tag
+ * may not, so the ref stays as the build's source and the tag gets this form of it.
+ */
+export const imageTagFor = (ref) =>
+    String(ref || 'main').replace(/[^A-Za-z0-9_.-]/g, '-').replace(/^[.-]+/, '').slice(0, 128) || 'main';

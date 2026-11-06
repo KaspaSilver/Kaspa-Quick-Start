@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { docker } from './dockerctl.js';
 import { hostPath, NAMES_DIR } from './paths.js';
-import { readEnvFile } from './store.js';
+import { imageTagFor, readEnvFile } from './store.js';
 
 /**
  * ".kachat domains" as an installable tool (kachat-domains docs/KQS.md).
@@ -22,7 +22,7 @@ export const SUMMARY_FILE = 'kachat-domains.json';
 const REVISION_LABEL = 'org.opencontainers.image.revision';
 
 export const ref = () => (readEnvFile().KACHAT_DOMAINS_REF || 'main').trim();
-export const imageTag = () => `kaspa-one-click/kachat-domains:${ref()}`;
+export const imageTag = () => `kaspa-one-click/kachat-domains:${imageTagFor(ref())}`;
 
 /**
  * .kachat Domains on one network is two things: the shared tool image above (verifies and

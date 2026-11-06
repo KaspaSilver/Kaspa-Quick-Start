@@ -2,7 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { COMPOSE_FILE, CONF_DIR } from './paths.js';
-import { readJson, writeJson, updateEnvFile, readEnvFile, NETWORKS } from './store.js';
+import { readJson, writeJson, updateEnvFile, readEnvFile, NETWORKS, imageTagFor } from './store.js';
+
+export { imageTagFor };
 import { docker } from './dockerctl.js';
 
 /**
@@ -457,7 +459,7 @@ export function validateAppsConfig(input) {
  * needs it. What remains is the network mismatch, which no amount of listening
  * fixes.
  */
-export function appBlockers(name, cfg, nodeCfg) {
+export function appBlockers(name, cfg, nodeCfg, { testnetNode = true } = {}) {
     const blockers = [];
     if (name === 'kachat' && cfg.kachat.enabled) {
         if (nodeCfg.network !== cfg.kachat.network) {
@@ -469,7 +471,12 @@ export function appBlockers(name, cfg, nodeCfg) {
     }
 
     if (name === 'bot' && cfg.bot?.enabled) {
-        if (nodeCfg.network !== cfg.bot.network) {
+        // A testnet-10 bot runs on the Testnet view's node; a mainnet one on this node.
+        if (cfg.bot.network === 'testnet-10') {
+            if (!testnetNode) {
+                blockers.push('The bot is set to testnet-10, which uses the testnet node. Install that node on the Testnet view first.');
+            }
+        } else if (nodeCfg.network !== cfg.bot.network) {
             blockers.push(
                 `The bot is set to ${cfg.bot.network} but your node is running ${nodeCfg.network}. ` +
                     'These have to match, or it watches an address on a chain the node is not following.',
@@ -572,6 +579,7 @@ export const allowedApnsTopics = (apns) =>
 export function writeAppsEnv(cfg) {
     updateEnvFile({
         KACHAT_REF: cfg.kachat.ref,
+        KACHAT_TAG: imageTagFor(cfg.kachat.ref),
         KACHAT_NETWORK: cfg.kachat.network,
         KACHAT_NODE_PORT: cfg.kachat.network === 'testnet-10' ? 17210 : 17110,
         KACHAT_FCM_PROJECT_ID: cfg.kachat.fcmProjectId,
@@ -593,12 +601,17 @@ export function writeAppsEnv(cfg) {
         // Both the image tag and the build arg, so switching refs actually
         // rebuilds rather than re-tagging the layers already cached.
         KACHAT_DESKTOP_REF: cfg.desktop?.ref || 'main',
+        KACHAT_DESKTOP_TAG: imageTagFor(cfg.desktop?.ref),
         BOT_REF: botRef(cfg),
+        BOT_TAG: imageTagFor(botRef(cfg)),
         BOT_NETWORK: cfg.bot?.network || 'mainnet',
         // Optional gap-filling for incoming messages after downtime: the chat API of the KaChat
         // indexer on the same network, when there is one (the bot copes without it).
         BOT_INDEXER_URL: cfg.bot?.network === 'testnet-10' ? 'http://kachat-app-testnet:8600' : 'http://kachat-app:8600',
-        // The node's ports move with its network, and the bot dials both.
+        // A testnet-10 bot uses the Testnet view's own node and bridge. The node's ports
+        // move with its network, and the bot dials both.
+        BOT_NODE_HOST: cfg.bot?.network === 'testnet-10' ? 'kaspad-testnet' : 'kaspad',
+        BOT_BRIDGE_HOST: cfg.bot?.network === 'testnet-10' ? 'bridge-testnet' : 'bridge',
         BOT_NODE_GRPC_PORT: cfg.bot?.network === 'testnet-10' ? 16210 : 16110,
         BOT_NODE_BORSH_PORT: cfg.bot?.network === 'testnet-10' ? 17210 : 17110,
         NEXTCLOUD_ADMIN_USER: cfg.nextcloud.adminUser,

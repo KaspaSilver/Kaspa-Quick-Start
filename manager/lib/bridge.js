@@ -81,7 +81,8 @@ export function validateBridgeConfig(input) {
     const seenPorts = new Set();
     cfg.instances = rawInstances.slice(0, 8).map((raw, index) => {
         const label = `Stratum port #${index + 1}`;
-        const port = int(label, raw?.stratumPort, 1024, 65535, 5555);
+        // Testnet-10 mining listens on the same ports + 100, so they have to fit too.
+        const port = int(label, raw?.stratumPort, 1024, 65535 - TESTNET_STRATUM_OFFSET, 5555);
         if (seenPorts.has(port)) errors.push(`Port ${port} is listed more than once.`);
         seenPorts.add(port);
 
@@ -89,10 +90,18 @@ export function validateBridgeConfig(input) {
         // instance from 2114 up; a stratum listener on those would collide.
         if (port === DASHBOARD_PORT) errors.push(`Port ${port} is used by the bridge dashboard.`);
         if (port >= 2114 && port <= 2114 + 8) errors.push(`Port ${port} is reserved for the bridge's metrics endpoints.`);
+        if (port + TESTNET_STRATUM_OFFSET === DASHBOARD_PORT) {
+            errors.push(`Port ${port} would put testnet mining on ${DASHBOARD_PORT}, the testnet bridge's dashboard.`);
+        }
 
         const diff = int(`${label} starting difficulty`, raw?.minShareDiff, 1, 1_000_000_000, 2048);
         return { stratumPort: port, minShareDiff: diff, publish: raw?.publish !== false };
     });
+    for (const port of seenPorts) {
+        if (seenPorts.has(port + TESTNET_STRATUM_OFFSET)) {
+            errors.push(`Ports ${port} and ${port + TESTNET_STRATUM_OFFSET} clash: testnet mining uses each port + ${TESTNET_STRATUM_OFFSET}.`);
+        }
+    }
 
     return { cfg, errors };
 }

@@ -431,10 +431,6 @@ function sanitizeNodeConfig(input) {
             return false;
         });
 
-    // The UI shows these as locked; enforce it here too so a hand-crafted
-    // request cannot turn off what the stack depends on.
-    cfg.expose.json = Boolean(input.expose?.json);
-
     return { cfg, errors };
 }
 
@@ -715,6 +711,11 @@ route('GET', /^\/api\/config$/, async (req, res) => {
 route('PUT', /^\/api\/config$/, async (req, res) => {
     const body = await readBody(req);
     const { cfg, errors } = sanitizeNodeConfig(body.config ?? {});
+    // Testnet-10 has its own node on the Testnet view. Running this one on it too clashes
+    // with that node's ports; a node already on testnet-10 from before may stay there.
+    if (cfg.network === 'testnet-10' && loadNodeConfig().network !== 'testnet-10') {
+        errors.push('Testnet 10 runs on its own node now. Use the Testnet view for it.');
+    }
     if (errors.length) return fail(res, 400, 'The configuration has problems.', { details: errors });
 
     saveNodeConfig(cfg);
@@ -747,7 +748,7 @@ route('PUT', /^\/api\/kachat\/backup$/, async (req, res) => {
     }
     if (dest && backup.destProblem(dest)) return fail(res, 400, backup.destProblem(dest));
     backup.saveConfig({ enabled, dest, keep });
-    backup.scheduleBackup(log);
+    backup.scheduleBackup(log, { deferWhile: () => jobs.busy });
     sendJson(res, 200, backup.status());
 });
 
@@ -763,6 +764,11 @@ route('POST', /^\/api\/kachat\/backup\/restore$/, async (req, res) => {
     const body = await readBody(req);
     const filePath = typeof body.path === 'string' ? body.path.trim() : '';
     if (backup.fileProblem(filePath)) return fail(res, 400, backup.fileProblem(filePath));
+    const [db, chat] = await Promise.all([
+        dockerctl.containerState('kaspa-node-kachat-db'),
+        dockerctl.containerState('kaspa-node-kachat'),
+    ]);
+    if (!db.running || !chat.running) return fail(res, 409, 'Start KaChat first. A restore writes into its database and chat store.');
     try {
         const result = await backup.restoreBackup(filePath, log);
         sendJson(res, 200, result);
@@ -1371,6 +1377,7 @@ route('POST', /^\/api\/proxy\/enabled$/, async (req, res) => {
  */
 function refuseWhileQueueBusy(res, what) {
     const busy = [...(jobs.busy ? [jobs.snapshot()] : []), ...jobs.pending].map((j) => j.name);
+    if (backup.busy()) busy.push(backup.status().restoring ? 'KaChat restore' : 'KaChat backup');
     if (!busy.length) return false;
     fail(
         res,
@@ -1749,7 +1756,7 @@ route('POST', /^\/api\/setup\/([a-z][a-z-]*)$/, async (req, res, match) => {
             return fail(res, 400, err.message);
         }
     }
-    const what = target ? `${target.scheme}://${target.host}:${target.port}` : what;
+    const what = target ? `${target.scheme}://${target.host}:${target.port}` : plan.service.label;
 
     const extras = {
         target,
@@ -2498,7 +2505,7 @@ route('GET', /^\/api\/apps\/(kachat|desktop|bot)\/refs$/, async (req, res, match
 // The bot's wallet is created and its address derived by the bot's own image,
 // running gen_wallet.py against the same Kaspa SDK it sends with, so the
 // address is always exactly the one it will spend from.
-const botImageTag = () => `kaspa-one-click/kachat-bot:${(readEnvFile().BOT_REF || 'main').trim()}`;
+const botImageTag = () => `kaspa-one-click/kachat-bot:${apps.imageTagFor((readEnvFile().BOT_REF || 'main').trim())}`;
 
 // A private key never goes on a command line (KQS-011): `docker run` names the variable and
 // takes its value from this process's environment, and inside the container gen_wallet.py
@@ -2649,16 +2656,10 @@ const lowBal = new Map(); // bot id -> { alerted, lastAt }
 
 async function lowBalanceWatchTick() {
     if (!bots.readPayout()) return;
-    const client = apps.loadAppsConfig().bot?.network === 'testnet-10' ? rpcTestnet : rpc;
     for (const b of bots.readBots().bots) {
         if (b.enabled === false || !b.address) continue;
-        let balanceKas;
-        try {
-            const r = await client.call('getBalanceByAddress', { address: b.address }, 6000);
-            balanceKas = Number(r?.balance ?? 0) / 1e8;
-        } catch {
-            return; // node not reachable or still syncing
-        }
+        const balanceKas = await botBalanceKas(b.address);
+        if (balanceKas === null) continue; // node not reachable or still syncing
         const st = lowBal.get(b.id) ?? { alerted: false, lastAt: 0 };
         lowBal.set(b.id, st);
         if (balanceKas >= LOWBAL_KAS || balanceKas <= 0) {
@@ -2702,7 +2703,9 @@ route('GET', /^\/api\/bot$/, async (req, res) => {
         config: bot.readConfig(),
         app: { ref: apps.botRef(cfg), network: cfg.bot.network },
         container: await lifecycle.status('bot'),
-        blockers: apps.appBlockers('bot', cfg, loadNodeConfig()),
+        blockers: apps.appBlockers('bot', cfg, loadNodeConfig(), {
+            testnetNode: (await dockerctl.containerState(KASPAD_TESTNET_CONTAINER)).exists,
+        }),
         node: { network: loadNodeConfig().network },
         build: apps.readBuildRecord('bot'),
         history: bot.readHistory(50),
@@ -2811,7 +2814,7 @@ route('GET', /^\/api\/bot\/wallet$/, async (req, res) => {
     let balanceKas = null;
     if (address) {
         try {
-            const r = await rpc.call('getBalanceByAddress', { address }, 6000);
+            const r = await botRpc().call('getBalanceByAddress', { address }, 6000);
             balanceKas = Number(r?.balance ?? 0) / 1e8;
         } catch {
             /* node not reachable or still syncing; balance stays unknown */
@@ -2870,9 +2873,16 @@ route('POST', /^\/api\/bot\/wallet\/reveal$/, async (req, res) => {
 // The Bot tab's squares (lib/bots.js): each bot has its own wallet and is set up in KaChat by
 // talking to it. These routes only write which bots exist and read what they report.
 
+/** The node the bot itself dials: the testnet node for a testnet-10 bot, else this one. */
+function botRpc() {
+    if (apps.loadAppsConfig().bot?.network !== 'testnet-10') return rpc;
+    rpcTestnet.setUrl(testnetRpcUrl());
+    return rpcTestnet;
+}
+
 async function botBalanceKas(address) {
     try {
-        const r = await rpc.call('getBalanceByAddress', { address }, 6000);
+        const r = await botRpc().call('getBalanceByAddress', { address }, 6000);
         return Number(r?.balance ?? 0) / 1e8;
     } catch {
         return null;
@@ -4401,6 +4411,29 @@ const CACHE_CLEANS = {
 
 /** Images this stack builds itself (everything with a `build:` in docker-compose.yml). */
 const BUILT_IMAGES = 'kaspa-one-click/*';
+
+/** The image each service in docker-compose.yml runs, with this stack's .env filled in, plus the tool images. */
+function pinnedImages() {
+    const env = readEnvFile();
+    // ${VAR:-default}, innermost first, so a default that is itself a variable resolves too.
+    const fill = (text) => {
+        let prev;
+        do {
+            prev = text;
+            text = text.replace(/\$\{([A-Z0-9_]+)(?::-([^${}]*))?\}/g, (_, name, def = '') => String(env[name] ?? '').trim() || def);
+        } while (text !== prev);
+        return text;
+    };
+    const out = new Set([kachatDomains.imageTag(), kassigner.ESPTOOL_IMAGE]);
+    let compose = '';
+    try {
+        compose = fs.readFileSync(COMPOSE_FILE, 'utf8');
+    } catch {
+        /* no compose file: only the tools are pinned */
+    }
+    for (const m of compose.matchAll(/^\s*image:\s*(kaspa-one-click\/\S+)\s*$/gm)) out.add(fill(m[1]));
+    return out;
+}
 // A build's cache is last touched while it runs, a little before its image is
 // stamped Created; a slow Rust build takes well over an hour. Kept generous.
 const BUILD_MARGIN_HOURS = 24;
@@ -4440,7 +4473,10 @@ async function smartClean(onLine) {
             return { id, ref };
         });
 
-    const unused = built.filter((b) => !inUse.has(b.id));
+    // Kept even with no container on them: the tags the stack runs now (a service that is
+    // stopped still needs its current image), and the tools only ever run with `docker run --rm`.
+    const pinned = pinnedImages();
+    const unused = built.filter((b) => !inUse.has(b.id) && !pinned.has(b.ref));
     if (unused.length) {
         for (const { ref } of unused) {
             onLine(`$ docker rmi ${ref}`);
@@ -4502,12 +4538,43 @@ route('POST', /^\/api\/system\/disk-cache\/clean$/, async (req, res) => {
     sendJson(res, 202, { ok: true, jobId: job.id });
 });
 
+/**
+ * The bot wallets whose keys exist only in this stack, with what each holds. Remove
+ * everything deletes conf/bot, so any KAS left in them is gone for good. A balance the
+ * node cannot read right now is null, and counts as possibly funded.
+ */
+async function walletsAtRisk() {
+    const out = [];
+    for (const b of bots.readBots().bots) {
+        if (!b.address) continue;
+        out.push({ name: bots.catalogType(b.type)?.title ?? b.type, address: b.address, balanceKas: await botBalanceKas(b.address) });
+    }
+    if (bot.walletKey() && bot.walletAddress()) {
+        out.push({ name: 'Block Notifier (old bot)', address: bot.walletAddress(), balanceKas: await botBalanceKas(bot.walletAddress()) });
+    }
+    return out.filter((w) => w.balanceKas === null || w.balanceKas > 0);
+}
+
+route('GET', /^\/api\/system\/teardown\/wallets$/, async (req, res) => {
+    sendJson(res, 200, { wallets: await walletsAtRisk() });
+});
+
 route('POST', /^\/api\/system\/teardown$/, async (req, res) => {
     const body = await readBody(req);
     // Typed rather than clicked. This removes the node, its chain data and this
     // panel, and there is no undo anywhere in the flow.
     if (String(body.confirm || '') !== 'DELETE EVERYTHING') {
         return fail(res, 400, 'Type DELETE EVERYTHING to confirm.');
+    }
+    // The bot wallets' keys go with conf/bot. Only once the page has shown which ones
+    // still hold KAS, and the owner said go ahead anyway.
+    if (body.walletsOk !== true) {
+        const wallets = await walletsAtRisk();
+        if (wallets.length) {
+            return fail(res, 409, 'Some bot wallets may still hold KAS, and their keys are deleted too.', {
+                details: wallets.map((w) => `${w.name}: ${w.address}`),
+            });
+        }
     }
     try {
         const started = await selfservice.teardown();
@@ -4935,7 +5002,7 @@ async function bootstrap() {
     syncProgress.start(log);
     testnetSync.start(log);
     scheduleExternalIpWatch(log);
-    backup.scheduleBackup(log);
+    backup.scheduleBackup(log, { deferWhile: () => jobs.busy });
     startHashrateWatch();
     startLowBalanceWatch();
     startMiningStatsPersist();

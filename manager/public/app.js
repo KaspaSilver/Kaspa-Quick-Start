@@ -2415,8 +2415,10 @@ async function loadSettings() {
     currentConfig = r.config;
     const c = r.config;
 
+    // The testnet node is always testnet-10. This node offers Testnet 10 only when it is
+    // already on it from before the Testnet view had its own node.
+    $('cfg-network').querySelector('option[value="testnet-10"]').hidden = !testnet && c.network !== 'testnet-10';
     $('cfg-network').value = c.network;
-    // The testnet node is always testnet-10; mainnet's selector is not offered there.
     $('cfg-network').disabled = testnet;
 
     for (const flag of FLAGS) $(`cfg-flag-${flag}`).checked = Boolean(c.flags[flag]);
@@ -9595,7 +9597,21 @@ $('global-teardown-confirm').addEventListener('input', (event) => {
 });
 
 $('global-teardown-btn').addEventListener('click', async () => {
-    if (!await askConfirm('Remove the node, all its data and this panel?\n\nThis cannot be undone. Docker itself stays installed.')) return;
+    let wallets = [];
+    try {
+        ({ wallets } = await api('/api/system/teardown/wallets'));
+    } catch (err) {
+        toast(err.message, 'error');
+        return;
+    }
+    const walletNote = wallets.length
+        ? '\n\nThese bot wallets may still hold KAS. Their keys are deleted too, so anything left in them is lost for good. ' +
+          'Send it out from the Bot tab first.\n' +
+          wallets
+              .map((w) => `• ${w.name}: ${w.balanceKas === null ? 'balance unknown' : `${w.balanceKas.toFixed(4)} KAS`}`)
+              .join('\n')
+        : '';
+    if (!await askConfirm(`Remove the node, all its data and this panel?\n\nThis cannot be undone. Docker itself stays installed.${walletNote}`)) return;
 
     $('global-teardown-btn').disabled = true;
     const job = await runAction({
@@ -9606,7 +9622,7 @@ $('global-teardown-btn').addEventListener('click', async () => {
             'It cannot be cancelled: half a teardown leaves a stack with nothing left to finish taking it apart.',
         cancellable: false,
         terminal: true,
-        request: () => api('/api/system/teardown', { method: 'POST', body: { confirm: TEARDOWN_PHRASE } }),
+        request: () => api('/api/system/teardown', { method: 'POST', body: { confirm: TEARDOWN_PHRASE, walletsOk: true } }),
     });
     // Only reached when it never started -- the phrase was wrong, or docker
     // refused to launch the container that does the removing.

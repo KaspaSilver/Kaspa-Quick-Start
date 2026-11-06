@@ -369,12 +369,36 @@ tar -xzf "$arc" -C "$tmp" --strip-components=1 || fail "The downloaded archive c
 [ -f "$tmp/docker-compose.yml" ] || fail "That archive does not look like the stack."
 
 step "Replacing the panel files"
+# The files being replaced are copied aside first. Any step below that fails puts them
+# back, so a half-written stack (no compose file, say) is never what is left.
+old="$tmp/.previous"
+mkdir -p "$old" || fail "Could not create a temporary directory."
+for item in ${CODE_ITEMS.join(' ')}; do
+  [ -e "${STACK_LOCAL}/$item" ] || continue
+  cp -a "${STACK_LOCAL}/$item" "$old/" || fail "Could not keep a copy of $item, so nothing was changed."
+done
+put_back() {
+  for item in ${CODE_ITEMS.join(' ')}; do
+    rm -rf "${STACK_LOCAL}/$item"
+    [ -e "$old/$item" ] && cp -a "$old/$item" "${STACK_LOCAL}/"
+  done
+}
+# The files back, and the image too once it has been rebuilt, then the panel from them.
+roll_back() {
+  put_back
+  if docker image inspect kaspa-one-click/manager:prev >/dev/null 2>&1; then
+    docker image tag kaspa-one-click/manager:prev kaspa-one-click/manager:1
+    [ "\${restarted:-0}" = 1 ] && { ${compose} up -d --force-recreate manager || true; }
+  fi
+  rm -rf "$tmp"
+}
+undo() { roll_back; fail "$1 The previous panel was put back."; }
 # An experimental branch describes itself here; main has none, so leaving one removes it.
 rm -f "${STACK_LOCAL}/EXPERIMENTAL.json"
 for item in ${CODE_ITEMS.join(' ')}; do
   [ -e "$tmp/$item" ] || continue
   rm -rf "${STACK_LOCAL}/$item"
-  cp -a "$tmp/$item" "${STACK_LOCAL}/" || fail "Could not write $item."
+  cp -a "$tmp/$item" "${STACK_LOCAL}/" || undo "Could not write $item."
 done
 # An experimental branch can bring folders this panel's list does not know yet (a new app's
 # build context): EXPERIMENTAL.json "items". Plain top-level names only, never state.
@@ -382,25 +406,32 @@ if [ -f "$tmp/EXPERIMENTAL.json" ]; then
   for item in $(node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));for(const i of m.items||[])if(/^[a-z0-9][a-z0-9._-]{0,60}$/.test(i)&&!["conf","proxy","data",".env"].includes(i))console.log(i)' "$tmp/EXPERIMENTAL.json"); do
     [ -e "$tmp/$item" ] || continue
     rm -rf "${STACK_LOCAL}/$item"
-    cp -a "$tmp/$item" "${STACK_LOCAL}/" || fail "Could not write $item."
+    cp -a "$tmp/$item" "${STACK_LOCAL}/" || undo "Could not write $item."
   done
 fi
-rm -rf "$tmp"
 
 step "Rebuilding the panel image"
-${compose} build manager || fail "The panel image did not build. The old panel is still running."
-# The branch the panel now runs (System > Experimental), recorded only once it has built.
+# The running image is kept as :prev, the way back if the new panel never comes up.
+docker image tag kaspa-one-click/manager:1 kaspa-one-click/manager:prev 2>/dev/null || true
+${compose} build manager || undo "The panel image did not build. The old panel is still running."
+
+step "Restarting the panel"
+restarted=1
+${compose} up -d --force-recreate manager || undo "The image built, but the panel container did not come back."
+# Built is not the same as working: wait for the new panel to answer before calling it done.
+up=0
+for i in $(seq 1 45); do
+  sleep 2
+  if docker exec kaspa-node-manager curl -fsS -o /dev/null http://127.0.0.1:8080/healthz 2>/dev/null; then up=1; break; fi
+done
+[ "$up" = 1 ] || undo "The new panel built but never started answering."
+rm -rf "$tmp"
+docker image rm kaspa-one-click/manager:prev >/dev/null 2>&1 || true
+# The branch the panel now runs (System > Experimental), recorded only once it is up.
 mkdir -p "${STACK_LOCAL}/conf" && printf '%s\n' "${ref}" > "${STACK_LOCAL}/conf/panel-ref"
 # And the exact commit, which the panel's own update check compares against.
 ${head?.sha ? `printf 'repo=%s\\nref=%s\\nsha=%s\\n' "${repo}" "${ref}" "${head.sha}" > "${STACK_LOCAL}/conf/panel-installed"` : `rm -f "${STACK_LOCAL}/conf/panel-installed"`}
-
-step "Restarting the panel"
 echo "result=ok" >> "$S"
-${compose} up -d --force-recreate manager || {
-  echo "error=The image built, but the panel container did not come back." >> "$S"
-  echo "result=fail" >> "$S"
-  exit 1
-}
 `;
 
     // Runs from the panel's own image, which already carries docker, compose,

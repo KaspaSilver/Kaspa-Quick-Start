@@ -114,7 +114,7 @@ services:
       options: { max-size: "10m", max-file: "3" }
 
   kachat-app:
-    image: kaspa-one-click/kachat:${KACHAT_REF:-main}
+    image: kaspa-one-click/kachat:${KACHAT_TAG:-${KACHAT_REF:-main}}
     build:
       # Built straight from the repository -- no host clone to keep in sync.
       # Changing KACHAT_REF and rebuilding is what the panel's update button does.
@@ -265,7 +265,7 @@ services:
       options: { max-size: "5m", max-file: "2" }
 
   kachat-desktop:
-    image: kaspa-one-click/kachat-desktop:${KACHAT_DESKTOP_REF:-main}
+    image: kaspa-one-click/kachat-desktop:${KACHAT_DESKTOP_TAG:-${KACHAT_DESKTOP_REF:-main}}
     build:
       # Built straight from the repository, which now carries its own
       # Dockerfile -- no second copy here to drift out of step with it.
@@ -349,7 +349,7 @@ services:
   # conf/bot rather than values in .env: that file is written 0600 by the panel
   # and .env is not.
   kachat-bot:
-    image: kaspa-one-click/kachat-bot:${BOT_REF:-main}
+    image: kaspa-one-click/kachat-bot:${BOT_TAG:-${BOT_REF:-main}}
     build:
       context: ${BOT_REPO:-https://github.com/KaspaSilver/KaChat-Bot.git}#${BOT_REF:-main}
     container_name: kaspa-node-kachat-bot
@@ -357,14 +357,15 @@ services:
     profiles: ["bot"]
     restart: unless-stopped
     environment:
-      # The node on this network, not the docker host. Ports follow the network,
-      # the same way the indexer's do.
-      NODE_GRPC: kaspad:${BOT_NODE_GRPC_PORT:-16110}
-      NODE_WRPC: ws://kaspad:${BOT_NODE_BORSH_PORT:-17110}
+      # The node on the bot's network, not the docker host: kaspad for mainnet,
+      # kaspad-testnet for testnet-10. Ports follow the network, the same way the
+      # indexer's do.
+      NODE_GRPC: ${BOT_NODE_HOST:-kaspad}:${BOT_NODE_GRPC_PORT:-16110}
+      NODE_WRPC: ws://${BOT_NODE_HOST:-kaspad}:${BOT_NODE_BORSH_PORT:-17110}
       KASPA_NETWORK: ${BOT_NETWORK:-mainnet}
       # KaChat Bot v2: the chat indexer fills gaps after downtime when it is there (optional).
       KACHAT_INDEXER_URL: ${BOT_INDEXER_URL:-}
-      BRIDGE_STATS_URL: http://bridge:3030/api/stats
+      BRIDGE_STATS_URL: http://${BOT_BRIDGE_HOST:-bridge}:3030/api/stats
       PYTHONUNBUFFERED: "1"
     # Everything that identifies a wallet lives here, written by the panel and
     # readable only by its owner. `required: false` so a stack that has never
@@ -642,7 +643,7 @@ services:
   kachat-app-testnet:
     # Its own tag (kachat-audits KQS-008). Sharing mainnet's kaspa-one-click/kachat meant a
     # testnet-only update re-tagged the image mainnet would start on at its next recreate.
-    image: kaspa-one-click/kachat-testnet:${KACHAT_REF:-main}
+    image: kaspa-one-click/kachat-testnet:${KACHAT_TAG:-${KACHAT_REF:-main}}
     build:
       context: ${KACHAT_REPO:-https://github.com/KaspaSilver/KaChat-Indexer.git}#${KACHAT_REF:-main}
       dockerfile: docker/kachat/Dockerfile.kachat-app
@@ -753,7 +754,7 @@ services:
       options: { max-size: "10m", max-file: "3" }
 
   kachat-names:
-    image: kaspa-one-click/kachat-names:${KACHAT_REF:-main}
+    image: kaspa-one-click/kachat-names:${KACHAT_TAG:-${KACHAT_REF:-main}}
     build:
       context: ${KACHAT_REPO:-https://github.com/KaspaSilver/KaChat-Indexer.git}#${KACHAT_REF:-main}
       dockerfile: docker/kachat-names/Dockerfile
@@ -822,7 +823,7 @@ services:
       options: { max-size: "10m", max-file: "3" }
 
   kachat-names-testnet:
-    image: kaspa-one-click/kachat-names-testnet:${KACHAT_REF:-main}
+    image: kaspa-one-click/kachat-names-testnet:${KACHAT_TAG:-${KACHAT_REF:-main}}
     build:
       context: ${KACHAT_REPO:-https://github.com/KaspaSilver/KaChat-Indexer.git}#${KACHAT_REF:-main}
       dockerfile: docker/kachat-names/Dockerfile
