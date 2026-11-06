@@ -15,11 +15,14 @@ function show(view) {
 function beginInstall() {
   mode = 'install';
   requestedPort = Number($('port').value) > 0 ? Number($('port').value) : 8420;
+  // The box left at its default sends no port, so a reinstall keeps the one the panel
+  // may have moved to (install.sh reads it from .env) instead of forcing 8420 back.
+  const changed = $('port').value !== $('port').defaultValue;
   $('step').textContent = 'Starting up';
   $('log').textContent = '';
   $('dockernote').style.display = 'none';
   show('running');
-  window.kqs.startInstall(requestedPort);
+  window.kqs.startInstall(changed ? requestedPort : null);
 }
 
 function beginUninstall(wipe) {

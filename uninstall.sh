@@ -19,12 +19,25 @@
 
 set -euo pipefail
 
+# Anything started from Finder (the desktop installer) or `do shell script` gets
+# PATH=/usr/bin:/bin:/usr/sbin:/sbin, where macOS keeps no docker CLI. Without
+# this an installed Docker looks missing, the containers are left running and
+# their folder is deleted from under them.
+if [ "$(uname -s)" = Darwin ]; then
+    for p in /Applications/Docker.app/Contents/Resources/bin "${HOME:-/var/empty}/.docker/bin" /opt/homebrew/bin /usr/local/bin; do
+        case ":$PATH:" in *":$p:"*) ;; *) PATH="$p:$PATH" ;; esac
+    done
+    export PATH
+fi
+
 STACK_DIR="${KASPA_STACK_DIR:-$HOME/.kaspa-node}"
 ASSUME_YES="${KASPA_YES:-0}"
 # A true uninstall by default: wipe everything, so nothing lingers. --keep-data
 # opts into keeping the synced chain + install dir for an instant reinstall.
 KEEP_DATA=0
 KEEP_BASE_IMAGES=0
+# The loop below consumes the arguments; the "re-run with sudo" hint needs them.
+ORIG_ARGS=("$@")
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -50,6 +63,7 @@ USAGE
         *) echo "Unknown option: $1 (try --help)" >&2; exit 2 ;;
     esac
 done
+case "$STACK_DIR" in ?*/) STACK_DIR="${STACK_DIR%/}" ;; esac
 
 if [ -t 1 ]; then
     B=$'\033[1m'; DIM=$'\033[2m'; RED=$'\033[31m'; GRN=$'\033[32m'; YLW=$'\033[33m'; CYN=$'\033[36m'; R=$'\033[0m'
@@ -77,6 +91,35 @@ if command -v docker >/dev/null 2>&1; then
 fi
 d() { $DOCKER_SUDO docker "$@"; }
 
+# The command to run this again as root. Under sudo HOME is /root, so the folder
+# is passed explicitly, along with every option this run was given.
+sudo_hint() {
+    local cmd a skip=0
+    cmd="sudo bash $(printf '%q' "$STACK_DIR/uninstall.sh")"
+    for a in ${ORIG_ARGS[@]+"${ORIG_ARGS[@]}"}; do
+        if [ "$skip" = 1 ]; then skip=0; continue; fi
+        if [ "$a" = --dir ]; then skip=1; continue; fi
+        cmd+=" $(printf '%q' "$a")"
+    done
+    printf '%s --dir %q' "$cmd" "$STACK_DIR"
+}
+
+# A folder install.sh made: it writes .kqs-install into every install. Older
+# installs, from before that marker, are known by their compose file and the
+# panel's source beside it. Anything else is never deleted, whatever --dir says.
+is_kqs_dir() {
+    [ -f "$1/.kqs-install" ] && return 0
+    [ -d "$1/manager" ] && [ -f "$1/docker-compose.yml" ] \
+        && grep -qE 'kaspa-node|kaspa-one-click' "$1/docker-compose.yml" 2>/dev/null
+}
+
+# ------------------------------------------------------------------- main ----
+
+# Everything that acts is in main, called from the script's last line, so a
+# download cut short does nothing instead of half an uninstall. The body is
+# left unindented to keep it readable as the script.
+main() {
+
 printf '\n%sRemove the Kaspa one-click node%s\n' "$B" "$R"
 printf '%s  directory %s%s\n' "$DIM" "$STACK_DIR" "$R"
 if [ "$KEEP_DATA" = "1" ]; then
@@ -99,7 +142,7 @@ elif ! d info >/dev/null 2>&1; then
     # nothing is exactly how a "panel still running after uninstall" happens.
     warn "Docker is installed but not reachable as this user (permission denied, or the daemon is down)."
     warn "Re-run the uninstall with elevated access, for example:"
-    warn "    sudo bash \"$STACK_DIR/uninstall.sh\"${*:+ $*}"
+    warn "    $(sudo_hint)"
     exit 1
 else
     # Graceful path: compose down with EVERY profile (bot/translate were
@@ -193,8 +236,9 @@ if [ -d "$STACK_DIR" ]; then
         say "Keeping $STACK_DIR (its .env holds what a reinstall needs to re-adopt your data)"
     else
         say "Removing $STACK_DIR"
-        # Refuse to delete anything that is not recognisably our install directory.
-        if [ -f "$STACK_DIR/docker-compose.yml" ] || [ -f "$STACK_DIR/.env" ]; then
+        # Refuse to delete anything that is not recognisably our install directory:
+        # --dir can name a shared folder, and this deletes it whole.
+        if is_kqs_dir "$STACK_DIR"; then
             # Containers run as root and can leave root-owned files in the bind-
             # mounted config, which a normal-user rm can't delete -- fall back to sudo.
             rm -rf "${STACK_DIR:?}" 2>/dev/null || $SUDO rm -rf "${STACK_DIR:?}" 2>/dev/null || true
@@ -204,7 +248,8 @@ if [ -d "$STACK_DIR" ]; then
                 ok "removed $STACK_DIR"
             fi
         else
-            warn "$STACK_DIR does not look like a Kaspa node install, so leaving it alone."
+            warn "$STACK_DIR is not a Kaspa Quick Start install folder (it has no .kqs-install marker), so nothing in it was deleted."
+            warn "If it holds only Kaspa Quick Start files, delete it yourself."
         fi
     fi
 fi
@@ -212,8 +257,15 @@ fi
 if [ "$KEEP_DATA" = "1" ]; then
     printf '\n%sDone.%s The containers, images and network are gone; your synced chain,\n' "$GRN$B" "$R"
     printf 'app data and %s were kept. Reinstall any time and it picks up where it left off.\n\n' "$STACK_DIR"
+elif [ -d "$STACK_DIR" ]; then
+    printf '\n%sDone.%s Every container, image, volume and the network are gone.\n' "$GRN$B" "$R"
+    printf '%s is still there (see above). Only Docker itself was left installed.\n\n' "$STACK_DIR"
 else
     printf '\n%sDone.%s Nothing from the install is left: every container, image, volume,\n' "$GRN$B" "$R"
     printf 'the network and %s are gone. Only Docker itself was left installed.\n' "$STACK_DIR"
     printf '%sNext time, uninstall with --keep-data to keep the chain for an instant reinstall.%s\n\n' "$DIM" "$R"
 fi
+
+}
+
+main

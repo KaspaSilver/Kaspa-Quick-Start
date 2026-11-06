@@ -339,6 +339,33 @@ function Write-TextFile {
     [System.IO.File]::WriteAllText($Path, $normalized, (New-Object System.Text.UTF8Encoding $false))
 }
 
+# Written into every install directory. uninstall.ps1 deletes a folder whole only
+# when it finds this (or an older install's signature, below).
+$StackMarker = '.kqs-install'
+
+# A folder this installer made. New installs carry the marker; older ones, from
+# before it existed, by their compose file and the panel's source beside it.
+function Test-KqsDir {
+    param([string] $Path)
+    if (Test-Path -LiteralPath (Join-Path $Path $StackMarker)) { return $true }
+    $compose = Join-Path $Path 'docker-compose.yml'
+    if ((Test-Path -LiteralPath (Join-Path $Path 'manager') -PathType Container) -and (Test-Path -LiteralPath $compose -PathType Leaf)) {
+        return [bool](Select-String -LiteralPath $compose -Pattern 'kaspa-node|kaspa-one-click' -Quiet)
+    }
+    return $false
+}
+
+# -Dir can name any folder, and a refresh replaces same-named entries in it
+# wholesale. So write only into a missing or empty folder, or one that is
+# already a Kaspa Quick Start install.
+function Assert-StackDir {
+    if (-not (Test-Path -LiteralPath $StackDir)) { return }
+    if (-not (Test-Path -LiteralPath $StackDir -PathType Container)) { Die "$StackDir exists and is not a folder. Choose another with -Dir." }
+    if (-not (Get-ChildItem -LiteralPath $StackDir -Force | Select-Object -First 1)) { return }
+    if (Test-KqsDir $StackDir) { return }
+    Die "$StackDir already has files in it and is not a Kaspa Quick Start install, so nothing was written there. Choose a new or empty folder with -Dir."
+}
+
 function Get-Stack {
     $scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { $null }
 
@@ -379,6 +406,7 @@ function Get-Stack {
     }
 
     New-Item -ItemType Directory -Path $StackDir -Force | Out-Null
+    Write-TextFile (Join-Path $StackDir $StackMarker) "Kaspa Quick Start install directory. uninstall.ps1 deletes this folder only while this file is in it.`n"
     # Only these are replaced wholesale on a re-install. conf\ holds generated
     # state (node.json, proxies.json) and proxy\ holds issued certificates and
     # generated vhosts - wiping either would cost the user real work.
@@ -490,6 +518,7 @@ Write-Host "install dir $StackDir"
 Write-Host "panel       http://localhost:$GuiPort"
 Write-Host ''
 
+Assert-StackDir
 Initialize-Docker
 Get-Stack
 # A re-run adopts what is already in .env for anything not passed explicitly: the panel
@@ -551,8 +580,9 @@ $isLoopback = $Bind -eq '127.0.0.1' -or $Bind -eq '::1' -or $Bind -eq 'localhost
 # The password is no longer typed here. On the default loopback bind the panel
 # asks for one on first open, which is easier to get right than a hidden prompt
 # and does not hold up a long build. -Password still works for a scripted
-# install, and a non-loopback bind without one is refused below, because there
-# the panel would be exposed before that first-run prompt could be answered.
+# install. A non-loopback bind without one gets a warning and a question below,
+# which -Yes answers yes. The panel itself then shows only its set-password
+# screen, and accepts that first password only from this machine.
 $authState = 'none'
 if ($Password)          { $authState = 'set' }
 elseif ($NoPassword)    { $authState = 'cleared' }
@@ -609,8 +639,8 @@ switch ($authState) {
             Write-Host '  Password        set it in the panel when you first open it' -ForegroundColor Green
             Write-Host "                  the panel is bound to $Bind, so only this machine can reach it until you do" -ForegroundColor DarkGray
         } else {
-            Write-Host '  Sign in         not required' -ForegroundColor Green
-            Write-Host "                  WARNING: bound to $Bind with no password" -ForegroundColor Yellow
+            Write-Host '  Password        set it in the panel when you first open it, from this machine' -ForegroundColor Yellow
+            Write-Host "                  WARNING: bound to $Bind with no password yet; until one is set, others see only the set-password screen" -ForegroundColor Yellow
         }
     }
 }
