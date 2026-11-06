@@ -38,10 +38,17 @@ curl -fsSL https://raw.githubusercontent.com/KaspaSilver/Kaspa-Quick-Start/main/
 irm https://raw.githubusercontent.com/KaspaSilver/Kaspa-Quick-Start/main/install.ps1 | iex
 ```
 
-When it finishes it prints the panel URL, `http://localhost:8420`. There is no
-login: the panel is bound to `127.0.0.1`, so only this machine can open it.
+When it finishes it prints the panel URL, `http://localhost:8420`. The first
+time you open it, it asks you to choose a password. It is bound to `127.0.0.1`,
+so only this machine can open it.
 See [Opening the panel to other machines](#opening-the-panel-to-other-machines)
 if you want to reach it from elsewhere.
+
+On Linux the installer also sets `"userland-proxy": false` in
+`/etc/docker/daemon.json`, so the node sees its peers' real addresses, and
+restarts Docker to apply it. That restart stops every running container, so if
+containers other than Kaspa Quick Start's are running it asks first (`--yes`
+answers yes).
 
 The node itself is not running at that point, and that is deliberate. Syncing
 the chain costs hours and tens of gigabytes, and publishing a port is a
@@ -447,7 +454,7 @@ installer warns first, and it takes 30–60 minutes.
 ## Installer options
 
 ```
---dir <path>          install location (default ~/.kaspa-node)
+--dir <path>          install location (default ~/.kaspa-node): a new or empty folder, or an earlier install
 --gui-port <port>     control panel port (default 8420)
 --bind <address>      address the panel listens on (default 127.0.0.1)
 --password <pass>     require a password to open the panel
@@ -477,7 +484,7 @@ proxy host (HTTPS) over a wider bind. If you do widen it (Global settings →
 "Reachable from other machines", or the installer):
 
 ```bash
-bash ~/.kaspa-node/install.sh --password 'something-long' --bind 0.0.0.0
+curl -fsSL https://raw.githubusercontent.com/KaspaSilver/Kaspa-Quick-Start/main/install.sh | bash -s -- --password 'something-long' --bind 0.0.0.0
 ```
 
 Or keep it loopback-only and forward the port over SSH, which needs no open port

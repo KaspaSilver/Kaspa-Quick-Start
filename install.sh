@@ -19,6 +19,18 @@
 
 set -euo pipefail
 
+# Anything started from Finder (the desktop installer) or `do shell script` gets
+# PATH=/usr/bin:/bin:/usr/sbin:/sbin, where macOS keeps no docker CLI, and an
+# installed Docker would look missing. Add where Docker Desktop and Homebrew put
+# it. Added whether or not they exist yet: a Docker Desktop installed below must
+# be found without a restart.
+if [ "$(uname -s)" = Darwin ]; then
+    for p in /Applications/Docker.app/Contents/Resources/bin "${HOME:-/var/empty}/.docker/bin" /opt/homebrew/bin /usr/local/bin; do
+        case ":$PATH:" in *":$p:"*) ;; *) PATH="$p:$PATH" ;; esac
+    done
+    export PATH
+fi
+
 # ------------------------------------------------------------------ config --
 
 STACK_REPO="${KASPA_STACK_REPO:-KaspaSilver/Kaspa-Quick-Start}"
@@ -81,6 +93,8 @@ USAGE
         *) echo "Unknown option: $1 (try --help)" >&2; exit 2 ;;
     esac
 done
+# No trailing slash, so paths built from it (and matched by find below) are exact.
+case "$STACK_DIR" in ?*/) STACK_DIR="${STACK_DIR%/}" ;; esac
 
 # ------------------------------------------------------------------ output --
 
@@ -383,10 +397,9 @@ ensure_inbound_p2p() {
     command -v systemctl >/dev/null 2>&1 || return 0
     systemctl cat docker.service >/dev/null 2>&1 || return 0
 
-    local f=/etc/docker/daemon.json changed=0
+    local f=/etc/docker/daemon.json content="" others
     if [ ! -f "$f" ]; then
-        $SUDO mkdir -p /etc/docker
-        printf '{\n  "userland-proxy": false,\n  "shutdown-timeout": 180\n}\n' | $SUDO tee "$f" >/dev/null && changed=1
+        content=$(printf '{\n  "userland-proxy": false,\n  "shutdown-timeout": 180\n}')
     elif command -v python3 >/dev/null 2>&1; then
         # Merge in place without clobbering other settings.
         local merged
@@ -406,18 +419,34 @@ print("__NOCHANGE__" if d == before else json.dumps(d, indent=2))
         case "$merged" in
             __NOCHANGE__) : ;;
             __SKIP__|"") warn "Left $f as-is (could not merge it). For inbound P2P peers, set \"userland-proxy\": false there and restart Docker." ;;
-            *) printf '%s\n' "$merged" | $SUDO tee "$f" >/dev/null && changed=1 ;;
+            *) content="$merged" ;;
         esac
     else
         warn "python3 not found, so $f was left alone. For inbound P2P peers, set \"userland-proxy\": false there and restart Docker."
     fi
+    [ -n "$content" ] || return 0
 
-    if [ "$changed" = "1" ]; then
-        say "Enabling inbound P2P (real peer IPs); restarting Docker to apply it"
-        $SUDO systemctl restart docker >/dev/null 2>&1 \
-            || warn "Set userland-proxy=false but could not restart Docker; it applies on the next Docker restart."
-        wait_for_docker 120 || true
+    # The restart stops every container on this machine, and those without a
+    # restart policy stay stopped. Ours all come back on their own; anyone
+    # else's are worth a question first.
+    others="$($DOCKER_SUDO docker ps --format '{{.Names}}' 2>/dev/null | grep -v '^kaspa-node' | tr '\n' ' ' || true)"
+    others="${others% }"
+    if [ -n "$others" ]; then
+        warn "Enabling inbound P2P means changing $f and restarting Docker."
+        warn "That restart stops every running container, and these are not part of Kaspa Quick Start: $others"
+        warn "Any of them without a restart policy stays stopped until you start it again."
+        if ! confirm "Restart Docker now?"; then
+            warn "Left $f and Docker alone. For inbound P2P peers, set \"userland-proxy\": false there and restart Docker when it suits you."
+            return 0
+        fi
     fi
+
+    $SUDO mkdir -p /etc/docker
+    printf '%s\n' "$content" | $SUDO tee "$f" >/dev/null || { warn "Could not write $f."; return 0; }
+    say "Enabling inbound P2P (real peer IPs); restarting Docker to apply it"
+    $SUDO systemctl restart docker >/dev/null 2>&1 \
+        || warn "Set userland-proxy=false but could not restart Docker; it applies on the next Docker restart."
+    wait_for_docker 120 || true
 }
 
 # What to tell someone when the Docker daemon never came up. On macOS that is
@@ -501,6 +530,31 @@ dc() { $DOCKER_SUDO docker compose -f "$STACK_DIR/docker-compose.yml" -f "$STACK
 
 # ------------------------------------------------------------------ stack ----
 
+# Written into every install directory. uninstall.sh deletes a folder whole only
+# when it finds this (or an older install's signature, below).
+STACK_MARKER=.kqs-install
+
+# A folder this installer made. New installs carry the marker; older ones, from
+# before it existed, by their compose file and the panel's source beside it.
+is_kqs_dir() {
+    [ -f "$1/$STACK_MARKER" ] && return 0
+    [ -d "$1/manager" ] && [ -f "$1/docker-compose.yml" ] \
+        && grep -qE 'kaspa-node|kaspa-one-click' "$1/docker-compose.yml" 2>/dev/null
+}
+
+# --dir can name any folder, and a refresh replaces same-named entries in it
+# wholesale. So write only into a missing or empty folder, or one that is
+# already a Kaspa Quick Start install.
+check_stack_dir() {
+    if [ ! -d "$STACK_DIR" ]; then
+        [ -e "$STACK_DIR" ] && die "$STACK_DIR exists and is not a folder. Choose another with --dir."
+        return 0
+    fi
+    [ -z "$(ls -A "$STACK_DIR" 2>/dev/null)" ] && return 0
+    is_kqs_dir "$STACK_DIR" && return 0
+    die "$STACK_DIR already has files in it and is not a Kaspa Quick Start install, so nothing was written there. Choose a new or empty folder with --dir."
+}
+
 fetch_stack() {
     local src_dir="" tmp sha=""
     # Running from a checkout? Use the files next to this script.
@@ -534,12 +588,17 @@ fetch_stack() {
     # rm/cp below fail with "Permission denied" for a normal-user install. Only the
     # small config/build tree lives here (the chain and every app's DATA are in
     # Docker volumes, which this never touches), so a chown is quick and safe.
-    if [ "$(id -u)" -ne 0 ] && [ -n "$SUDO" ] \
-       && [ -n "$(find "$STACK_DIR" ! -uid "$(id -u)" 2>/dev/null | head -n1)" ]; then
+    # Except conf/bot: the panel gives that to the bot's own user (uid 10001) on
+    # purpose, and handed back to us the bot falls back to running as root.
+    local me; me="$(id -u)"
+    if [ "$me" -ne 0 ] && [ -n "$SUDO" ] \
+       && [ -n "$(find "$STACK_DIR" -path "$STACK_DIR/conf/bot" -prune -o ! -uid "$me" -print 2>/dev/null | head -n1)" ]; then
         say "Reclaiming ownership of $STACK_DIR (some files are root-owned from a previous run)"
-        $SUDO chown -R "$(id -u):$(id -g)" "$STACK_DIR" 2>/dev/null \
-            || warn "Could not chown $STACK_DIR; if the update fails, run: sudo chown -R $(id -un) \"$STACK_DIR\""
+        $SUDO find "$STACK_DIR" -path "$STACK_DIR/conf/bot" -prune -o ! -uid "$me" -exec chown -h "$me:$(id -g)" {} + 2>/dev/null \
+            || warn "Could not chown $STACK_DIR; if the update fails, run: sudo find \"$STACK_DIR\" -path \"$STACK_DIR/conf/bot\" -prune -o -exec chown -h $(id -un) {} +"
     fi
+    printf '%s\n' "Kaspa Quick Start install directory. uninstall.sh deletes this folder only while this file is in it." \
+        > "$STACK_DIR/$STACK_MARKER"
 
     # Only these are replaced wholesale on a re-install. conf/ holds generated
     # state (node.json, proxies.json) and proxy/ the vhosts made from it --
@@ -719,7 +778,9 @@ write_env() {
             grep -v -E "^(${INSTALLER_ENV_KEYS})=" "$env_file" | grep -v -x -F "$ENV_HEADER" | grep -v '^[[:space:]]*$' || true
         fi
     } > "$tmp"
-    cat "$tmp" > "$env_file"
+    # umask 077: a new .env holds the session secret, so it is never readable by
+    # others, not even for the moment before the chmod.
+    ( umask 077; cat "$tmp" > "$env_file" )
     rm -f "$tmp"
     chmod 600 "$env_file"
     ENV_HAD_PASSWORD=$([ -n "$existing_hash" ] && echo 1 || echo 0)
@@ -733,7 +794,7 @@ write_password_hash() {
     local tmp; tmp="$(mktemp)"
     grep -v '^ADMIN_PASSWORD_HASH=' "$STACK_DIR/.env" > "$tmp"
     printf 'ADMIN_PASSWORD_HASH=%s\n' "${1:-}" >> "$tmp"
-    cat "$tmp" > "$STACK_DIR/.env"
+    ( umask 077; cat "$tmp" > "$STACK_DIR/.env" )
     rm -f "$tmp"
     chmod 600 "$STACK_DIR/.env"
 }
@@ -756,10 +817,17 @@ is_loopback_bind() {
 
 # ------------------------------------------------------------------- main ----
 
+# Everything that acts is in main, called from the script's last line. A
+# download cut short ends inside this definition (or before the call), which
+# bash then never runs, so a truncated script does nothing instead of half an
+# install. The body is left unindented to keep it readable as the script.
+main() {
+
 printf '\n%sKaspa one-click node%s\n' "$B" "$R"
 printf '%sinstall dir%s %s\n' "$DIM" "$R" "$STACK_DIR"
 printf '%spanel%s       http://localhost:%s\n\n' "$DIM" "$R" "$GUI_PORT"
 
+check_stack_dir
 ensure_docker
 fetch_stack
 adopt_existing_env
@@ -784,9 +852,10 @@ write_env
 # The password is no longer typed at the terminal. On the default loopback
 # bind the panel prompts for one on first open, where it is easier to get right
 # than a hidden `read` and does not hold up a long build. The --password flag
-# still works for a scripted install, and a non-loopback bind without one is
-# still refused below, because there the panel is exposed before that first-run
-# prompt could ever be answered.
+# still works for a scripted install. A non-loopback bind without one gets a
+# warning and a question below; --yes, or a run with no terminal to ask on, goes
+# ahead. The panel itself then shows only its set-password screen, and accepts
+# that first password only from this machine.
 prompt_for_password() { :; }
 prompt_for_password
 
@@ -844,8 +913,9 @@ case "$AUTH_STATE" in
             printf '                  %sthe panel is bound to %s, so only this machine can reach it until you do%s\n' \
                 "$DIM" "$MANAGER_BIND" "$R"
         else
-            printf '  Sign in         %snot required%s\n' "$GRN" "$R"
-            printf '                  %sWARNING: bound to %s with no password%s\n' "$YLW" "$MANAGER_BIND" "$R"
+            printf '  Password        %sset it in the panel when you first open it, from this machine%s\n' "$YLW" "$R"
+            printf '                  %sWARNING: bound to %s with no password yet; until one is set, others see only the set-password screen%s\n' \
+                "$YLW" "$MANAGER_BIND" "$R"
         fi
         ;;
 esac
@@ -956,3 +1026,7 @@ offer_to_open_panel() {
 }
 
 offer_to_open_panel
+
+}
+
+main

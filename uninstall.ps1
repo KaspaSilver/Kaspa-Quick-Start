@@ -47,6 +47,19 @@ function Confirm-Step {
 
 $StackDir = $Dir.TrimEnd('\', '/')
 
+# A folder install.ps1 made: it writes .kqs-install into every install. Older
+# installs, from before that marker, are known by their compose file and the
+# panel's source beside it. Anything else is never deleted, whatever -Dir says.
+function Test-KqsDir {
+    param([string] $Path)
+    if (Test-Path -LiteralPath (Join-Path $Path '.kqs-install')) { return $true }
+    $compose = Join-Path $Path 'docker-compose.yml'
+    if ((Test-Path -LiteralPath (Join-Path $Path 'manager') -PathType Container) -and (Test-Path -LiteralPath $compose -PathType Leaf)) {
+        return [bool](Select-String -LiteralPath $compose -Pattern 'kaspa-node|kaspa-one-click' -Quiet)
+    }
+    return $false
+}
+
 Write-Host ''
 Write-Host 'Remove the Kaspa one-click node' -ForegroundColor White
 Write-Host "  directory $StackDir" -ForegroundColor DarkGray
@@ -162,14 +175,16 @@ if (Test-Path $StackDir) {
         # reinstall re-adopt the synced chain and the apps' databases as-is.
         Say "Keeping $StackDir (its .env holds what a reinstall needs to re-adopt your data)"
     } else {
-        # Refuse to delete anything that is not recognisably our install directory.
-        if ((Test-Path (Join-Path $StackDir 'docker-compose.yml')) -or (Test-Path (Join-Path $StackDir '.env'))) {
+        # Refuse to delete anything that is not recognisably our install directory:
+        # -Dir can name a shared folder, and this deletes it whole.
+        if (Test-KqsDir $StackDir) {
             Say "Removing $StackDir"
             Remove-Item $StackDir -Recurse -Force -ErrorAction SilentlyContinue
             if (-not (Test-Path $StackDir)) { Ok "removed $StackDir" }
             else { Warn "Could not fully remove $StackDir - delete it by hand." }
         } else {
-            Warn "$StackDir does not look like a Kaspa node install - leaving it alone."
+            Warn "$StackDir is not a Kaspa Quick Start install folder (it has no .kqs-install marker), so nothing in it was deleted."
+            Warn 'If it holds only Kaspa Quick Start files, delete it yourself.'
         }
     }
 }
@@ -178,6 +193,9 @@ Write-Host ''
 if ($Keep) {
     Write-Host 'Done. The containers, images and network are gone; your synced chain,' -ForegroundColor Green
     Write-Host "app data and $StackDir were kept. Reinstall any time and it picks up where it left off." -ForegroundColor Green
+} elseif (Test-Path $StackDir) {
+    Write-Host 'Done. Every container, image, volume and the network are gone.' -ForegroundColor Green
+    Write-Host "$StackDir is still there (see above). Only Docker Desktop was left installed." -ForegroundColor Green
 } else {
     Write-Host 'Done. Nothing from the install is left: every container, image, volume,' -ForegroundColor Green
     Write-Host "the network and $StackDir are gone. Only Docker Desktop was left installed." -ForegroundColor Green

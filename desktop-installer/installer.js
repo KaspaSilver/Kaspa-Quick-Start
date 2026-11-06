@@ -25,21 +25,40 @@ const osa = (s) => `"${String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 
 function stackDir() { return path.join(os.homedir(), '.kaspa-node'); }
 
+// Where Docker Desktop and Homebrew put the docker CLI on macOS. An app opened from
+// Finder, and every `do shell script`, runs with PATH=/usr/bin:/bin:/usr/sbin:/sbin,
+// where none of these is, so the script decided Docker was missing: it reinstalled it,
+// or (uninstalling) skipped the containers and deleted the folder they run from. The
+// scripts add these too; the home one is added here because the script runs as root.
+function macDockerPath() {
+  return ['/usr/local/bin', '/opt/homebrew/bin', path.join(os.homedir(), '.docker', 'bin'),
+    '/Applications/Docker.app/Contents/Resources/bin'].join(':');
+}
+
 function posixBootstrap(scriptFile, args, logFile, doneFile, { toLog = false } = {}) {
   const dir = stackDir();
   const uid = process.getuid ? process.getuid() : 0;
   const gid = process.getgid ? process.getgid() : 0;
-  const runline = args.length
-    ? `curl -fsSL ${RAW}/${scriptFile} | bash -s -- ${args.map(sh).join(' ')}`
-    : `curl -fsSL ${RAW}/${scriptFile} | bash`;
+  // Downloaded to a file first, never piped: `curl | bash` reports bash's exit code, so
+  // an offline machine "succeeded", and a transfer cut short ran half a script. The file
+  // sits in this run's private directory, next to the log.
+  const file = path.join(path.dirname(logFile), scriptFile);
+  const runline =
+    `if curl -fsSL ${RAW}/${scriptFile} -o ${sh(file)}; then ` +
+    `bash ${sh(file)}${args.length ? ` ${args.map(sh).join(' ')}` : ''}; code=$?; ` +
+    `else code=$?; echo "[installer] could not download ${scriptFile} (curl exit $code). Check the internet connection and try again."; fi; ` +
+    `rm -f ${sh(file)}`;
+  const pathline = process.platform === 'darwin' ? `export PATH=${sh(macDockerPath())}:"$PATH"; ` : '';
   // KASPA_YES so nothing waits on a prompt; KASPA_STACK_DIR so a root-run script
-  // still targets the real user's home; chown so anything left behind stays theirs;
-  // the exit code goes to the done file. The leading echo proves capture is live.
+  // still targets the real user's home; chown so anything left behind stays theirs,
+  // except conf/bot, which the panel hands to the bot's own user (uid 10001) on
+  // purpose: given back to us, the bot falls back to running as root.
+  // The exit code goes to the done file. The leading echo proves capture is live.
   const body =
-    `export KASPA_YES=1 KASPA_STACK_DIR=${sh(dir)}; ` +
+    `export KASPA_YES=1 KASPA_STACK_DIR=${sh(dir)}; ${pathline}` +
     `echo "[installer] starting, running as $(id -un)"; ` +
-    `${runline}; code=$?; ` +
-    `chown -R ${uid}:${gid} ${sh(dir)} 2>/dev/null || true; ` +
+    `${runline}; ` +
+    `[ -d ${sh(dir)} ] && find ${sh(dir)} -path ${sh(path.join(dir, 'conf', 'bot'))} -prune -o ! -uid ${uid} -exec chown -h ${uid}:${gid} {} + 2>/dev/null; ` +
     `printf '%s' "$code" > ${sh(`${doneFile}.tmp`)} && mv -f ${sh(`${doneFile}.tmp`)} ${sh(doneFile)}; ` +
     `echo "[installer] finished with code $code"`;
   // Two ways the app gets progress, one per elevation channel:
@@ -96,6 +115,8 @@ function cleanEnv() {
   delete env.LD_PRELOAD;
   // If AppRun stashed the pre-AppImage value, put it back.
   if (env.APPIMAGE_ORIGINAL_LD_LIBRARY_PATH) env.LD_LIBRARY_PATH = env.APPIMAGE_ORIGINAL_LD_LIBRARY_PATH;
+  // Finder hands the app a PATH without Docker's CLI (see macDockerPath).
+  if (process.platform === 'darwin') env.PATH = `${macDockerPath()}:${env.PATH || '/usr/bin:/bin:/usr/sbin:/sbin'}`;
   return env;
 }
 
@@ -232,11 +253,16 @@ function run(base, posixArgs, winArgs, { onLine = () => {}, onDone = () => {} } 
   return { logFile };
 }
 
+// No port means none is passed, so the script keeps the one in an existing .env (the
+// panel can change it) and uses 8420 on a first install. The window sends one only
+// when the person changed the box.
 const runInstall = ({ port, ...handlers } = {}) => {
   const p = Number(port) > 0 ? String(Number(port)) : null;
   return run('install', p ? ['--gui-port', p] : [], p ? ['-Yes', '-GuiPort', p] : ['-Yes'], handlers);
 };
+// Both choices are passed explicitly. The scripts' own default is the full wipe, while
+// the window's default (box unchecked) keeps the chain and the data.
 const runUninstall = ({ deleteData = false, ...handlers } = {}) =>
-  run('uninstall', deleteData ? ['--delete-data'] : [], deleteData ? ['-Yes', '-DeleteData'] : ['-Yes'], handlers);
+  run('uninstall', [deleteData ? '--delete-data' : '--keep-data'], ['-Yes', deleteData ? '-DeleteData' : '-KeepData'], handlers);
 
 module.exports = { runInstall, runUninstall };
