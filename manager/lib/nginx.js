@@ -54,7 +54,7 @@ export const TARGET_KINDS = {
     'kachat-names': { label: '.kachat Domains API', websocket: false, grpc: false },
     'kachat-names-testnet': { label: '.kachat Domains API (testnet-10)', websocket: false, grpc: false },
     desktop: { label: 'KaChat Desktop', websocket: true, grpc: false },
-    nextcloud: { label: 'Nextcloud', websocket: false, grpc: false },
+    nextcloud: { label: 'KaChat Nextcloud', websocket: false, grpc: false },
     custom: { label: 'Custom host:port', websocket: false, grpc: false },
 };
 
@@ -429,7 +429,27 @@ function renderLocations(ordered, nodeConfig, { namesOn = {} } = {}) {
         const up = upstreamFor(proxy, nodeConfig);
         const path = normalizePath(proxy.path);
         const cors = publishOf(proxy.target?.kind)?.cors ?? null;
-        if (path === '/') {
+        const only = publishOf(proxy.target?.kind)?.onlyPaths;
+        if (path === '/' && only) {
+            // A service that only lets some paths through (KaChat Nextcloud): those
+            // go to it, and the rest of the name answers 404. A regex location wins
+            // over the `/` prefix whenever it matches.
+            lines.push(...extraLocations(proxy, { namesOn }));
+            lines.push(`    location ~ "${only}" {`);
+            lines.push(locationBlock(up, proxy, '        ', { cors }));
+            lines.push('    }');
+            lines.push('    location / {');
+            lines.push('        return 404;');
+            lines.push('    }');
+        } else if (only) {
+            // Published on a path by an older version, before it was root-only: its
+            // filter is written for the root, so nothing of it answers here.
+            for (const loc of [`= ${path}`, `^~ ${path}/`]) {
+                lines.push(`    location ${loc} {`);
+                lines.push('        return 404;');
+                lines.push('    }');
+            }
+        } else if (path === '/') {
             lines.push(...extraLocations(proxy, { namesOn }));
             lines.push('    location / {');
             lines.push(locationBlock(up, proxy, '        ', { cors }));

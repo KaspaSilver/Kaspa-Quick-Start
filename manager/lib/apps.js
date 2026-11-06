@@ -6,10 +6,11 @@ import { readJson, writeJson, updateEnvFile, readEnvFile, NETWORKS, imageTagFor 
 
 export { imageTagFor };
 import { docker } from './dockerctl.js';
+import { ALLOWED_PATHS as NEXTCLOUD_ALLOWED_PATHS } from './nextcloud.js';
 
 /**
  * The optional applications that ride along with the node: the KaChat indexer,
- * the KaChat desktop client and Nextcloud. All are upstream projects of ours,
+ * the KaChat desktop client and KaChat Nextcloud. All are upstream projects of ours,
  * all live behind a compose profile so they do not exist until switched on, and
  * all track a git ref the panel can move forward.
  */
@@ -125,14 +126,14 @@ export const APPS = {
         adminPort: null,
     },
     nextcloud: {
-        label: 'Nextcloud',
+        label: 'KaChat Nextcloud',
         // Not a repository of ours. It is the official image with ffmpeg added
         // for video thumbnails, so what it tracks is a docker tag, and "is
         // there an update" is a question for the registry rather than GitHub.
         repo: null,
         image: 'nextcloud:stable',
         profile: 'nextcloud',
-        services: ['nextcloud-db', 'nextcloud-redis', 'nextcloud-imaginary', 'nextcloud'],
+        services: ['nextcloud-db', 'nextcloud-redis', 'nextcloud'],
         // A file server: nothing to do with the chain, so never gated on it.
         needsSyncedNode: false,
         container: 'kaspa-node-nextcloud',
@@ -144,10 +145,12 @@ export const APPS = {
             // whatever size the person is storing, so the proxy imposes no limit
             // of its own. Nextcloud's own settings decide.
             maxBodySize: '0',
+            // Only what KaChat and KaPay use answers on its name; nginx gives
+            // everything else a 404, so its web login is not on the internet.
+            onlyPaths: NEXTCLOUD_ALLOWED_PATHS,
         },
-        ports: {
-            web: { port: 80, label: 'Nextcloud web', hostPort: 8080 },
-        },
+        // No port on the machine: the apps reach it on its published name.
+        ports: {},
         adminPort: null,
     },
 };
@@ -222,18 +225,11 @@ export const DEFAULT_APPS_CONFIG = {
     nextcloud: {
         enabled: false,
         ref: 'main',
-        publish: { web: true },
-        // Not 8080. That is this panel's own port, and Docker refuses to start a
-        // container whose published port is already taken, so a Nextcloud left
-        // on 8080 could never come up.
-        hostPort: 8081,
-        adminUser: 'admin',
-        trustedDomains: 'localhost',
     },
 };
 
 /**
- * Host ports the stack already publishes, so Nextcloud cannot be pointed at one
+ * Host ports the stack already publishes, so an app cannot be pointed at one
  * of them. Docker's own error for this arrives long after the button was
  * pressed and reads like an internal fault, which is no help at all when the
  * fix is simply to pick another number.
@@ -309,13 +305,6 @@ export function loadAppsConfig() {
     if (sk.pushEnabled === undefined || (sk.pushEnabled === false && !sk.pushChoiceAt)) {
         cfg.kachat.pushEnabled = Boolean(cfg.kachat.fcmProjectId || cfg.kachat.apns?.teamId);
     }
-
-    // Earlier versions defaulted Nextcloud to 8080, which is this panel's port,
-    // so it could never start. Move those forward rather than leaving somebody
-    // with a saved setting that only fails.
-    if (reservedHostPorts().has(Number(cfg.nextcloud.hostPort))) {
-        cfg.nextcloud.hostPort = DEFAULT_APPS_CONFIG.nextcloud.hostPort;
-    }
     return cfg;
 }
 
@@ -326,7 +315,6 @@ export const saveAppsConfig = (cfg) => writeJson(APPS_STATE_FILE, cfg);
 // Git ref names: no "..", which is also what the panel's "something else"
 // placeholder contains, so a placeholder can never be saved as a branch.
 const REF_RE = /^(?!.*\.\.)[A-Za-z0-9._\/-]{1,100}$/;
-const DOMAIN_LIST_RE = /^[A-Za-z0-9.\-, ]{0,300}$/;
 
 export function validateAppsConfig(input) {
     const errors = [];
@@ -416,37 +404,13 @@ export function validateAppsConfig(input) {
     const n = input.nextcloud ?? {};
     cfg.nextcloud.enabled = Boolean(n.enabled);
     const nref = String(n.ref ?? 'main').trim();
-    if (!REF_RE.test(nref)) errors.push('Nextcloud branch or tag contains invalid characters.');
+    if (!REF_RE.test(nref)) errors.push('KaChat Nextcloud branch or tag contains invalid characters.');
     else cfg.nextcloud.ref = nref;
 
-    cfg.nextcloud.publish = { web: n.publish?.web !== false };
-
-    const port = Number(n.hostPort ?? DEFAULT_APPS_CONFIG.nextcloud.hostPort);
-    const taken = reservedHostPorts().get(port);
-    if (!Number.isInteger(port) || port < 1024 || port > 65535) {
-        errors.push('Nextcloud port must be between 1024 and 65535.');
-    } else if (taken && cfg.nextcloud.publish.web) {
-        errors.push(
-            `Port ${port} is already used by ${taken}, so Nextcloud cannot start on it. Pick another one, ` +
-                `for example ${port + 1}.`,
-        );
-    } else {
-        cfg.nextcloud.hostPort = port;
-    }
-
-    const user = String(n.adminUser ?? 'admin').trim();
-    if (!/^[A-Za-z0-9._-]{1,64}$/.test(user)) errors.push('Nextcloud admin user is invalid.');
-    else cfg.nextcloud.adminUser = user;
-
-    const domains = String(n.trustedDomains ?? 'localhost').trim();
-    if (!DOMAIN_LIST_RE.test(domains)) {
-        errors.push('Trusted domains may only contain hostnames, separated by spaces or commas.');
-    } else {
-        // Stored space separated whatever was typed. NEXTCLOUD_TRUSTED_DOMAINS is
-        // read by a shell `for` loop over an unquoted variable, so it splits on
-        // whitespace and a comma would stay stuck to the hostname before it.
-        cfg.nextcloud.trustedDomains = domains.split(/[\s,]+/).filter(Boolean).join(' ') || 'localhost';
-    }
+    // Older saved files carry a host port, an admin user and trusted domains.
+    // None of them is a setting any more: there is no port, and the panel keeps
+    // the trusted name in step with the one it is published on.
+    for (const key of ['publish', 'hostPort', 'adminUser', 'trustedDomains']) delete cfg.nextcloud[key];
 
     return { cfg, errors };
 }
@@ -530,7 +494,6 @@ export async function ensureSecrets(log = () => {}) {
         KACHAT_NAMES_DB_PASSWORD_TESTNET: () => randomSecret(24),
         NEXTCLOUD_DB_PASSWORD: () => randomSecret(24),
         NEXTCLOUD_DB_ROOT_PASSWORD: () => randomSecret(24),
-        NEXTCLOUD_IMAGINARY_SECRET: () => randomSecret(24),
         NEXTCLOUD_ADMIN_PASSWORD: () => randomSecret(18),
     };
     for (const [key, make] of Object.entries(need)) {
@@ -616,8 +579,6 @@ export function writeAppsEnv(cfg) {
         BOT_BRIDGE_HOST: cfg.bot?.network === 'testnet-10' ? 'bridge-testnet' : 'bridge',
         BOT_NODE_GRPC_PORT: cfg.bot?.network === 'testnet-10' ? 16210 : 16110,
         BOT_NODE_BORSH_PORT: cfg.bot?.network === 'testnet-10' ? 17210 : 17110,
-        NEXTCLOUD_ADMIN_USER: cfg.nextcloud.adminUser,
-        NEXTCLOUD_TRUSTED_DOMAINS: cfg.nextcloud.trustedDomains,
     });
 }
 
@@ -652,7 +613,7 @@ export function renderAppsPortsOverride(cfg) {
         '# Published ports for the optional applications.',
         'services:',
     ];
-    const published = { kachat: [], desktop: [], nextcloud: [] };
+    const published = { kachat: [], desktop: [] };
 
     const kachatPorts = [];
     if (cfg.kachat.publish.api) kachatPorts.push(APPS.kachat.ports.api.port);
@@ -671,17 +632,6 @@ export function renderAppsPortsOverride(cfg) {
             const hostPort = cfg.desktop.hostPort || 5173;
             lines.push(`      - "0.0.0.0:${hostPort}:5173/tcp"`);
             published.desktop = [hostPort];
-        } else {
-            lines.push('      []');
-        }
-    }
-
-    if (composeDefines('nextcloud')) {
-        lines.push('  nextcloud:');
-        lines.push('    ports:');
-        if (cfg.nextcloud.publish.web) {
-            lines.push(`      - "0.0.0.0:${cfg.nextcloud.hostPort}:80/tcp"`);
-            published.nextcloud = [cfg.nextcloud.hostPort];
         } else {
             lines.push('      []');
         }
@@ -887,81 +837,4 @@ export function summarizeError(error) {
     return trimmed.endsWith('.') ? trimmed : `${trimmed}.`;
 }
 
-// ------------------------------------------------------- nextcloud runtime --
-
-/**
- * Nextcloud settings that only take effect at install time.
- *
- * The image reads NEXTCLOUD_TRUSTED_DOMAINS once, inside the branch that runs
- * the first-time install. Change the value afterwards and nothing happens: the
- * container is already installed, so that branch never runs again. The panel
- * would look like it had applied a setting it had not.
- *
- * The same is true of the admin password, which is only used to create the
- * account. Both are therefore applied with `occ` against the running container,
- * which is what the install would have done.
- *
- * Everything here needs the container up. A stopped Nextcloud simply defers:
- * whatever is in the config is applied the next time this runs.
- */
-export const NEXTCLOUD_CONTAINER = APPS.nextcloud.container;
-
-/** Runs an `occ` command as the web user inside the Nextcloud container. */
-// Env vars are named on argv and valued from the docker client's environment (pass the same
-// object as the call's `env` option), so a password never shows in `ps` (KQS-011).
-function occArgs(args, { env = {} } = {}) {
-    const envFlags = Object.keys(env).flatMap((k) => ['-e', k]);
-    return ['exec', '-u', 'www-data', ...envFlags, NEXTCLOUD_CONTAINER, 'php', 'occ', ...args];
-}
-
-/**
- * Rewrites the trusted-domain list to match the config.
- *
- * Indices are positional, so the list is written from 0 upward and anything
- * left over from a longer previous list is removed. Without that, shortening
- * the list would leave the dropped names still trusted.
- */
-export async function syncTrustedDomains(docker, cfg, onLine = () => {}) {
-    const wanted = String(cfg.nextcloud.trustedDomains || 'localhost')
-        .split(/[\s,]+/)
-        .filter(Boolean);
-    if (!wanted.length) return;
-
-    for (const [i, domain] of wanted.entries()) {
-        await docker(occArgs(['config:system:set', 'trusted_domains', String(i), '--value', domain]));
-    }
-    // Clear stale trailing entries. `occ` exits non-zero once there is nothing
-    // at an index, which is the signal to stop rather than an error.
-    for (let i = wanted.length; i < wanted.length + 10; i++) {
-        try {
-            await docker(occArgs(['config:system:delete', 'trusted_domains', String(i)]));
-        } catch {
-            break;
-        }
-    }
-    onLine(`Trusted domains: ${wanted.join(', ')}`);
-}
-
-/** The admin account's name and password, as the panel needs to show them. */
-export function nextcloudAdmin() {
-    const env = readEnvFile();
-    return {
-        user: env.NEXTCLOUD_ADMIN_USER || 'admin',
-        password: env.NEXTCLOUD_ADMIN_PASSWORD || '',
-    };
-}
-
-/**
- * Changes the admin password on the running instance and records the new one.
- *
- * `occ` takes it from the environment rather than an argument, so it never
- * appears in the container's process list.
- */
-export async function setNextcloudAdminPassword(docker, password) {
-    const { user } = nextcloudAdmin();
-    await docker(occArgs(['user:resetpassword', '--password-from-env', user], { env: { OC_PASS: password } }), {
-        timeoutMs: 120_000,
-        env: { OC_PASS: password },
-    });
-    updateEnvFile({ NEXTCLOUD_ADMIN_PASSWORD: password });
-}
+// KaChat Nextcloud's own runtime (accounts, app passwords, shares) is lib/nextcloud.js.

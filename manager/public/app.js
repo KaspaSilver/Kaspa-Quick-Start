@@ -294,6 +294,7 @@ function selectTab(name) {
     }
     setUpdateQueueView(name === 'queue');
     if (name === 'bot') loadBot().catch(() => {});
+    if (name === 'nextcloud') loadNextcloud();
     if (name === 'push') loadPush().catch(() => {});
     if (name === 'extension') loadExtension().catch(() => {});
     // NFC Card asks its helper every 2 seconds, only while it is on screen.
@@ -602,7 +603,6 @@ const SVC_LOGS = {
             ['nextcloud', 'nextcloud'],
             ['nextcloud-db', 'mariadb'],
             ['nextcloud-redis', 'redis'],
-            ['nextcloud-imaginary', 'imaginary'],
         ],
     },
     proxy: { mainnet: [['proxy', 'nginx proxy'], ['cloudflared', 'cloudflared']] },
@@ -1476,7 +1476,7 @@ const SERVICE_NAMES = {
     desktop: 'KaChat-Desktop',
     kassigner: 'KasSigner',
     extension: 'the KaPay Extension',
-    nextcloud: 'Nextcloud',
+    nextcloud: 'KaChat Nextcloud',
     bot: 'the KaChat Bot',
     translate: 'the translation engine',
     proxy: 'Tunnel & domains',
@@ -3923,14 +3923,13 @@ async function loadApps() {
     $('desktop-port').value = c.desktop?.hostPort ?? 5173;
     renderAppState('desktop', r.apps.desktop);
 
-    // --- Nextcloud ---
-    // No ref: it is built on a docker tag, not a branch of anything.
-    $('nextcloud-pub-web').checked = c.nextcloud.publish.web;
-    $('nextcloud-port').value = c.nextcloud.hostPort;
-    $('nextcloud-user').value = c.nextcloud.adminUser;
-    $('nextcloud-domains').value = c.nextcloud.trustedDomains;
-    renderAppState('nextcloud', r.apps.nextcloud);
-    loadNextcloudAdmin();
+    // --- KaChat Nextcloud ---
+    // No ref: it is built on a docker tag, not a branch of anything. Its own
+    // page (accounts, app passwords, shares) is loadNextcloud().
+    const ncBuild = r.apps.nextcloud?.build;
+    $('nextcloud-build').textContent = ncBuild?.sha
+        ? `Built from ${String(ncBuild.sha).slice(0, 7)} on ${new Date(ncBuild.builtAt).toLocaleString()}`
+        : 'Not built yet.';
     loadRefPickers();
     for (const [app, tab] of [['kachat', 'kachat'], ['desktop', 'desktop'], ['nextcloud', 'nextcloud']]) {
         const running = Boolean(r.apps[app]?.container?.running);
@@ -4020,33 +4019,6 @@ function renderAppState(name, state) {
         }
 
         const build = $('kachat-build');
-        build.textContent = state.build?.sha
-            ? `Built from ${String(state.build.sha).slice(0, 7)} on ${new Date(state.build.builtAt).toLocaleString()}`
-            : 'Not built yet.';
-    }
-
-    if (name === 'nextcloud') {
-        const link = $('nextcloud-link');
-        const cfg = appsState.config.nextcloud;
-        link.hidden = false;
-        if (running && cfg.publish.web) {
-            const url = `http://${location.hostname}:${cfg.hostPort}`;
-            link.className = 'verdict ok';
-            link.innerHTML = `<a href="${url}" target="_blank" rel="noreferrer noopener">${escapeHtml(url)} ↗</a>`;
-        } else if (running) {
-            link.className = 'verdict';
-            link.textContent =
-                'Running, but not published on the host. Reach it through a proxy host, or tick "Publish on the host" under Settings.';
-        } else {
-            const note = appStatusNote(state, {
-                absent: 'Not installed yet. Installing builds it and leaves it switched off.',
-                stopped: 'Not running. Its switch in the sidebar starts it.',
-            });
-            link.className = note.bad ? 'verdict bad' : 'verdict';
-            link.textContent = note.text;
-        }
-
-        const build = $('nextcloud-build');
         build.textContent = state.build?.sha
             ? `Built from ${String(state.build.sha).slice(0, 7)} on ${new Date(state.build.builtAt).toLocaleString()}`
             : 'Not built yet.';
@@ -4187,10 +4159,6 @@ function collectAppConfig(name) {
         // built on a docker tag, but dropping it from the document would fail
         // the server's validation of the whole apps config.
         ref: appsState?.config?.nextcloud?.ref ?? 'main',
-        publish: { web: $('nextcloud-pub-web').checked },
-        hostPort: Number($('nextcloud-port').value),
-        adminUser: $('nextcloud-user').value.trim(),
-        trustedDomains: $('nextcloud-domains').value.trim(),
     };
 }
 
@@ -4214,68 +4182,11 @@ for (const app of ['kachat', 'desktop']) {
     });
 }
 
-// --- nextcloud admin password ---
-
-/**
- * The install-time password, shown because there is nowhere else to find it
- * short of reading the stack's .env by hand. Masked until asked for, so it is
- * not left sitting on screen.
- */
-async function loadNextcloudAdmin() {
-    try {
-        const r = await api('/api/apps/nextcloud/admin');
-        $('nextcloud-pass').value = r.password || '';
-        $('nextcloud-pass').placeholder = r.password ? '' : 'not set yet';
-    } catch {
-        /* the card is only useful once the stack has been installed */
-    }
-}
-
-$('nextcloud-pass-show').addEventListener('click', () => {
-    const box = $('nextcloud-pass');
-    const hidden = box.type === 'password';
-    box.type = hidden ? 'text' : 'password';
-    $('nextcloud-pass-show').textContent = hidden ? 'Hide' : 'Show';
-});
-
-$('nextcloud-pass-copy').addEventListener('click', async () => {
-    const value = $('nextcloud-pass').value;
-    if (!value) return toast('There is no password to copy yet.', 'bad');
-    try {
-        await navigator.clipboard.writeText(value);
-        toast('Password copied.');
-    } catch {
-        // Clipboard access needs a secure context, which plain http on another
-        // machine is not. Selecting it is then the only way to get at it.
-        $('nextcloud-pass').type = 'text';
-        $('nextcloud-pass').select();
-        toast('Could not reach the clipboard, so it is selected instead.', 'bad');
-    }
-});
-
-$('nextcloud-pass-save').addEventListener('click', async () => {
-    const box = $('nextcloud-pass-new');
-    const password = box.value;
-    if (password.length < 10) return toast('Nextcloud needs at least 10 characters.', 'bad');
-
-    const button = $('nextcloud-pass-save');
-    button.disabled = true;
-    try {
-        await api('/api/apps/nextcloud/admin/password', { method: 'POST', body: { password } });
-        box.value = '';
-        toast('Password changed.');
-        loadNextcloudAdmin();
-    } catch (e) {
-        toast(e.message, 'bad');
-    } finally {
-        button.disabled = false;
-    }
-});
-
 for (const name of ['kachat', 'desktop', 'nextcloud']) {
     // The switch is a power control: it takes effect on the spot, matching the
     // one on Mining. Everything that needs an explicit Apply stays a checkbox.
-    $(`${name}-save`).addEventListener('click', async () => {
+    // KaChat Nextcloud has nothing to apply: its page does everything on the spot.
+    $(`${name}-save`)?.addEventListener('click', async () => {
         const err = $(`${name}-error`);
         err.hidden = true;
         try {
@@ -4346,6 +4257,296 @@ for (const button of document.querySelectorAll('[data-app-action]')) {
         });
     });
 }
+
+// ------------------------------------------------------- kachat nextcloud ---
+
+/*
+ * KaChat Nextcloud: the Nextcloud on this stack, for the KaChat and KaPay apps,
+ * run entirely from here -- accounts, app passwords, the links that have been
+ * shared, and calls. Installing, the switch and uninstalling are the panel's
+ * usual ones. Ported from Quick Start Home's KaChat Nextcloud page.
+ */
+let ncState = null;
+let ncAccount = null;
+
+async function loadNextcloud() {
+    try {
+        ncState = await api('/api/nextcloud');
+    } catch {
+        return;
+    }
+    renderNextcloud();
+}
+
+const ncAccounts = () => ncState?.accounts ?? [];
+const ncCurrent = () => ncAccounts().find((a) => a.username === ncAccount) ?? ncAccounts()[0] ?? null;
+const ncCopy = (value) => `<button type="button" class="copy-btn" data-copy="${escapeHtml(value)}">Copy</button>`;
+const ncAgo = (iso) => kAge(Date.now() - new Date(iso).getTime());
+
+function renderNextcloud() {
+    const k = ncState;
+    if (!k) return;
+    // Not installed, the cards stay as a preview under the install screen, the
+    // way every other app's page does. Before the first start there is nothing
+    // set up to show, so it says what the switch will do.
+    if (!k.installed) {
+        for (const id of ['nc-live', 'nc-connect-card', 'nc-calls-card']) $(id).hidden = false;
+        $('nc-setup').hidden = true;
+        return;
+    }
+    $('nc-setup').hidden = k.setUp;
+    $('nc-live').hidden = !k.setUp;
+    // Accounts and calls are read from Nextcloud itself, which a switched-off
+    // one cannot answer; the status card says it is off instead.
+    for (const id of ['nc-connect-card', 'nc-calls-card']) $(id).hidden = !k.setUp || !k.running;
+    if (!k.setUp) return;
+
+    const accounts = ncAccounts();
+    ncAccount = ncCurrent()?.username ?? null;
+    const acct = ncCurrent();
+    const hasPw = Boolean(acct?.appPasswords?.length);
+
+    const tag = $('nc-state');
+    const ready = k.running && k.server && hasPw;
+    tag.textContent = !k.running ? 'stopped' : ready ? 'ready' : 'needs finishing';
+    tag.className = `tag ${ready ? 'ok' : k.running ? 'warn' : 'off'}`;
+
+    const check = (done, text) => `<li><span class="svc-dot ${done ? 'ok' : 'bad'}"></span><span>${text}</span></li>`;
+    // Switched off, the one thing worth saying is that; the rest is read from a
+    // Nextcloud that is not answering.
+    $('nc-checks').innerHTML = !k.running
+        ? check(false, 'Switched off. Links sent from it do not open until its switch in the sidebar starts it again.')
+        : [
+              check(true, 'Running.'),
+              check(Boolean(k.server), k.server ? `On its name at <strong>${escapeHtml(k.server)}</strong>.` : 'Not on a name yet.'),
+              check(Boolean(acct), acct ? `Account <strong>${escapeHtml(acct.username)}</strong> is ready.` : 'No account yet. Add one under Accounts.'),
+              check(hasPw, hasPw ? 'It has an app password.' : 'No app password yet. Make one below.'),
+          ].join('');
+    if (k.error) $('nc-checks').innerHTML += check(false, escapeHtml(k.error));
+
+    $('nc-next').innerHTML =
+        k.running && !k.server
+            ? `<div class="verdict"><p><strong>Put it on a name.</strong> Open <a href="#" data-goto-tab="proxy">Tunnel &amp; domains</a> and publish <strong>KaChat Nextcloud</strong> on a name of its own, such as <code>share.example.com</code>. Only what KaChat and KaPay use is reachable on that name.</p></div>`
+            : '';
+
+    // Connect apps.
+    const pick = (sel) => {
+        $(sel).innerHTML = accounts.map((a) => `<option value="${escapeHtml(a.username)}" ${a.username === ncAccount ? 'selected' : ''}>${escapeHtml(a.username)}</option>`).join('');
+    };
+    pick('nc-account-pick');
+    pick('nc-media-pick');
+    $('nc-account-pick-row').hidden = accounts.length < 2;
+    $('nc-media-pick-row').hidden = accounts.length < 2;
+
+    $('nc-server').textContent = k.server ?? 'publish it on a name first';
+    $('nc-server-copy').innerHTML = k.server ? ncCopy(k.server) : '';
+    $('nc-username').textContent = acct?.username ?? '–';
+    $('nc-username-copy').innerHTML = acct ? ncCopy(acct.username) : '';
+    $('nc-pw-go').disabled = !acct || !k.running;
+    $('nc-pw-list').innerHTML = (acct?.appPasswords ?? [])
+        .map(
+            (t) => `<div class="nc-row">
+                <div class="nc-row-main">
+                    <span class="nc-row-title">${escapeHtml(t.name)}</span>
+                    <span class="muted">${t.lastActivity ? `last used ${ncAgo(t.lastActivity)}` : 'not used yet'}</span>
+                </div>
+                <button type="button" class="ghost danger" data-nc-revoke="${escapeHtml(String(t.id))}">Revoke</button>
+            </div>`,
+        )
+        .join('');
+
+    // Calls.
+    const t = k.talk;
+    $('nc-calls').innerHTML = !t?.enabled
+        ? '<p class="verdict bad">Nextcloud Talk is not installed here, so KaChat calls are off. Restarting it tries again.</p>'
+        : `<ul class="nc-checks">
+                <li><span class="svc-dot ok"></span><span>Nextcloud Talk ${escapeHtml(t.version ?? '')} is on, so KaChat can make voice and video calls.</span></li>
+                <li><span class="svc-dot ${t.stun?.length ? 'ok' : 'bad'}"></span><span>${
+                    t.stun?.length ? `Phones find each other with ${escapeHtml(t.stun.join(', '))}.` : 'No STUN server, so most calls between different networks fail.'
+                }</span></li>
+            </ul>
+            <p class="hint">
+                The sound and picture go straight between the two phones, not through this machine,
+                and nothing needs a port opened. A call can still fail to connect when both phones
+                are on strict networks, such as two phones on mobile data with some carriers: that
+                needs a relay (TURN), which is not set up.
+            </p>`;
+
+    // Accounts.
+    $('nc-accounts').innerHTML = accounts.length
+        ? accounts
+              .map((a) => {
+                  const quota = a.quota && a.quota !== 'none' ? a.quota : 'no limit';
+                  return `<div class="nc-row">
+                    <div class="nc-row-main">
+                        <span class="nc-row-title">${escapeHtml(a.username)}</span>
+                        <span class="muted">${a.used !== null ? fmtSize(a.used) : '–'} used of ${escapeHtml(quota)} · ${a.appPasswords.length} app password${a.appPasswords.length === 1 ? '' : 's'}</span>
+                    </div>
+                    <div class="row nc-quota">
+                        <input value="${escapeHtml(a.quota && a.quota !== 'none' ? a.quota : '')}" placeholder="20 GB" data-nc-quota-input="${escapeHtml(a.username)}" size="8">
+                        <button type="button" class="ghost" data-nc-quota="${escapeHtml(a.username)}">Set space</button>
+                        <button type="button" class="ghost danger" data-nc-remove-user="${escapeHtml(a.username)}">Remove</button>
+                    </div>
+                </div>`;
+              })
+              .join('')
+        : '<p class="muted">No accounts yet.</p>';
+}
+
+async function loadNextcloudMedia() {
+    const user = $('nc-media-pick').value || ncAccount;
+    const box = $('nc-media');
+    if (!user || !ncState?.running) {
+        box.innerHTML = '<p class="muted">Nothing to show while it is stopped or has no account.</p>';
+        $('nc-media-count').textContent = '–';
+        return;
+    }
+    box.innerHTML = '<p class="muted">Reading the links…</p>';
+    let list;
+    try {
+        ({ shares: list } = await api(`/api/nextcloud/accounts/${encodeURIComponent(user)}/shares`));
+    } catch (e) {
+        box.innerHTML = `<p class="verdict bad">${escapeHtml(e.message)}</p>`;
+        return;
+    }
+    $('nc-media-count').textContent = `${list.length} shared`;
+    const kind = (m) => (String(m).startsWith('video/') ? 'video' : String(m).startsWith('audio/') ? 'voice' : String(m).startsWith('image/') ? 'photo' : 'file');
+    box.innerHTML = list.length
+        ? list
+              .map(
+                  (s) => `<div class="nc-media-item">
+                    ${
+                        kind(s.mime) === 'voice'
+                            ? '<div class="nc-thumb nc-thumb-voice" aria-hidden="true">♪</div>'
+                            : `<img class="nc-thumb" loading="lazy" alt="" src="/api/nextcloud/accounts/${encodeURIComponent(user)}/preview/${encodeURIComponent(s.fileId)}">`
+                    }
+                    <div class="nc-row-main">
+                        <span class="nc-row-title">${escapeHtml(s.name)}</span>
+                        <span class="muted">${kind(s.mime)}${s.created ? ` · shared ${ncAgo(s.created)}` : ''}${s.expires ? ` · until ${escapeHtml(new Date(s.expires).toLocaleDateString())}` : ''}</span>
+                        <span class="nc-addr"><a href="${escapeHtml(s.url)}" target="_blank" rel="noreferrer noopener">${escapeHtml(s.url)} ↗</a>${ncCopy(s.url)}</span>
+                    </div>
+                    <button type="button" class="ghost danger" data-nc-unshare="${escapeHtml(String(s.id))}" data-nc-unshare-name="${escapeHtml(s.name)}">Stop sharing</button>
+                </div>`,
+              )
+              .join('')
+        : '<p class="muted">Nothing has been shared from this account yet.</p>';
+}
+
+// A file with no preview (a video Nextcloud has not made one for yet) gets a
+// plain play mark instead of a broken image.
+$('nc-media').addEventListener(
+    'error',
+    (event) => {
+        if (!event.target.matches?.('img.nc-thumb')) return;
+        event.target.replaceWith(Object.assign(document.createElement('div'), { className: 'nc-thumb nc-thumb-voice', textContent: '▶' }));
+    },
+    true,
+);
+
+document.querySelector('[data-subtab="nc-media"]').addEventListener('click', loadNextcloudMedia);
+$('nc-media-refresh').addEventListener('click', loadNextcloudMedia);
+$('nc-media-pick').addEventListener('change', loadNextcloudMedia);
+$('nc-account-pick').addEventListener('change', () => {
+    ncAccount = $('nc-account-pick').value;
+    $('nc-pw-new').hidden = true;
+    renderNextcloud();
+});
+$('nc-refresh').addEventListener('click', loadNextcloud);
+
+$('tab-nextcloud').addEventListener('click', async (event) => {
+    const goto = event.target.closest('[data-goto-tab]');
+    if (goto) {
+        event.preventDefault();
+        selectTab(goto.dataset.gotoTab);
+        return;
+    }
+    const revoke = event.target.closest('[data-nc-revoke]');
+    if (revoke) {
+        if (!(await askConfirm('Revoke this app password?\n\nThe app using it is signed out at once and has to be given a new one.'))) return;
+        try {
+            await api(`/api/nextcloud/accounts/${encodeURIComponent(ncAccount)}/app-passwords/${revoke.dataset.ncRevoke}`, { method: 'DELETE' });
+            toast('Revoked.');
+        } catch (e) {
+            toast(e.message, 'bad');
+        }
+        return loadNextcloud();
+    }
+    const unshare = event.target.closest('[data-nc-unshare]');
+    if (unshare) {
+        const user = $('nc-media-pick').value || ncAccount;
+        const sure = await askConfirm(
+            `Stop sharing ${unshare.dataset.ncUnshareName}?\n\nThe link stops working for everyone who has it, including in chats already sent. The file itself stays in the account.`,
+        );
+        if (!sure) return;
+        try {
+            await api(`/api/nextcloud/accounts/${encodeURIComponent(user)}/shares/${unshare.dataset.ncUnshare}`, { method: 'DELETE' });
+            toast('No longer shared.');
+        } catch (e) {
+            toast(e.message, 'bad');
+        }
+        return loadNextcloudMedia();
+    }
+    const quota = event.target.closest('[data-nc-quota]');
+    if (quota) {
+        const user = quota.dataset.ncQuota;
+        const value = document.querySelector(`[data-nc-quota-input="${CSS.escape(user)}"]`).value.trim() || 'none';
+        try {
+            await api(`/api/nextcloud/accounts/${encodeURIComponent(user)}/quota`, { method: 'PUT', body: { quota: value } });
+            toast('Saved.');
+        } catch (e) {
+            toast(e.message, 'bad');
+        }
+        return loadNextcloud();
+    }
+    const removeUser = event.target.closest('[data-nc-remove-user]');
+    if (removeUser) {
+        const user = removeUser.dataset.ncRemoveUser;
+        const sure = await askConfirm(
+            `Remove the account ${user}?\n\nEverything in it goes: its photos, videos, voice messages and contacts backup. Every link it shared stops working, and KaChat and KaPay signed in with it are signed out.`,
+        );
+        if (!sure) return;
+        try {
+            await api(`/api/nextcloud/accounts/${encodeURIComponent(user)}`, { method: 'DELETE' });
+            toast(`Removed ${user}.`);
+        } catch (e) {
+            toast(e.message, 'bad');
+        }
+        return loadNextcloud();
+    }
+});
+
+$('nc-pw-go').addEventListener('click', async () => {
+    const name = $('nc-pw-name').value.trim() || 'KaChat';
+    const box = $('nc-pw-new');
+    $('nc-pw-go').disabled = true;
+    try {
+        const r = await api(`/api/nextcloud/accounts/${encodeURIComponent(ncAccount)}/app-passwords`, { method: 'POST', body: { name } });
+        box.hidden = false;
+        box.innerHTML = `<p><strong>App password for ${escapeHtml(r.name)}</strong>. Copy it into the app now: it is shown only this once.</p>
+            <div class="nc-field-row"><span class="nc-field">Password</span><code>${escapeHtml(r.password)}</code>${ncCopy(r.password)}</div>`;
+        $('nc-pw-name').value = '';
+    } catch (e) {
+        toast(e.message, 'bad');
+    }
+    $('nc-pw-go').disabled = false;
+    loadNextcloud();
+});
+
+$('nc-new-user-go').addEventListener('click', async () => {
+    const username = $('nc-new-user').value.trim();
+    if (!username) return toast('Type a username first.', 'bad');
+    $('nc-new-user-go').disabled = true;
+    try {
+        await api('/api/nextcloud/accounts', { method: 'POST', body: { username } });
+        toast(`Made ${username}.`);
+        $('nc-new-user').value = '';
+        ncAccount = username.toLowerCase();
+    } catch (e) {
+        toast(e.message, 'bad');
+    }
+    $('nc-new-user-go').disabled = false;
+    loadNextcloud();
+});
 
 // ----------------------------------------------------------- kachat panel ---
 
@@ -6361,7 +6562,7 @@ let serviceState = {};
 const UNINSTALL_COPY = {
     kachat: 'the indexed chat history and its Postgres database',
     desktop: 'nothing: it keeps no state of its own',
-    nextcloud: 'every file, photo and calendar stored in it',
+    nextcloud: 'every photo, video and voice message sent from it, and the contacts backups in it. Every link sent from it stops working',
     bot: 'nothing it collected. Its settings, including the wallet key, stay in the stack directory and are kept',
     node: 'the entire synced blockchain. Tens of gigabytes, and days of syncing to get back',
     kassigner: 'the downloaded firmware and the record of what was verified. A device you have already flashed is unaffected',
@@ -6418,6 +6619,10 @@ async function loadServices() {
         loadExtension().catch(() => {});
     }
     renderUninstallCards();
+    // Its page reads more than this poll knows, so it is read again whenever
+    // the switch or an install changes what this poll does know.
+    const nc = serviceState.nextcloud;
+    if (nc && ncState && (nc.installed !== ncState.installed || nc.running !== ncState.running)) loadNextcloud();
 }
 
 /**

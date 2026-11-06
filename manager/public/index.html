@@ -215,13 +215,13 @@
       </div>
       <p class="nav-group-title">Apps</p>
       <div class="nav-row">
-        <button class="nav-item" data-tab="nextcloud" title="Nextcloud">
+        <button class="nav-item" data-tab="nextcloud" title="KaChat Nextcloud">
           <span class="nav-dot" data-health="nextcloud"></span>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 16.5a3.5 3.5 0 00-.7-6.9 5.5 5.5 0 00-10.5-1.2A4.2 4.2 0 006 16.5z"/><circle cx="12" cy="12.5" r="2.2"/></svg>
-          <span class="label">Nextcloud</span>
+          <span class="label">KaChat Nextcloud</span>
         </button>
-        <label class="switch mini" title="Start or stop Nextcloud">
-          <input type="checkbox" data-service="nextcloud" aria-label="Start or stop Nextcloud">
+        <label class="switch mini" title="Start or stop KaChat Nextcloud">
+          <input type="checkbox" data-service="nextcloud" aria-label="Start or stop KaChat Nextcloud">
           <span class="track"></span>
         </label>
       </div>
@@ -365,7 +365,7 @@
         </article>
         <article class="card figure">
           <h3>Storage</h3>
-          <p class="muted">The disk your apps write to. The chain, the databases and Nextcloud all land here.</p>
+          <p class="muted">The disk your apps write to. The chain, the databases and KaChat Nextcloud all land here.</p>
           <!--
             The path this is measured at is a tooltip, not a line of its own: it
             is reassurance for the one person who wonders which disk, and on a
@@ -2074,117 +2074,112 @@
     </section>
 
     <section id="tab-nextcloud" class="tab">
-      <nav class="subnav" aria-label="Nextcloud">
-        <button class="subtab-btn active" data-subtab="nextcloud-overview">Overview</button>
-        <button class="subtab-btn" data-subtab="nextcloud-settings">Settings</button>
+      <nav class="subnav" aria-label="KaChat Nextcloud">
+        <button class="subtab-btn active" data-subtab="nc-connect">Connect apps</button>
+        <button class="subtab-btn" data-subtab="nc-media">Shared media</button>
+        <button class="subtab-btn" data-subtab="nc-accounts">Accounts</button>
         <button class="subtab-btn" data-subtab="nextcloud-updates">Updates</button>
         <button class="subtab-btn" data-subtab="nextcloud-log">Logs</button>
         <button class="subtab-btn" data-subtab="nextcloud-uninstall">Uninstall</button>
       </nav>
 
-      <div id="sub-nextcloud-overview" class="subtab active">
+      <div id="sub-nc-connect" class="subtab active">
         <div class="grid">
-          <!-- Left: running it, and getting into it. -->
-          <article class="card">
-            <div class="toggle-row">
-              <div class="toggle-text">
-                <strong>Run Nextcloud</strong>
-                <span class="muted">Starts Nextcloud with its database, cache and preview generator.</span>
-              </div>
-              <span id="nextcloud-state" class="tag">off</span>
-            </div>
-            <div id="nextcloud-notice" class="verdict" hidden></div>
-            <p class="error" id="nextcloud-error" hidden></p>
+          <!-- Installed, but never started: the first start is what sets it up. -->
+          <article class="card span2" id="nc-setup" hidden>
+            <h3>Switch it on to finish setting it up</h3>
+            <p class="muted">
+              The first time its switch in the sidebar starts it, it sets itself up for KaChat:
+              Nextcloud Talk for calls, previews for photos and videos, and an account called
+              <code>kachat</code> for the apps to sign in to. That takes a minute or two.
+            </p>
+            <p class="muted">
+              It runs alongside the node with its own database and cache. Nothing else in this
+              stack depends on it.
+            </p>
+          </article>
 
-            <div class="node-section" id="nextcloud-open-card">
-              <h3>Open it</h3>
-              <div id="nextcloud-link" class="verdict" hidden></div>
-              <p class="hint">
-                Sign in as the admin user with the password generated when it was
-                installed. Both are on the Settings tab, where you can also change
-                the password.
-              </p>
+          <article class="card span2" id="nc-live" hidden>
+            <div class="node-head">
+              <h3>KaChat Nextcloud</h3>
+              <span id="nc-state" class="tag">–</span>
+            </div>
+            <ul class="nc-checks" id="nc-checks"></ul>
+            <div id="nc-next"></div>
+            <div class="row">
+              <button type="button" class="ghost" id="nc-refresh">Check again</button>
             </div>
           </article>
 
-          <!-- Right: what it is, for anyone who has not switched it on yet. -->
-          <article class="card">
-            <h3>Nextcloud</h3>
+          <article class="card span2 guide" id="nc-connect-card" hidden>
+            <h3>Sign in to KaChat and KaPay</h3>
             <p class="muted">
-              Your own cloud for files, photos and video. It is where KaChat can
-              share media from and back chats up to, so none of it passes through
-              anyone else's servers. Video thumbnails and iPhone HEIC previews are
-              already set up for you.
+              In KaChat (and in KaPay, for its contacts and portfolio backup), open the Nextcloud
+              setting and copy these in. Use the same account in both, so they share your contacts.
             </p>
-            <p class="muted">
-              It arrives with <strong>Contacts</strong>, <strong>Calendar</strong>,
-              <strong>Notes</strong>, <strong>Tasks</strong> and
-              <strong>Talk</strong>, installed the first time it starts.
-            </p>
+            <label id="nc-account-pick-row">Account
+              <select id="nc-account-pick"></select>
+            </label>
+            <div class="nc-fields">
+              <div class="nc-field-row"><span class="nc-field">Server</span><code id="nc-server">–</code><span id="nc-server-copy"></span></div>
+              <div class="nc-field-row"><span class="nc-field">Username</span><code id="nc-username">–</code><span id="nc-username-copy"></span></div>
+            </div>
+
+            <h3 class="sub">App password</h3>
+            <p class="muted">Make one for each app, so you can turn one off without the other.</p>
+            <div class="row nc-newpw">
+              <input id="nc-pw-name" placeholder="KaChat on iPhone" autocomplete="off" spellcheck="false">
+              <button type="button" class="primary" id="nc-pw-go">Make an app password</button>
+            </div>
+            <div id="nc-pw-new" class="verdict ok" hidden></div>
+            <div id="nc-pw-list" class="nc-list"></div>
             <p class="hint">
-              It runs alongside the node with its own database and cache, and stays
-              off until you switch it on. Nothing else in this stack depends on it.
-              Talk's chat and one-to-one calls work as they are; group calls with
-              more than a few people want a TURN server, which this stack does not
-              run.
+              An app password works only for apps, never for a web login, and you can revoke it
+              here at any time, for example if a phone is lost. Two-step login is not needed for
+              this account: its web login is not on the internet, and app passwords skip it anyway.
             </p>
+          </article>
+
+          <article class="card span2" id="nc-calls-card" hidden>
+            <h3>Calls</h3>
+            <div id="nc-calls"></div>
           </article>
         </div>
       </div>
 
-      <div id="sub-nextcloud-settings" class="subtab">
+      <div id="sub-nc-media" class="subtab">
         <div class="grid">
-          <!--
-            Access and Apply share the left column so Apply fills the space
-            under a short Access card, instead of waiting for the taller
-            password card beside it and leaving a hole.
-          -->
-          <div class="col">
-            <article class="card">
-              <h3>Access</h3>
-              <label class="check"><input type="checkbox" id="nextcloud-pub-web"> Publish on the host</label>
-              <label class="inline">Port <input type="number" id="nextcloud-port" min="1024" max="65535"></label>
-              <label class="inline">Admin user <input id="nextcloud-user"></label>
-              <label>Trusted domains
-                <input id="nextcloud-domains" placeholder="localhost cloud.example.com">
-              </label>
-              <p class="hint">
-                If you give Nextcloud a domain, add it here too, separated by spaces
-                or commas. Nextcloud turns away requests for names it has not been
-                told about.
-              </p>
-            </article>
-            <article class="card span2">
-              <h3>Apply</h3>
-              <p class="muted">Changes here rebuild or restart Nextcloud.</p>
-              <div class="row">
-                <button type="button" id="nextcloud-save" class="primary">Apply settings</button>
-                <button type="button" class="ghost" data-app-action="nextcloud/restart">Restart</button>
-              </div>
-            </article>
-          </div>
-
-          <article class="card">
-            <h3>Admin password</h3>
-            <p class="muted">
-              Generated when Nextcloud was installed. This is the password for the
-              admin user above, and the panel is the only place it is shown.
-            </p>
-            <div class="row">
-              <input id="nextcloud-pass" type="password" size="26" readonly>
-              <button type="button" id="nextcloud-pass-show" class="ghost">Show</button>
-              <button type="button" id="nextcloud-pass-copy" class="ghost">Copy</button>
+          <article class="card span2">
+            <div class="node-head">
+              <h3>Shared media</h3>
+              <span id="nc-media-count" class="tag">–</span>
             </div>
-            <label class="stack">Change it
-              <span class="row">
-                <input id="nextcloud-pass-new" type="password" size="26" placeholder="at least 10 characters">
-                <button type="button" id="nextcloud-pass-save" class="primary">Set new password</button>
-              </span>
-            </label>
-            <p class="hint">
-              This changes it inside Nextcloud straight away and remembers the new
-              one here. Anyone already signed in stays signed in.
+            <p class="muted">
+              Every photo, video and voice message sent as a link, newest first. Stop sharing
+              and the link stops working for everyone at once; the file stays in the account.
             </p>
+            <label id="nc-media-pick-row">Account
+              <select id="nc-media-pick"></select>
+            </label>
+            <div id="nc-media" class="nc-media"></div>
+            <div class="row">
+              <button type="button" class="ghost" id="nc-media-refresh">Refresh</button>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <div id="sub-nc-accounts" class="subtab">
+        <div class="grid">
+          <article class="card span2">
+            <h3>Accounts</h3>
+            <p class="muted">One per person. Each has its own space, contacts backup and links.</p>
+            <div id="nc-accounts" class="nc-list"></div>
+            <h3 class="sub">Add an account</h3>
+            <div class="row nc-newpw">
+              <input id="nc-new-user" placeholder="username" autocomplete="off" spellcheck="false" autocapitalize="off">
+              <button type="button" class="ghost" id="nc-new-user-go">Add</button>
+            </div>
           </article>
         </div>
       </div>
@@ -2224,6 +2219,10 @@
       <div id="sub-nextcloud-uninstall" class="subtab">
         <div class="grid">
           <article class="card span2 uninstall-card" data-uninstall="nextcloud"></article>
+          <p class="hint span2">
+            If it is on a name, take that off under Tunnel &amp; domains first: every link sent
+            from it stops working.
+          </p>
         </div>
       </div>
 
@@ -3342,8 +3341,8 @@
           <ul class="plain">
             <li>Chain data goes with it, so a fresh install re-syncs from
               scratch. That takes hours.</li>
-            <li>KaChat and Nextcloud data goes too, including anything stored in
-              Nextcloud.</li>
+            <li>KaChat and KaChat Nextcloud data goes too, including every photo,
+              video and voice message sent from it.</li>
             <li>Every bot's wallet key goes too. Any KAS still in a bot wallet is
               lost for good, so send it out from the Bot tab first.</li>
             <li>Base images shared with your other projects are skipped

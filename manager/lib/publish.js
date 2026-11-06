@@ -87,10 +87,13 @@ export const SERVICES = [
     {
         key: 'nextcloud',
         kind: 'nextcloud',
-        sharedPath: '/cloud',
-        label: 'Nextcloud',
-        detail: 'Files, photos and calendars.',
-        afterNote: 'Nextcloud is at https://{domain}. Add the name to its trusted domains under Apps if it complains.',
+        // The apps are given the name itself as their server, and Nextcloud
+        // builds every link from the root, so it never shares a name on a path.
+        rootOnly: true,
+        label: 'KaChat Nextcloud',
+        detail: 'For the KaChat and KaPay apps: photo, video and voice links, contacts backup and calls.',
+        afterNote:
+            'Put https://{domain} in KaChat and KaPay as the Nextcloud server, with the username and an app password from its page. Only what the two apps use is reachable on this name; Nextcloud\'s web login and pages are not on the internet.',
     },
     {
         key: 'panel',

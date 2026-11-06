@@ -621,10 +621,8 @@ fetch_stack() {
     else
         rm -f "$STACK_DIR/conf/panel-installed"
     fi
-    # The Nextcloud hook is skipped silently by that image's entrypoint if it is
-    # not executable, so it is not left to whatever the copy preserved.
-    chmod +x "$STACK_DIR/kaspad/entrypoint.sh" "$STACK_DIR/kachat/run-admin.sh" "$STACK_DIR/uninstall.sh" \
-             "$STACK_DIR/nextcloud/hooks/apps/10-apps.sh" 2>/dev/null || true
+    # Not left to whatever the copy preserved.
+    chmod +x "$STACK_DIR/kaspad/entrypoint.sh" "$STACK_DIR/kachat/run-admin.sh" "$STACK_DIR/uninstall.sh" 2>/dev/null || true
 
     # The manager writes nginx's configuration into these as soon as it boots,
     # which is before the proxy can be switched on.

@@ -96,21 +96,20 @@ export const UNITS = {
         buildable: ['kachat-desktop'],
         data: 'nothing: it keeps no state of its own',
     },
+    // KaChat Nextcloud, for the KaChat and KaPay apps. lib/nextcloud.js has the
+    // rest, including what happens the first time its switch starts it.
     nextcloud: {
-        label: 'Nextcloud',
+        label: 'KaChat Nextcloud',
         profile: 'nextcloud',
-        services: ['nextcloud-db', 'nextcloud-redis', 'nextcloud-imaginary', 'nextcloud'],
-        containers: [
-            'kaspa-node-nextcloud',
-            'kaspa-node-nextcloud-db',
-            'kaspa-node-nextcloud-redis',
-            'kaspa-node-nextcloud-imaginary',
-        ],
+        services: ['nextcloud-db', 'nextcloud-redis', 'nextcloud'],
+        // The preview generator older versions ran is listed so that uninstalling
+        // one of those installs takes it too.
+        containers: ['kaspa-node-nextcloud', 'kaspa-node-nextcloud-db', 'kaspa-node-nextcloud-redis', 'kaspa-node-nextcloud-imaginary'],
         primary: 'kaspa-node-nextcloud',
         volumes: ['kaspa-node-nextcloud-data', 'kaspa-node-nextcloud-db-data'],
         images: ['kaspa-one-click/nextcloud'],
         buildable: ['nextcloud'],
-        data: 'every file, photo and calendar stored in it',
+        data: 'every photo, video and voice message sent from it, and the contacts backups in it',
     },
     bot: {
         label: 'KaChat Bot',

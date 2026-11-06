@@ -214,11 +214,16 @@ services:
       driver: json-file
       options: { max-size: "20m", max-file: "3" }
 
-  # ---- Nextcloud ------------------------------------------------------------
+  # ---- KaChat Nextcloud -----------------------------------------------------
   #
-  # Behind the "nextcloud" profile. Upstream's compose also brings its own
-  # nginx-proxy-manager, Portainer and DuckDNS updater; all three are dropped
-  # because this stack already provides those, and NPM would collide on 80/443.
+  # Behind the "nextcloud" profile. A Nextcloud for the KaChat and KaPay apps:
+  # their photo, video and voice links, their encrypted contacts backup, and
+  # Nextcloud Talk for KaChat calls. lib/nextcloud.js runs it, and the panel's
+  # page for it does everything, so Nextcloud's own pages are never needed.
+  #
+  # No port on the machine: it is reached through a name published under Tunnel
+  # & domains, where nginx only lets through what the two apps use, and by the
+  # panel over the stack network.
   nextcloud-db:
     image: mariadb:10.11
     container_name: kaspa-node-nextcloud-db
@@ -245,22 +250,10 @@ services:
     hostname: nextcloud-redis
     profiles: ["nextcloud"]
     restart: unless-stopped
-    networks:
-      - kaspa
-    logging:
-      driver: json-file
-      options: { max-size: "5m", max-file: "2" }
-
-  # Generates image previews, including iPhone HEIC.
-  nextcloud-imaginary:
-    image: nextcloud/aio-imaginary:latest
-    container_name: kaspa-node-nextcloud-imaginary
-    hostname: nextcloud-imaginary
-    profiles: ["nextcloud"]
-    restart: unless-stopped
-    cap_add: ["SYS_NICE"]
-    environment:
-      IMAGINARY_SECRET: ${NEXTCLOUD_IMAGINARY_SECRET:-}
+    # Cache and file locking only: nothing in it has to outlive a restart.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    tmpfs:
+      - /data:size=16m
     networks:
       - kaspa
     logging:
@@ -310,29 +303,23 @@ services:
       MYSQL_USER: nextcloud
       MYSQL_PASSWORD: ${NEXTCLOUD_DB_PASSWORD:-}
       REDIS_HOST: nextcloud-redis
+      # An admin nobody uses: the apps sign in to accounts of their own, with
+      # app passwords the panel makes. Its password is random and never shown.
       NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USER:-admin}
       NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD:-}
-      NEXTCLOUD_TRUSTED_DOMAINS: ${NEXTCLOUD_TRUSTED_DOMAINS:-localhost}
+      # The published name is added by the panel when there is one.
+      NEXTCLOUD_TRUSTED_DOMAINS: nextcloud localhost
       TRUSTED_PROXIES: 172.16.0.0/12
-      # Read by previews.config.php, and only used when Imaginary was given one.
-      NEXTCLOUD_IMAGINARY_SECRET: ${NEXTCLOUD_IMAGINARY_SECRET:-}
+      # A single upload from KaChat is one request, and Cloudflare stops a
+      # request at 100 MB on its free plan anyway.
+      PHP_UPLOAD_LIMIT: 1G
     volumes:
       - nextcloud-data:/var/www/html
-      # The image loads every *.config.php in that directory. Mounted rather
-      # than baked in, so it can be corrected without a rebuild, and read-only
-      # so Nextcloud's own config writes never land in it.
-      - ${STACK_DIR}/nextcloud/previews.config.php:/var/www/html/config/previews.config.php:ro
-      # Installs Contacts, Calendar, Notes, Tasks and Talk. One directory
-      # mounted at both hooks rather than two copies of the same script: the
-      # first run is a new instance, the second catches one that predates it.
-      - ${STACK_DIR}/nextcloud/hooks/apps:/docker-entrypoint-hooks.d/post-installation:ro
-      - ${STACK_DIR}/nextcloud/hooks/apps:/docker-entrypoint-hooks.d/post-upgrade:ro
     networks:
       - kaspa
     depends_on:
       - nextcloud-db
       - nextcloud-redis
-      - nextcloud-imaginary
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }

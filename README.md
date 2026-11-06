@@ -10,7 +10,7 @@ bind and which ports to publish before you press Start. **To go public, switch
 on the ports you want in the panel and open them on your router.**
 A stratum bridge is included, so miners and ASICs can point straight at your
 node, with a dashboard for hashrate, workers and blocks found. The
-[KaChat indexer](https://github.com/KaspaSilver/KaChat-Indexer), Nextcloud and
+[KaChat indexer](https://github.com/KaspaSilver/KaChat-Indexer), KaChat Nextcloud and
 the [block notifier bot](https://github.com/KaspaSilver/Kaspa-Block-Notifier) can
 be switched on from the same panel, each tracking its own source.
 
@@ -183,7 +183,6 @@ Nothing outside `manager/` is mounted, so changes to `docker-compose.yml`,
 | `18110` | wRPC JSON           | serve browser / JSON clients (the panel already uses it internally) |
 | `5555`  | stratum             | only if you mine, and only for miners outside this machine |
 | `3080`  | KaPosts REST API    | only if KaChat clients connect from outside this machine |
-| `8081`  | Nextcloud           | only if you reach Nextcloud without a proxy host |
 | `8420`  | control panel       | bound to `127.0.0.1`, so do not forward it. To reach it from outside, publish it under Tunnel & domains |
 
 Nothing here is ever forwarded for a web address. Names on your own domain go
@@ -359,21 +358,31 @@ on Setup erases a card's backup and PIN and loads the card software fresh. The
 **Helper** tab checks the helper against KaChat-NFC's releases and updates the
 one on this server. None of this waits for a panel update.
 
-**Nextcloud.** Your own cloud for the files, photos and video KaChat shares and
-backs up. The official `nextcloud:stable` image with ffmpeg added, and previews
-switched on for you: photos and iPhone HEIC through a separate Imaginary
-container, video thumbnails through ffmpeg, plus PDF, SVG, audio cover art,
-text and OpenDocument. Nextcloud enables none of that by default.
+**KaChat Nextcloud.** A Nextcloud for the KaChat and KaPay apps: the photo,
+video and voice messages KaChat sends as links, the encrypted contacts backup
+the two apps share, and Nextcloud Talk for KaChat calls. Its page in the panel
+does everything, so Nextcloud's own pages are never needed:
 
-It also comes with Contacts, Calendar, Notes, Tasks and Talk, installed on
-first run by a hook the image itself calls. Talk's chat and one-to-one calls
-work as they are; group calls with more than a handful of people want a TURN
-server, which this stack does not run.
+- **Connect apps**: the server address and username to paste into KaChat and
+  KaPay, with copy buttons, and app passwords made (shown once) and revoked.
+- **Shared media**: every link an account has made, with thumbnails, and Stop
+  sharing, which KaChat itself cannot do.
+- **Accounts**: one per person, each with its own space.
+- **Calls**: Talk is installed and given public STUN servers, so calls connect
+  with no port opened anywhere. A TURN relay is not set up.
 
-Updating checks what the `nextcloud:stable` tag points at now and rebuilds on
-it. Publish it on a port, or give it a domain and HTTPS under Proxy and domains,
-remember to add that domain to its trusted-domains list too, or Nextcloud will
-refuse the request.
+The first time its switch starts it, it sets itself up (Talk, previews for
+photos, iPhone HEIC and video, public links) and makes an account called
+`kachat`. It has no port on the machine: publish it on a name of its own under
+Tunnel & domains, and that name only lets through what KaChat and KaPay use
+(their files, share links and calls). Nextcloud's web login and pages are not
+on the internet. Its background jobs run from the panel every five minutes.
+
+It is the official `nextcloud:stable` image with ffmpeg added for video
+thumbnails; updating checks what that tag points at now and rebuilds on it.
+Ported from [Quick Start Home](https://github.com/Shudan10/Home)'s KaChat
+Nextcloud. An install that had the earlier general-purpose Nextcloud keeps its
+files and accounts.
 
 Both apps have a **Check for updates** button. Neither publishes releases, so the
 honest question is how far the branch you track has moved: the panel compares the
@@ -402,7 +411,7 @@ conf/proxies.json      proxy host definitions
 conf/mining.json       mining settings from the panel
 conf/bridge.yaml       generated stratum bridge config
 conf/bridge-ports.yml  generated compose override for stratum ports
-conf/apps.json         KaChat / Nextcloud settings from the panel
+conf/apps.json         KaChat / KaChat Nextcloud settings from the panel
 conf/apps-ports.yml    generated compose override for their ports
 conf/*-build.json      which upstream commit each app image was built from
 conf/cloudflare/       the tunnel: its tokens (0600) and which account it is on
@@ -423,7 +432,7 @@ bind-mounting a RocksDB database into Docker Desktop is painfully slow.
 | `cloudflared` | `cloudflare/cloudflared`  | the Cloudflare Tunnel: public names with no open port (only when Tunnel & domains is on and connected) |
 | `bridge`  | built from the release binary | stratum server for miners (only when mining is on) |
 | `kachat-app` + `kachat-db` | built from KaChat-Indexer | chat/KaPosts indexer and its Postgres (only when KaChat is on) |
-| `nextcloud` + db/redis/imaginary | `nextcloud:stable` + ffmpeg | private cloud (only when Nextcloud is on) |
+| `nextcloud` + db/redis | `nextcloud:stable` + ffmpeg | KaChat Nextcloud: media links, contacts backup and calls for KaChat and KaPay (only when it is on) |
 | `libretranslate` | `libretranslate/libretranslate` | translates KaPosts for the indexer, offline (only when Translation is installed) |
 | `kachat-bot` | built from Kaspa-Block-Notifier | messages your phone when this node finds a block (only when KaChat Bot is installed) |
 

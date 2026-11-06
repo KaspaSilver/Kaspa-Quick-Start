@@ -50,6 +50,7 @@ import * as publish from './lib/publish.js';
 import * as portcheck from './lib/portcheck.js';
 import * as push from './lib/push.js';
 import * as lifecycle from './lib/lifecycle.js';
+import * as nextcloud from './lib/nextcloud.js';
 import * as cloudflare from './lib/cloudflare.js';
 import * as host from './lib/host.js';
 import * as bot from './lib/bot.js';
@@ -1298,6 +1299,10 @@ route('GET', /^\/api\/proxies$/, async (req, res) => {
 async function saveProxyList(list, cfg, onLine) {
     saveProxies(list);
     nginx.writeAll(list, cfg, renderOptions());
+    // KaChat Nextcloud trusts the name it is published on and builds its links
+    // from it, so a name added, moved or taken off reaches it too. In the
+    // background: it is a few dozen occ calls, and it only acts on a change.
+    nextcloud.applyPublicHost(onLine ?? log).catch((err) => log(`KaChat Nextcloud was not told about its name: ${err.message}`));
     // With the proxy off the files are still written, so switching it on later
     // brings up everything that was configured meanwhile.
     if (!proxyEnabled()) return;
@@ -2187,8 +2192,8 @@ route('POST', /^\/api\/mining\/(start|stop|restart)$/, async (req, res, match) =
  * containers rather than stopping them, matching how mining behaves: a stopped
  * service could otherwise be restarted by an unrelated `compose up`.
  */
-// The services built from source. The rest are stock images (databases, cache,
-// imaginary) with nothing to build, and asking compose to build them errors.
+// The services built from source. The rest are stock images (databases, cache)
+// with nothing to build, and asking compose to build them errors.
 const BUILDABLE_SERVICES = new Set(['kachat-app', 'kachat-desktop', 'nextcloud']);
 
 async function applyAppConfig(name, cfg, onLine = () => {}) {
@@ -2256,17 +2261,10 @@ async function applyAppConfig(name, cfg, onLine = () => {}) {
         }
     }
 
-    // Nextcloud reads its trusted domains only while installing, so a change
-    // made later has to be applied to the running instance or it silently does
-    // nothing. Failure here is worth reporting but not worth failing the job:
-    // the container is up either way.
-    if (name === 'nextcloud') {
-        try {
-            await apps.syncTrustedDomains(dockerctl.docker, cfg, onLine);
-        } catch (err) {
-            onLine(`Could not update the trusted domains: ${err.message}`);
-        }
-    }
+    // Its settings live inside Nextcloud, and its first start is when it sets
+    // itself up for KaChat. Failure here is worth reporting but not worth
+    // failing the job: the container is up either way.
+    if (name === 'nextcloud') await nextcloudAfterStart(onLine);
 
     onLine(`${app.label} is up.`);
     return { enabled: true };
@@ -3301,33 +3299,6 @@ route('PUT', /^\/api\/kachat\/translate$/, async (req, res) => {
     sendJson(res, 202, { ok: true, jobId: job.id, languages, restarted: true });
 });
 
-route('GET', /^\/api\/apps\/nextcloud\/admin$/, async (req, res) => {
-    // The panel is bound to loopback and this is the same value sitting in the
-    // stack's .env, so showing it here reveals nothing a local user could not
-    // already read. It is the only way to reach a fresh install.
-    sendJson(res, 200, apps.nextcloudAdmin());
-});
-
-route('POST', /^\/api\/apps\/nextcloud\/admin\/password$/, async (req, res) => {
-    const body = await readBody(req);
-    const password = String(body.password ?? '');
-
-    // Nextcloud's own minimum is 10 characters. Checking here means a bad one is
-    // refused before the container is touched, rather than after a failed occ run.
-    if (password.length < 10) return fail(res, 400, 'The password needs to be at least 10 characters.');
-    if (password.length > 200) return fail(res, 400, 'That password is too long.');
-
-    const state = await dockerctl.containerState(apps.APPS.nextcloud.container);
-    if (!state.running) return fail(res, 409, 'Nextcloud is not running, so its password cannot be changed yet.');
-
-    try {
-        await apps.setNextcloudAdminPassword(dockerctl.docker, password);
-        sendJson(res, 200, { ok: true });
-    } catch (err) {
-        fail(res, 500, `Nextcloud refused the change: ${err.message}`);
-    }
-});
-
 route('GET', /^\/api\/apps\/(kachat|desktop|nextcloud|bot)\/check$/, async (req, res, match) => {
     const name = match[1];
     try {
@@ -3397,6 +3368,9 @@ route('POST', /^\/api\/apps\/(kachat|desktop|nextcloud|bot)\/update$/, async (re
                 profile: app.profile,
                 timeoutMs: 20 * 60_000,
             });
+            // A new Nextcloud upgrades itself on its first start, and its settings
+            // are reapplied once it has.
+            if (name === 'nextcloud') await nextcloudAfterStart(onLine);
         } else {
             onLine(`${app.label} is stopped, so it stays stopped. It runs the new build when you start it.`);
         }
@@ -3412,8 +3386,57 @@ route('POST', /^\/api\/apps\/(kachat|desktop|nextcloud)\/(start|stop|restart)$/,
     const job = jobs.start(`${action} ${app.label}`, async (onLine) => {
         const verb = action === 'start' ? ['up', '-d'] : [action];
         await dockerctl.compose([...verb, ...app.services], { onLine, profile: app.profile, timeoutMs: 10 * 60_000 });
+        if (name === 'nextcloud' && action !== 'stop') await nextcloudAfterStart(onLine);
     });
     sendJson(res, 202, { ok: true, jobId: job.id });
+});
+
+// ------------------------------------------------------- kachat nextcloud --
+
+/*
+ * KaChat Nextcloud: lib/nextcloud.js has the why. Installing, the switch and
+ * uninstalling go through /api/services like every app; these are the rest,
+ * answered on the spot -- an app password has to come back in the answer,
+ * since it is shown once and never kept.
+ */
+async function nextcloudAfterStart(onLine) {
+    await nextcloud.afterStart(onLine).catch((err) => onLine(`KaChat Nextcloud is up, but setting it up did not finish: ${err.message}`));
+}
+
+const nextcloudTry = (fn) => async (req, res, match, url) => {
+    try {
+        const out = await fn(req, res, match, url);
+        if (!res.headersSent) sendJson(res, 200, out ?? { ok: true });
+    } catch (err) {
+        fail(res, err.status && err.status < 600 ? err.status : 500, err.message);
+    }
+};
+
+route('GET', /^\/api\/nextcloud$/, nextcloudTry(() => nextcloud.status()));
+
+route('POST', /^\/api\/nextcloud\/accounts$/, nextcloudTry(async (req) => nextcloud.addAccount((await readBody(req)).username)));
+
+route('DELETE', /^\/api\/nextcloud\/accounts\/([a-z0-9._-]+)$/, nextcloudTry((req, res, m) => nextcloud.removeAccount(m[1])));
+
+route('PUT', /^\/api\/nextcloud\/accounts\/([a-z0-9._-]+)\/quota$/, nextcloudTry(async (req, res, m) => nextcloud.setQuota(m[1], (await readBody(req)).quota)));
+
+route('POST', /^\/api\/nextcloud\/accounts\/([a-z0-9._-]+)\/app-passwords$/, nextcloudTry(async (req, res, m) => nextcloud.addAppPassword(m[1], (await readBody(req)).name)));
+
+route('DELETE', /^\/api\/nextcloud\/accounts\/([a-z0-9._-]+)\/app-passwords\/(\d+)$/, nextcloudTry((req, res, m) => nextcloud.revokeAppPassword(m[1], m[2])));
+
+route('GET', /^\/api\/nextcloud\/accounts\/([a-z0-9._-]+)\/shares$/, nextcloudTry(async (req, res, m) => ({ shares: await nextcloud.shares(m[1]) })));
+
+route('DELETE', /^\/api\/nextcloud\/accounts\/([a-z0-9._-]+)\/shares\/(\d+)$/, nextcloudTry((req, res, m) => nextcloud.stopSharing(m[1], m[2])));
+
+route('GET', /^\/api\/nextcloud\/accounts\/([a-z0-9._-]+)\/preview\/(\d+)$/, async (req, res, m) => {
+    try {
+        const img = await nextcloud.preview(m[1], m[2]);
+        res.writeHead(200, { 'Content-Type': img.type, 'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff' });
+        res.end(img.body);
+    } catch (err) {
+        res.writeHead(err.status === 404 ? 404 : 502);
+        res.end();
+    }
 });
 
 // -------------------------------------------------------- admin password --
@@ -3622,9 +3645,11 @@ route('POST', /^\/api\/services\/([a-z0-9-]+)\/(start|stop)$/, async (req, res, 
     const state = await lifecycle.status(match[1]);
     if (!state.installed) return fail(res, 409, `${unit.label} is not installed yet.`);
 
-    const job = jobs.start(`${running ? 'Start' : 'Stop'} ${unit.label}`, (onLine) =>
-        lifecycle.setRunning(match[1], running, onLine),
-    );
+    const job = jobs.start(`${running ? 'Start' : 'Stop'} ${unit.label}`, async (onLine) => {
+        await lifecycle.setRunning(match[1], running, onLine);
+        // The first start is also when KaChat Nextcloud sets itself up and makes its account.
+        if (running && match[1] === 'nextcloud') await nextcloudAfterStart(onLine);
+    });
     sendJson(res, 202, { ok: true, jobId: job.id });
 });
 
@@ -3639,9 +3664,16 @@ route('POST', /^\/api\/services\/([a-z0-9-]+)\/uninstall$/, async (req, res, mat
         return fail(res, 400, 'The uninstall request did not confirm which service it meant.');
     }
 
+    // A name on the internet pointing at nothing is a broken link in every chat
+    // it was sent in; it is taken off first, on purpose.
+    if (match[1] === 'nextcloud' && loadProxies().some((p) => p.target?.kind === 'nextcloud')) {
+        return fail(res, 409, 'Take its name off first, under Tunnel & domains. Every link sent from it stops working once it is gone.');
+    }
+
     const keepData = body.keepData === true;
     const job = jobs.start(`Uninstall ${unit.label}`, async (onLine) => {
         const removed = await lifecycle.uninstall(match[1], { keepData, onLine });
+        if (match[1] === 'nextcloud') nextcloud.forget({ keepData }, onLine);
 
         // Back to how it looked before it was ever installed.
         const appsCfg = apps.loadAppsConfig();
@@ -5047,6 +5079,8 @@ async function bootstrap() {
     startLowBalanceWatch();
     startMiningStatsPersist();
     startPanelUpdateCheck();
+    // KaChat Nextcloud's background jobs: there are almost no page loads to run them from.
+    setInterval(() => !jobs.busy && nextcloud.runCron().catch(() => {}), 5 * 60_000).unref?.();
     // The NFC helper runs only while its page is open; one left from before a restart goes, and
     // so does any image built for an older release.
     kachatNfc.stopServerHelper().then(() => kachatNfc.removeOldImages()).catch(() => {});

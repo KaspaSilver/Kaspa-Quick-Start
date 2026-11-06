@@ -1,9 +1,9 @@
-# Nextcloud image for the one-click stack.
+# Nextcloud image for the one-click stack: KaChat Nextcloud.
 #
 # The official image plus ffmpeg, which is what OC\Preview\Movie shells out to
-# for video thumbnails. Image previews, iPhone HEIC included, are handled by the
-# separate Imaginary container; previews.config.php is what actually switches
-# both of them on, since Nextcloud enables neither by default.
+# for video thumbnails. The panel (lib/nextcloud.js) switches the preview
+# providers on with occ, since Nextcloud enables neither video nor HEIC by
+# default.
 FROM nextcloud:stable
 
 RUN apt-get update \
