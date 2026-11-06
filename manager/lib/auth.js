@@ -101,9 +101,39 @@ export function issueSession() {
     return { token: `${payload}.${sign(payload)}` };
 }
 
+// Sign out ends that one session for good, not just this browser's copy of the cookie: its
+// nonce goes on this list, which a session is checked against. Sessions never run out on
+// their own, so a copied cookie would otherwise outlive the sign-out.
+const REVOKED_FILE = path.join(CONF_DIR, 'revoked-sessions.json');
+const REVOKED_MAX = 2000;
+let revoked = new Set();
+try {
+    revoked = new Set(JSON.parse(fs.readFileSync(REVOKED_FILE, 'utf8')).nonces ?? []);
+} catch {
+    /* none yet */
+}
+function saveRevoked() {
+    try {
+        fs.writeFileSync(REVOKED_FILE, `${JSON.stringify({ nonces: [...revoked].slice(-REVOKED_MAX) })}\n`, { mode: 0o600 });
+    } catch {
+        /* best effort: the cookie is still cleared */
+    }
+}
+
+/** End one session (Sign out). */
+export function revokeSession(token) {
+    if (!validateSession(token)) return;
+    revoked.add(token.split('.')[1]);
+    if (revoked.size > REVOKED_MAX) revoked = new Set([...revoked].slice(-REVOKED_MAX));
+    saveRevoked();
+}
+
 /** End every session, this one included (a new one is issued to the caller separately). */
 export function revokeAllSessions() {
     updateEnvFile({ SESSION_EPOCH: crypto.randomBytes(8).toString('hex') });
+    // The new epoch ends every earlier session by itself, so the list starts over.
+    revoked = new Set();
+    saveRevoked();
 }
 
 export function validateSession(token) {
@@ -111,7 +141,7 @@ export function validateSession(token) {
     const parts = token.split('.');
     if (parts.length !== 3) return false;
     const [issued, nonce, sig] = parts;
-    if (!/^[0-9a-f]+$/.test(sig)) return false;
+    if (!/^[0-9a-f]+$/.test(sig) || revoked.has(nonce)) return false;
     // No time check: the signature alone decides. Sign out everywhere and a new
     // password change the epoch the signature is bound to, which ends it.
     const expected = sign(`${issued}.${nonce}`);
@@ -153,7 +183,7 @@ export function sessionCookie(token, { secure }) {
 
 export const clearCookie = () => `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`;
 
-const requestToken = (req) => parseCookies(req.headers.cookie || '')[COOKIE_NAME];
+export const requestToken = (req) => parseCookies(req.headers.cookie || '')[COOKIE_NAME];
 export const isAuthenticated = (req) => validateSession(requestToken(req));
 
 /** The caller's own valid session cookie sent again with a fresh lifetime, or null. */
@@ -209,6 +239,9 @@ const THROTTLE_FILE = path.join(CONF_DIR, 'login-throttle.json');
 const failures = new Map(); // client -> { count, first, lockedUntil }
 let globalFails = { count: 0, first: 0 };
 let inFlight = 0;
+let nextStart = 0; // during a burst, when the next password check may begin
+const MAX_WAIT_MS = 15_000;
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // The proxy's address on the stack network, refreshed in the background.
 let proxyAddresses = new Set();
@@ -225,14 +258,28 @@ setInterval(refreshProxyAddress, 60_000).unref?.();
 
 const bare = (ip) => String(ip || '').replace(/^::ffff:/, '');
 
+/**
+ * One IPv6 network counts as one client: anyone holding a /64 (the usual home or VPS
+ * allocation) can use any address in it, so keying on the full address would hand each
+ * guesser 2^64 fresh per-client allowances. IPv4 addresses are keyed as they are.
+ */
+export function throttleKey(ip) {
+    if (!ip.includes(':')) return ip;
+    const [head, tail = ''] = ip.split('::');
+    const left = head ? head.split(':') : [];
+    const right = ip.includes('::') && tail ? tail.split(':') : [];
+    const groups = ip.includes('::') ? [...left, ...Array(Math.max(0, 8 - left.length - right.length)).fill('0'), ...right] : left;
+    return `${groups.slice(0, 4).map((g) => (parseInt(g, 16) || 0).toString(16)).join(':')}::/64`;
+}
+
 export function clientKey(req) {
     const peer = bare(req.socket?.remoteAddress) || 'unknown';
-    if (!proxyAddresses.has(peer)) return peer;
+    if (!proxyAddresses.has(peer)) return throttleKey(peer);
     const xff = String(req.headers['x-forwarded-for'] || '')
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean);
-    return xff.length ? xff[xff.length - 1] : peer;
+    return throttleKey(bare(xff.length ? xff[xff.length - 1] : peer));
 }
 
 function loadLocks() {
@@ -290,9 +337,32 @@ export const recordLoginSuccess = (key) => {
     if (failures.delete(key)) saveLocks();
 };
 
-/** Runs `fn` if fewer than MAX_CONCURRENT checks are running; null when busy. */
+/** How far apart password checks start while the panel is seeing a burst of wrong answers. */
+function burstSpacing(now) {
+    if (now - globalFails.first > LOCK_MS) return 0;
+    const over = globalFails.count - GLOBAL_SLOW_AFTER;
+    return over > 0 ? Math.min(4500, over * 250) : 0;
+}
+
+/**
+ * Runs `fn` once a slot is free; null when the wait would be too long. In a burst the checks
+ * start one at a time, spaced out, so many requests in parallel guess no faster than one
+ * after another. Outside a burst a busy moment is waited out briefly rather than refused.
+ */
 export async function withLoginSlot(fn) {
-    if (inFlight >= MAX_CONCURRENT) return null;
+    const now = Date.now();
+    const spacing = burstSpacing(now);
+    if (spacing) {
+        const at = Math.max(now, nextStart);
+        if (at - now > MAX_WAIT_MS) return null;
+        nextStart = at + spacing;
+        if (at > now) await sleep(at - now);
+    }
+    const deadline = Date.now() + 5000;
+    while (inFlight >= MAX_CONCURRENT) {
+        if (Date.now() > deadline) return null;
+        await sleep(50);
+    }
     inFlight += 1;
     try {
         return await fn();

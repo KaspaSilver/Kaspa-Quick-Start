@@ -65,6 +65,9 @@ import {
     passwordUnusable,
     isAuthenticated,
     refreshedCookie,
+    requestToken,
+    revokeSession,
+    validateSession,
     issueSession,
     revokeAllSessions,
     sessionCookie,
@@ -142,6 +145,17 @@ async function readBody(req, limit = 512 * 1024) {
     }
 }
 
+// No other page may frame the panel. A same-site one (another port on this host, a sibling
+// name on its domain) could otherwise lay it under its own and steer clicks onto its
+// confirm dialogs. On every static answer, the index.html fallback included.
+const STATIC_HEADERS = {
+    'Cache-Control': 'no-cache',
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'same-origin',
+    'X-Frame-Options': 'DENY',
+    'Content-Security-Policy': "frame-ancestors 'none'",
+};
+
 function serveStatic(req, res, urlPath) {
     const rel = urlPath === '/' ? 'index.html' : urlPath.replace(/^\/+/, '');
     const file = path.resolve(PUBLIC_DIR, rel);
@@ -154,15 +168,13 @@ function serveStatic(req, res, urlPath) {
             // Unknown paths fall back to the single page app entry point.
             return fs.readFile(path.join(PUBLIC_DIR, 'index.html'), (err2, html) => {
                 if (err2) return fail(res, 404, 'Not found');
-                res.writeHead(200, { 'Content-Type': MIME['.html'] });
+                res.writeHead(200, { 'Content-Type': MIME['.html'], ...STATIC_HEADERS });
                 res.end(html);
             });
         }
         res.writeHead(200, {
             'Content-Type': MIME[path.extname(file)] || 'application/octet-stream',
-            'Cache-Control': 'no-cache',
-            'X-Content-Type-Options': 'nosniff',
-            'Referrer-Policy': 'same-origin',
+            ...STATIC_HEADERS,
         });
         res.end(data);
     });
@@ -180,7 +192,14 @@ function sse(req, res) {
         if (res.writableEnded) return;
         res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     };
-    const keepAlive = setInterval(() => !res.writableEnded && res.write(': ping\n\n'), 20_000);
+    // A stream outlives the request that opened it, so its session is checked again on every
+    // ping: Sign out everywhere or a new password ends open log and job streams too.
+    const token = requestToken(req);
+    const keepAlive = setInterval(() => {
+        if (res.writableEnded) return;
+        if (authRequired() && !validateSession(token)) return res.end();
+        res.write(': ping\n\n');
+    }, 20_000);
     const close = () => clearInterval(keepAlive);
     req.on('close', close);
     res.on('close', close);
@@ -513,9 +532,15 @@ route(
     { auth: false },
 );
 
-route('POST', /^\/api\/logout$/, async (req, res) => sendJson(res, 200, { ok: true }, { 'Set-Cookie': clearCookie() }), {
-    auth: false,
-});
+route(
+    'POST',
+    /^\/api\/logout$/,
+    async (req, res) => {
+        revokeSession(requestToken(req));
+        sendJson(res, 200, { ok: true }, { 'Set-Cookie': clearCookie() });
+    },
+    { auth: false },
+);
 
 // Ends every session on every browser, then signs this one back in (KQS-018). Changing the
 // password does the same by itself: sessions are bound to the stored hash.
@@ -4724,6 +4749,26 @@ async function handleRequest(req, res) {
         return fail(res, 400, 'Bad request');
     }
 
+    // Same-origin guard for state changes, ahead of everything (the KaChat mounts included,
+    // which strip Origin before the indexer could check it). SameSite=Strict still lets a
+    // same-site page send the cookie: another port on this host, or a sibling name on the
+    // domain the panel is published on. Origin and Sec-Fetch-Site tell those apart.
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+        const origin = req.headers.origin;
+        let sameHost = true;
+        if (origin) {
+            try {
+                sameHost = new URL(origin).host === req.headers.host;
+            } catch {
+                sameHost = false;
+            }
+        }
+        const site = req.headers['sec-fetch-site'];
+        if (!sameHost || (site && site !== 'same-origin' && site !== 'none')) {
+            return fail(res, 403, 'Cross-origin request refused.');
+        }
+    }
+
     // The embedded KaChat dashboard. Behind the same auth as everything else,
     // since it can delete indexed content.
     if (url.pathname === kachatProxy.MOUNT || url.pathname.startsWith(`${kachatProxy.MOUNT}/`)) {
@@ -4747,21 +4792,6 @@ async function handleRequest(req, res) {
     // none, so only the auth: false routes (session, login, first password) answer.
     if (match.auth && authRequired() && !isAuthenticated(req)) {
         return fail(res, 401, 'Not signed in.');
-    }
-
-    // Same-origin guard for state changes. The session cookie is SameSite=Strict
-    // already; this closes the gap for clients that ignore that.
-    if (['POST', 'PUT', 'DELETE'].includes(req.method)) {
-        const origin = req.headers.origin;
-        if (origin) {
-            let sameHost = false;
-            try {
-                sameHost = new URL(origin).host === req.headers.host;
-            } catch {
-                sameHost = false;
-            }
-            if (!sameHost) return fail(res, 403, 'Cross-origin request refused.');
-        }
     }
 
     try {

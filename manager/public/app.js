@@ -48,9 +48,12 @@ async function api(path, { method = 'GET', body, headers = {} } = {}) {
         /* empty body */
     }
     if (res.status === 401) {
+        // Signed out while the panel was open (Sign out everywhere, a new password): start
+        // the page over, so no stream, timer or secret it had loaded lives on behind the form.
+        if (!$('app').classList.contains('hidden')) location.reload();
         // With no password set yet, everything answers 401: stay on (or return to) the
         // set-password screen rather than offering a sign-in nobody can complete.
-        if (needsSetup) showFirstRun();
+        else if (needsSetup) showFirstRun();
         else showLogin();
         throw new Error('Not signed in.');
     }
@@ -197,7 +200,9 @@ $('login-form').addEventListener('submit', async (event) => {
 
 $('logout').addEventListener('click', async () => {
     await fetch('/api/logout', { method: 'POST' });
-    showLogin();
+    // A fresh page rather than hiding this one: its log streams, timers and anything it
+    // showed (a revealed key, the Nextcloud password) go with it.
+    location.reload();
 });
 
 // --- first run: set the admin password on the panel, not in the terminal ---
