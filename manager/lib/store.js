@@ -161,7 +161,8 @@ export function protectManagerConfig() {
 }
 
 export const loadProxies = () => readJson(PROXIES_FILE, []);
-export const saveProxies = (list) => writeJson(PROXIES_FILE, list);
+// Holds each host's basic-auth hash, so it is the panel's alone (conf/ is mounted into other containers).
+export const saveProxies = (list) => writeJson(PROXIES_FILE, list, { mode: 0o600 });
 
 export const loadDomains = () => readJson(DOMAINS_FILE, []);
 export const saveDomains = (list) => writeJson(DOMAINS_FILE, list);

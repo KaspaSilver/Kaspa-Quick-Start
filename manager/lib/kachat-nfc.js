@@ -190,6 +190,8 @@ const CALLS = {
     'POST /v1/card/secure': 120_000,
 };
 let busy = false;
+/** A card load or secure is going through the server helper right now. */
+export const writing = () => busy;
 
 /**
  * Passes one call to the server helper and hands back its status and body untouched. The body

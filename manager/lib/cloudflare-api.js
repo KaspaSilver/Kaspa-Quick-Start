@@ -89,7 +89,8 @@ export async function getTunnel(token, accountId, tunnelId) {
         const t = await call(token, 'GET', `/accounts/${accountId}/cfd_tunnel/${tunnelId}`);
         return t && !t.deleted_at ? { id: t.id, name: t.name } : null;
     } catch (err) {
-        if (err.status === 404 || err.status === 400) return null;
+        // Not found, or on an account this token has no access to: not ours to manage.
+        if (err.status === 404 || err.status === 400 || err.status === 403) return null;
         throw err;
     }
 }

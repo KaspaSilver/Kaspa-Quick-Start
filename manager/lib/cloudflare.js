@@ -311,7 +311,12 @@ export async function connect(rawToken, onLine = () => {}) {
     // The tunnel this machine already runs, made in the dashboard: keep it.
     const running = tokenInfo();
     if (running) {
-        const found = await cf.getTunnel(token, running.accountTag, running.tunnelId).catch(() => null);
+        // getTunnel answers null itself when this token can't see that tunnel. Any other error
+        // (Cloudflare busy, a timeout) stops here: falling through would replace a working
+        // tunnel with a new one that none of its names point at.
+        const found = await cf.getTunnel(token, running.accountTag, running.tunnelId).catch((err) => {
+            throw new Error(`Could not check the tunnel this machine runs (${err.message}). Nothing was changed; try Connect again.`);
+        });
         if (found) {
             accountId = running.accountTag;
             tunnel = { ...found, token: await cf.runToken(token, accountId, found.id), created: false, adopted: true };

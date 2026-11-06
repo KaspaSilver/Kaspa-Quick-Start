@@ -203,7 +203,9 @@ function sse(req, res) {
     const close = () => clearInterval(keepAlive);
     req.on('close', close);
     res.on('close', close);
-    return { send, onClose: (fn) => req.on('close', fn) };
+    // A caller that awaited something first may register after the browser already left;
+    // 'close' has fired by then and would never fire again, so run it at once.
+    return { send, onClose: (fn) => (req.destroyed || res.destroyed ? fn() : req.on('close', fn)) };
 }
 
 // -------------------------------------------------------------- apply logic --
@@ -2284,7 +2286,13 @@ route('GET', /^\/api\/kachat-nfc$/, async (req, res, match, url) => {
     sendJson(res, 200, { repo: kachatNfc.REPO, host, server, latest, github });
 });
 
+// Stopping, rebuilding or removing the helper mid-write leaves a card with its old software
+// erased and the new one not in yet, so none of them while a load or secure is running.
+const refuseWhileNfcWrites = (res) =>
+    kachatNfc.writing() ? (fail(res, 409, 'A card is being written right now. Wait for it to finish.'), true) : false;
+
 route('POST', /^\/api\/kachat-nfc\/server\/start$/, async (req, res) => {
+    if (refuseWhileNfcWrites(res)) return;
     if ((await kachatNfc.hostKind()) !== 'linux') {
         return fail(res, 409, 'This server runs Docker Desktop, which cannot reach USB. Install the helper on your computer instead.');
     }
@@ -2293,11 +2301,13 @@ route('POST', /^\/api\/kachat-nfc\/server\/start$/, async (req, res) => {
 });
 
 route('POST', /^\/api\/kachat-nfc\/server\/stop$/, async (req, res) => {
+    if (refuseWhileNfcWrites(res)) return;
     await kachatNfc.stopServerHelper();
     sendJson(res, 200, { ok: true });
 });
 
 route('POST', /^\/api\/kachat-nfc\/server\/remove$/, async (req, res) => {
+    if (refuseWhileNfcWrites(res)) return;
     const job = jobs.start('Remove the NFC helper', (onLine) => kachatNfc.removeServerHelper(onLine));
     sendJson(res, 202, { ok: true, jobId: job.id });
 });

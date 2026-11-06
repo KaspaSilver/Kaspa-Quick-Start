@@ -537,9 +537,12 @@ docker builder prune -f >/dev/null 2>&1 || true
 # The parent is mounted rather than the stack directory itself, because a bind
 # mount cannot delete its own mount point: mounted at itself, rm -rf empties the
 # directory but leaves it behind. Guarded exactly as uninstall.sh guards it, so
-# a directory that is not recognisably this install is never touched.
-if [ -f "/host/${base}/docker-compose.yml" ] || [ -f "/host/${base}/.env" ]; then
-  rm -rf "/host/${base}" && echo "Removed ${STACK_HOST}"
+# a directory that is not recognisably this install is never touched: the
+# .kqs-install marker install.sh writes, or (older installs) this stack's compose
+# file with the panel's source beside it. A shared folder given as --dir is not.
+d="/host/${base}"
+if [ -f "$d/.kqs-install" ] || { [ -d "$d/manager" ] && grep -qE 'kaspa-node|kaspa-one-click' "$d/docker-compose.yml" 2>/dev/null; }; then
+  rm -rf "$d" && echo "Removed ${STACK_HOST}"
 else
   echo "${STACK_HOST} does not look like a Kaspa node install, so leaving it alone."
 fi

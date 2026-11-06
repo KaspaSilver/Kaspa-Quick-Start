@@ -194,8 +194,11 @@ export { COOKIE_NAME };
 
 /** Password hash for nginx `auth_basic_user_file` ({SHA} is understood by nginx). */
 export function htpasswdLine(user, password) {
-    const digest = crypto.createHash('sha1').update(password).digest('base64');
-    return `${user}:{SHA}${digest}`;
+    // Salted ({SSHA}, which nginx reads natively), so two names with the same password do not
+    // share a hash and a precomputed table is no use. Lines saved before stay {SHA} and work.
+    const salt = crypto.randomBytes(8);
+    const digest = crypto.createHash('sha1').update(password).update(salt).digest();
+    return `${user}:{SSHA}${Buffer.concat([digest, salt]).toString('base64')}`;
 }
 
 /**

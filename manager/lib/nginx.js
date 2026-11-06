@@ -438,9 +438,14 @@ function renderLocations(ordered, nodeConfig, { namesOn = {} } = {}) {
             // The rewrite is what makes the prefix invisible to the service:
             // /borsh and /borsh/anything both arrive as / and /anything. A
             // proxy_pass with a URI cannot do both without doubling slashes.
-            lines.push(`    location ^~ ${path} {`);
-            lines.push(locationBlock(up, proxy, '        ', { strip: path, cors }));
-            lines.push('    }');
+            // Two locations, the path itself and everything under path/, because
+            // a bare prefix also takes /app.js and /apple-touch-icon.png from
+            // whatever serves the root of the name.
+            for (const loc of [`= ${path}`, `^~ ${path}/`]) {
+                lines.push(`    location ${loc} {`);
+                lines.push(locationBlock(up, proxy, '        ', { strip: path, cors }));
+                lines.push('    }');
+            }
         }
         lines.push('');
     }

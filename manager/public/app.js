@@ -3450,19 +3450,25 @@ async function pollDag() {
     // following it from there replays history a page a second, which at ten blocks a second
     // never catches up. Start again at the tip, as on the first poll.
     const paused = dag.lastAt != null && performance.now() - dag.lastAt > 5000;
-    if (paused && dag.next) {
+    // The other network's blocks are another chain: start over at its tip, as after a pause.
+    const switched = dag.net != null && dag.net !== networkView;
+    if ((paused && dag.next) || switched) {
         dag.next = null;
         dag.blocks.clear();
         dag.reds.clear();
         dag.arrivals = [];
         dag.view = null;
     }
+    const net = networkView;
+    dag.net = net;
     let r;
     try {
-        r = await api(`/api/dag/blocks?net=${networkView}${dag.next ? `&since=${dag.next}` : ''}`);
+        r = await api(`/api/dag/blocks?net=${net}${dag.next ? `&since=${dag.next}` : ''}`);
     } catch {
         return;
     }
+    // Switched while this was in flight: its blocks belong to the network just left.
+    if (net !== networkView) return;
     dag.lastAt = performance.now();
     if (!r?.available) {
         dag.blocks.clear();
@@ -6835,6 +6841,11 @@ function botCard(b, d) {
     const funded = st ? st.funded : bal != null && bal > 0.01;
     // Every bot is public: no owner, no pairing code, live as soon as it runs.
     const isFaq = b.type === 'faq';
+    // Written by the bot container, which talks to anyone on KaChat: numbers only, never markup.
+    const n = (v) => Number(v) || 0;
+    const stats = st?.stats
+        ? { answered: n(st.stats.answered), peopleToday: n(st.stats.peopleToday), active: n(st.stats.active), people: n(st.stats.people) }
+        : null;
     const stage = b.enabled === false ? 'off' : st?.stage || 'active';
     // Only once it has been funded: before that, step 1 already says to fund it.
     const low = funded && bal != null && bal < 0.25;
@@ -6848,8 +6859,8 @@ function botCard(b, d) {
           </label></span></div>
         ${st?.summary ? `<p><strong>${escapeHtml(st.summary)}</strong></p>` : ''}
         ${!funded ? '<p class="hint">Send it about 5 KAS to start: it pays for every message it sends.</p>' : ''}
-        ${isFaq && st?.stats ? `<p class="muted">${st.stats.answered} answers given, ${st.stats.peopleToday} ${st.stats.peopleToday === 1 ? 'person' : 'people'} asked today.</p>` : ''}
-        ${!isFaq && st?.stats ? `<p class="muted">${st.stats.active} ${st.stats.active === 1 ? 'person' : 'people'} set up${st.stats.people > st.stats.active ? `, ${st.stats.people - st.stats.active} still setting up` : ''}.</p>` : ''}
+        ${isFaq && stats ? `<p class="muted">${stats.answered} answers given, ${stats.peopleToday} ${stats.peopleToday === 1 ? 'person' : 'people'} asked today.</p>` : ''}
+        ${!isFaq && stats ? `<p class="muted">${stats.active} ${stats.active === 1 ? 'person' : 'people'} set up${stats.people > stats.active ? `, ${stats.people - stats.active} still setting up` : ''}.</p>` : ''}
         <div class="bot-wallet-row">
           <div class="bot-wallet-qr bot-qr" data-address="${escapeHtml(b.address)}"></div>
           <div>
@@ -10555,6 +10566,7 @@ $('nfc-server-restart').addEventListener('click', () => {
     startNfcServer();
 });
 $('nfc-server-leave').addEventListener('click', async () => {
+    if (nfc.busy) return toast('A card is being written right now. Wait for it to finish.');
     nfcRememberServer(false);
     nfc.via = null;
     await api('/api/kachat-nfc/server/stop', { method: 'POST' }).catch(() => {});
@@ -10562,6 +10574,7 @@ $('nfc-server-leave').addEventListener('click', async () => {
     nfcPoll();
 });
 $('nfc-server-remove').addEventListener('click', async () => {
+    if (nfc.busy) return toast('A card is being written right now. Wait for it to finish.');
     if (!(await askConfirm('Remove the NFC helper from this server?\n\nIts image is deleted and built again next time. No card is changed.'))) return;
     nfcRememberServer(false);
     await queueAction({
