@@ -7,10 +7,15 @@
  * crosses this boundary is JSON, and the panel's own KaChat screens are the
  * only thing that calls it.
  *
- * The indexer binds its admin port to loopback inside its container because it
- * is unauthenticated, so proxying from in here is also the only way to reach it
- * without publishing an open port on the host.
+ * kachat-admin has no login of its own and listens on the kaspa network
+ * (kachat/run-admin.sh binds 0.0.0.0:3081 so the panel can reach it), where
+ * every other container can reach it too. What protects it is ADMIN_TOKEN: the
+ * panel generates it (KACHAT_ADMIN_TOKEN in .env), compose hands it to both
+ * indexers, and only this proxy sends it, after the panel's own sign-in. Its
+ * port is never published on the host.
  */
+
+import { readEnvFile } from './store.js';
 
 const ADMIN_ORIGIN = process.env.KACHAT_ADMIN_ORIGIN || 'http://kachat-app:3081';
 export const MOUNT = '/kachat';
@@ -32,6 +37,8 @@ const HOP_BY_HOP = new Set([
     'content-encoding',
     'content-length',
 ]);
+
+const adminToken = () => String(readEnvFile().KACHAT_ADMIN_TOKEN || '').trim();
 
 export const handle = (req, res, url) => proxy(req, res, url, MOUNT, ADMIN_ORIGIN);
 export const handleTestnet = (req, res, url) => proxy(req, res, url, TESTNET_MOUNT, TESTNET_ADMIN_ORIGIN);
@@ -65,6 +72,8 @@ async function proxy(req, res, url, mount, origin) {
                 // has no business reaching the indexer.
                 ...(req.headers['content-type'] ? { 'content-type': req.headers['content-type'] } : {}),
                 ...(req.headers.accept ? { accept: req.headers.accept } : {}),
+                // Read live, so a token generated at boot is sent without a restart.
+                ...(adminToken() ? { 'x-admin-token': adminToken() } : {}),
             },
             body,
             redirect: 'manual',

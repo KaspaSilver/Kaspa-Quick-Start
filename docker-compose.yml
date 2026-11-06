@@ -147,6 +147,9 @@ services:
       SKI_PORT: 8500
       WEBSERVER_PORT: 3080
       ADMIN_PORT: 3081
+      # kachat-admin listens on the kaspa network (run-admin.sh) and has no login of its
+      # own, so every call must carry this token. Only the panel's KaChat proxy has it.
+      ADMIN_TOKEN: ${KACHAT_ADMIN_TOKEN:-}
       CHAT_API_PORT: 8600
       KASIA_INDEXER_DB_ROOT: /app/data
       KASIA_API_BIND: 0.0.0.0:8600
@@ -671,6 +674,9 @@ services:
       SKI_PORT: 8500
       WEBSERVER_PORT: 3080
       ADMIN_PORT: 3081
+      # kachat-admin listens on the kaspa network (run-admin.sh) and has no login of its
+      # own, so every call must carry this token. Only the panel's KaChat proxy has it.
+      ADMIN_TOKEN: ${KACHAT_ADMIN_TOKEN:-}
       CHAT_API_PORT: 8600
       KASIA_INDEXER_DB_ROOT: /app/data
       KASIA_API_BIND: 0.0.0.0:8600

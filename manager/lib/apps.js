@@ -524,6 +524,8 @@ export async function ensureSecrets(log = () => {}) {
     const need = {
         KACHAT_DB_PASSWORD: () => randomSecret(24),
         KACHAT_PUSH_SECRET: () => randomSecret(32),
+        // kachat-admin's shared token: the panel's KaChat proxy sends it on every call.
+        KACHAT_ADMIN_TOKEN: () => randomSecret(32),
         KACHAT_NAMES_DB_PASSWORD: () => randomSecret(24),
         KACHAT_NAMES_DB_PASSWORD_TESTNET: () => randomSecret(24),
         NEXTCLOUD_DB_PASSWORD: () => randomSecret(24),
