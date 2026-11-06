@@ -23,14 +23,21 @@ jobs:
       run:
         working-directory: desktop-installer
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # The job token can write releases; keep it out of .git/config, where
+          # every later step (npm install scripts included) could read it.
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20
 
+      # Exactly the versions in the committed package-lock.json: these builds are
+      # signed and notarized, so nothing may resolve differently from one tag to
+      # the next. Update the lockfile deliberately, in a commit.
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       # Import the Developer ID cert into a keychain WE control, rather than let
       # electron-builder create its own (its set-key-partition-list step fails on
