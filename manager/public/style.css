@@ -2976,6 +2976,10 @@ body.dag-fullscreen { overflow: hidden; }
     border-top: 1px solid var(--line);
 }
 .nc-file .nc-row-main { flex: 1 1 0; min-width: 0; }
+.nc-file-actions { flex: none; gap: 6px; margin: 0; }
+@media (max-width: 560px) {
+    .nc-file { flex-wrap: wrap; }
+}
 @media (max-width: 560px) {
     .nc-media-item { flex-wrap: wrap; }
     .nc-media-item > button { margin-left: 68px; }

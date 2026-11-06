@@ -562,6 +562,74 @@ export async function download(username, rel) {
     return { name: parts.at(-1), length: res.headers.get('content-length'), body: res.body };
 }
 
+const TRASH_PROPFIND = `<?xml version="1.0"?>
+<d:propfind xmlns:d="DAV:" xmlns:nc="http://nextcloud.org/ns">
+  <d:prop><nc:trashbin-original-location/><nc:trashbin-deletion-time/></d:prop>
+</d:propfind>`;
+
+/**
+ * Takes a just-deleted file out of Nextcloud's trash too. A delete otherwise
+ * sits there for up to 30 days, still counted against the account's space,
+ * and anyone with the account could put it back. True when it was found and
+ * removed; false when there was nothing to remove (the trash app is off).
+ */
+async function purgeFromTrash(user, auth, rel) {
+    const base = `${INTERNAL}/remote.php/dav/trashbin/${encodeURIComponent(user)}/trash/`;
+    const res = await deps.fetch(base, {
+        method: 'PROPFIND',
+        headers: { Authorization: auth, Depth: '1', 'Content-Type': 'application/xml' },
+        body: TRASH_PROPFIND,
+        signal: AbortSignal.timeout(30_000),
+    });
+    if (res.status === 404) return false;
+    if (res.status !== 207) throw new NextcloudError(`Nextcloud's trash answered ${res.status}.`, 502);
+    // The same path can be in the trash more than once; the newest is this one.
+    const match = (await res.text())
+        .split(/<[a-z]+:response>/i)
+        .slice(1)
+        .map((block) => ({
+            href: xmlText(block, 'href'),
+            from: xmlText(block, 'trashbin-original-location'),
+            at: Number(xmlText(block, 'trashbin-deletion-time')) || 0,
+        }))
+        .filter((t) => t.from === rel && t.href)
+        .sort((a, b) => b.at - a.at)[0];
+    if (!match) return false;
+    const gone = await deps.fetch(new URL(match.href, INTERNAL).href, {
+        method: 'DELETE',
+        headers: { Authorization: auth },
+        signal: AbortSignal.timeout(30_000),
+    });
+    if (!gone.ok && gone.status !== 404) throw new NextcloudError(`Nextcloud's trash answered ${gone.status}.`, 502);
+    return true;
+}
+
+/**
+ * Deletes one file for good: out of the account and out of its trash. Any
+ * public link to it stops working, for everyone who has it. Files only: a
+ * folder is what the apps put their files in, and the list shows its files
+ * one by one.
+ */
+export async function deleteFile(username, rel) {
+    const user = checkUsername(username);
+    const parts = checkPath(rel);
+    const path = parts.join('/');
+    const item = (await listFolder(user, parts.slice(0, -1)))?.find((i) => i.path === path);
+    if (!item) throw new NextcloudError('No such file.', 404);
+    if (item.folder) throw new NextcloudError('Only files can be deleted here, one at a time.');
+    const auth = basicAuth(user, await ensurePanelToken(user));
+    const res = await deps.fetch(davUrl(user, parts), {
+        method: 'DELETE',
+        headers: { Authorization: auth },
+        signal: AbortSignal.timeout(60_000),
+    });
+    if (res.status === 404) throw new NextcloudError('No such file.', 404);
+    if (!res.ok) throw new NextcloudError(`Nextcloud answered ${res.status}.`, 502);
+    // Deleted either way; only the trash copy is in question.
+    const purged = await purgeFromTrash(user, auth, path).catch(() => null);
+    return { deleted: path, purged };
+}
+
 // ----------------------------------------------------------------- status ---
 
 export const isInstalled = () => Boolean(config().setUpAt);

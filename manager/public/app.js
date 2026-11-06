@@ -4502,7 +4502,10 @@ async function loadNextcloudFiles() {
                                 <span class="nc-row-title">${escapeHtml(f.name)}</span>
                                 <span class="muted">${fmtSize(f.size)}${f.modified ? ` · ${ncAgo(f.modified)}` : ''}${note ? ` · ${escapeHtml(note)}` : ''}</span>
                             </div>
-                            <button type="button" class="ghost" data-nc-download="${escapeHtml(href(f))}">Download</button>
+                            <div class="row nc-file-actions">
+                                <button type="button" class="ghost" data-nc-download="${escapeHtml(href(f))}">Download</button>
+                                <button type="button" class="ghost danger" data-nc-delete="${escapeHtml(f.path)}" data-nc-delete-user="${escapeHtml(user)}" data-nc-delete-shared="${f.shared ? '1' : ''}">Delete</button>
+                            </div>
                         </div>`;
                     })
                     .join('');
@@ -4545,6 +4548,36 @@ $('tab-nextcloud').addEventListener('click', async (event) => {
             toast(e.message, 'bad');
         }
         return loadNextcloud();
+    }
+    const del = event.target.closest('[data-nc-delete]');
+    if (del) {
+        const path = del.dataset.ncDelete;
+        const name = path.split('/').pop();
+        // What losing this one file means, in the words of the apps that use it.
+        const what = /(^|\/)kachat-contacts\.json$/i.test(path)
+            ? ' KaChat and KaPay lose their contacts backup until one of them saves it again.'
+            : /portfolio/i.test(path) && /\.json$/i.test(path)
+              ? ' KaPay loses its portfolio backup until it saves it again.'
+              : /(^|\/)kachat-backup\.json$/i.test(path)
+                ? ' KaChat loses this backup until it saves it again.'
+                : '';
+        const link = del.dataset.ncDeleteShared ? ' Its link stops working for everyone who has it, including in chats already sent.' : '';
+        const sure = await askConfirm(
+            `Delete ${name}?\n\nIt is deleted for good: it does not go to Nextcloud's trash, and it cannot be got back.${what}${link}`,
+        );
+        if (!sure) return;
+        del.disabled = true;
+        try {
+            await api(`/api/nextcloud/accounts/${encodeURIComponent(del.dataset.ncDeleteUser)}/file?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
+            toast(`Deleted ${name}.`);
+        } catch (e) {
+            toast(e.message, 'bad');
+            del.disabled = false;
+            return;
+        }
+        loadNextcloudFiles();
+        loadNextcloud();
+        return;
     }
     const download = event.target.closest('[data-nc-download]');
     if (download) {

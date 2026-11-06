@@ -368,7 +368,8 @@ does everything, so Nextcloud's own pages are never needed:
 - **Shared media**: every link an account has made, with thumbnails, and Stop
   sharing, which KaChat itself cannot do.
 - **KaChat folder**: every file the two apps have backed up (contacts and
-  portfolio backups, sent media), read live, each one downloadable.
+  portfolio backups, sent media), read live, each one downloadable, and
+  deletable one at a time (for good, not to Nextcloud's trash).
 - **Accounts**: one per person, each with its own space.
 - **Calls**: Talk is installed and given public STUN servers, so calls connect
   with no port opened anywhere. A TURN relay is not set up.

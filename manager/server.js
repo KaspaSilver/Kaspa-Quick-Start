@@ -3461,6 +3461,8 @@ route('GET', /^\/api\/nextcloud\/accounts\/([a-z0-9._-]+)\/file$/, async (req, r
     Readable.fromWeb(file.body).on('error', () => res.destroy()).pipe(res);
 });
 
+route('DELETE', /^\/api\/nextcloud\/accounts\/([a-z0-9._-]+)\/file$/, nextcloudTry((req, res, m, url) => nextcloud.deleteFile(m[1], url.searchParams.get('path'))));
+
 // -------------------------------------------------------- admin password --
 
 /** What the renderer needs besides the proxy hosts. */
