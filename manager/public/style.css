@@ -994,6 +994,20 @@ table.instances td:last-child { width: 40px; text-align: right; }
 }
 .install-gate-card h3 { margin-top: 0; }
 .install-gate-card p { margin-bottom: 18px; }
+/* KasSigner's Factory reset needs nothing installed: it is how somebody done
+   with KasSigner, or who never installed it here, gets the board back. So its
+   tab bar stays usable, and that one screen is never covered. */
+#tab-kassigner.not-installed > .subnav,
+#tab-kassigner.not-installed.factory-open > *:not(.install-gate) {
+    filter: none;
+    opacity: 1;
+    pointer-events: auto;
+    user-select: auto;
+}
+#tab-kassigner.not-installed > .subnav { position: relative; z-index: 4; }
+#tab-kassigner.factory-open > .install-gate { display: none; }
+/* A full SHA-256 is one 64-character word; let it wrap inside the card. */
+.board-card .hash { overflow-wrap: anywhere; }
 
 /* Anything that installs, starts, stops or removes a container takes the whole
    screen while it runs.

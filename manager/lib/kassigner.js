@@ -339,6 +339,10 @@ export async function uninstall(onLine = () => {}) {
     } else {
         onLine('No firmware was downloaded.');
     }
+    if (fs.existsSync(FACTORY_DIR)) {
+        fs.rmSync(FACTORY_DIR, { recursive: true, force: true });
+        onLine('Deleted the factory firmware kept for restoring a board.');
+    }
 
     try {
         await docker(['image', 'rm', '-f', ESPTOOL_IMAGE], { timeoutMs: 60_000 });
@@ -505,4 +509,151 @@ export async function flash({ port, board, image = 'full', onLine = () => {} }) 
     onLine('Done. The board reboots into the firmware on its own.');
     onLine('A released build closes its USB port a second or two after booting. That is the firmware working, not a failed write.');
     return { ok: true, port, board, image, sha256: actual };
+}
+
+// -------------------------------------------------------------- factory ----
+
+/**
+ * The software a board came with, for putting it back the way it was bought.
+ *
+ * M5Stack publishes its factory demo through M5Burner, whose catalogue gives a
+ * download and no hash. So the file is pinned here with the SHA-256 it had when
+ * this was added, and the same rule as the KasSigner images applies: no match,
+ * nothing written. If M5Stack replaces the file, restoring stops until someone
+ * has looked at the new one, which is the right failure for a tool that erases
+ * a board.
+ *
+ * Only the M5Stack board so far. Waveshare does not publish its factory image
+ * anywhere a hash could be pinned against.
+ */
+export const FACTORY = {
+    m5stack: {
+        label: 'M5Stack CoreS3 SE',
+        name: 'CoreS3SE UserDemo v0.6',
+        publisher: 'M5Stack, through M5Burner',
+        publishedAt: '2024-05-24',
+        url: 'https://m5burner-cdn.m5stack.com/firmware/fed93812db65b5347b706d1f237021b9.bin',
+        file: 'm5stack-cores3se-userdemo-v0.6.bin',
+        sha256: 'c6990a38bd3c42ab85ad77d377ebf47118b43a126c7623022e102f9f4d60063a',
+    },
+};
+
+// Beside the KasSigner firmware rather than in it: a firmware folder with
+// anything in it is what counts as KasSigner being installed (lifecycle.js), and
+// fetching this to get rid of KasSigner should not install it.
+const FACTORY_DIR = path.join(CONF_DIR, 'kassigner-factory');
+
+async function fetchFactory(image, onLine) {
+    const file = path.join(FACTORY_DIR, image.file);
+    if (fs.existsSync(file) && (await sha256(file)) === image.sha256) {
+        onLine(`${image.file} already here and verified.`);
+        return file;
+    }
+
+    onLine(`Downloading ${image.name} from ${image.publisher}...`);
+    fs.mkdirSync(FACTORY_DIR, { recursive: true });
+    const res = await fetch(image.url, { headers: { 'User-Agent': ghHeaders['User-Agent'] }, signal: AbortSignal.timeout(300_000) });
+    if (!res.ok) throw new Error(`Download failed with ${res.status}.`);
+    fs.writeFileSync(file, Buffer.from(await res.arrayBuffer()));
+
+    const actual = await sha256(file);
+    if (actual !== image.sha256) {
+        fs.unlinkSync(file);
+        throw new Error(
+            `${image.name} does not match the hash pinned for it. Expected ${image.sha256.slice(0, 16)}…, got ${actual.slice(0, 16)}…. ` +
+                'The file has been deleted and nothing was written to any device.',
+        );
+    }
+    onLine(`${image.file} verified.`);
+    return file;
+}
+
+/**
+ * Erases the whole board and writes the factory image back.
+ *
+ * Erasing everything rather than writing over the top, so nothing of KasSigner
+ * is left behind in a partition the factory layout does not use.
+ *
+ * A board someone has run the KasSigner eFuse runbook on cannot go back: Secure
+ * Boot is burned in for good and the factory image is not signed with their
+ * key, so it would never start. So the board's security state is read first,
+ * which changes nothing, and the erase only happens if it is clear. esptool's
+ * own refusal (no --force is ever passed) stays behind that as a second guard,
+ * but it is skipped in Secure Download Mode, which is why it is not the only one.
+ */
+export async function restoreFactory({ port, board, onLine = () => {} }) {
+    if (!PORT_RE.test(port)) throw new Error(`"${port}" is not a serial port this can write to.`);
+    const image = FACTORY[board];
+    if (!image) throw new Error('There is no factory firmware for that board here.');
+
+    const file = await fetchFactory(image, onLine);
+    // Again, right before writing, as flash() does.
+    if ((await sha256(file)) !== image.sha256) {
+        throw new Error('The factory firmware on disk no longer matches its hash. Nothing was written.');
+    }
+
+    await ensureEsptool(onLine);
+
+    const esptool = (args) => [
+        'run',
+        '--rm',
+        '--device',
+        `${port}:${port}`,
+        '-v',
+        `${hostPath('conf/kassigner-factory')}:/fw:ro`,
+        ESPTOOL_IMAGE,
+        'python',
+        '-m',
+        'esptool',
+        '--chip',
+        'esp32s3',
+        '--port',
+        port,
+        ...args,
+    ];
+
+    onLine(`Reading the security settings on ${port}. This changes nothing.`);
+    // --after no_reset leaves it in download mode for the write. Reset, a
+    // released KasSigner would boot and close its USB port again.
+    const { stdout } = await docker(esptool(['--after', 'no_reset', 'get_security_info']), { onLine, timeoutMs: 2 * 60_000 });
+    const locked = [
+        [/Secure Download Mode/i, 'Secure Download Mode'],
+        [/Secure Boot: Enabled/i, 'Secure Boot'],
+        [/Flash Encryption: Enabled/i, 'flash encryption'],
+    ].filter(([re]) => re.test(stdout)).map(([, name]) => name);
+    if (locked.length) {
+        throw new Error(
+            `This board has ${locked.join(' and ')} burned into its eFuses, from the KasSigner eFuse runbook. eFuses ` +
+                'cannot be undone and the factory firmware is not signed with your key, so it would never start. ' +
+                'Nothing was erased. This board can only run firmware signed with that key from now on.',
+        );
+    }
+    if (!/Secure Boot: Disabled/i.test(stdout)) {
+        throw new Error('Could not read the security settings on this board, so it was left alone. Nothing was erased.');
+    }
+    onLine('No Secure Boot or flash encryption. Safe to restore.');
+    onLine('');
+
+    onLine(`Erasing ${port} and writing ${image.name} for the ${image.label} at 0x0.`);
+    onLine(`SHA-256 ${image.sha256}`);
+
+    let securityRefused = false;
+    try {
+        await docker(esptool(['--baud', '460800', 'write_flash', '--erase-all', '0x0', `/fw/${image.file}`]), {
+            onLine: (line) => {
+                if (/Active security features detected|Secure Boot detected/.test(line)) securityRefused = true;
+                onLine(line);
+            },
+            timeoutMs: 20 * 60_000,
+        });
+    } catch (err) {
+        if (securityRefused) {
+            throw new Error('esptool found security features on this board and refused to erase it. Nothing was erased.');
+        }
+        throw err;
+    }
+
+    onLine(`Done. The board restarts into ${image.name}, as it came from ${image.label.split(' ')[0]}.`);
+    onLine('Nothing of KasSigner is left on it.');
+    return { ok: true, port, board, sha256: image.sha256 };
 }

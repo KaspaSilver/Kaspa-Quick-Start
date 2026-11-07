@@ -3054,6 +3054,7 @@
         <button class="subtab-btn active" data-subtab="kassigner-setup">Setup</button>
         <button class="subtab-btn" data-subtab="kassigner-updates">Updates</button>
         <button class="subtab-btn" data-subtab="kassigner-verify">Verify</button>
+        <button class="subtab-btn" data-subtab="kassigner-factory">Factory reset</button>
         <button class="subtab-btn" data-subtab="kassigner-uninstall">Uninstall</button>
       </nav>
 
@@ -3161,6 +3162,53 @@
         </div>
       </div>
     
+      <div id="sub-kassigner-factory" class="subtab">
+        <div class="grid">
+          <article class="card span2">
+            <h3>Put the original software back</h3>
+            <p class="muted">
+              Erases the whole board and writes the software it came with from
+              the shop, so it is the same as when you unboxed it. KasSigner is
+              removed completely. Use this to give the board away, use it for
+              something else, or start over.
+            </p>
+            <div id="kassigner-factory-boards"></div>
+            <p class="hint">
+              If you ran the KasSigner eFuse runbook on this board, it cannot go
+              back: Secure Boot is burned in for good and the factory software is
+              not signed with your key. The panel reads the board's security
+              settings first and stops without erasing anything if so.
+            </p>
+          </article>
+
+          <article class="card span2" id="kassigner-factory-plug" hidden>
+            <div class="node-head">
+              <h3>Plug it in</h3>
+              <span id="kassigner-factory-chosen" class="tag"></span>
+            </div>
+            <p class="muted">
+              Connect it over USB. If KasSigner is on it, hold the reset button
+              for about three seconds, until the green light comes on, so it comes
+              up ready to be written to. KasSigner closes its USB port a second
+              after starting, so the board will not show up otherwise.
+            </p>
+            <div class="row">
+              <button type="button" id="kassigner-factory-detect" class="primary">Look for it</button>
+              <span class="muted" id="kassigner-factory-detect-note"></span>
+            </div>
+            <div id="kassigner-factory-devices"></div>
+
+            <div id="kassigner-factory-run" hidden>
+              <div class="node-head">
+                <h3>Restoring</h3>
+                <span id="kassigner-factory-state" class="tag">working</span>
+              </div>
+              <pre id="kassigner-factory-log" class="logview"></pre>
+            </div>
+          </article>
+        </div>
+      </div>
+
       <div id="sub-kassigner-uninstall" class="subtab">
         <div class="grid">
           <article class="card span2 uninstall-card" data-uninstall="kassigner"></article>

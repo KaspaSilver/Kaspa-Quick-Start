@@ -2393,6 +2393,7 @@ route('GET', /^\/api\/kassigner$/, async (req, res) => {
         state,
         repo: kassigner.REPO,
         boards: kassigner.BOARDS,
+        factory: kassigner.FACTORY,
     });
 });
 
@@ -2446,6 +2447,21 @@ route('POST', /^\/api\/kassigner\/flash$/, async (req, res) => {
 
     const job = jobs.start(`Write firmware to ${body.port}`, (onLine) =>
         kassigner.flash({ port: body.port, board: body.board, image: body.image || 'full', onLine }),
+    );
+    sendJson(res, 202, { ok: true, jobId: job.id });
+});
+
+/**
+ * Puts a board back to the software it shipped with. Not gated on KasSigner
+ * being switched on: somebody done with it should not have to download every
+ * KasSigner image first just to be rid of it.
+ */
+route('POST', /^\/api\/kassigner\/factory-restore$/, async (req, res) => {
+    const body = await readBody(req);
+    if (!kassigner.FACTORY[body.board]) return fail(res, 400, 'There is no factory firmware for that board here.');
+
+    const job = jobs.start(`Restore factory firmware to ${body.port}`, (onLine) =>
+        kassigner.restoreFactory({ port: body.port, board: body.board, onLine }),
     );
     sendJson(res, 202, { ok: true, jobId: job.id });
 });

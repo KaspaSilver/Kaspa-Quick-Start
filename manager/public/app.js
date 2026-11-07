@@ -849,6 +849,9 @@ function selectSubtab(section, name) {
     for (const panel of section.querySelectorAll(':scope > .subtab')) {
         panel.classList.toggle('active', panel.id === `sub-${name}`);
     }
+    // KasSigner's Factory reset is open whether or not KasSigner is installed
+    // (style.css): it is how somebody done with it gets the board back.
+    if (section.id === 'tab-kassigner') section.classList.toggle('factory-open', name === 'kassigner-factory');
     // A log card only streams while it is on screen.
     syncSvcLog();
     // The world map is fetched the first time "Am I public?" is opened.
@@ -5983,11 +5986,13 @@ $('tab-kachat').addEventListener('click', async (event) => {
 let kassignerState = null;
 let kassignerBoards = {};
 let chosenBoard = null;
+let kassignerFactory = {};
 
 async function loadKassigner() {
     const r = await api('/api/kassigner');
     kassignerState = r.state;
     kassignerBoards = r.boards;
+    kassignerFactory = r.factory || {};
 
     const on = Boolean(r.state.enabled);
     const tag = $('kassigner-state');
@@ -6008,6 +6013,7 @@ async function loadKassigner() {
         : 'Nothing downloaded yet.';
 
     renderKassignerBoards();
+    renderKassignerFactory();
     // Choosing a board only makes sense once the firmware is actually here.
     $('kassigner-step-board').hidden = !on;
 }
@@ -6077,8 +6083,8 @@ $('kassigner-detect').addEventListener('click', async () => {
     }
 });
 
-function renderKassignerDevices(devices) {
-    const box = $('kassigner-devices');
+/** The serial ports found, each with one button; Setup and Factory reset differ only in the button. */
+function renderSerialDevices(box, devices, button, hint) {
     if (!devices.length) {
         box.innerHTML =
             '<p class="verdict">No serial device is connected. Check the cable is a data cable rather than charge-only, ' +
@@ -6094,15 +6100,21 @@ function renderKassignerDevices(devices) {
                   <td class="muted">${escapeHtml(d.id || 'no identifier')}${
                       d.looksLikeEsp32 ? ' <span class="tag ok">looks right</span>' : ''
                   }</td>
-                  <td><button type="button" class="primary" data-flash="${escapeHtml(d.port)}">Write firmware</button></td>
+                  <td>${button(d.port)}</td>
                 </tr>`,
             )
             .join('')}</tbody></table></div>
-        <p class="hint">
-          Writing replaces everything on the board. It does not touch a seed,
-          because a KasSigner never stores one: keys live in RAM and are gone at
-          power-off.
-        </p>`;
+        <p class="hint">${hint}</p>`;
+}
+
+function renderKassignerDevices(devices) {
+    renderSerialDevices(
+        $('kassigner-devices'),
+        devices,
+        (port) => `<button type="button" class="primary" data-flash="${escapeHtml(port)}">Write firmware</button>`,
+        'Writing replaces everything on the board. It does not touch a seed, because a KasSigner never stores one: ' +
+            'keys live in RAM and are gone at power-off.',
+    );
 }
 
 $('kassigner-devices').addEventListener('click', async (event) => {
@@ -6140,6 +6152,110 @@ $('kassigner-devices').addEventListener('click', async (event) => {
         inlineJob = null;
         panel.hidden = true;
         for (const b of document.querySelectorAll('[data-flash]')) b.disabled = false;
+        toast(e.message, 'bad');
+    }
+});
+
+// --- factory reset ---
+
+/**
+ * Putting a board back to what it shipped with. Separate from Setup because it
+ * is the opposite of it, and not gated on KasSigner being switched on: somebody
+ * finished with KasSigner should not need its firmware downloaded to be rid of it.
+ */
+let factoryBoard = null;
+
+function renderKassignerFactory() {
+    const entries = Object.entries(kassignerFactory);
+    $('kassigner-factory-boards').innerHTML = entries.length
+        ? `<div class="grid">${entries
+              .map(
+                  ([key, f]) => `<article class="card board-card">
+                    <h3>${escapeHtml(f.label)}</h3>
+                    <p class="muted">${escapeHtml(f.name)}, published by ${escapeHtml(f.publisher)} on ${escapeHtml(f.publishedAt)}.</p>
+                    <p class="hint mono hash">SHA-256 ${escapeHtml(f.sha256)}</p>
+                    <div class="row"><button type="button" class="primary" data-factory-board="${escapeHtml(key)}">Restore this one</button></div>
+                  </article>`,
+              )
+              .join('')}
+              <article class="card board-card soon">
+                <h3>Waveshare</h3>
+                <p class="muted">Not yet. Waveshare does not publish its factory software anywhere it can be checked against a hash.</p>
+              </article></div>`
+        : '<p class="verdict">No factory firmware is available here.</p>';
+}
+
+$('kassigner-factory-boards').addEventListener('click', (event) => {
+    const key = event.target.dataset?.factoryBoard;
+    if (!key) return;
+    factoryBoard = key;
+    $('kassigner-factory-plug').hidden = false;
+    $('kassigner-factory-chosen').textContent = kassignerFactory[key].label;
+    $('kassigner-factory-devices').innerHTML = '';
+    $('kassigner-factory-detect-note').textContent = '';
+    $('kassigner-factory-plug').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+
+$('kassigner-factory-detect').addEventListener('click', async () => {
+    const button = $('kassigner-factory-detect');
+    const note = $('kassigner-factory-detect-note');
+    button.disabled = true;
+    note.textContent = 'Looking at the USB ports…';
+    try {
+        const { devices } = await api('/api/kassigner/devices');
+        renderSerialDevices(
+            $('kassigner-factory-devices'),
+            devices,
+            (port) => `<button type="button" class="danger" data-factory-port="${escapeHtml(port)}">Erase and restore</button>`,
+            'Everything on the board is erased first. KasSigner never stores a seed on the board, so nothing is lost ' +
+                'that power-off would not already have cleared.',
+        );
+        note.textContent = devices.length ? `${devices.length} serial device${devices.length === 1 ? '' : 's'} found.` : 'Nothing there yet.';
+    } catch (e) {
+        note.textContent = '';
+        toast(e.message, 'bad');
+    } finally {
+        button.disabled = false;
+    }
+});
+
+$('kassigner-factory-devices').addEventListener('click', async (event) => {
+    const port = event.target.dataset?.factoryPort;
+    if (!port || !factoryBoard) return;
+    const f = kassignerFactory[factoryBoard];
+    if (
+        !await askConfirm(
+            `Erase ${port} and restore the factory software?\n\n` +
+                `Board: ${f.label}\nSoftware: ${f.name}\n\n` +
+                'Everything on the board is erased, KasSigner included. To use it as a KasSigner again, write the firmware from Setup.',
+        )
+    ) {
+        return;
+    }
+    const panel = $('kassigner-factory-run');
+    const state = $('kassigner-factory-state');
+    const buttons = () => document.querySelectorAll('[data-factory-port]');
+    panel.hidden = false;
+    state.textContent = 'working';
+    state.className = 'tag';
+    for (const b of buttons()) b.disabled = true;
+
+    claimJob('Restore factory firmware', {
+        el: $('kassigner-factory-log'),
+        state,
+        onEnd: (job) => {
+            state.textContent = job.status === 'succeeded' ? 'done' : 'failed';
+            state.className = `tag ${job.status === 'succeeded' ? 'ok' : 'off'}`;
+            for (const b of buttons()) b.disabled = false;
+        },
+    });
+
+    try {
+        await api('/api/kassigner/factory-restore', { method: 'POST', body: { port, board: factoryBoard } });
+    } catch (e) {
+        inlineJob = null;
+        panel.hidden = true;
+        for (const b of buttons()) b.disabled = false;
         toast(e.message, 'bad');
     }
 });
