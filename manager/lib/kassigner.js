@@ -653,7 +653,7 @@ export async function restoreFactory({ port, board, onLine = () => {} }) {
         throw err;
     }
 
-    onLine(`Done. The board restarts into ${image.name}, as it came from ${image.label.split(' ')[0]}.`);
+    onLine(`Done. The board restarts into its factory software, as it came from ${image.label.split(' ')[0]}.`);
     onLine('Nothing of KasSigner is left on it.');
     return { ok: true, port, board, sha256: image.sha256 };
 }

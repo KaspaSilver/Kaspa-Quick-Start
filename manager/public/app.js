@@ -6162,39 +6162,21 @@ $('kassigner-devices').addEventListener('click', async (event) => {
  * Putting a board back to what it shipped with. Separate from Setup because it
  * is the opposite of it, and not gated on KasSigner being switched on: somebody
  * finished with KasSigner should not need its firmware downloaded to be rid of it.
+ *
+ * Scan and restore, with no board to pick: only the M5Stack has a factory image
+ * here. Nor could the panel pick for you -- the M5Stack and the Waveshare both
+ * use the ESP32-S3's own USB port and announce themselves identically.
  */
-let factoryBoard = null;
+const factoryBoard = () => Object.keys(kassignerFactory)[0] ?? null;
 
 function renderKassignerFactory() {
-    const entries = Object.entries(kassignerFactory);
-    $('kassigner-factory-boards').innerHTML = entries.length
-        ? `<div class="grid">${entries
-              .map(
-                  ([key, f]) => `<article class="card board-card">
-                    <h3>${escapeHtml(f.label)}</h3>
-                    <p class="muted">${escapeHtml(f.name)}, published by ${escapeHtml(f.publisher)} on ${escapeHtml(f.publishedAt)}.</p>
-                    <p class="hint mono hash">SHA-256 ${escapeHtml(f.sha256)}</p>
-                    <div class="row"><button type="button" class="primary" data-factory-board="${escapeHtml(key)}">Restore this one</button></div>
-                  </article>`,
-              )
-              .join('')}
-              <article class="card board-card soon">
-                <h3>Waveshare</h3>
-                <p class="muted">Not yet. Waveshare does not publish its factory software anywhere it can be checked against a hash.</p>
-              </article></div>`
-        : '<p class="verdict">No factory firmware is available here.</p>';
+    const f = kassignerFactory[factoryBoard()];
+    $('kassigner-factory-detect').disabled = !f;
+    $('kassigner-factory-about').textContent = f
+        ? `For the ${f.label}: M5Stack's factory firmware (${f.name}, ${f.publishedAt}), SHA-256 ${f.sha256}. ` +
+          'Waveshare boards are not covered yet: Waveshare does not publish its factory software anywhere it can be checked against a hash.'
+        : 'No factory firmware is available here.';
 }
-
-$('kassigner-factory-boards').addEventListener('click', (event) => {
-    const key = event.target.dataset?.factoryBoard;
-    if (!key) return;
-    factoryBoard = key;
-    $('kassigner-factory-plug').hidden = false;
-    $('kassigner-factory-chosen').textContent = kassignerFactory[key].label;
-    $('kassigner-factory-devices').innerHTML = '';
-    $('kassigner-factory-detect-note').textContent = '';
-    $('kassigner-factory-plug').scrollIntoView({ behavior: 'smooth', block: 'start' });
-});
 
 $('kassigner-factory-detect').addEventListener('click', async () => {
     const button = $('kassigner-factory-detect');
@@ -6221,13 +6203,14 @@ $('kassigner-factory-detect').addEventListener('click', async () => {
 
 $('kassigner-factory-devices').addEventListener('click', async (event) => {
     const port = event.target.dataset?.factoryPort;
-    if (!port || !factoryBoard) return;
-    const f = kassignerFactory[factoryBoard];
+    const board = factoryBoard();
+    if (!port || !board) return;
+    const f = kassignerFactory[board];
     if (
         !await askConfirm(
-            `Erase ${port} and restore the factory software?\n\n` +
-                `Board: ${f.label}\nSoftware: ${f.name}\n\n` +
-                'Everything on the board is erased, KasSigner included. To use it as a KasSigner again, write the firmware from Setup.',
+            `Erase ${port} and restore the ${f.label} factory software?\n\n` +
+                'Only for the M5Stack. Everything on the board is erased, KasSigner included. ' +
+                'To use it as a KasSigner again, write the firmware from Setup.',
         )
     ) {
         return;
@@ -6251,7 +6234,7 @@ $('kassigner-factory-devices').addEventListener('click', async (event) => {
     });
 
     try {
-        await api('/api/kassigner/factory-restore', { method: 'POST', body: { port, board: factoryBoard } });
+        await api('/api/kassigner/factory-restore', { method: 'POST', body: { port, board } });
     } catch (e) {
         inlineJob = null;
         panel.hidden = true;

@@ -3171,28 +3171,14 @@
               removed completely. Use this to give the board away, use it for
               something else, or start over.
             </p>
-            <div id="kassigner-factory-boards"></div>
-            <p class="hint">
-              If you ran the KasSigner eFuse runbook on this board, it cannot go
-              back: Secure Boot is burned in for good and the factory software is
-              not signed with your key. The panel reads the board's security
-              settings first and stops without erasing anything if so.
-            </p>
-          </article>
-
-          <article class="card span2" id="kassigner-factory-plug" hidden>
-            <div class="node-head">
-              <h3>Plug it in</h3>
-              <span id="kassigner-factory-chosen" class="tag"></span>
-            </div>
             <p class="muted">
-              Connect it over USB. If KasSigner is on it, hold the reset button
-              for about three seconds, until the green light comes on, so it comes
-              up ready to be written to. KasSigner closes its USB port a second
-              after starting, so the board will not show up otherwise.
+              Plug it in over USB. If KasSigner is on it, hold the reset button
+              for about three seconds, until the green light comes on: KasSigner
+              closes its USB port a second after starting, so the board will not
+              show up otherwise. Then scan.
             </p>
             <div class="row">
-              <button type="button" id="kassigner-factory-detect" class="primary">Look for it</button>
+              <button type="button" id="kassigner-factory-detect" class="primary">Scan</button>
               <span class="muted" id="kassigner-factory-detect-note"></span>
             </div>
             <div id="kassigner-factory-devices"></div>
@@ -3204,6 +3190,14 @@
               </div>
               <pre id="kassigner-factory-log" class="logview"></pre>
             </div>
+
+            <p class="hint" id="kassigner-factory-about"></p>
+            <p class="hint">
+              If you ran the KasSigner eFuse runbook on this board, it cannot go
+              back: Secure Boot is burned in for good and the factory software is
+              not signed with your key. The panel reads the board's security
+              settings first and stops without erasing anything if so.
+            </p>
           </article>
         </div>
       </div>

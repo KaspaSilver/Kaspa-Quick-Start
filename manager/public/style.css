@@ -1006,8 +1006,8 @@ table.instances td:last-child { width: 40px; text-align: right; }
 }
 #tab-kassigner.not-installed > .subnav { position: relative; z-index: 4; }
 #tab-kassigner.factory-open > .install-gate { display: none; }
-/* A full SHA-256 is one 64-character word; let it wrap inside the card. */
-.board-card .hash { overflow-wrap: anywhere; }
+/* A full SHA-256 is one 64-character word; let it wrap. */
+#kassigner-factory-about { overflow-wrap: anywhere; }
 
 /* Anything that installs, starts, stops or removes a container takes the whole
    screen while it runs.
