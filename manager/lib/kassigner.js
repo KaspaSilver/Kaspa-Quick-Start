@@ -583,7 +583,7 @@ async function fetchFactory(image, onLine) {
  */
 /**
  * esptool's way of reaching the chip, in the order they are tried. A board
- * already in download mode (reset held while plugging in) answers without
+ * already in download mode (reset held until the green light) answers without
  * being touched, so that goes first. Resetting it from here is the fallback:
  * on the ESP32-S3's own USB that drops the port and brings it back, often as a
  * different ttyACM, which is why each attempt finds the board again first.
@@ -616,8 +616,8 @@ export async function restoreFactory({ port, board, onLine = () => {} }) {
 
     const unplugged = (what, { ready = true } = {}) =>
         new Error(
-            `${what} Start it in download mode: unplug the USB cable, hold the reset button, plug the cable back ` +
-                'in, then let go. Then Scan and try again. Nothing was erased.' +
+            `${what} Start it in download mode: with it plugged in, hold the reset button for two to three ` +
+                'seconds, until the small green light comes on, then let go. Then Scan and try again. Nothing was erased.' +
                 (ready ? ' The firmware and the flashing tool are ready now, so the next try starts on the board straight away.' : ''),
         );
 
@@ -736,8 +736,8 @@ export async function restoreFactory({ port, board, onLine = () => {} }) {
             throw new Error('esptool found security features on this board and refused to erase it. Nothing was erased.');
         }
         throw new Error(
-            `The write stopped: ${lastLine(err.message)}. The board may be half erased, which is harmless: unplug ` +
-                'it, hold the reset button while plugging it back in, Scan, and run Erase and restore again.',
+            `The write stopped: ${lastLine(err.message)}. The board may be half erased, which is harmless: hold ` +
+                'the reset button until the green light comes on, Scan, and run Erase and restore again.',
         );
     }
 

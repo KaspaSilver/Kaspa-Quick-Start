@@ -6055,7 +6055,7 @@ $('kassigner-boards').addEventListener('click', (event) => {
     $('kassigner-board-chosen').textContent = chosenBoard.label;
     $('kassigner-plug-hint').textContent =
         key === 'm5stack'
-            ? 'Connect it over USB. If it has been used before, hold the reset button while plugging it in so it comes up ready to be written to.'
+            ? 'Connect it over USB. If it has been used before, hold its reset button for two to three seconds, until a small green light comes on, then let go: when the light goes out it is ready to be written to.'
             : 'Connect it over USB. If it has been used before, hold the BOOT button while plugging it in so it comes up ready to be written to.';
     $('kassigner-devices').innerHTML = '';
     $('kassigner-detect-note').textContent = '';
