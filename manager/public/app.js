@@ -5993,6 +5993,9 @@ async function loadKassigner() {
     kassignerState = r.state;
     kassignerBoards = r.boards;
     kassignerFactory = r.factory || {};
+    // First, before the rest of the tab: Factory reset must not be left blank
+    // because something below it failed.
+    renderKassignerFactory();
 
     const on = Boolean(r.state.enabled);
     const tag = $('kassigner-state');
@@ -6013,7 +6016,6 @@ async function loadKassigner() {
         : 'Nothing downloaded yet.';
 
     renderKassignerBoards();
-    renderKassignerFactory();
     // Choosing a board only makes sense once the firmware is actually here.
     $('kassigner-step-board').hidden = !on;
 }
@@ -6169,6 +6171,18 @@ $('kassigner-devices').addEventListener('click', async (event) => {
  */
 const factoryBoard = () => Object.keys(kassignerFactory)[0] ?? null;
 
+/** The factory image, loading it first if the tab never got it (a failed load at startup). */
+async function ensureKassignerFactory() {
+    if (!factoryBoard()) {
+        const r = await api('/api/kassigner');
+        kassignerFactory = r.factory || {};
+        renderKassignerFactory();
+    }
+    const board = factoryBoard();
+    if (!board) throw new Error('This panel has no factory firmware to restore.');
+    return board;
+}
+
 function renderKassignerFactory() {
     const f = kassignerFactory[factoryBoard()];
     $('kassigner-factory-detect').disabled = !f;
@@ -6202,9 +6216,15 @@ $('kassigner-factory-detect').addEventListener('click', async () => {
 });
 
 $('kassigner-factory-devices').addEventListener('click', async (event) => {
-    const port = event.target.dataset?.factoryPort;
-    const board = factoryBoard();
-    if (!port || !board) return;
+    const port = event.target.closest('[data-factory-port]')?.dataset.factoryPort;
+    if (!port) return;
+    let board;
+    try {
+        board = await ensureKassignerFactory();
+    } catch (e) {
+        toast(e.message, 'bad');
+        return;
+    }
     const f = kassignerFactory[board];
     if (
         !await askConfirm(
