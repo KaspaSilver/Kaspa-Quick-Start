@@ -583,7 +583,7 @@ async function fetchFactory(image, onLine) {
  */
 /**
  * esptool's way of reaching the chip, in the order they are tried. A board
- * already in download mode (held reset until the green light) answers without
+ * already in download mode (reset held while plugging in) answers without
  * being touched, so that goes first. Resetting it from here is the fallback:
  * on the ESP32-S3's own USB that drops the port and brings it back, often as a
  * different ttyACM, which is why each attempt finds the board again first.
@@ -600,12 +600,14 @@ async function findBoard(id, port) {
     return (id && devices.find((d) => d.id === id)?.port) || devices.find((d) => d.port === port)?.port || null;
 }
 
-const lastLine = (text) =>
-    String(text || '')
-        .trim()
+/** The line of esptool's output that says what went wrong, not the link it prints after it. */
+const lastLine = (text) => {
+    const lines = String(text || '')
         .split('\n')
-        .filter(Boolean)
-        .pop() || '';
+        .map((l) => l.trim())
+        .filter((l) => l && !/^For troubleshooting steps/.test(l));
+    return (lines.findLast((l) => /error|fatal/i.test(l)) ?? lines.at(-1) ?? '').replace(/^A fatal error occurred: /, '');
+};
 
 export async function restoreFactory({ port, board, onLine = () => {} }) {
     if (!PORT_RE.test(port)) throw new Error(`"${port}" is not a serial port this can write to.`);
@@ -614,8 +616,8 @@ export async function restoreFactory({ port, board, onLine = () => {} }) {
 
     const unplugged = (what, { ready = true } = {}) =>
         new Error(
-            `${what} Hold the reset button for about three seconds, until the green light comes on, then Scan and ` +
-                'try again. Nothing was erased.' +
+            `${what} Start it in download mode: unplug the USB cable, hold the reset button, plug the cable back ` +
+                'in, then let go. Then Scan and try again. Nothing was erased.' +
                 (ready ? ' The firmware and the flashing tool are ready now, so the next try starts on the board straight away.' : ''),
         );
 
@@ -691,7 +693,7 @@ export async function restoreFactory({ port, board, onLine = () => {} }) {
             await new Promise((resolve) => setTimeout(resolve, 2000));
         }
     }
-    if (stdout === null) throw unplugged('Could not reach the board in download mode.');
+    if (stdout === null) throw unplugged('The board did not answer: it is not in download mode, and KasSigner keeps its USB port switched off.');
 
     const locked = [
         [/Secure Download Mode/i, 'Secure Download Mode'],
@@ -734,8 +736,8 @@ export async function restoreFactory({ port, board, onLine = () => {} }) {
             throw new Error('esptool found security features on this board and refused to erase it. Nothing was erased.');
         }
         throw new Error(
-            `The write stopped: ${lastLine(err.message)}. The board may be half erased, which is harmless: hold the ` +
-                'reset button until the green light comes on, Scan, and run Erase and restore again.',
+            `The write stopped: ${lastLine(err.message)}. The board may be half erased, which is harmless: unplug ` +
+                'it, hold the reset button while plugging it back in, Scan, and run Erase and restore again.',
         );
     }
 
