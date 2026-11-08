@@ -581,10 +581,48 @@ async function fetchFactory(image, onLine) {
  * own refusal (no --force is ever passed) stays behind that as a second guard,
  * but it is skipped in Secure Download Mode, which is why it is not the only one.
  */
+/**
+ * esptool's way of reaching the chip, in the order they are tried. A board
+ * already in download mode (held reset until the green light) answers without
+ * being touched, so that goes first. Resetting it from here is the fallback:
+ * on the ESP32-S3's own USB that drops the port and brings it back, often as a
+ * different ttyACM, which is why each attempt finds the board again first.
+ */
+const CONNECT_STRATEGIES = [
+    { before: 'no_reset', attempts: '3', note: 'Connecting to the board as it is.' },
+    { before: 'default_reset', attempts: '7', note: 'Resetting it into download mode.' },
+    { before: 'no_reset', attempts: '7', note: 'Connecting again after the reset.' },
+];
+
+/** Where a board is now. Its by-id name carries its MAC, so it survives coming back as another port. */
+async function findBoard(id, port) {
+    const devices = await detectDevices();
+    return (id && devices.find((d) => d.id === id)?.port) || devices.find((d) => d.port === port)?.port || null;
+}
+
+const lastLine = (text) =>
+    String(text || '')
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .pop() || '';
+
 export async function restoreFactory({ port, board, onLine = () => {} }) {
     if (!PORT_RE.test(port)) throw new Error(`"${port}" is not a serial port this can write to.`);
     const image = FACTORY[board];
     if (!image) throw new Error('There is no factory firmware for that board here.');
+
+    const unplugged = (what, { ready = true } = {}) =>
+        new Error(
+            `${what} Hold the reset button for about three seconds, until the green light comes on, then Scan and ` +
+                'try again. Nothing was erased.' +
+                (ready ? ' The firmware and the flashing tool are ready now, so the next try starts on the board straight away.' : ''),
+        );
+
+    // Which board this is, by name, before anything slow: it can drop off USB
+    // and come back as another port while the firmware downloads.
+    const id = (await detectDevices()).find((d) => d.port === port)?.id ?? null;
+    if (!id && !(await findBoard(null, port))) throw unplugged(`${port} is not there any more.`, { ready: false });
 
     const file = await fetchFactory(image, onLine);
     // Again, right before writing, as flash() does.
@@ -594,11 +632,11 @@ export async function restoreFactory({ port, board, onLine = () => {} }) {
 
     await ensureEsptool(onLine);
 
-    const esptool = (args) => [
+    const esptool = (at, args) => [
         'run',
         '--rm',
         '--device',
-        `${port}:${port}`,
+        `${at}:${at}`,
         '-v',
         `${hostPath('conf/kassigner-factory')}:/fw:ro`,
         ESPTOOL_IMAGE,
@@ -608,14 +646,53 @@ export async function restoreFactory({ port, board, onLine = () => {} }) {
         '--chip',
         'esp32s3',
         '--port',
-        port,
+        at,
         ...args,
     ];
+    // esptool's own output, minus a Python traceback when it gives up: the
+    // last line of one says all there is to say, and it is reported below.
+    const quiet = () => {
+        let inTrace = false;
+        return (line) => {
+            if (inTrace) return;
+            // esptool prints it straight after "Connecting...", on the same line.
+            const at = line.indexOf('Traceback (most recent call last)');
+            if (at === -1) return onLine(line);
+            inTrace = true;
+            if (at > 0) onLine(line.slice(0, at));
+        };
+    };
 
-    onLine(`Reading the security settings on ${port}. This changes nothing.`);
-    // --after no_reset leaves it in download mode for the write. Reset, a
-    // released KasSigner would boot and close its USB port again.
-    const { stdout } = await docker(esptool(['--after', 'no_reset', 'get_security_info']), { onLine, timeoutMs: 2 * 60_000 });
+    onLine('');
+    onLine('Reading the security settings on the board. This changes nothing.');
+    let stdout = null;
+    for (const strategy of CONNECT_STRATEGIES) {
+        const at = await findBoard(id, port);
+        if (!at) {
+            onLine('The board is not on USB right now. Waiting a moment for it to come back...');
+            await new Promise((resolve) => setTimeout(resolve, 3000));
+            port = (await findBoard(id, port)) || port;
+            continue;
+        }
+        if (at !== port) onLine(`The board is on ${at} now.`);
+        port = at;
+        onLine(strategy.note);
+        try {
+            // --after no_reset leaves it in download mode for the write. Reset, a
+            // released KasSigner would boot and close its USB port again.
+            ({ stdout } = await docker(
+                esptool(port, ['--before', strategy.before, '--after', 'no_reset', '--connect-attempts', strategy.attempts, 'get_security_info']),
+                { onLine: quiet(), timeoutMs: 2 * 60_000 },
+            ));
+            break;
+        } catch (err) {
+            onLine(`  did not answer (${lastLine(err.message)})`);
+            // A reset drops the USB port; give it a moment to come back.
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
+    }
+    if (stdout === null) throw unplugged('Could not reach the board in download mode.');
+
     const locked = [
         [/Secure Download Mode/i, 'Secure Download Mode'],
         [/Secure Boot: Enabled/i, 'Secure Boot'],
@@ -634,23 +711,32 @@ export async function restoreFactory({ port, board, onLine = () => {} }) {
     onLine('No Secure Boot or flash encryption. Safe to restore.');
     onLine('');
 
-    onLine(`Erasing ${port} and writing ${image.name} for the ${image.label} at 0x0.`);
+    onLine(`Erasing the board on ${port} and writing ${image.name} for the ${image.label} at 0x0.`);
     onLine(`SHA-256 ${image.sha256}`);
 
     let securityRefused = false;
+    const print = quiet();
     try {
-        await docker(esptool(['--baud', '460800', 'write_flash', '--erase-all', '0x0', `/fw/${image.file}`]), {
-            onLine: (line) => {
-                if (/Active security features detected|Secure Boot detected/.test(line)) securityRefused = true;
-                onLine(line);
+        // no_reset: the security check left it in download mode, and a reset
+        // here could drop the port again.
+        await docker(
+            esptool(port, ['--before', 'no_reset', '--baud', '460800', 'write_flash', '--erase-all', '0x0', `/fw/${image.file}`]),
+            {
+                onLine: (line) => {
+                    if (/Active security features detected|Secure Boot detected/.test(line)) securityRefused = true;
+                    print(line);
+                },
+                timeoutMs: 20 * 60_000,
             },
-            timeoutMs: 20 * 60_000,
-        });
+        );
     } catch (err) {
         if (securityRefused) {
             throw new Error('esptool found security features on this board and refused to erase it. Nothing was erased.');
         }
-        throw err;
+        throw new Error(
+            `The write stopped: ${lastLine(err.message)}. The board may be half erased, which is harmless: hold the ` +
+                'reset button until the green light comes on, Scan, and run Erase and restore again.',
+        );
     }
 
     onLine(`Done. The board restarts into its factory software, as it came from ${image.label.split(' ')[0]}.`);
