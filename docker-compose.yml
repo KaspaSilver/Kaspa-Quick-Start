@@ -217,9 +217,9 @@ services:
   # ---- KaChat Nextcloud -----------------------------------------------------
   #
   # Behind the "nextcloud" profile. A Nextcloud for the KaChat and KaPay apps:
-  # their photo, video and voice links, their encrypted contacts backup, and
-  # Nextcloud Talk for KaChat calls. lib/nextcloud.js runs it, and the panel's
-  # page for it does everything, so Nextcloud's own pages are never needed.
+  # their photo, video and voice links and their encrypted contacts backup.
+  # lib/nextcloud.js runs it, and the panel's page for it does everything, so
+  # Nextcloud's own pages are never needed.
   #
   # No port on the machine: it is reached through a name published under Tunnel
   # & domains, where nginx only lets through what the two apps use, and by the

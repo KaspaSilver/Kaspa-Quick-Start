@@ -4293,15 +4293,15 @@ function renderNextcloud() {
     // way every other app's page does. Before the first start there is nothing
     // set up to show, so it says what the switch will do.
     if (!k.installed) {
-        for (const id of ['nc-live', 'nc-connect-card', 'nc-calls-card']) $(id).hidden = false;
+        for (const id of ['nc-live', 'nc-connect-card']) $(id).hidden = false;
         $('nc-setup').hidden = true;
         return;
     }
     $('nc-setup').hidden = k.setUp;
     $('nc-live').hidden = !k.setUp;
-    // Accounts and calls are read from Nextcloud itself, which a switched-off
+    // Accounts are read from Nextcloud itself, which a switched-off
     // one cannot answer; the status card says it is off instead.
-    for (const id of ['nc-connect-card', 'nc-calls-card']) $(id).hidden = !k.setUp || !k.running;
+    $('nc-connect-card').hidden = !k.setUp || !k.running;
     if (!k.setUp) return;
 
     const accounts = ncAccounts();
@@ -4359,23 +4359,6 @@ function renderNextcloud() {
             </div>`,
         )
         .join('');
-
-    // Calls.
-    const t = k.talk;
-    $('nc-calls').innerHTML = !t?.enabled
-        ? '<p class="verdict bad">Nextcloud Talk is not installed here, so KaChat calls are off. Restarting it tries again.</p>'
-        : `<ul class="nc-checks">
-                <li><span class="svc-dot ok"></span><span>Nextcloud Talk ${escapeHtml(t.version ?? '')} is on, so KaChat can make voice and video calls.</span></li>
-                <li><span class="svc-dot ${t.stun?.length ? 'ok' : 'bad'}"></span><span>${
-                    t.stun?.length ? `Phones find each other with ${escapeHtml(t.stun.join(', '))}.` : 'No STUN server, so most calls between different networks fail.'
-                }</span></li>
-            </ul>
-            <p class="hint">
-                The sound and picture go straight between the two phones, not through this machine,
-                and nothing needs a port opened. A call can still fail to connect when both phones
-                are on strict networks, such as two phones on mobile data with some carriers: that
-                needs a relay (TURN), which is not set up.
-            </p>`;
 
     // Accounts.
     $('nc-accounts').innerHTML = accounts.length

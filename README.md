@@ -359,9 +359,9 @@ on Setup erases a card's backup and PIN and loads the card software fresh. The
 one on this server. None of this waits for a panel update.
 
 **KaChat Nextcloud.** A Nextcloud for the KaChat and KaPay apps: the photo,
-video and voice messages KaChat sends as links, the encrypted contacts backup
-the two apps share, and Nextcloud Talk for KaChat calls. Its page in the panel
-does everything, so Nextcloud's own pages are never needed:
+video and voice messages KaChat sends as links, and the encrypted contacts
+backup the two apps share. Its page in the panel does everything, so
+Nextcloud's own pages are never needed:
 
 - **Connect apps**: the server address and username to paste into KaChat and
   KaPay, with copy buttons, and app passwords made (shown once) and revoked.
@@ -371,15 +371,13 @@ does everything, so Nextcloud's own pages are never needed:
   portfolio backups, sent media), read live, each one downloadable, and
   deletable one at a time (for good, not to Nextcloud's trash).
 - **Accounts**: one per person, each with its own space.
-- **Calls**: Talk is installed and given public STUN servers, so calls connect
-  with no port opened anywhere. A TURN relay is not set up.
 
-The first time its switch starts it, it sets itself up (Talk, previews for
+The first time its switch starts it, it sets itself up (previews for
 photos, iPhone HEIC and video, public links, new accounts empty of
 Nextcloud's sample files) and makes an account called
 `kachat`. It has no port on the machine: publish it on a name of its own under
 Tunnel & domains, and that name only lets through what KaChat and KaPay use
-(their files, share links and calls). Nextcloud's web login and pages are not
+(their files and share links). Nextcloud's web login and pages are not
 on the internet. Its background jobs run from the panel every five minutes.
 
 It is the official `nextcloud:stable` image with ffmpeg added for video
@@ -436,7 +434,7 @@ bind-mounting a RocksDB database into Docker Desktop is painfully slow.
 | `cloudflared` | `cloudflare/cloudflared`  | the Cloudflare Tunnel: public names with no open port (only when Tunnel & domains is on and connected) |
 | `bridge`  | built from the release binary | stratum server for miners (only when mining is on) |
 | `kachat-app` + `kachat-db` | built from KaChat-Indexer | chat/KaPosts indexer and its Postgres (only when KaChat is on) |
-| `nextcloud` + db/redis | `nextcloud:stable` + ffmpeg | KaChat Nextcloud: media links, contacts backup and calls for KaChat and KaPay (only when it is on) |
+| `nextcloud` + db/redis | `nextcloud:stable` + ffmpeg | KaChat Nextcloud: media links and contacts backup for KaChat and KaPay (only when it is on) |
 | `libretranslate` | `libretranslate/libretranslate` | translates KaPosts for the indexer, offline (only when Translation is installed) |
 | `kachat-bot` | built from Kaspa-Block-Notifier | messages your phone when this node finds a block (only when KaChat Bot is installed) |
 
