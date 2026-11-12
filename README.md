@@ -380,6 +380,14 @@ Tunnel & domains, and that name only lets through what KaChat and KaPay use
 (their files and share links). Nextcloud's web login and pages are not
 on the internet. Its background jobs run from the panel every five minutes.
 
+KaChat Desktop's live site (`https://desktop.kachat.app`) connects to it
+straight from the browser, so the app password never passes through a server
+KaChat runs. For that, nginx sends CORS headers for exactly that origin, on
+only what the site calls (WebDAV files, the login check, revoking the app
+password, share links, thumbnails), and answers the preflight itself. Any
+other origin gets no CORS headers, and credentials (cookies) are never
+allowed: the site signs in with the app password alone.
+
 It is the official `nextcloud:stable` image with ffmpeg added for video
 thumbnails; updating checks what that tag points at now and rebuilds on it.
 Ported from [Quick Start Home](https://github.com/Shudan10/Home)'s KaChat

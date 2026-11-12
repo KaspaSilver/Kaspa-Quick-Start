@@ -6,7 +6,7 @@ import { readJson, writeJson, updateEnvFile, readEnvFile, NETWORKS, imageTagFor 
 
 export { imageTagFor };
 import { docker } from './dockerctl.js';
-import { ALLOWED_PATHS as NEXTCLOUD_ALLOWED_PATHS } from './nextcloud.js';
+import { ALLOWED_PATHS as NEXTCLOUD_ALLOWED_PATHS, BROWSER_CORS as NEXTCLOUD_BROWSER_CORS } from './nextcloud.js';
 
 /**
  * The optional applications that ride along with the node: the KaChat indexer,
@@ -148,6 +148,8 @@ export const APPS = {
             // Only what KaChat and KaPay use answers on its name; nginx gives
             // everything else a 404, so its web login is not on the internet.
             onlyPaths: NEXTCLOUD_ALLOWED_PATHS,
+            // KaChat Desktop's live site, straight from the browser.
+            browserCors: NEXTCLOUD_BROWSER_CORS,
         },
         // No port on the machine: the apps reach it on its published name.
         ports: {},

@@ -319,6 +319,57 @@ function corsBlock(cors, i) {
     return lines;
 }
 
+/*
+ * CORS for named origins only, unlike corsBlock(), which answers any origin
+ * and suits a public API. A file server holding someone's photos is not one:
+ * this sends nothing at all to an origin that is not on the list, and leaves
+ * Allow-Credentials out.
+ *
+ * nginx has no `if (a && b)`, so the decisions are maps (browserCorsMaps(),
+ * at the top of the file), named per proxy so two names publishing Nextcloud
+ * do not define the same variable twice. An empty value means add_header
+ * sends nothing. The origin is matched as a case-sensitive regex: a plain map
+ * string would match ignoring case.
+ */
+const corsVar = (name, proxy) => `$kcors_${name}_${proxy.id}`;
+const originRegex = (origins) => `~^(${origins.map((o) => o.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')).join('|')})$`;
+
+function browserCorsMaps(cors, proxy) {
+    const match = originRegex(cors.origins);
+    const map = (name, source, value) => [`map ${source} ${corsVar(name, proxy)} {`, '    default "";', `    "${match}" ${value};`, '}'];
+    return [
+        ...map('origin', '$http_origin', '$http_origin'),
+        ...map('expose', '$http_origin', `"${cors.expose}"`),
+        ...map('vary', '$http_origin', 'Origin'),
+        // The preflight: an OPTIONS from a listed origin.
+        `map "$request_method $http_origin" ${corsVar('preflight', proxy)} {`,
+        '    default "";',
+        `    "~^OPTIONS ${match.slice(2)}" 1;`,
+        '}',
+    ];
+}
+
+function browserCorsBlock(cors, proxy, i) {
+    const lines = [];
+    // Before passTo(), for the same reason as in corsBlock().
+    lines.push(`${i}if (${corsVar('preflight', proxy)}) {`);
+    lines.push(`${i}    add_header Access-Control-Allow-Origin ${corsVar('origin', proxy)} always;`);
+    lines.push(`${i}    add_header Access-Control-Allow-Methods "${cors.methods}" always;`);
+    lines.push(`${i}    add_header Access-Control-Allow-Headers "${cors.headers}" always;`);
+    lines.push(`${i}    add_header Access-Control-Max-Age ${cors.maxAge} always;`);
+    lines.push(`${i}    add_header Vary Origin always;`);
+    lines.push(`${i}    return 204;`);
+    lines.push(`${i}}`);
+    // Ours are the only ones: two Allow-Origin headers fail as surely as none.
+    for (const header of ['Access-Control-Allow-Origin', 'Access-Control-Allow-Credentials', 'Access-Control-Expose-Headers']) {
+        lines.push(`${i}proxy_hide_header ${header};`);
+    }
+    lines.push(`${i}add_header Access-Control-Allow-Origin ${corsVar('origin', proxy)} always;`);
+    lines.push(`${i}add_header Access-Control-Expose-Headers ${corsVar('expose', proxy)} always;`);
+    lines.push(`${i}add_header Vary ${corsVar('vary', proxy)} always;`);
+    return lines;
+}
+
 function locationBlock(up, proxy, indent = '        ', { strip = null, cors = null } = {}) {
     const i = indent;
     const lines = [];
@@ -435,6 +486,15 @@ function renderLocations(ordered, nodeConfig, { namesOn = {} } = {}) {
             // go to it, and the rest of the name answers 404. A regex location wins
             // over the `/` prefix whenever it matches.
             lines.push(...extraLocations(proxy, { namesOn }));
+            // The paths a browser app on another origin may call, first: the
+            // first regex location that matches is the one nginx uses.
+            const browserCors = publishOf(proxy.target?.kind)?.browserCors;
+            if (browserCors) {
+                lines.push(`    location ~ "${browserCors.paths}" {`);
+                lines.push(...browserCorsBlock(browserCors, proxy, '        '));
+                lines.push(locationBlock(up, proxy, '        ', { cors }));
+                lines.push('    }');
+            }
             lines.push(`    location ~ "${only}" {`);
             lines.push(locationBlock(up, proxy, '        ', { cors }));
             lines.push('    }');
@@ -498,6 +558,10 @@ export function renderDomain(domain, hosts, nodeConfig, { namesOn = {} } = {}) {
     for (const proxy of live) {
         if (proxy.rateLimit) {
             out.push(`limit_req_zone $binary_remote_addr zone=kz_${proxy.id}:10m rate=${Number(proxy.rateLimit)}r/s;`);
+        }
+        const browserCors = publishOf(proxy.target?.kind)?.browserCors;
+        if (browserCors && publishOf(proxy.target?.kind)?.onlyPaths && normalizePath(proxy.path) === '/') {
+            out.push(...browserCorsMaps(browserCors, proxy));
         }
     }
 

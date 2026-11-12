@@ -81,6 +81,37 @@ export const ALLOWED_PATHS =
 // Apps a messenger's storage has no use for. Disabled, not removed.
 const UNWANTED_APPS = ['firstrunwizard', 'dashboard', 'weather_status', 'recommendations', 'survey_client', 'nextcloud_announcements'];
 
+/*
+ * KaChat Desktop's live site talks to this Nextcloud straight from the
+ * browser, so the app password never passes through a server KaChat runs. A
+ * browser only allows that with CORS, which stock Nextcloud does not send on
+ * WebDAV, so nginx adds it (lib/nginx.js), for this one origin and only on
+ * what the site calls:
+ *   remote.php/dav/files/<user>/...          GET PUT MKCOL MOVE DELETE PROPFIND
+ *   ocs/v2.php/cloud/user                    login check
+ *   ocs/v2.php/core/apppassword              revoke on disconnect
+ *   ocs/v2.php/apps/files_sharing/api/v1/shares  share links for media
+ *   (index.php/)core/preview.png             thumbnails
+ * The preflight is answered by nginx and never reaches Nextcloud. No
+ * Allow-Credentials: the site sends no cookies, only a Basic Authorization
+ * header with the app password.
+ */
+export const BROWSER_CORS = {
+    origins: ['https://desktop.kachat.app'],
+    paths:
+        '^/(' +
+        [
+            'remote\\.php/dav/files/[^/]+(/|$)',
+            'ocs/v2\\.php/(cloud/user|core/apppassword|apps/files_sharing/api/v1/shares)$',
+            '(index\\.php/)?core/preview\\.png$',
+        ].join('|') +
+        ')',
+    methods: 'GET, PUT, POST, DELETE, MKCOL, MOVE, PROPFIND, OPTIONS',
+    headers: 'Authorization, Content-Type, Depth, Destination, Overwrite, OCS-APIRequest, Accept',
+    expose: 'ETag, OC-ETag, OC-FileId, Content-Type, Content-Length',
+    maxAge: 600,
+};
+
 const PREVIEW_PROVIDERS = [
     'OC\\Preview\\PNG',
     'OC\\Preview\\JPEG',
