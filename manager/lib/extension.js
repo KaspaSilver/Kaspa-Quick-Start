@@ -4,7 +4,8 @@ import { CONF_DIR, hostPath } from './paths.js';
 import { docker } from './dockerctl.js';
 
 /**
- * The KaPay browser extension (KaChat's wallet for Chrome, Brave and Edge; it doesn't support
+ * The K browser extension (K's wallet for Chrome, Brave and Edge, from the KaPay-Browser-Extension
+ * repo; it doesn't support
  * Firefox).
  *
  * Nothing runs here. Installing it builds the extension from its repository the way its
@@ -104,12 +105,12 @@ export async function build(onLine = () => {}) {
     fs.writeFileSync(path.join(NEXT, 'build.json'), `${JSON.stringify({ sha, ref: REF, version, builtAt: new Date().toISOString() }, null, 2)}\n`);
     fs.rmSync(CURRENT, { recursive: true, force: true });
     fs.renameSync(NEXT, CURRENT);
-    onLine(`KaPay Extension ${version} built from ${sha.slice(0, 12)}.`);
+    onLine(`K Extension ${version} built from ${sha.slice(0, 12)}.`);
     onLine('If it is already loaded in your browser, press its reload button on the extensions page to pick this up.');
 }
 
 /** Removes every build from this machine. A browser that loaded it keeps its own copy until removed there. */
 export function uninstall(onLine = () => {}) {
     fs.rmSync(DIR, { recursive: true, force: true });
-    onLine('The KaPay Extension builds are removed from this machine. Remove it from your browser on its extensions page.');
+    onLine('The K Extension builds are removed from this machine. Remove it from your browser on its extensions page.');
 }

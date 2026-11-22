@@ -96,7 +96,7 @@ export const UNITS = {
         buildable: ['kachat-desktop'],
         data: 'nothing: it keeps no state of its own',
     },
-    // K Nextcloud, for the KaChat and KaPay apps. lib/nextcloud.js has the
+    // K Nextcloud, for K. lib/nextcloud.js has the
     // rest, including what happens the first time its switch starts it.
     nextcloud: {
         label: 'K Nextcloud',

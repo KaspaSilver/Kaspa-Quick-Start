@@ -5,7 +5,7 @@ import { CONF_DIR } from './paths.js';
 import { loadManagerConfig, loadProxies, readEnvFile, readJson, saveManagerConfig, writeJson } from './store.js';
 
 /*
- * K Nextcloud: the Nextcloud on this stack, run for the KaChat and KaPay apps.
+ * K Nextcloud: the Nextcloud on this stack, run for K.
  *
  * Ported from Quick Start Home (Shudan10/Home, lib/kachat.js), where it is a
  * second Nextcloud beside a personal one. Here it is the only one, so it keeps
@@ -249,7 +249,7 @@ async function configure(onLine = () => {}) {
     }
 
     // New accounts start empty, not with Nextcloud's sample files: the
-    // folder page should show only what KaChat and KaPay put there.
+    // folder page should show only what K puts there.
     await occ(['config:system:set', 'skeletondirectory', '--value', '']).catch(() => {});
     await occ(['config:system:set', 'templatedirectory', '--value', '']).catch(() => {});
 

@@ -1478,7 +1478,7 @@ const SERVICE_NAMES = {
     kachat: 'KaChat-Indexer',
     desktop: 'KaChat-Desktop',
     kassigner: 'KasSigner',
-    extension: 'the KaPay Extension',
+    extension: 'the K Extension',
     nextcloud: 'K Nextcloud',
     bot: 'the KaChat Bot',
     translate: 'the translation engine',
@@ -4264,7 +4264,7 @@ for (const button of document.querySelectorAll('[data-app-action]')) {
 // ------------------------------------------------------- kachat nextcloud ---
 
 /*
- * K Nextcloud: the Nextcloud on this stack, for the KaChat and KaPay apps,
+ * K Nextcloud: the Nextcloud on this stack, for K,
  * run entirely from here -- accounts, app passwords, the links that have been
  * shared, and calls. Installing, the switch and uninstalling are the panel's
  * usual ones. Ported from Quick Start Home's K Nextcloud page.
@@ -4329,7 +4329,7 @@ function renderNextcloud() {
 
     $('nc-next').innerHTML =
         k.running && !k.server
-            ? `<div class="verdict"><p><strong>Put it on a name.</strong> Open <a href="#" data-goto-tab="proxy">Tunnel &amp; domains</a> and publish <strong>K Nextcloud</strong> on a name of its own, such as <code>share.example.com</code>. Only what KaChat and KaPay use is reachable on that name.</p></div>`
+            ? `<div class="verdict"><p><strong>Put it on a name.</strong> Open <a href="#" data-goto-tab="proxy">Tunnel &amp; domains</a> and publish <strong>K Nextcloud</strong> on a name of its own, such as <code>share.example.com</code>. Only what K uses is reachable on that name.</p></div>`
             : '';
 
     // Connect apps.
@@ -6718,8 +6718,8 @@ async function buildExtension(title) {
     $('extension-update-status').textContent = 'Not checked yet.';
     loadExtension().catch(() => {});
 }
-$('extension-update').addEventListener('click', () => buildExtension('Updating the KaPay Extension'));
-$('extension-rebuild').addEventListener('click', () => buildExtension('Rebuilding the KaPay Extension'));
+$('extension-update').addEventListener('click', () => buildExtension('Updating the K Extension'));
+$('extension-rebuild').addEventListener('click', () => buildExtension('Rebuilding the K Extension'));
 
 // ------------------------------------------------------- kassigner verify ---
 

@@ -162,9 +162,8 @@ services:
       # read-only from conf/push (written 0600 by that panel), not baked in.
       FCM_PROJECT_ID: ${KACHAT_FCM_PROJECT_ID:-}
       FCM_SERVICE_ACCOUNT_PATH: /push/fcm/service-account.json
-      # The Android apps the push service accepts (KaChat, KaPost, KaPay, KaPlay), all in the one
-      # Firebase project. Set from the Push Service tab; empty = com.kachat.app only. An indexer
-      # without per-app Android support ignores it.
+      # K's Android package (com.kachat.app), set by the Push Service tab. The indexer decides
+      # which pushes K gets. An indexer without per-app Android support ignores it.
       FCM_ALLOWED_PACKAGES: ${KACHAT_FCM_ALLOWED_PACKAGES:-}
       APNS_TOPIC: ${KACHAT_APNS_TOPIC:-}
       APNS_KEY_ID: ${KACHAT_APNS_KEY_ID:-}
@@ -216,7 +215,7 @@ services:
 
   # ---- K Nextcloud -----------------------------------------------------
   #
-  # Behind the "nextcloud" profile. A Nextcloud for the KaChat and KaPay apps:
+  # Behind the "nextcloud" profile. A Nextcloud for K:
   # their photo, video and voice links and their encrypted contacts backup.
   # lib/nextcloud.js runs it, and the panel's page for it does everything, so
   # Nextcloud's own pages are never needed.
@@ -673,9 +672,8 @@ services:
       # the testnet push registrations apart (per KACHAT_NAMES_INDEXER.md part A).
       FCM_PROJECT_ID: ${KACHAT_FCM_PROJECT_ID:-}
       FCM_SERVICE_ACCOUNT_PATH: /push/fcm/service-account.json
-      # The Android apps the push service accepts (KaChat, KaPost, KaPay, KaPlay), all in the one
-      # Firebase project. Set from the Push Service tab; empty = com.kachat.app only. An indexer
-      # without per-app Android support ignores it.
+      # K's Android package (com.kachat.app), set by the Push Service tab. The indexer decides
+      # which pushes K gets. An indexer without per-app Android support ignores it.
       FCM_ALLOWED_PACKAGES: ${KACHAT_FCM_ALLOWED_PACKAGES:-}
       APNS_TOPIC: ${KACHAT_APNS_TOPIC:-}
       APNS_KEY_ID: ${KACHAT_APNS_KEY_ID:-}

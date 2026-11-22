@@ -93,7 +93,7 @@ export const SERVICES = [
         label: 'K Nextcloud',
         detail: 'For K: photo, video and voice links, and the contacts and portfolio backups.',
         afterNote:
-            'Put https://{domain} in KaChat and KaPay as the Nextcloud server, with the username and an app password from its page. Only what the two apps use is reachable on this name; Nextcloud\'s web login and pages are not on the internet.',
+            'Put https://{domain} in K as the Nextcloud server, with the username and an app password from its page. Only what K uses is reachable on this name; Nextcloud\'s web login and pages are not on the internet.',
     },
     {
         key: 'panel',

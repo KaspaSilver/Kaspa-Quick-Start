@@ -2335,10 +2335,10 @@ async function helperCall(req, res, method, path) {
 
 // -------------------------------------------------------- browser extension --
 
-// The KaPay browser extension: built here, loaded into a browser in developer mode. Nothing runs,
+// The K browser extension (repo KaPay-Browser-Extension): built here, loaded into a browser in developer mode. Nothing runs,
 // so it is a unit with an install and an uninstall and no switch (runnable: false).
 lifecycle.registerUnit('extension', {
-    label: 'KaPay Extension',
+    label: 'K Extension',
     tab: 'extension',
     data: 'the built extension folders and zips. A browser that loaded it keeps its own copy until you remove it there',
     hooks: {
@@ -2348,7 +2348,7 @@ lifecycle.registerUnit('extension', {
         },
         install: (onLine) => extension.build(onLine),
         async setRunning() {
-            throw new Error('The KaPay Extension has nothing to run here: load it in your browser.');
+            throw new Error('The K Extension has nothing to run here: load it in your browser.');
         },
         uninstall: ({ onLine }) => extension.uninstall(onLine),
     },
@@ -2369,13 +2369,13 @@ route('GET', /^\/api\/extension\/latest$/, async (req, res) => {
 
 /** Update and Rebuild are the same thing: build the branch as it is now. */
 route('POST', /^\/api\/extension\/build$/, async (req, res) => {
-    const job = jobs.start('Build the KaPay Extension', (onLine) => extension.build(onLine));
+    const job = jobs.start('Build the K Extension', (onLine) => extension.build(onLine));
     sendJson(res, 202, { ok: true, jobId: job.id });
 });
 
 route('GET', /^\/api\/extension\/download\/([a-z]+)$/, async (req, res, match) => {
     const pkg = extension.packageFile(match[1]);
-    if (!pkg) return fail(res, 404, 'There is no build of that yet. Install the KaPay Extension first.');
+    if (!pkg) return fail(res, 404, 'There is no build of that yet. Install the K Extension first.');
     res.writeHead(200, {
         'Content-Type': 'application/zip',
         'Content-Disposition': `attachment; filename="${pkg.name}"`,

@@ -145,7 +145,7 @@ export const APPS = {
             // whatever size the person is storing, so the proxy imposes no limit
             // of its own. Nextcloud's own settings decide.
             maxBodySize: '0',
-            // Only what KaChat and KaPay use answers on its name; nginx gives
+            // Only what K uses answers on its name; nginx gives
             // everything else a 404, so its web login is not on the internet.
             onlyPaths: NEXTCLOUD_ALLOWED_PATHS,
             // KaChat Desktop's live site, straight from the browser.

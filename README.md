@@ -342,7 +342,7 @@ a browser app, so accounts and settings live in the browser you open it with,
 and it talks to whichever node and indexer you point it at from inside the app.
 It does not wait for this node to sync, because it does not have to.
 
-**KaPay Extension.** KaChat's wallet for Chrome, Brave
+**K Extension.** K's wallet for Chrome, Brave
 and Edge (it doesn't support Firefox), built here from
 [KaPay-Browser-Extension](https://github.com/KaspaSilver/KaPay-Browser-Extension)
 so you can load it in developer mode. Nothing runs on this machine: Install
