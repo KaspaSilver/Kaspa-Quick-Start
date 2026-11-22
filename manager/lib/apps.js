@@ -10,7 +10,7 @@ import { ALLOWED_PATHS as NEXTCLOUD_ALLOWED_PATHS, BROWSER_CORS as NEXTCLOUD_BRO
 
 /**
  * The optional applications that ride along with the node: the KaChat indexer,
- * the KaChat desktop client and KaChat Nextcloud. All are upstream projects of ours,
+ * the KaChat desktop client and K Nextcloud. All are upstream projects of ours,
  * all live behind a compose profile so they do not exist until switched on, and
  * all track a git ref the panel can move forward.
  */
@@ -126,7 +126,7 @@ export const APPS = {
         adminPort: null,
     },
     nextcloud: {
-        label: 'KaChat Nextcloud',
+        label: 'K Nextcloud',
         // Not a repository of ours. It is the official image with ffmpeg added
         // for video thumbnails, so what it tracks is a docker tag, and "is
         // there an update" is a question for the registry rather than GitHub.
@@ -192,14 +192,12 @@ export const DEFAULT_APPS_CONFIG = {
         // Android push (Firebase). Only the non-secret project id lives here; the
         // service-account.json is written to conf/push/ by the Push Service panel.
         fcmProjectId: '',
-        // The other Android apps in the same Firebase project whose devices the push service
-        // accepts (FCM_ALLOWED_PACKAGES). Same service account.
-        fcmApps: ['kapost.kachat.app', 'kapay.kachat.app', 'kaplay.kachat.app'],
         // Apple push (iOS). Non-secret identifiers only -- the .p8 key file lives
         // in conf/push/, written by the Push Service panel, never in this file.
-        // `apps`: the other iPhone apps on the same Apple team whose devices the push service
-        // accepts, each on its own APNs topic (KaChat Wallet PUSH_SERVICE.md section 1). Same .p8.
-        apns: { enabled: false, teamId: '', keyId: '', topic: 'com.kachat.app', environment: 'production', apps: ['com.kachat.kaposts', 'com.kachat.wallet'] },
+        // Push is for K alone (com.kachat.app): the indexer decides which pushes each
+        // device gets (KaChat-Indexer docs/K_ALL_IN_ONE_PUSH.md), so there is no list of
+        // other apps to send to any more.
+        apns: { enabled: false, teamId: '', keyId: '', topic: 'com.kachat.app', environment: 'production' },
         // Server-side translation of KaPosts. Its engine is a container of its
         // own -- gigabytes of language models -- so this is only the setting;
         // whether the engine exists at all is the `translate` service.
@@ -344,8 +342,6 @@ export function validateAppsConfig(input) {
     const fcm = String(k.fcmProjectId ?? '').trim();
     if (fcm && !/^[a-z0-9-]{1,64}$/.test(fcm)) errors.push('FCM project id may only contain lowercase letters, digits and dashes.');
     cfg.kachat.fcmProjectId = fcm;
-    // The other Android apps' packages: only the known ones (FCM_ALLOWED_PACKAGES stays a closed list).
-    cfg.kachat.fcmApps = Array.isArray(k.fcmApps) ? ANDROID_APPS.map((x) => x.pkg).filter((p) => k.fcmApps.includes(p)) : [...DEFAULT_APPS_CONFIG.kachat.fcmApps];
 
     // Apple push identifiers (non-secret). The .p8 key itself is uploaded to
     // conf/push/ separately and never travels through this config.
@@ -362,8 +358,6 @@ export function validateAppsConfig(input) {
     if (topic && !/^[A-Za-z0-9.-]{1,155}$/.test(topic)) errors.push('APNs topic (iOS bundle id) contains invalid characters.');
     apns.topic = topic || 'com.kachat.app';
     apns.environment = ['production', 'sandbox'].includes(a.environment) ? a.environment : 'production';
-    // The other iPhone apps' topics: only the known ones (APNS_ALLOWED_TOPICS stays a closed list).
-    apns.apps = Array.isArray(a.apps) ? IPHONE_APPS.map((x) => x.topic).filter((t) => a.apps.includes(t)) : [...DEFAULT_APPS_CONFIG.kachat.apns.apps];
     cfg.kachat.apns = apns;
 
     // Translation languages are edited on their own screen; a save from any other screen
@@ -406,7 +400,7 @@ export function validateAppsConfig(input) {
     const n = input.nextcloud ?? {};
     cfg.nextcloud.enabled = Boolean(n.enabled);
     const nref = String(n.ref ?? 'main').trim();
-    if (!REF_RE.test(nref)) errors.push('KaChat Nextcloud branch or tag contains invalid characters.');
+    if (!REF_RE.test(nref)) errors.push('K Nextcloud branch or tag contains invalid characters.');
     else cfg.nextcloud.ref = nref;
 
     // Older saved files carry a host port, an admin user and trusted domains.
@@ -523,26 +517,6 @@ export async function ensureSecrets(log = () => {}) {
 export const botRef = (cfg) => (!cfg.bot?.ref || cfg.bot.ref === 'bots' ? 'main' : cfg.bot.ref);
 
 /** Writes the non-secret settings the compose file reads for these services. */
-/** The other KaChat iPhone apps a push can go to, besides the main app's own topic. */
-export const IPHONE_APPS = [
-    { topic: 'com.kachat.kaposts', label: 'KaPosts' },
-    { topic: 'com.kachat.wallet', label: 'KaChat Wallet' },
-];
-
-/** The other KaChat Android apps a push can go to, besides KaChat itself (com.kachat.app). */
-export const ANDROID_APPS = [
-    { pkg: 'kapost.kachat.app', label: 'KaPost' },
-    { pkg: 'kapay.kachat.app', label: 'KaPay' },
-    { pkg: 'kaplay.kachat.app', label: 'KaPlay' },
-];
-
-/** KaChat's own package plus the other Android apps switched on, for FCM_ALLOWED_PACKAGES. */
-export const allowedFcmPackages = (fcmApps) => ['com.kachat.app', ...(fcmApps ?? [])].join(',');
-
-/** The main app's topic plus the other apps switched on, for APNS_ALLOWED_TOPICS. */
-export const allowedApnsTopics = (apns) =>
-    [...new Set([apns?.topic || 'com.kachat.app', ...(apns?.apps ?? [])])].join(',');
-
 export function writeAppsEnv(cfg) {
     updateEnvFile({
         KACHAT_REF: cfg.kachat.ref,
@@ -550,8 +524,8 @@ export function writeAppsEnv(cfg) {
         KACHAT_NETWORK: cfg.kachat.network,
         KACHAT_NODE_PORT: cfg.kachat.network === 'testnet-10' ? 17210 : 17110,
         KACHAT_FCM_PROJECT_ID: cfg.kachat.fcmProjectId,
-        // Every Android app the push service accepts devices from.
-        KACHAT_FCM_ALLOWED_PACKAGES: allowedFcmPackages(cfg.kachat.fcmApps),
+        // K is the one Android app the push service sends to.
+        KACHAT_FCM_ALLOWED_PACKAGES: 'com.kachat.app',
         // Push Service master switch read by the indexer at startup (KACHAT_PUSH_ENABLED).
         KACHAT_PUSH_ENABLED: cfg.kachat.pushEnabled ? 'true' : 'false',
         // Apple push identifiers (iOS). The .p8 key file is not here -- it is
@@ -560,8 +534,8 @@ export function writeAppsEnv(cfg) {
         KACHAT_APNS_KEY_ID: cfg.kachat.apns?.keyId || '',
         KACHAT_APNS_TOPIC: cfg.kachat.apns?.topic || '',
         KACHAT_APNS_ENVIRONMENT: cfg.kachat.apns?.environment || 'production',
-        // Every iPhone app the push service may send to, each device on its own app's topic.
-        KACHAT_APNS_ALLOWED_TOPICS: allowedApnsTopics(cfg.kachat.apns),
+        // K's own topic only: the indexer already knows the retired apps' topics by itself.
+        KACHAT_APNS_ALLOWED_TOPICS: cfg.kachat.apns?.topic || 'com.kachat.app',
         // Read by the translation engine at startup and by nothing else. It
         // only loads what is listed here, so changing it means recreating it.
         LT_LOAD_ONLY: cfg.kachat.translate?.languages || 'en,es,pt,fr,de,ru,zh,ja,ko,ar,vi',
@@ -839,4 +813,4 @@ export function summarizeError(error) {
     return trimmed.endsWith('.') ? trimmed : `${trimmed}.`;
 }
 
-// KaChat Nextcloud's own runtime (accounts, app passwords, shares) is lib/nextcloud.js.
+// K Nextcloud's own runtime (accounts, app passwords, shares) is lib/nextcloud.js.

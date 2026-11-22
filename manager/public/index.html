@@ -137,7 +137,7 @@
         </label>
       </div>
 
-      <p class="nav-group-title">KaChat</p>
+      <p class="nav-group-title">K</p>
       <div class="nav-row">
         <button class="nav-item" data-tab="kachat" data-requires-node title="Indexer">
           <span class="nav-dot" data-health="kachat"></span>
@@ -214,13 +214,13 @@
         </button>
       </div>
       <div class="nav-row">
-        <button class="nav-item" data-tab="nextcloud" title="KaChat Nextcloud">
+        <button class="nav-item" data-tab="nextcloud" title="K Nextcloud">
           <span class="nav-dot" data-health="nextcloud"></span>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 16.5a3.5 3.5 0 00-.7-6.9 5.5 5.5 0 00-10.5-1.2A4.2 4.2 0 006 16.5z"/><circle cx="12" cy="12.5" r="2.2"/></svg>
-          <span class="label">KaChat Nextcloud</span>
+          <span class="label">K Nextcloud</span>
         </button>
-        <label class="switch mini" title="Start or stop KaChat Nextcloud">
-          <input type="checkbox" data-service="nextcloud" aria-label="Start or stop KaChat Nextcloud">
+        <label class="switch mini" title="Start or stop K Nextcloud">
+          <input type="checkbox" data-service="nextcloud" aria-label="Start or stop K Nextcloud">
           <span class="track"></span>
         </label>
       </div>
@@ -364,7 +364,7 @@
         </article>
         <article class="card figure">
           <h3>Storage</h3>
-          <p class="muted">The disk your apps write to. The chain, the databases and KaChat Nextcloud all land here.</p>
+          <p class="muted">The disk your apps write to. The chain, the databases and K Nextcloud all land here.</p>
           <!--
             The path this is measured at is a tooltip, not a line of its own: it
             is reassurance for the one person who wonders which disk, and on a
@@ -1105,7 +1105,7 @@
       because that API binds to loopback inside its own container.
     -->
     <section id="tab-kachat" class="tab">
-      <nav class="subnav" aria-label="KaChat">
+      <nav class="subnav" aria-label="KaChat indexer">
         <button class="subtab-btn active" data-subtab="kachat-overview">Overview</button>
         <button class="subtab-btn" data-subtab="kachat-kaposts">KaPosts</button>
         <button class="subtab-btn" data-subtab="kachat-broadcasts">Public chats</button>
@@ -1128,7 +1128,7 @@
             <div class="toggle-text">
               <strong>KaChat-Indexer</strong>
               <span class="muted">
-                Turns this node's chain data into the APIs KaChat clients talk to:
+                Turns this node's chain data into the APIs K and the other clients talk to:
                 direct and group chats, public chats, KaPosts and mentions. It reads
                 the node you are already running, so nothing syncs twice.
               </span>
@@ -1166,7 +1166,7 @@
             <div><dt>Indexed last hour</dt><dd id="kachat-ingest">–</dd></div>
           </dl>
           <p class="hint">
-            Freshness comes from the transactions the node hands over. KaChat
+            Freshness comes from the transactions the node hands over. Chat
             content can lag behind that quite legitimately, because it only moves
             when somebody actually posts.
           </p>
@@ -1243,7 +1243,7 @@
           </div>
           <p class="hint">
             The cards are the channels this indexer knows about, which is a list
-            that ships inside it. A room the KaChat apps have started using may
+            that ships inside it. A room K has started using may
             not be here yet: rebuild the indexer under Updates to pick up its
             newer list, or add the name above, which works either way.
           </p>
@@ -1342,14 +1342,14 @@
               <button type="button" id="kachat-group-save" class="primary">Save and apply</button>
             </div>
             <p class="hint">
-              Your KaChat app knows these ids, since it already sends them when it
+              K knows these ids, since it already sends them when it
               registers for notifications. Nothing here can work them out for you:
               they come from the group keys, which this indexer never sees. Saving
               restarts the chat indexer.
             </p>
             <p class="hint">
               List every member's id for a group and you keep the whole conversation;
-              list only your own and you keep only what you sent. Your KaChat app
+              list only your own and you keep only what you sent. K
               knows all of them, because reading a group means asking for each
               member's id in turn. Whatever you send is kept either way.
             </p>
@@ -1587,7 +1587,7 @@
               <div class="toggle-text">
                 <strong>Post translation</strong>
                 <span class="muted">
-                  KaChat apps ask this indexer to translate a KaPost into the
+                  K asks this indexer to translate a KaPost into the
                   reader's language, and it is answered here, by a translation
                   engine running on this machine. Nothing is sent to Google or
                   DeepL and there is no API key: the engine is
@@ -1779,7 +1779,7 @@
             <p class="muted">
               <code>.kachat</code> names are a registry of Kaspa covenant contracts (names, gaps and
               marketplace offers). This app is everything needed to serve them yourself, exactly as
-              the KaChat apps read them: the registry's own tooling from
+              K reads them: the registry's own tooling from
               <code>KaspaSilver/kachat-domains</code> (it recompiles the contracts and refuses any
               manifest that does not match them), and a names server that follows the verified
               registry from your node and answers <code>/names</code>, <code>/market</code>,
@@ -1938,7 +1938,7 @@
               <span id="desktop-state" class="tag">-</span>
             </div>
             <p class="muted">
-              The KaChat client, served from this machine instead of a website.
+              The K web client, served from this machine instead of a website.
               Switch it on in the sidebar and open it in a browser. It is the same
               app as the desktop build, so accounts and settings live in the
               browser you open it with.
@@ -2018,7 +2018,7 @@
               <span id="extension-state" class="tag">-</span>
             </div>
             <p class="muted">
-              The KaChat wallet for your browser, built here from its repository so you can load
+              The KaPay wallet for your browser, built here from its repository so you can load
               it in developer mode. Nothing runs on this machine: the browser runs it.
             </p>
             <div id="extension-build-info" class="verdict" hidden></div>
@@ -2073,7 +2073,7 @@
     </section>
 
     <section id="tab-nextcloud" class="tab">
-      <nav class="subnav" aria-label="KaChat Nextcloud">
+      <nav class="subnav" aria-label="K Nextcloud">
         <button class="subtab-btn active" data-subtab="nc-connect">Connect apps</button>
         <button class="subtab-btn" data-subtab="nc-media">Shared media</button>
         <button class="subtab-btn" data-subtab="nc-files">KaChat folder</button>
@@ -2089,9 +2089,9 @@
           <article class="card span2" id="nc-setup" hidden>
             <h3>Switch it on to finish setting it up</h3>
             <p class="muted">
-              The first time its switch in the sidebar starts it, it sets itself up for KaChat:
+              The first time its switch in the sidebar starts it, it sets itself up for K:
               previews for photos and videos, public links, and an account called
-              <code>kachat</code> for the apps to sign in to. That takes a minute or two.
+              <code>kachat</code> for K to sign in to. That takes a minute or two.
             </p>
             <p class="muted">
               It runs alongside the node with its own database and cache. Nothing else in this
@@ -2101,7 +2101,7 @@
 
           <article class="card span2" id="nc-live" hidden>
             <div class="node-head">
-              <h3>KaChat Nextcloud</h3>
+              <h3>K Nextcloud</h3>
               <span id="nc-state" class="tag">–</span>
             </div>
             <ul class="nc-checks" id="nc-checks"></ul>
@@ -2112,14 +2112,14 @@
           </article>
 
           <article class="card span2 guide" id="nc-connect-card" hidden>
-            <h3>Sign in to KaChat and KaPay</h3>
+            <h3>Sign in to K</h3>
             <p class="muted">
-              In KaChat (and in KaPay, for its contacts and portfolio backup), open the Nextcloud
-              setting and copy these in. Use the same account in both, so they share your contacts.
+              In K, open the Nextcloud setting and copy these in. K keeps its contacts and portfolio
+              backups here, along with the photos, videos and voice messages you send.
             </p>
             <p class="muted">
               KaChat Desktop at <code>desktop.kachat.app</code> works too: it connects to this server
-              straight from your browser, so the app password never passes through a server KaChat
+              straight from your browser, so the app password never passes through a server K
               runs. This server lets that one site in and no other.
             </p>
             <label id="nc-account-pick-row">Account
@@ -2133,7 +2133,7 @@
             <h3 class="sub">App password</h3>
             <p class="muted">Make one for each app, so you can turn one off without the other.</p>
             <div class="row nc-newpw">
-              <input id="nc-pw-name" placeholder="KaChat on iPhone" autocomplete="off" spellcheck="false">
+              <input id="nc-pw-name" placeholder="K on iPhone" autocomplete="off" spellcheck="false">
               <button type="button" class="primary" id="nc-pw-go">Make an app password</button>
             </div>
             <div id="nc-pw-new" class="verdict ok" hidden></div>
@@ -2177,8 +2177,8 @@
               <span id="nc-files-count" class="tag">–</span>
             </div>
             <p class="muted">
-              Everything KaChat and KaPay have backed up to this account, read live from
-              KaChat Nextcloud: the contacts and portfolio backups, and every photo, video and
+              Everything K has backed up to this account, read live from
+              K Nextcloud: the contacts and portfolio backups, and every photo, video and
               voice message sent. Download saves a copy. Delete removes a file for good, and
               any link to it stops working.
             </p>
@@ -2278,7 +2278,7 @@
             <p class="muted">
               Pick a bot and set it up. It gets its own small wallet: send it about 5 KAS, which pays
               for its messages. Bots are public: there is no pairing code. Anyone who starts a chat with
-              a bot's address in KaChat (you too) is first told that messages sent to the bot are not
+              a bot's address in K (you too) is first told that messages sent to the bot are not
               private (you, running it, can read them under Messages and options) and must reply
               <code>agree</code>. Then they get their own setup questions right there in the
               conversation, and their own notifications. Every message is paid from the bot's wallet,
@@ -2306,7 +2306,7 @@
               Messages and options) sends everything in that bot's wallet to this address in one go,
               minus the network fee: to take back what you funded it with, or before removing it.
               The panel's own alerts (a pool hashrate drop, a bot wallet running low) are messaged to
-              this address in KaChat.
+              this address in K.
             </p>
             <label class="stack">Your Kaspa address (<span id="bot-payout-net">mainnet</span>)
               <span class="row">
@@ -2380,13 +2380,16 @@
         <article class="card span2">
           <div class="toggle-row">
             <div class="toggle-text"><strong>Push Service</strong>
-              <span class="muted">Mobile push notifications for the KaChat indexer: Android via Firebase, iPhone via Apple.</span>
+              <span class="muted">Push notifications for K, on Android through Firebase and on iPhone through Apple.</span>
             </div>
             <span id="push-state" class="tag off">not set</span>
           </div>
+          <p class="hint">K gets every notification from here: chats and groups, KaPost likes and replies,
+          Public Chats rooms, KAS received and <code>.kachat</code> names. The KaChat indexer decides what each
+          phone gets, so there is nothing to choose per app.</p>
           <p class="hint">Turn the Push Service on or off with its switch in the sidebar. Off keeps these settings but sends no notifications; the indexer keeps running either way. Flipping it restarts the indexer (about two minutes) if it is on.</p>
           <div class="notice">
-            <p><strong>This is only for people who run the KaChat mobile apps.</strong> Every value below
+            <p><strong>This is only for people who publish the K app.</strong> Every value below
             belongs to <em>your own</em> Firebase project (Android) and Apple developer account (iOS), the
             same accounts your App Store and Play Store listings are published under. If you just run a node
             or indexer, leave this blank: the indexer works fine without it, it simply won't send push.</p>
@@ -2401,13 +2404,7 @@
             <label class="inline">Project ID <input id="push-fcm-project" size="24" autocomplete="off" spellcheck="false" placeholder="not set"></label>
             <span id="push-fcm-status" class="pill">no key</span>
           </div>
-          <div class="row" id="push-fcm-apps">
-            <span class="muted">Also send to:</span>
-            <label class="check"><input type="checkbox" data-fcm-app="kapost.kachat.app"> KaPost <code>kapost.kachat.app</code></label>
-            <label class="check"><input type="checkbox" data-fcm-app="kapay.kachat.app"> KaPay <code>kapay.kachat.app</code></label>
-            <label class="check"><input type="checkbox" data-fcm-app="kaplay.kachat.app"> KaPlay <code>kaplay.kachat.app</code></label>
-          </div>
-          <p class="hint">The other KaChat Android apps in the same Firebase project. The same service account sends to all of them.</p>
+          <p class="hint">Sends to K on Android, <code>com.kachat.app</code>.</p>
           <label>Service account JSON
             <textarea id="push-fcm-key" rows="6" spellcheck="false" autocomplete="off" placeholder='Firebase console → Project settings → Service accounts → Generate new private key. Paste the whole JSON. Leave blank to keep the saved one.'></textarea>
           </label>
@@ -2429,12 +2426,7 @@
             </label>
             <span id="push-apns-status" class="pill">no key</span>
           </div>
-          <div class="row" id="push-apns-apps">
-            <span class="muted">Also send to:</span>
-            <label class="check"><input type="checkbox" data-apns-app="com.kachat.kaposts"> KaPosts <code>com.kachat.kaposts</code></label>
-            <label class="check"><input type="checkbox" data-apns-app="com.kachat.wallet"> KaChat Wallet <code>com.kachat.wallet</code></label>
-          </div>
-          <p class="hint">The other KaChat iPhone apps on the same Apple team. The same .p8 key signs for all of them, and each phone gets its pushes on its own app's topic.</p>
+          <p class="hint">The topic is K's bundle id, <code>com.kachat.app</code>.</p>
           <label>Auth key (.p8)
             <textarea id="push-apns-key" rows="6" spellcheck="false" autocomplete="off" placeholder="Apple Developer → Keys → your APNs key. Paste the whole AuthKey_XXXX.p8, from its BEGIN line to its END line. Leave blank to keep the saved one."></textarea>
           </label>
@@ -2451,7 +2443,7 @@
         <article class="card span2">
           <h3>Web Push</h3>
           <p class="muted">
-            Notifications for the KaChat web app installed from a browser. Each network gets its
+            Notifications for KaChat Desktop when it is installed from a browser. Each network gets its
             own key, generated here and kept in this machine's settings; the key never leaves it.
             Rotating a key signs every browser up again by itself within a day.
           </p>
@@ -2813,7 +2805,7 @@
     -->
     <!--
       NFC Card (github.com/KaspaSilver/KaChat-NFC): loads the KaChat-NFC applet onto a Java Card so
-      KaChat can back up a seed phrase to it. The card work is done by a small helper: on the
+      K can back up a seed phrase to it. The card work is done by a small helper: on the
       computer the browser is on, or (Linux servers) in a container here. A tool, not a service.
     -->
     <section id="tab-nfc" class="tab">
@@ -2839,7 +2831,7 @@
           </div>
           <p class="hint">
             This page loads the open source KaChat-NFC software onto the card. The backup itself,
-            the PIN and the seed phrase stay in KaChat: nothing here asks for them.
+            the PIN and the seed phrase stay in K: nothing here asks for them.
           </p>
         </article>
 
@@ -3409,7 +3401,7 @@
           <ul class="plain">
             <li>Chain data goes with it, so a fresh install re-syncs from
               scratch. That takes hours.</li>
-            <li>KaChat and KaChat Nextcloud data goes too, including every photo,
+            <li>KaChat indexer and K Nextcloud data goes too, including every photo,
               video and voice message sent from it.</li>
             <li>Every bot's wallet key goes too. Any KAS still in a bot wallet is
               lost for good, so send it out from the Bot tab first.</li>
@@ -3439,11 +3431,11 @@
           <h3>Get in touch</h3>
           <p class="muted">
             Questions, bugs, or something in here behaving oddly. Email gets read,
-            and the KaChat account is the same person on the network this panel runs.
+            and the K account is the same person on the network this panel runs.
           </p>
           <ul class="links">
             <li><span class="what">Email</span><a href="mailto:kaspasilver@gmail.com">kaspasilver@gmail.com</a></li>
-            <li><span class="what">KaChat</span><a href="https://kachat.app/u/qzkwy29a6gh0969ae59d96ya80zevjtetdftcxd4veczp6p8fczfsadq6w977" target="_blank" rel="noreferrer noopener">KaspaSilver on KaChat ↗</a></li>
+            <li><span class="what">K</span><a href="https://kachat.app/u/qzkwy29a6gh0969ae59d96ya80zevjtetdftcxd4veczp6p8fczfsadq6w977" target="_blank" rel="noreferrer noopener">KaspaSilver on K ↗</a></li>
           </ul>
         </article>
 

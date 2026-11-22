@@ -5,7 +5,7 @@ import { CONF_DIR } from './paths.js';
 import { loadManagerConfig, loadProxies, readEnvFile, readJson, saveManagerConfig, writeJson } from './store.js';
 
 /*
- * KaChat Nextcloud: the Nextcloud on this stack, run for the KaChat and KaPay apps.
+ * K Nextcloud: the Nextcloud on this stack, run for the KaChat and KaPay apps.
  *
  * Ported from Quick Start Home (Shudan10/Home, lib/kachat.js), where it is a
  * second Nextcloud beside a personal one. Here it is the only one, so it keeps
@@ -245,7 +245,7 @@ async function configure(onLine = () => {}) {
     if (apps.enabled?.spreed || apps.disabled?.spreed) {
         await occ(['app:disable', 'spreed']).catch(() => {});
         await occ(['app:remove', 'spreed'], { timeoutMs: 2 * 60_000 }).catch(() => {});
-        onLine('Removed Nextcloud Talk, which KaChat no longer uses.');
+        onLine('Removed Nextcloud Talk, which K does not use.');
     }
 
     // New accounts start empty, not with Nextcloud's sample files: the
@@ -278,7 +278,7 @@ export async function applyPublicHost(onLine = () => {}) {
     if (!isInstalled() || !(await deps.containerState(CONTAINER)).running) return;
     await configure(onLine);
     appliedHost = host;
-    onLine(host ? `KaChat Nextcloud now answers on https://${host}.` : 'KaChat Nextcloud has no public name now.');
+    onLine(host ? `K Nextcloud now answers on https://${host}.` : 'K Nextcloud has no public name now.');
 }
 
 // ------------------------------------------------------------- lifecycle ---
@@ -297,11 +297,11 @@ export async function afterStart(onLine = () => {}) {
         }
     }
     if (!(await waitReady(onLine))) {
-        onLine('KaChat Nextcloud did not finish starting in time, so its settings were left for the next start.');
+        onLine('K Nextcloud did not finish starting in time, so its settings were left for the next start.');
         return;
     }
     const first = !isInstalled();
-    if (first) onLine('Setting it up for KaChat: previews for photos and videos, public links...');
+    if (first) onLine('Setting it up for K: previews for photos and videos, public links...');
     await configure(onLine);
     appliedHost = publicHost();
     if (first) {
@@ -309,7 +309,7 @@ export async function afterStart(onLine = () => {}) {
         // Reinstalled over kept data, or an older Nextcloud carried over: its accounts are already there.
         if (!Object.keys(existing).some((u) => u !== adminUser())) await addAccount('kachat', onLine);
         saveConfig({ setUpAt: new Date().toISOString() });
-        onLine('Ready. Make an app password on its page and put it in KaChat.');
+        onLine('Ready. Make an app password on its page and put it in K.');
     }
 }
 
@@ -388,7 +388,7 @@ async function ensurePanelToken(user) {
 /** A new app password for an app. Shown once, by the page; never kept here. */
 export async function addAppPassword(username, label) {
     const user = checkUsername(username);
-    const name = String(label ?? '').trim().slice(0, 60) || 'KaChat';
+    const name = String(label ?? '').trim().slice(0, 60) || 'K';
     if (name === PANEL_TOKEN_NAME) throw new NextcloudError("That name is the panel's own. Pick another.");
     return { name, password: await makeAppPassword(user, name) };
 }

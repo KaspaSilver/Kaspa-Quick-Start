@@ -96,10 +96,10 @@ export const UNITS = {
         buildable: ['kachat-desktop'],
         data: 'nothing: it keeps no state of its own',
     },
-    // KaChat Nextcloud, for the KaChat and KaPay apps. lib/nextcloud.js has the
+    // K Nextcloud, for the KaChat and KaPay apps. lib/nextcloud.js has the
     // rest, including what happens the first time its switch starts it.
     nextcloud: {
-        label: 'KaChat Nextcloud',
+        label: 'K Nextcloud',
         profile: 'nextcloud',
         services: ['nextcloud-db', 'nextcloud-redis', 'nextcloud'],
         // The preview generator older versions ran is listed so that uninstalling

@@ -90,8 +90,8 @@ export const SERVICES = [
         // The apps are given the name itself as their server, and Nextcloud
         // builds every link from the root, so it never shares a name on a path.
         rootOnly: true,
-        label: 'KaChat Nextcloud',
-        detail: 'For the KaChat and KaPay apps: photo, video and voice links, contacts backup and calls.',
+        label: 'K Nextcloud',
+        detail: 'For K: photo, video and voice links, and the contacts and portfolio backups.',
         afterNote:
             'Put https://{domain} in KaChat and KaPay as the Nextcloud server, with the username and an app password from its page. Only what the two apps use is reachable on this name; Nextcloud\'s web login and pages are not on the internet.',
     },

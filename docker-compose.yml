@@ -214,7 +214,7 @@ services:
       driver: json-file
       options: { max-size: "20m", max-file: "3" }
 
-  # ---- KaChat Nextcloud -----------------------------------------------------
+  # ---- K Nextcloud -----------------------------------------------------
   #
   # Behind the "nextcloud" profile. A Nextcloud for the KaChat and KaPay apps:
   # their photo, video and voice links and their encrypted contacts backup.

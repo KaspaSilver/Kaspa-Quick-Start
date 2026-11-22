@@ -54,7 +54,7 @@ export const TARGET_KINDS = {
     'kachat-names': { label: '.kachat Domains API', websocket: false, grpc: false },
     'kachat-names-testnet': { label: '.kachat Domains API (testnet-10)', websocket: false, grpc: false },
     desktop: { label: 'KaChat Desktop', websocket: true, grpc: false },
-    nextcloud: { label: 'KaChat Nextcloud', websocket: false, grpc: false },
+    nextcloud: { label: 'K Nextcloud', websocket: false, grpc: false },
     custom: { label: 'Custom host:port', websocket: false, grpc: false },
 };
 
@@ -482,7 +482,7 @@ function renderLocations(ordered, nodeConfig, { namesOn = {} } = {}) {
         const cors = publishOf(proxy.target?.kind)?.cors ?? null;
         const only = publishOf(proxy.target?.kind)?.onlyPaths;
         if (path === '/' && only) {
-            // A service that only lets some paths through (KaChat Nextcloud): those
+            // A service that only lets some paths through (K Nextcloud): those
             // go to it, and the rest of the name answers 404. A regex location wins
             // over the `/` prefix whenever it matches.
             lines.push(...extraLocations(proxy, { namesOn }));

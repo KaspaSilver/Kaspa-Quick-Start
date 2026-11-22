@@ -1300,10 +1300,10 @@ route('GET', /^\/api\/proxies$/, async (req, res) => {
 async function saveProxyList(list, cfg, onLine) {
     saveProxies(list);
     nginx.writeAll(list, cfg, renderOptions());
-    // KaChat Nextcloud trusts the name it is published on and builds its links
+    // K Nextcloud trusts the name it is published on and builds its links
     // from it, so a name added, moved or taken off reaches it too. In the
     // background: it is a few dozen occ calls, and it only acts on a change.
-    nextcloud.applyPublicHost(onLine ?? log).catch((err) => log(`KaChat Nextcloud was not told about its name: ${err.message}`));
+    nextcloud.applyPublicHost(onLine ?? log).catch((err) => log(`K Nextcloud was not told about its name: ${err.message}`));
     // With the proxy off the files are still written, so switching it on later
     // brings up everything that was configured meanwhile.
     if (!proxyEnabled()) return;
@@ -2591,7 +2591,7 @@ async function botGenerateWallet(network, fromKey = null) {
  */
 async function botSendMessage(text, viaId = null) {
     const to = bots.readPayout();
-    if (!to) throw new Error('Set your Kaspa address in Bot > Wallet to get alerts in KaChat.');
+    if (!to) throw new Error('Set your Kaspa address in Bot > Wallet to get alerts in K.');
     const on = bots
         .readBots()
         .bots.filter((b) => b.enabled !== false)
@@ -2720,7 +2720,7 @@ async function lowBalanceWatchTick() {
         if (st.alerted || now - st.lastAt < LOWBAL_MIN_INTERVAL_MS) continue;
         const title = bots.catalogType(b.type)?.title ?? 'bot';
         const message =
-            `Wallet alert: your KaChat ${title} is low, ${balanceKas.toFixed(4)} KAS left (under ${LOWBAL_KAS} KAS). ` +
+            `Wallet alert: your ${title} is low, ${balanceKas.toFixed(4)} KAS left (under ${LOWBAL_KAS} KAS). ` +
             `Top up ${b.address} so it can keep sending messages.`;
         try {
             await botSendMessage(message, b.id);
@@ -2836,7 +2836,7 @@ route('POST', /^\/api\/bot\/test$/, async (req, res) => {
             ['run', '--rm', '-T', '--no-deps', '--entrypoint', 'python', 'kachat-bot', 'watcher.py', '--test'],
             { onLine, profile: 'bot', timeoutMs: 3 * 60_000 },
         );
-        onLine('If it reported the message sent, it is on its way to your KaChat alias. An empty wallet means fund it first.');
+        onLine('If it reported the message sent, it is on its way to you in K. An empty wallet means fund it first.');
     });
     sendJson(res, 202, { ok: true, jobId: job.id });
 });
@@ -3411,13 +3411,13 @@ route('POST', /^\/api\/apps\/(kachat|desktop|nextcloud)\/(start|stop|restart)$/,
 // ------------------------------------------------------- kachat nextcloud --
 
 /*
- * KaChat Nextcloud: lib/nextcloud.js has the why. Installing, the switch and
+ * K Nextcloud: lib/nextcloud.js has the why. Installing, the switch and
  * uninstalling go through /api/services like every app; these are the rest,
  * answered on the spot -- an app password has to come back in the answer,
  * since it is shown once and never kept.
  */
 async function nextcloudAfterStart(onLine) {
-    await nextcloud.afterStart(onLine).catch((err) => onLine(`KaChat Nextcloud is up, but setting it up did not finish: ${err.message}`));
+    await nextcloud.afterStart(onLine).catch((err) => onLine(`K Nextcloud is up, but setting it up did not finish: ${err.message}`));
 }
 
 const nextcloudTry = (fn) => async (req, res, match, url) => {
@@ -3687,7 +3687,7 @@ route('POST', /^\/api\/services\/([a-z0-9-]+)\/(start|stop)$/, async (req, res, 
 
     const job = jobs.start(`${running ? 'Start' : 'Stop'} ${unit.label}`, async (onLine) => {
         await lifecycle.setRunning(match[1], running, onLine);
-        // The first start is also when KaChat Nextcloud sets itself up and makes its account.
+        // The first start is also when K Nextcloud sets itself up and makes its account.
         if (running && match[1] === 'nextcloud') await nextcloudAfterStart(onLine);
     });
     sendJson(res, 202, { ok: true, jobId: job.id });
@@ -4184,7 +4184,6 @@ route('GET', /^\/api\/push$/, async (req, res) => {
         // never set, so an existing push setup shows on rather than off after upgrade.
         pushEnabled: k.pushEnabled !== undefined ? Boolean(k.pushEnabled) : Boolean(k.fcmProjectId || k.apns?.teamId),
         fcmProjectId: k.fcmProjectId ?? '',
-        fcmApps: k.fcmApps ?? apps.DEFAULT_APPS_CONFIG.kachat.fcmApps,
         apns: k.apns ?? apps.DEFAULT_APPS_CONFIG.kachat.apns,
         // Whether the key files are actually on disk. The panel never reads them
         // back out -- it only ever says present or not.
@@ -4303,7 +4302,6 @@ route('POST', /^\/api\/push\/config$/, async (req, res) => {
                 // Only the switch sends pushEnabled; remember it was a choice (KQS-027).
                 ...(body.pushEnabled !== undefined ? { pushChoiceAt: Date.now() } : {}),
                 fcmProjectId: body.fcmProjectId ?? current.kachat.fcmProjectId,
-                fcmApps: body.fcmApps ?? current.kachat.fcmApps,
                 apns: { ...current.kachat.apns, ...(body.apns ?? {}) },
             },
         };
@@ -5119,7 +5117,7 @@ async function bootstrap() {
     startLowBalanceWatch();
     startMiningStatsPersist();
     startPanelUpdateCheck();
-    // KaChat Nextcloud's background jobs: there are almost no page loads to run them from.
+    // K Nextcloud's background jobs: there are almost no page loads to run them from.
     setInterval(() => !jobs.busy && nextcloud.runCron().catch(() => {}), 5 * 60_000).unref?.();
     // The NFC helper runs only while its page is open; one left from before a restart goes, and
     // so does any image built for an older release.

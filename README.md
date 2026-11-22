@@ -10,7 +10,7 @@ bind and which ports to publish before you press Start. **To go public, switch
 on the ports you want in the panel and open them on your router.**
 A stratum bridge is included, so miners and ASICs can point straight at your
 node, with a dashboard for hashrate, workers and blocks found. The
-[KaChat indexer](https://github.com/KaspaSilver/KaChat-Indexer), KaChat Nextcloud and
+[KaChat indexer](https://github.com/KaspaSilver/KaChat-Indexer), K Nextcloud and
 the [block notifier bot](https://github.com/KaspaSilver/Kaspa-Block-Notifier) can
 be switched on from the same panel, each tracking its own source.
 
@@ -182,7 +182,7 @@ Nothing outside `manager/` is mounted, so changes to `docker-compose.yml`,
 | `17110` | wRPC Borsh          | serve Rusty/KDX style clients            |
 | `18110` | wRPC JSON           | serve browser / JSON clients (the panel already uses it internally) |
 | `5555`  | stratum             | only if you mine, and only for miners outside this machine |
-| `3080`  | KaPosts REST API    | only if KaChat clients connect from outside this machine |
+| `3080`  | KaPosts REST API    | only if K or another client connects from outside this machine |
 | `8420`  | control panel       | bound to `127.0.0.1`, so do not forward it. To reach it from outside, publish it under Tunnel & domains |
 
 Nothing here is ever forwarded for a web address. Names on your own domain go
@@ -304,7 +304,7 @@ be published, and the panel says so if it is off.
 The bridge container only exists while mining is on: it sits behind a compose
 profile, so a normal node install never starts a stratum server.
 
-**Mining** and **KaChat** stay greyed out in the sidebar until the node is
+**Mining** and the **K** group stay greyed out in the sidebar until the node is
 running *and* synced. Both read live chain data, and a stratum server on a syncing
 node hands miners stale work, and the indexer would index a chain that is not
 there yet. The API refuses to enable them for the same reason, so the greying is
@@ -328,7 +328,15 @@ own container.
 The first build compiles the indexer from Rust source and takes a while; follow
 it under Logs → kachat indexer.
 
-**KaChat-Desktop.** The KaChat client itself, served from this machine instead
+**Push Service.** Push notifications for K, the all-in-one app (chats, groups,
+Wallet, KaPost, Public Chats rooms, KaPlay and `.kachat` names), sent by the
+indexer. It takes your own Firebase project and service account for Android and
+your Apple Team ID, Key ID and `.p8` key for iPhone, and sends to K's
+`com.kachat.app` alone. The indexer decides which pushes each phone gets, so
+there is no per-app list here. Keys stay on this machine, readable by its owner
+only.
+
+**KaChat-Desktop.** The K web client, served from this machine instead
 of a website. Switch it on and open the address it gives you in a browser. It is
 a browser app, so accounts and settings live in the browser you open it with,
 and it talks to whichever node and indexer you point it at from inside the app.
@@ -344,7 +352,7 @@ commits on `main`.
 
 **NFC Card.** Loads the open source
 [KaChat-NFC](https://github.com/KaspaSilver/KaChat-NFC) software onto a J3R180
-Java Card and secures its admin keys, so KaChat can back up the seed phrase of
+Java Card and secures its admin keys, so K can back up the seed phrase of
 an account that has a passphrase to the card, behind a 6-digit PIN. The
 passphrase is never saved to the card, so keep it and the seed phrase on paper
 too. A small helper on your Mac or Windows computer reaches the reader, and the
@@ -358,16 +366,15 @@ on Setup erases a card's backup and PIN and loads the card software fresh. The
 **Helper** tab checks the helper against KaChat-NFC's releases and updates the
 one on this server. None of this waits for a panel update.
 
-**KaChat Nextcloud.** A Nextcloud for the KaChat and KaPay apps: the photo,
-video and voice messages KaChat sends as links, and the encrypted contacts
-backup the two apps share. Its page in the panel does everything, so
+**K Nextcloud.** A Nextcloud for K: the photo, video and voice messages K
+sends as links, the encrypted contacts backup and the portfolio backup. Its page in the panel does everything, so
 Nextcloud's own pages are never needed:
 
-- **Connect apps**: the server address and username to paste into KaChat and
-  KaPay, with copy buttons, and app passwords made (shown once) and revoked.
+- **Connect apps**: the server address and username to paste into K, with
+  copy buttons, and app passwords made (shown once) and revoked.
 - **Shared media**: every link an account has made, with thumbnails, and Stop
-  sharing, which KaChat itself cannot do.
-- **KaChat folder**: every file the two apps have backed up (contacts and
+  sharing, which K itself cannot do.
+- **KaChat folder**: every file K has backed up (contacts and
   portfolio backups, sent media), read live, each one downloadable, and
   deletable one at a time (for good, not to Nextcloud's trash).
 - **Accounts**: one per person, each with its own space.
@@ -376,13 +383,13 @@ The first time its switch starts it, it sets itself up (previews for
 photos, iPhone HEIC and video, public links, new accounts empty of
 Nextcloud's sample files) and makes an account called
 `kachat`. It has no port on the machine: publish it on a name of its own under
-Tunnel & domains, and that name only lets through what KaChat and KaPay use
+Tunnel & domains, and that name only lets through what K uses
 (their files and share links). Nextcloud's web login and pages are not
 on the internet. Its background jobs run from the panel every five minutes.
 
 KaChat Desktop's live site (`https://desktop.kachat.app`) connects to it
 straight from the browser, so the app password never passes through a server
-KaChat runs. For that, nginx sends CORS headers for exactly that origin, on
+K runs. For that, nginx sends CORS headers for exactly that origin, on
 only what the site calls (WebDAV files, the login check, revoking the app
 password, share links, thumbnails), and answers the preflight itself. Any
 other origin gets no CORS headers, and credentials (cookies) are never
@@ -421,7 +428,7 @@ conf/proxies.json      proxy host definitions
 conf/mining.json       mining settings from the panel
 conf/bridge.yaml       generated stratum bridge config
 conf/bridge-ports.yml  generated compose override for stratum ports
-conf/apps.json         KaChat / KaChat Nextcloud settings from the panel
+conf/apps.json         KaChat indexer / K Nextcloud settings from the panel
 conf/apps-ports.yml    generated compose override for their ports
 conf/*-build.json      which upstream commit each app image was built from
 conf/cloudflare/       the tunnel: its tokens (0600) and which account it is on
@@ -442,7 +449,7 @@ bind-mounting a RocksDB database into Docker Desktop is painfully slow.
 | `cloudflared` | `cloudflare/cloudflared`  | the Cloudflare Tunnel: public names with no open port (only when Tunnel & domains is on and connected) |
 | `bridge`  | built from the release binary | stratum server for miners (only when mining is on) |
 | `kachat-app` + `kachat-db` | built from KaChat-Indexer | chat/KaPosts indexer and its Postgres (only when KaChat is on) |
-| `nextcloud` + db/redis | `nextcloud:stable` + ffmpeg | KaChat Nextcloud: media links and contacts backup for KaChat and KaPay (only when it is on) |
+| `nextcloud` + db/redis | `nextcloud:stable` + ffmpeg | K Nextcloud: media links and backups for K (only when it is on) |
 | `libretranslate` | `libretranslate/libretranslate` | translates KaPosts for the indexer, offline (only when Translation is installed) |
 | `kachat-bot` | built from Kaspa-Block-Notifier | messages your phone when this node finds a block (only when KaChat Bot is installed) |
 

@@ -1479,7 +1479,7 @@ const SERVICE_NAMES = {
     desktop: 'KaChat-Desktop',
     kassigner: 'KasSigner',
     extension: 'the KaPay Extension',
-    nextcloud: 'KaChat Nextcloud',
+    nextcloud: 'K Nextcloud',
     bot: 'the KaChat Bot',
     translate: 'the translation engine',
     proxy: 'Tunnel & domains',
@@ -3926,7 +3926,7 @@ async function loadApps() {
     $('desktop-port').value = c.desktop?.hostPort ?? 5173;
     renderAppState('desktop', r.apps.desktop);
 
-    // --- KaChat Nextcloud ---
+    // --- K Nextcloud ---
     // No ref: it is built on a docker tag, not a branch of anything. Its own
     // page (accounts, app passwords, shares) is loadNextcloud().
     const ncBuild = r.apps.nextcloud?.build;
@@ -4188,7 +4188,7 @@ for (const app of ['kachat', 'desktop']) {
 for (const name of ['kachat', 'desktop', 'nextcloud']) {
     // The switch is a power control: it takes effect on the spot, matching the
     // one on Mining. Everything that needs an explicit Apply stays a checkbox.
-    // KaChat Nextcloud has nothing to apply: its page does everything on the spot.
+    // K Nextcloud has nothing to apply: its page does everything on the spot.
     $(`${name}-save`)?.addEventListener('click', async () => {
         const err = $(`${name}-error`);
         err.hidden = true;
@@ -4264,10 +4264,10 @@ for (const button of document.querySelectorAll('[data-app-action]')) {
 // ------------------------------------------------------- kachat nextcloud ---
 
 /*
- * KaChat Nextcloud: the Nextcloud on this stack, for the KaChat and KaPay apps,
+ * K Nextcloud: the Nextcloud on this stack, for the KaChat and KaPay apps,
  * run entirely from here -- accounts, app passwords, the links that have been
  * shared, and calls. Installing, the switch and uninstalling are the panel's
- * usual ones. Ported from Quick Start Home's KaChat Nextcloud page.
+ * usual ones. Ported from Quick Start Home's K Nextcloud page.
  */
 let ncState = null;
 let ncAccount = null;
@@ -4329,7 +4329,7 @@ function renderNextcloud() {
 
     $('nc-next').innerHTML =
         k.running && !k.server
-            ? `<div class="verdict"><p><strong>Put it on a name.</strong> Open <a href="#" data-goto-tab="proxy">Tunnel &amp; domains</a> and publish <strong>KaChat Nextcloud</strong> on a name of its own, such as <code>share.example.com</code>. Only what KaChat and KaPay use is reachable on that name.</p></div>`
+            ? `<div class="verdict"><p><strong>Put it on a name.</strong> Open <a href="#" data-goto-tab="proxy">Tunnel &amp; domains</a> and publish <strong>K Nextcloud</strong> on a name of its own, such as <code>share.example.com</code>. Only what KaChat and KaPay use is reachable on that name.</p></div>`
             : '';
 
     // Connect apps.
@@ -4434,9 +4434,9 @@ $('nc-media').addEventListener(
 // What a file is, in the words of the apps that wrote it. Anything else is
 // shown by its name alone.
 function ncFileNote(f) {
-    if (/(^|\/)kachat-contacts\.json$/i.test(f.path)) return 'Contacts backup, shared by KaChat and KaPay. Encrypted with your wallet seed.';
-    if (/(^|\/)kachat-backup\.json$/i.test(f.path)) return 'KaChat backup.';
-    if (/portfolio/i.test(f.path) && /\.json$/i.test(f.path)) return 'KaPay portfolio. Not encrypted: readable on this server.';
+    if (/(^|\/)kachat-contacts\.json$/i.test(f.path)) return 'K contacts backup. Encrypted with your wallet seed.';
+    if (/(^|\/)kachat-backup\.json$/i.test(f.path)) return 'K backup.';
+    if (/portfolio/i.test(f.path) && /\.json$/i.test(f.path)) return 'K portfolio. Not encrypted: readable on this server.';
     if (/^KaChat\/Media\//.test(f.path)) return f.shared ? 'Sent media, its link is open.' : 'Sent media, no open link.';
     return '';
 }
@@ -4461,7 +4461,7 @@ async function loadNextcloudFiles() {
     const total = files.reduce((n, f) => n + f.size, 0);
     $('nc-files-count').textContent = `${files.length} file${files.length === 1 ? '' : 's'} · ${fmtSize(total)}`;
     if (!files.length) {
-        box.innerHTML = '<p class="muted">Nothing backed up yet. Once KaChat or KaPay is signed in to this account, its backups and sent media show up here.</p>';
+        box.innerHTML = '<p class="muted">Nothing backed up yet. Once K is signed in to this account, its backups and sent media show up here.</p>';
         return;
     }
     // Grouped by the folder each file sits in, the KaChat folder first and
@@ -4539,13 +4539,13 @@ $('tab-nextcloud').addEventListener('click', async (event) => {
     if (del) {
         const path = del.dataset.ncDelete;
         const name = path.split('/').pop();
-        // What losing this one file means, in the words of the apps that use it.
+        // What losing this one file means, in K's words.
         const what = /(^|\/)kachat-contacts\.json$/i.test(path)
-            ? ' KaChat and KaPay lose their contacts backup until one of them saves it again.'
+            ? ' K loses its contacts backup until it saves it again.'
             : /portfolio/i.test(path) && /\.json$/i.test(path)
-              ? ' KaPay loses its portfolio backup until it saves it again.'
+              ? ' K loses its portfolio backup until it saves it again.'
               : /(^|\/)kachat-backup\.json$/i.test(path)
-                ? ' KaChat loses this backup until it saves it again.'
+                ? ' K loses this backup until it saves it again.'
                 : '';
         const link = del.dataset.ncDeleteShared ? ' Its link stops working for everyone who has it, including in chats already sent.' : '';
         const sure = await askConfirm(
@@ -4602,7 +4602,7 @@ $('tab-nextcloud').addEventListener('click', async (event) => {
     if (removeUser) {
         const user = removeUser.dataset.ncRemoveUser;
         const sure = await askConfirm(
-            `Remove the account ${user}?\n\nEverything in it goes: its photos, videos, voice messages and contacts backup. Every link it shared stops working, and KaChat and KaPay signed in with it are signed out.`,
+            `Remove the account ${user}?\n\nEverything in it goes: its photos, videos, voice messages and contacts backup. Every link it shared stops working, and K signed in with it is signed out.`,
         );
         if (!sure) return;
         try {
@@ -4616,7 +4616,7 @@ $('tab-nextcloud').addEventListener('click', async (event) => {
 });
 
 $('nc-pw-go').addEventListener('click', async () => {
-    const name = $('nc-pw-name').value.trim() || 'KaChat';
+    const name = $('nc-pw-name').value.trim() || 'K';
     const box = $('nc-pw-new');
     $('nc-pw-go').disabled = true;
     try {
@@ -7129,7 +7129,7 @@ const botShort = (a) => (a && a.length > 26 ? `${a.slice(0, 16)}…${a.slice(-6)
 const STAGE_TEXT = {
     off: 'Off',
     awaiting_pairing: 'Starting',
-    setup: 'Setting up in your KaChat chat',
+    setup: 'Setting up in your K chat',
     active: 'Running',
     paused: 'Paused',
     disabled: 'Paused',
@@ -8278,12 +8278,10 @@ async function loadPush() {
         return;
     }
     $('push-fcm-project').value = d.fcmProjectId || '';
-    for (const box of document.querySelectorAll('[data-fcm-app]')) box.checked = (d.fcmApps ?? []).includes(box.dataset.fcmApp);
     $('push-apns-team').value = d.apns?.teamId || '';
     $('push-apns-keyid').value = d.apns?.keyId || '';
     $('push-apns-topic').value = d.apns?.topic || 'com.kachat.app';
     $('push-apns-env').value = d.apns?.environment || 'production';
-    for (const box of document.querySelectorAll('[data-apns-app]')) box.checked = (d.apns?.apps ?? []).includes(box.dataset.apnsApp);
     // Never fill the key boxes: the panel does not read keys back out, and an
     // empty box means "keep what is saved".
     $('push-fcm-key').value = '';
@@ -8406,13 +8404,11 @@ $('webpush-rows')?.addEventListener('click', async (event) => {
 $('push-save').addEventListener('click', async () => {
     const body = {
         fcmProjectId: $('push-fcm-project').value.trim(),
-        fcmApps: [...document.querySelectorAll('[data-fcm-app]:checked')].map((b) => b.dataset.fcmApp),
         apns: {
             teamId: $('push-apns-team').value.trim(),
             keyId: $('push-apns-keyid').value.trim(),
             topic: $('push-apns-topic').value.trim(),
             environment: $('push-apns-env').value,
-            apps: [...document.querySelectorAll('[data-apns-app]:checked')].map((b) => b.dataset.apnsApp),
         },
     };
     // Keys travel only when the box is non-empty; blank keeps the saved one.
@@ -10246,7 +10242,7 @@ async function loadNamesRules() {
         <ul class="plain">
           <li>A name is 1 to 32 characters: lowercase <code>a-z</code>, digits <code>0-9</code> and <code>-</code>, not starting or ending with <code>-</code>. It is used as <code>name.kachat</code>.</li>
           <li>Each name can have exactly one owner. This is enforced by the chain itself, not by any server.</li>
-          <li>An owner is a KaChat (Kaspa) address. Every action by an owner needs that address's signature.</li>
+          <li>An owner is a K (Kaspa) address. Every action by an owner needs that address's signature.</li>
           <li>Each registered name holds a <strong>${kasOf(p.bond)}</strong> deposit, returned when it is released or reclaimed.</li>
         </ul>
       </article>
@@ -10811,7 +10807,7 @@ function renderNfc(st) {
     nfcTag('ready', 'ok');
     setNfcNow(
         'Ready',
-        `${picker}<p class="verdict ok">Ready. Open KaChat and back up by tapping this card. The account you back up needs a BIP39 passphrase.</p>${loadedFacts}${newer}`,
+        `${picker}<p class="verdict ok">Ready. Open K and back up by tapping this card. The account you back up needs a BIP39 passphrase.</p>${loadedFacts}${newer}`,
     );
 }
 
