@@ -3965,11 +3965,32 @@ route('GET', /^\/api\/kachat-domains$/, async (req, res, match, url) => {
 });
 
 /**
- * What the names server image is built from (docker/kachat-names/Dockerfile in K-Digital-Freedom-Indexer).
- * The rest of that repo is the chat/KaPost indexer, which gets commits nearly every day; a
- * commit touching none of these changes nothing in the server, so it is not an update here.
+ * What the names server depends on, out of K-Digital-Freedom-Indexer. Its image compiles the
+ * whole kachat-webserver, but runs it names-only (/names, /market, /offers, /profiles,
+ * /identity); the rest of that crate is the chat/KaPost indexer's, which gets commits nearly
+ * every day, and counting those (and every Cargo.lock bump) made .kachat Domains report an
+ * update after almost every indexer commit. So: the names code, its two crates and its image.
+ *
+ * The repo can say better itself: docker/kachat-names/watch-paths.txt, one path or prefix per
+ * line (# comments), read at the newest commit and used instead of this list when present.
  */
-const NAMES_SERVER_PATHS = ['kachat-webserver/', 'kachat-names/', 'kachat-names-follower/', 'docker/kachat-names/', 'Cargo.toml', 'Cargo.lock'];
+const NAMES_SERVER_PATHS = [
+    'kachat-names/',
+    'kachat-names-follower/',
+    'docker/kachat-names/',
+    'kachat-webserver/src/names.rs',
+    'kachat-webserver/src/names_api.rs',
+];
+const NAMES_WATCH_FILE = 'docker/kachat-names/watch-paths.txt';
+
+async function namesServerPaths(sha) {
+    const text = await selfservice.fileAt({ repo: apps.APPS.kachat.repo, path: NAMES_WATCH_FILE, ref: sha });
+    const listed = (text ?? '')
+        .split('\n')
+        .map((l) => l.replace(/#.*/, '').trim())
+        .filter(Boolean);
+    return listed.length ? listed : NAMES_SERVER_PATHS;
+}
 
 route('GET', /^\/api\/kachat-domains\/check$/, async (req, res) => {
     try {
@@ -3980,12 +4001,17 @@ route('GET', /^\/api\/kachat-domains\/check$/, async (req, res) => {
             kachatDomains.installedRevision(),
         ]);
         const built = env.KACHAT_NAMES_SERVER_COMMIT || null;
-        // The server half is an update only when the new commits touch what the server is built
-        // from; an unreadable comparison counts as touching (never claim up to date on a guess).
+        // The server half is an update only when the new commits touch what the server depends
+        // on; an unreadable comparison counts as touching (never claim up to date on a guess).
         let serverUpdate = Boolean(built) && built !== server.sha;
+        let serverFiles = null;
         if (serverUpdate) {
             const files = await selfservice.changedFiles({ repo: apps.APPS.kachat.repo, base: built, head: server.sha });
-            if (files) serverUpdate = files.some((f) => NAMES_SERVER_PATHS.some((p) => f === p || f.startsWith(p)));
+            if (files) {
+                const paths = await namesServerPaths(server.sha);
+                serverFiles = files.filter((f) => paths.some((p) => f === p || f.startsWith(p)));
+                serverUpdate = serverFiles.length > 0;
+            }
         }
         sendJson(res, 200, {
             latest,
@@ -3994,6 +4020,9 @@ route('GET', /^\/api\/kachat-domains\/check$/, async (req, res) => {
             serverBuilt: built,
             toolingUpdate: revision !== null && revision !== latest.sha,
             serverUpdate,
+            // What moved, so the page can say why rather than only that.
+            serverFiles,
+            serverUnrecorded: !built,
             updateAvailable: revision !== null && (revision !== latest.sha || !built || serverUpdate),
         });
     } catch (err) {

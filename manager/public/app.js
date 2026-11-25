@@ -8445,11 +8445,23 @@ $('kd-check')?.addEventListener('click', async () => {
             `<br>server <code>${escapeHtml(r.server.sha.slice(0, 12))}</code> ${escapeHtml(r.server.message || '')}`;
         $('kd-update').disabled = !r.updateAvailable;
         status.className = `update-status ${r.updateAvailable ? 'available' : 'current'}`;
-        // Which half moved: the registry tooling, the names server's own code, or neither.
-        // K-Digital-Freedom-Indexer commits that touch nothing the server is built from are not an update.
-        const what = [r.toolingUpdate ? 'the registry tooling' : '', r.serverUpdate ? "the names server's code" : ''].filter(Boolean).join(' and ');
+        // Why, not only whether: which half moved, and for the server which of its files. The
+        // indexer's own daily commits that leave the names server alone are not counted.
+        const why = [];
+        if (r.toolingUpdate) why.push(`The registry tooling has a newer commit (${r.latest.sha.slice(0, 7)}).`);
+        if (r.serverUpdate) {
+            const files = (r.serverFiles ?? []).map((f) => f.split('/').pop());
+            why.push(
+                files.length
+                    ? `The names server's code changed: ${files.slice(0, 4).join(', ')}${files.length > 4 ? ` and ${files.length - 4} more` : ''}.`
+                    : "The names server's code may have changed (GitHub could not list what did).",
+            );
+        }
+        if (r.serverUnrecorded) {
+            why.push('There is no record of which commit this names server was built from, so it cannot be compared. One update records it.');
+        }
         status.textContent = r.updateAvailable
-            ? `A newer version of ${what || '.kachat Domains'} is available.`
+            ? why.join(' ') || 'A newer version of .kachat Domains is available.'
             : 'Up to date. New K-Digital-Freedom-Indexer commits that leave the names server untouched are not counted.';
     } catch (e) {
         status.className = 'update-status error';

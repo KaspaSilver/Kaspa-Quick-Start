@@ -264,6 +264,19 @@ export async function changedFiles({ repo, base, head }) {
     }
 }
 
+/** One text file from a repo at a commit, or null when it is not there or cannot be read. */
+export async function fileAt({ repo, path, ref }) {
+    if (!REPO_RE.test(repo) || !REF_RE.test(ref) || !/^[A-Za-z0-9._/-]{1,200}$/.test(path) || path.includes('..')) return null;
+    try {
+        const res = await ghFetch(`https://api.github.com/repos/${repo}/contents/${path}?ref=${encodeURIComponent(ref)}`);
+        if (!res.ok) return null;
+        const f = await res.json();
+        return f.encoding === 'base64' ? Buffer.from(f.content ?? '', 'base64').toString('utf8') : null;
+    } catch {
+        return null;
+    }
+}
+
 export async function latestCommit({ repo = 'KaspaSilver/Kaspa-Quick-Start', ref = 'main' } = {}) {
     if (!REPO_RE.test(repo)) throw new Error(`"${repo}" is not a valid owner/repo.`);
     if (!REF_RE.test(ref)) throw new Error(`"${ref}" is not a valid branch, tag or commit.`);
