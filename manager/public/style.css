@@ -2878,7 +2878,32 @@ body.dag-fullscreen { overflow: hidden; }
 .logs-download { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; flex-wrap: wrap; }
 .logs-download select { width: auto; }
 
-/* The Chess view's bot boards: one small table per bot level. */
+/* KaPlay's Arcade card: one game at a time, picked like the network switch. */
+.arcade-games {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 2px 0 10px;
+    padding: 4px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+}
+.arcade-game {
+    padding: 6px 18px;
+    font-size: 13px;
+    font-weight: 650;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    border-radius: 999px;
+    cursor: pointer;
+}
+.arcade-game:hover { color: var(--text); }
+.arcade-game.active { background: var(--accent); color: var(--on-accent); }
+.arcade-pickers { margin-bottom: 4px; }
+
+/* The Chess bot boards: one small table per bot level. */
 .chess-bot h4 { margin: 4px 0 8px; }
 
 /* NFC Card: a command to copy, and the admin key shown once. */

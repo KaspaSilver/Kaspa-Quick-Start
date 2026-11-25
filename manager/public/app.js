@@ -5368,16 +5368,19 @@ let channelState = { tracked: [], defaults: [], configured: false };
 
 const CHANNEL_RE = /^[a-z0-9][a-z0-9._-]{0,35}$/;
 
-// Channels KaPlay plays chess over rather than rooms people chat in. Untracked, the games are
-// never recorded and the Chess view's boards stay empty, so leaving one off gets a warning.
+// Rooms KaPlay plays over rather than rooms people chat in. Their cards are on the KaPlay tab,
+// not among the public chats. Untracked, the games are never recorded and the boards stay empty.
 const GAME_CHANNELS = {
     'chess-arena': '1v1 games and tournaments',
     'chess-bots': 'games against the bots',
     'kplay-arcade': 'every KaPlay game',
 };
 
-async function loadKachatBroadcasts() {
-
+/**
+ * Reads the channel counts and the tracked list into channelState, for Public chats and for
+ * KaPlay's Game rooms. False when the indexer did not answer.
+ */
+async function loadChannelState() {
     let counts = {};
     let total = 0;
     try {
@@ -5395,19 +5398,9 @@ async function loadKachatBroadcasts() {
         // all. It still tracks the set it was built with, in code, so reporting
         // "none tracked" would be the opposite of the truth.
         if (!Array.isArray(settings.available_broadcast_channels)) {
-            channelState = { tracked: [], defaults: [], configured: false, unsupported: true };
-            $('kachat-channels-tag').textContent = 'not configurable';
-            $('kachat-channels-tag').className = 'tag';
-            $('kachat-channels').innerHTML =
-                '<p class="verdict">This indexer is older than per-channel tracking, so it follows the ' +
-                'channels it was built with and they cannot be changed from here. Update it under the ' +
-                'Updates tab to choose between them.</p>';
-            $('kachat-channel-new').disabled = true;
-            $('kachat-channel-add').disabled = true;
-            return;
+            channelState = { tracked: [], defaults: [], configured: false, unsupported: true, counts, total };
+            return true;
         }
-        $('kachat-channel-new').disabled = false;
-        $('kachat-channel-add').disabled = false;
         channelState.unsupported = false;
         // An indexer with its own KaPlay switch follows the game rooms by that switch alone,
         // whatever this list says; an older one follows them only while they are on it.
@@ -5424,16 +5417,46 @@ async function loadKachatBroadcasts() {
                 : [...channelState.defaults];
         }
     } catch {
+        return false;
+    }
+    channelState.counts = counts;
+    channelState.total = total;
+    return true;
+}
+
+async function loadKachatBroadcasts() {
+    if (!(await loadChannelState())) {
         $('kachat-channels').innerHTML = '<p class="muted">The indexer is not answering.</p>';
         return;
     }
-
-    channelState.counts = counts;
-    channelState.total = total;
+    if (channelState.unsupported) {
+        $('kachat-channels-tag').textContent = 'not configurable';
+        $('kachat-channels-tag').className = 'tag';
+        $('kachat-channels').innerHTML =
+            '<p class="verdict">This indexer is older than per-channel tracking, so it follows the ' +
+            'channels it was built with and they cannot be changed from here. Update it under the ' +
+            'Updates tab to choose between them.</p>';
+        $('kachat-channel-new').disabled = true;
+        $('kachat-channel-add').disabled = true;
+        return;
+    }
+    $('kachat-channel-new').disabled = false;
+    $('kachat-channel-add').disabled = false;
     setChannelsDirty(!!channelState.dirty);
-    renderChannels(counts, total);
+    renderChannels(channelState.counts, channelState.total);
     renderChannelSelects();
     await loadBroadcastRows();
+}
+
+/** KaPlay's poll: only the channel state its Game rooms card needs. */
+async function loadKaplayRooms() {
+    if (!(await loadChannelState())) {
+        $('kaplay-rooms').innerHTML = '<p class="muted">The indexer is not answering.</p>';
+        for (const id of ['kaplay-rooms-off', 'kaplay-rooms-save-row', 'kaplay-rooms-note']) $(id).hidden = true;
+        return;
+    }
+    setChannelsDirty(!!channelState.dirty);
+    renderKaplayRooms();
 }
 
 function renderChannels(counts, total) {
@@ -5448,12 +5471,19 @@ function renderChannels(counts, total) {
     //             invisible here -- not tracked and no rows, so nothing to
     //             render -- and the only way to find it is to already know the
     //             name and type it in.
+    // Whatever the Public chats cards show, the Game rooms on the KaPlay tab follow the same list.
+    renderKaplayRooms();
+
     const names = [
         ...new Set([...channelState.tracked, ...Object.keys(counts), ...channelState.defaults]),
-    ].sort();
+    ]
+        .filter((c) => !GAME_CHANNELS[c])
+        .sort();
+    // The indexer's total counts the game rooms too; their messages are moves, so they come off.
+    const chatTotal = Math.max(0, total - Object.keys(GAME_CHANNELS).reduce((sum, c) => sum + (counts[c] || 0), 0));
 
     const tag = $('kachat-channels-tag');
-    const n = channelState.tracked.length;
+    const n = channelState.tracked.filter((c) => !GAME_CHANNELS[c]).length;
     tag.textContent = n ? `${n} channel${n === 1 ? '' : 's'} indexed` : 'none indexed';
     tag.className = `tag ${n ? 'ok' : 'off'}`;
 
@@ -5463,24 +5493,13 @@ function renderChannels(counts, total) {
         // the ones it ships are switched off instead, so the list it came with
         // stays recoverable. How many that is, is upstream's to decide.
         const removable = !channelState.defaults.includes(name);
-        const game = GAME_CHANNELS[name];
-        // A game room the KaPlay switch governs keeps its card for the count, without a switch
-        // of its own here: flipping one would do nothing.
-        if (game && channelState.kaplaySwitch) {
-            return `<div class="channel-card game">
-              <div class="head"><span class="name" title="#${escapeHtml(name)}">#${escapeHtml(name)}</span></div>
-              <div class="count">${fmtNum(counts[name] || 0)}</div>
-              <div class="kind">KaPlay · ${escapeHtml(game)}. Its switch is on the KaPlay tab.</div>
-            </div>`;
-        }
-        return `<div class="channel-card${on ? '' : ' off'}${on ? '' : ' untracked'}${game ? ' game' : ''}">
+        return `<div class="channel-card${on ? '' : ' off'}${on ? '' : ' untracked'}">
           <div class="head">
             <span class="name" title="#${escapeHtml(name)}">#${escapeHtml(name)}</span>
             ${removable ? `<button type="button" class="drop" data-drop-channel="${escapeHtml(name)}" title="Remove from the list">✕</button>` : ''}
             <label class="switch"><input type="checkbox" data-channel="${escapeHtml(name)}"${on ? ' checked' : ''}><span class="track"></span></label>
           </div>
           <div class="count">${fmtNum(counts[name] || 0)}</div>
-          ${game ? `<div class="kind" title="Moves and results, not chat">KaPlay · ${escapeHtml(game)}</div>` : ''}
         </div>`;
     };
 
@@ -5488,16 +5507,15 @@ function renderChannels(counts, total) {
     // again on every toggle, and insertAdjacentHTML does not replace: without
     // this, flipping two switches leaves two notices.
     document.getElementById('kachat-channels-none')?.remove();
-    document.getElementById('kachat-channels-games')?.remove();
 
     $('kachat-channels').innerHTML =
         names.map(card).join('') +
         `<div class="channel-card total">
            <div class="head"><span class="name">Total public chats</span></div>
-           <div class="count">${fmtNum(total)}</div>
+           <div class="count">${fmtNum(chatTotal)}</div>
          </div>`;
 
-    if (!channelState.tracked.length) {
+    if (!n) {
         $('kachat-channels').insertAdjacentHTML(
             'afterend',
             '<p class="verdict bad" id="kachat-channels-none">Nothing is tracked, so no public chats are being stored at all.</p>',
@@ -5509,32 +5527,6 @@ function renderChannels(counts, total) {
     // indexer has started shipping since it was saved is pointed at rather than
     // added. Only for a list somebody actually saved: an indexer with no list
     // configured follows its own defaults and has nothing to miss.
-    // A game channel off the list is the louder case, and is named on its own: chess just
-    // stops being recorded, with nothing in the apps to say why. Any game channel counts,
-    // offered or not, since an older indexer may not ship #chess-bots as a default yet.
-    // #kplay-arcade is left out: an indexer without the KaPlay switch never followed it.
-    const gamesOff = channelState.kaplaySwitch
-        ? []
-        : Object.keys(GAME_CHANNELS).filter((c) => c !== 'kplay-arcade' && !channelState.tracked.includes(c));
-    if (gamesOff.length) {
-        $('kachat-channels').insertAdjacentHTML(
-            'afterend',
-            `<p class="verdict bad" id="kachat-channels-games">
-               ${gamesOff.map((c) => `#${escapeHtml(c)}`).join(' and ')} ${gamesOff.length === 1 ? 'is' : 'are'} not
-               tracked, so KaPlay's ${gamesOff.map((c) => escapeHtml(GAME_CHANNELS[c])).join(' and ')} are not
-               being recorded and the Chess boards for them stay empty.
-               <button type="button" class="ghost" id="kachat-channels-games-adopt">Track ${gamesOff.length === 1 ? 'it' : 'them'}</button>
-             </p>`,
-        );
-        $('kachat-channels-games-adopt').addEventListener('click', () => {
-            channelState.tracked = [...channelState.tracked, ...gamesOff];
-            setChannelsDirty(true);
-            renderChannels(channelState.counts, channelState.total);
-            renderChannelSelects();
-            toast('Added. Save and apply to start recording them.');
-        });
-    }
-
     const missing = channelState.configured
         ? channelState.defaults.filter((c) => !channelState.tracked.includes(c) && !GAME_CHANNELS[c])
         : [];
@@ -5557,10 +5549,66 @@ function renderChannels(counts, total) {
     });
 }
 
+/**
+ * KaPlay's game rooms. An indexer with the KaPlay switch follows them by that switch alone, so
+ * their cards only count; an older one follows them by the channel list, so each card has its
+ * own switch, saved with that list. #kplay-arcade only shows there once it is on the list: such
+ * an indexer never followed it.
+ */
+function renderKaplayRooms() {
+    const box = $('kaplay-rooms');
+    const off = $('kaplay-rooms-off');
+    const note = $('kaplay-rooms-note');
+    const saveRow = $('kaplay-rooms-save-row');
+    if (channelState.unsupported) {
+        box.innerHTML = '';
+        off.hidden = saveRow.hidden = true;
+        note.textContent =
+            'This indexer is older than per-channel tracking, so it follows the game rooms it was built with. ' +
+            'Update it under the Updates tab to choose.';
+        note.hidden = false;
+        return;
+    }
+    const counts = channelState.counts || {};
+    const bySwitch = !!channelState.kaplaySwitch;
+    const names = Object.keys(GAME_CHANNELS).filter(
+        (c) => bySwitch || c !== 'kplay-arcade' || channelState.tracked.includes(c) || counts[c],
+    );
+    box.innerHTML = names
+        .map((name) => {
+            // By the switch, a card is not dimmed: the switch at the top says whether it is on.
+            const on = bySwitch || channelState.tracked.includes(name);
+            return `<div class="channel-card game${on ? '' : ' off'}">
+              <div class="head">
+                <span class="name" title="#${escapeHtml(name)}">#${escapeHtml(name)}</span>
+                ${bySwitch ? '' : `<label class="switch"><input type="checkbox" data-channel="${escapeHtml(name)}"${on ? ' checked' : ''}><span class="track"></span></label>`}
+              </div>
+              <div class="count">${fmtNum(counts[name] || 0)}</div>
+              <div class="kind">${escapeHtml(GAME_CHANNELS[name])}</div>
+            </div>`;
+        })
+        .join('');
+
+    // A chess room off the list is named on its own: the games just stop being recorded, with
+    // nothing in K to say why.
+    const gamesOff = bySwitch ? [] : names.filter((c) => c !== 'kplay-arcade' && !channelState.tracked.includes(c));
+    off.hidden = !gamesOff.length;
+    off.textContent = gamesOff.length
+        ? `${gamesOff.map((c) => `#${c}`).join(' and ')} ${gamesOff.length === 1 ? 'is' : 'are'} off, so KaPlay's ` +
+          `${gamesOff.map((c) => GAME_CHANNELS[c]).join(' and ')} are not being recorded and those boards stay empty.`
+        : '';
+    saveRow.hidden = bySwitch;
+    note.textContent = bySwitch
+        ? 'These rooms follow the Index KaPlay switch at the top of this tab.'
+        : 'This indexer follows the game rooms by its channel list, so Save and apply sends the whole list, Public chats included.';
+    note.hidden = false;
+}
+
 /** Marks the list as changed but not yet sent. */
 function setChannelsDirty(dirty) {
     channelState.dirty = dirty;
     $('kachat-channels-dirty').hidden = !dirty;
+    $('kaplay-rooms-dirty').hidden = !dirty;
 }
 
 /** Sends the list as it now stands. No restart; the indexer picks it up. */
@@ -5575,17 +5623,19 @@ async function saveChannels() {
                 : 'No channels tracked, so nothing is being stored.',
             channelState.tracked.length ? '' : 'bad',
         );
-        loadKachatBroadcasts();
+        if (activeSubtab('kachat') === 'kachat-kaplay') loadKaplayRooms();
+        else loadKachatBroadcasts();
     } catch (e) {
         toast(e instanceof IndexerDown ? 'The indexer is not running.' : e.message, 'bad');
     }
 }
 
 $('kachat-channels-save').addEventListener('click', saveChannels);
+$('kaplay-rooms-save').addEventListener('click', saveChannels);
 
 // Toggling and removing change the list on screen; nothing is sent until Save
 // and apply, which is why the unsaved marker exists.
-$('kachat-channels').addEventListener('change', (event) => {
+function toggleChannel(event) {
     const channel = event.target.dataset?.channel;
     if (!channel) return;
     channelState.tracked = event.target.checked
@@ -5593,7 +5643,9 @@ $('kachat-channels').addEventListener('change', (event) => {
         : channelState.tracked.filter((c) => c !== channel);
     setChannelsDirty(true);
     renderChannels(channelState.counts, channelState.total);
-});
+}
+$('kachat-channels').addEventListener('change', toggleChannel);
+$('kaplay-rooms').addEventListener('change', toggleChannel);
 
 $('kachat-channels').addEventListener('click', (event) => {
     const channel = event.target.dataset?.dropChannel;
@@ -5612,6 +5664,7 @@ $('kachat-channel-add').addEventListener('click', () => {
     if (!CHANNEL_RE.test(name)) {
         return toast('Lowercase letters, digits, dots, dashes and underscores, up to 36 characters.', 'bad');
     }
+    if (GAME_CHANNELS[name]) return toast(`#${name} is a KaPlay game room. It is on the KaPlay tab.`);
     if (channelState.tracked.includes(name)) return toast(`#${name} is already on the list.`);
 
     channelState.tracked = [...channelState.tracked, name];
@@ -5883,6 +5936,9 @@ function refreshKachatPanel() {
             break;
         case 'kachat-block':
             loadKachatBlocklist();
+            break;
+        case 'kachat-kaplay':
+            loadKaplayRooms();
             break;
         case 'kachat-delete':
             // Its public-chat purge needs the tracked channels for its picker.
@@ -7913,7 +7969,7 @@ $('bot-update').addEventListener('click', async () => {
 // ------------------------------------------------------------------- KaPlay ---
 
 // Read-only views of KaPlay's boards: the chess leaderboard the K-Digital-Freedom-Indexer replays from
-// #chess-arena, and the arcade scores from #kplay-arcade.
+// #chess-arena and #chess-bots, and the Snake and 2048 scores from #kplay-arcade.
 const chessShort = (addr) => {
     const s = String(addr ?? '');
     return s.length > 24 ? `${s.slice(0, 12)}…${s.slice(-6)}` : s;
@@ -7927,117 +7983,132 @@ const chessWhen = (ms) => {
     }
 };
 
-// Both boards come from the same indexer, so either answer sets the one tag.
+// Every board comes from the same indexer, so any answer sets the one tag.
 function setKaplayState(data) {
     const state = $('kaplay-state');
     state.textContent = !data.installed ? 'not installed' : data.running ? 'live' : 'stopped';
     state.className = data.installed && data.running ? 'tag ok' : 'tag off';
 }
 
-function loadKaplay() {
-    loadChess().catch(() => {});
-    loadArcade().catch(() => {});
+// The Arcade card shows one game's one leaderboard at a time. Chess's 1v1 and tournament boards
+// cover the indexer's last 30 days, so they have no period to pick.
+const ARCADE_BOARDS = {
+    chess: [
+        { id: 'duel', label: '1v1' },
+        { id: 'tournament', label: 'Tournaments' },
+        { id: 'bots', label: 'Against the bots', period: true },
+    ],
+    snake: [{ id: 'best', label: 'Best scores', period: true }],
+    2048: [{ id: 'best', label: 'Best scores', period: true }],
+};
+// The game on screen, and the board last picked for each, so switching game and back keeps it.
+const arcadeView = { game: 'chess', board: { chess: 'duel', snake: 'best', 2048: 'best' } };
+// Only the latest pick's answer is drawn: a slow one for the previous pick is dropped.
+let arcadeSeq = 0;
+
+function arcadeBoard() {
+    const boards = ARCADE_BOARDS[arcadeView.game];
+    return boards.find((b) => b.id === arcadeView.board[arcadeView.game]) || boards[0];
 }
 
-async function loadChess() {
-    const err = $('chess-error');
+function renderArcadePickers() {
+    for (const button of document.querySelectorAll('#arcade-games .arcade-game')) {
+        const on = button.dataset.game === arcadeView.game;
+        button.classList.toggle('active', on);
+        button.setAttribute('aria-selected', String(on));
+    }
+    const boards = ARCADE_BOARDS[arcadeView.game];
+    const pick = $('arcade-board-pick');
+    pick.innerHTML = boards.map((b) => `<option value="${b.id}">${escapeHtml(b.label)}</option>`).join('');
+    pick.value = arcadeBoard().id;
+    // A game with one board has nothing to choose between.
+    pick.hidden = boards.length < 2;
+    $('arcade-period').hidden = !arcadeBoard().period;
+}
+
+function loadKaplay() {
+    loadArcadeBoard().catch(() => {});
+}
+
+async function loadArcadeBoard() {
+    renderArcadePickers();
+    const { game } = arcadeView;
+    const board = arcadeBoard();
+    const seq = ++arcadeSeq;
+    const err = $('arcade-error');
     err.hidden = true;
     try {
-        const query = new URLSearchParams({ period: $('chess-bots-period').value });
+        const query = new URLSearchParams({ period: $('arcade-period').value });
+        if (game !== 'chess') query.set('game', game);
         if (networkView === 'testnet') query.set('net', 'testnet');
-        renderChess(await api(`/api/chess?${query}`));
+        const data = await api(game === 'chess' ? `/api/chess?${query}` : `/api/arcade?${query}`);
+        if (seq !== arcadeSeq) return;
+        setKaplayState(data);
+        if (game === 'chess') renderChess(data, board.id);
+        else renderArcade(data);
     } catch (e) {
+        if (seq !== arcadeSeq) return;
         err.textContent = e.message;
         err.hidden = false;
+        $('arcade-board').innerHTML = '';
     }
 }
 
-function renderChess(data) {
-    setKaplayState(data);
+const kaplayNameCell = (a) => `<td class="mono" title="${escapeHtml(a)}">${escapeHtml(chessShort(a))}</td>`;
 
-    const err = $('chess-error');
-    if (data.error) {
-        err.textContent = data.error;
-        err.hidden = false;
-    } else {
-        err.hidden = true;
+function renderChess(data, board) {
+    const err = $('arcade-error');
+    const summary = $('arcade-summary');
+    const box = $('arcade-board');
+    const failed = board === 'bots' ? data.botsError || data.error : data.error;
+    err.textContent = failed || '';
+    err.hidden = !failed;
+    if (failed || !data.installed) {
+        summary.textContent = '';
+        box.innerHTML = '';
+        return;
     }
+    if (board === 'bots') return renderChessBots(data);
 
-    // Two boards, sorted panel-side the way the app sorts each (§6). The server returns the raw
+    // Sorted panel-side the way the app sorts each board (§6). The server returns the raw
     // per-player breakdown; the phone (and here) re-sorts by the board it is showing.
     const players = data.leaderboard || [];
-    const nameCell = (a) => `<td class="mono" title="${escapeHtml(a)}">${escapeHtml(chessShort(a))}</td>`;
-
-    const duel = players
-        .filter((p) => (p.duelWins || 0) + (p.duelLosses || 0) > 0)
-        .sort(
-            (a, b) =>
-                (b.duelWins || 0) - (a.duelWins || 0) ||
-                (a.duelLosses || 0) - (b.duelLosses || 0) ||
-                (b.lastPlayedAt || 0) - (a.lastPlayedAt || 0),
-        );
-    const db = $('chess-duel-board');
-    if (!duel.length) {
-        db.innerHTML = '<p class="muted">No 1v1 games in the last 30 days yet.</p>';
-    } else {
-        db.innerHTML =
-            '<table class="blocks"><thead><tr><th>#</th><th>Player</th><th>Wins</th><th>Losses</th><th>Last</th></tr></thead><tbody>' +
-            duel
-                .map(
-                    (p, i) =>
-                        `<tr><td>${i + 1}</td>${nameCell(p.address)}<td>${escapeHtml(fmtNum(p.duelWins))}</td><td>${escapeHtml(fmtNum(p.duelLosses))}</td><td>${escapeHtml(chessWhen(p.lastPlayedAt))}</td></tr>`,
-                )
-                .join('') +
-            '</tbody></table>';
+    const duel = board === 'duel';
+    const won = duel ? 'duelWins' : 'tournamentsWon';
+    const lost = duel ? 'duelLosses' : 'tournamentsLost';
+    summary.textContent = duel
+        ? 'Last 30 days. Most wins first, then fewest losses.'
+        : 'Last 30 days, whole tournaments only: won as champion, lost when knocked out.';
+    const ranked = players
+        .filter((p) => (p[won] || 0) + (p[lost] || 0) > 0)
+        .sort((a, b) => (b[won] || 0) - (a[won] || 0) || (a[lost] || 0) - (b[lost] || 0) || (b.lastPlayedAt || 0) - (a.lastPlayedAt || 0));
+    if (!ranked.length) {
+        box.innerHTML = `<p class="muted">No ${duel ? '1v1 games' : 'tournaments'} in the last 30 days yet.</p>`;
+        return;
     }
-
-    // Tournament board = whole tournaments only: won (champion) vs lost (knocked out).
-    const tourney = players
-        .filter((p) => (p.tournamentsWon || 0) + (p.tournamentsLost || 0) > 0)
-        .sort(
-            (a, b) =>
-                (b.tournamentsWon || 0) - (a.tournamentsWon || 0) ||
-                (a.tournamentsLost || 0) - (b.tournamentsLost || 0) ||
-                (b.lastPlayedAt || 0) - (a.lastPlayedAt || 0),
-        );
-    const tb = $('chess-tournament-board');
-    if (!tourney.length) {
-        tb.innerHTML = '<p class="muted">No tournaments in the last 30 days yet.</p>';
-    } else {
-        tb.innerHTML =
-            '<table class="blocks"><thead><tr><th>#</th><th>Player</th><th>Won</th><th>Lost</th><th>Last</th></tr></thead><tbody>' +
-            tourney
-                .map(
-                    (p, i) =>
-                        `<tr><td>${i + 1}</td>${nameCell(p.address)}<td>${escapeHtml(fmtNum(p.tournamentsWon))}</td><td>${escapeHtml(fmtNum(p.tournamentsLost))}</td><td>${escapeHtml(chessWhen(p.lastPlayedAt))}</td></tr>`,
-                )
-                .join('') +
-            '</tbody></table>';
-    }
-    renderChessBots(data);
+    box.innerHTML =
+        `<table class="blocks"><thead><tr><th>#</th><th>Player</th><th>${duel ? 'Wins' : 'Won'}</th><th>${duel ? 'Losses' : 'Lost'}</th><th>Last</th></tr></thead><tbody>` +
+        ranked
+            .map(
+                (p, i) =>
+                    `<tr><td>${i + 1}</td>${kaplayNameCell(p.address)}<td>${escapeHtml(fmtNum(p[won]))}</td><td>${escapeHtml(fmtNum(p[lost]))}</td><td>${escapeHtml(chessWhen(p.lastPlayedAt))}</td></tr>`,
+            )
+            .join('') +
+        '</tbody></table>';
 }
 
 // One board per KaPlay bot level the indexer has games for, lowest first. The indexer has
 // already ranked each one (fewest moves, then earliest), so the order is kept as it comes.
 function renderChessBots(data) {
-    const err = $('chess-bots-error');
-    err.textContent = data.botsError || '';
-    err.hidden = !data.botsError;
-
-    const box = $('chess-bot-boards');
+    $('arcade-summary').textContent = 'Fewest of their own moves each player needed to checkmate each bot.';
+    const box = $('arcade-board');
     const bots = data.bots || [];
-    if (data.botsError || !data.installed) {
-        box.innerHTML = '';
-        return;
-    }
     if (!bots.length) {
         box.innerHTML =
             `<p class="muted">No bot games ${data.period === 'month' ? 'this month' : 'yet'}. KaPlay sends them on ` +
-            '#chess-bots, so if none ever show, check that it is tracked under ' +
-            '<a href="#" data-chess-goto="kachat-broadcasts">Public chats</a>.</p>';
+            '#chess-bots, so if none ever show, check that room under Game rooms below.</p>';
         return;
     }
-    const nameCell = (a) => `<td class="mono" title="${escapeHtml(a)}">${escapeHtml(chessShort(a))}</td>`;
     box.innerHTML =
         '<div class="grid">' +
         bots
@@ -8049,7 +8120,7 @@ function renderChessBots(data) {
                       players
                           .map(
                               (p, i) =>
-                                  `<tr><td>${i + 1}</td>${nameCell(p.address)}<td>${escapeHtml(fmtNum(p.moves))}</td><td>${escapeHtml(chessWhen(p.at))}</td></tr>`,
+                                  `<tr><td>${i + 1}</td>${kaplayNameCell(p.address)}<td>${escapeHtml(fmtNum(p.moves))}</td><td>${escapeHtml(chessWhen(p.at))}</td></tr>`,
                           )
                           .join('') +
                       '</tbody></table>'
@@ -8061,22 +8132,7 @@ function renderChessBots(data) {
 }
 
 // The indexer ranks the board (best score, then the earlier game), so its order is kept.
-async function loadArcade() {
-    const err = $('arcade-error');
-    err.hidden = true;
-    try {
-        const query = new URLSearchParams({ game: $('arcade-game').value, period: $('arcade-period').value });
-        if (networkView === 'testnet') query.set('net', 'testnet');
-        renderArcade(await api(`/api/arcade?${query}`));
-    } catch (e) {
-        err.textContent = e.message;
-        err.hidden = false;
-    }
-}
-
 function renderArcade(data) {
-    setKaplayState(data);
-
     const err = $('arcade-error');
     err.textContent = data.error || '';
     err.hidden = !data.error;
@@ -8085,7 +8141,7 @@ function renderArcade(data) {
     const summary = $('arcade-summary');
     const box = $('arcade-board');
     if (!data.installed || data.error) {
-        summary.textContent = "Each player's best score. Every game here was replayed by the indexer and reaches the score it claims.";
+        summary.textContent = '';
         box.innerHTML = '';
         return;
     }
@@ -8113,23 +8169,27 @@ function renderArcade(data) {
                 const whenCell = /^[0-9a-f]{64}$/i.test(p.tx || '')
                     ? `<a href="${explorer}${p.tx}" target="_blank" rel="noreferrer noopener" title="Open this game's transaction">${when}</a>`
                     : when;
-                return `<tr><td>${i + 1}</td><td class="mono" title="${escapeHtml(p.address)}">${escapeHtml(chessShort(p.address))}</td><td>${escapeHtml(fmtNum(p.score))}</td><td>${whenCell}</td></tr>`;
+                return `<tr><td>${i + 1}</td>${kaplayNameCell(p.address)}<td>${escapeHtml(fmtNum(p.score))}</td><td>${whenCell}</td></tr>`;
             })
             .join('') +
         '</tbody></table>';
 }
 
-$('kaplay-refresh').addEventListener('click', loadKaplay);
-$('arcade-game').addEventListener('change', () => loadArcade().catch(() => {}));
-$('arcade-period').addEventListener('change', () => loadArcade().catch(() => {}));
-
-$('chess-bots-period').addEventListener('change', () => loadChess().catch(() => {}));
-$('chess-bot-boards').addEventListener('click', (event) => {
-    const link = event.target.closest('[data-chess-goto]');
-    if (!link) return;
-    event.preventDefault();
-    selectSubtab(link.closest('section'), link.dataset.chessGoto);
+$('kaplay-refresh').addEventListener('click', () => {
+    loadKaplay();
+    loadKaplayRooms();
 });
+$('arcade-games').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-game]');
+    if (!button || button.dataset.game === arcadeView.game) return;
+    arcadeView.game = button.dataset.game;
+    loadKaplay();
+});
+$('arcade-board-pick').addEventListener('change', (event) => {
+    arcadeView.board[arcadeView.game] = event.target.value;
+    loadKaplay();
+});
+$('arcade-period').addEventListener('change', loadKaplay);
 
 // ---------------------------------------------------------- address profiles ---
 
