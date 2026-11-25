@@ -1270,8 +1270,8 @@
 
         <article class="card span2">
           <div class="node-head">
-            <h3>Recent public chats</h3>
-            <select id="kachat-bcast-channel"><option value="">All channels</option></select>
+            <h3>Public chat history</h3>
+            <select id="kachat-bcast-channel" aria-label="Room"><option value="">All rooms</option></select>
             <button type="button" id="kachat-bcast-refresh" class="ghost">Refresh</button>
           </div>
           <div class="scroll-x">
@@ -1280,9 +1280,15 @@
               <tbody id="kachat-bcast-rows"><tr><td colspan="5" class="muted">Nothing yet.</td></tr></tbody>
             </table>
           </div>
+          <div class="row" id="kachat-bcast-pager"></div>
+          <p class="hint" id="kachat-bcast-onepage" hidden>
+            This indexer only hands over its newest messages, so older pages are not reachable yet.
+            Update the indexer under Updates to page through the whole history.
+          </p>
           <p class="hint">
-            Only the channels switched on above are indexed. Messages are kept
-            for 30 days and the preview shows the first 200 characters.
+            Newest first, 50 a page, from every room with messages stored, including ones no longer
+            indexed and KaPlay's game rooms. Only the channels switched on above are indexed, and
+            the preview shows the first 200 characters.
           </p>
         </article>
         <p class="hint">Deleting a public chat, or purging stored public chats by channel, is under the <strong>Delete</strong> tab.</p>

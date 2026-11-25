@@ -865,6 +865,7 @@ function refreshKaspadForView() {
     // and a KaPost page belong to the other network's indexer.
     channelState.dirty = false;
     kapostsPage = { page: 1, total: 0 };
+    bcastPage = { page: 1, total: 0 };
     if (activeSubtab('kachat')) refreshKachatPanel();
     if (activeSubtab('kachat') === 'kachat-kaplay') loadKaplay();
     if (activeSubtab('kachat') === 'kachat-profiles') loadProfiles().catch(() => {});
@@ -932,8 +933,10 @@ function selectSubtab(section, name) {
     if (name === 'kachat-updates') loadTestnetIndexerUpdate().catch(() => {});
     else if (name === 'kachat-transfer') { loadBackup().catch(() => {}); loadReindex().catch(() => {}); refreshKachatPanel(); }
     else if (name.startsWith('kachat-')) {
-        // Opened afresh, "Recently indexed" starts on page 1; the poll after this keeps its page.
+        // Opened afresh, "Recently indexed" and the public chat history start on page 1; the
+        // poll after this keeps the page being read.
         if (name === 'kachat-kaposts') kapostsPage = { page: 1, total: 0 };
+        if (name === 'kachat-broadcasts') bcastPage = { page: 1, total: 0 };
         refreshKachatPanel();
     }
     // Its own call: refreshKachatPanel gives up when the indexer is not
@@ -5263,37 +5266,34 @@ const TRASH_SVG =
 const KAPOSTS_PAGE = 25;
 let kapostsPage = { page: 1, total: 0 };
 
-function renderRecentPager() {
-    const pager = $('kachat-recent-pager');
-    if (!pager) return;
-    const pages = Math.max(1, Math.ceil(kapostsPage.total / KAPOSTS_PAGE));
-    const cur = kapostsPage.page;
-    if (kapostsPage.total === 0) {
-        pager.innerHTML = '';
-        return;
-    }
-    // Windowed set: first, last, and the current page ±2, with … for the gaps.
+/**
+ * Numbered page buttons: first, last, and the current page ±2, with … for the gaps, then the
+ * count. Each button carries its page number in `attr` (a data- attribute name).
+ */
+function numberedPager({ page: cur, total, per, attr, noun = 'item' }) {
+    if (total === 0) return '';
+    const pages = Math.max(1, Math.ceil(total / per));
     const want = new Set([1, pages, cur, cur - 1, cur - 2, cur + 1, cur + 2]);
     const shown = [...want].filter((n) => n >= 1 && n <= pages).sort((a, b) => a - b);
 
-    const btn = (n, label, extra = '') =>
-        `<button type="button" class="ghost mini" data-recent-page="${n}" ${extra}>${label}</button>`;
+    const btn = (n, label, extra = '') => `<button type="button" class="ghost mini" ${attr}="${n}" ${extra}>${label}</button>`;
 
     let html = btn(Math.max(1, cur - 1), '←', cur === 1 ? 'disabled' : '');
     let prev = 0;
     for (const n of shown) {
         if (n - prev > 1) html += '<span class="muted" style="padding:0 2px">…</span>';
-        html +=
-            n === cur
-                ? `<button type="button" class="ghost mini" data-recent-page="${n}" aria-current="page" style="font-weight:700;text-decoration:underline">${n}</button>`
-                : btn(n, String(n));
+        html += n === cur ? btn(n, String(n), 'aria-current="page" style="font-weight:700;text-decoration:underline"') : btn(n, String(n));
         prev = n;
     }
     html += btn(Math.min(pages, cur + 1), '→', cur === pages ? 'disabled' : '');
-    html += `<span class="muted" style="margin-left:8px">${fmtNum(kapostsPage.total)} item${
-        kapostsPage.total === 1 ? '' : 's'
-    }</span>`;
-    pager.innerHTML = html;
+    html += `<span class="muted" style="margin-left:8px">${fmtNum(total)} ${noun}${total === 1 ? '' : 's'}</span>`;
+    return html;
+}
+
+function renderRecentPager() {
+    const pager = $('kachat-recent-pager');
+    if (!pager) return;
+    pager.innerHTML = numberedPager({ ...kapostsPage, per: KAPOSTS_PAGE, attr: 'data-recent-page' });
 }
 
 function renderRecentRows(rows) {
@@ -5678,12 +5678,19 @@ $('kachat-channel-new').addEventListener('keydown', (event) => {
     if (event.key === 'Enter') $('kachat-channel-add').click();
 });
 
-/** The two channel pickers follow whatever is tracked. */
+/**
+ * The two room pickers: every room that is tracked or still has messages stored, so a room
+ * switched off (or a KaPlay game room) can still be read and cleared.
+ */
 function renderChannelSelects() {
-    const options = channelState.tracked.map((c) => `<option value="${escapeHtml(c)}">#${escapeHtml(c)}</option>`).join('');
+    const counts = channelState.counts || {};
+    const rooms = [...new Set([...channelState.tracked, ...Object.keys(counts)])].sort();
+    const options = rooms
+        .map((c) => `<option value="${escapeHtml(c)}">#${escapeHtml(c)} (${fmtNum(counts[c] || 0)})</option>`)
+        .join('');
     const feed = $('kachat-bcast-channel');
     const keep = feed.value;
-    feed.innerHTML = `<option value="">All channels</option>${options}`;
+    feed.innerHTML = `<option value="">All rooms (${fmtNum(channelState.total || 0)})</option>${options}`;
     if ([...feed.options].some((o) => o.value === keep)) feed.value = keep;
     // The Delete tab's picker: refreshed every few seconds, so it keeps what was picked.
     const purge = $('kachat-purge-channel');
@@ -5692,11 +5699,29 @@ function renderChannelSelects() {
     if ([...purge.options].some((o) => o.value === picked)) purge.value = picked;
 }
 
-async function loadBroadcastRows() {
+// The public chat history pages 50 at a time, the way KaPost's "Recently indexed" does: the
+// admin API answers {total, items} for an offset. An indexer from before that answers a bare
+// array of its newest rows, which is shown as the one page it is.
+const BCAST_PAGE = 50;
+let bcastPage = { page: 1, total: 0 };
+
+async function loadBroadcastRows(page = bcastPage.page) {
     const channel = $('kachat-bcast-channel').value;
-    const query = channel ? `?channel=${encodeURIComponent(channel)}&limit=50` : '?limit=50';
+    const query = new URLSearchParams({ limit: String(BCAST_PAGE), offset: String((page - 1) * BCAST_PAGE) });
+    if (channel) query.set('channel', channel);
     try {
-        const rows = await kachat(`broadcasts${query}`);
+        const res = await kachat(`broadcasts?${query}`);
+        const onePage = Array.isArray(res);
+        const rows = onePage ? res : res.items || [];
+        const total = onePage ? rows.length : res.total || 0;
+        // A page the history has since shrunk below (rows deleted) goes to its last one.
+        const pages = Math.max(1, Math.ceil(total / BCAST_PAGE));
+        if (!onePage && page > pages) return loadBroadcastRows(pages);
+        bcastPage = { page: onePage ? 1 : page, total };
+        $('kachat-bcast-onepage').hidden = !onePage || rows.length < BCAST_PAGE;
+        $('kachat-bcast-pager').innerHTML = onePage
+            ? ''
+            : numberedPager({ ...bcastPage, per: BCAST_PAGE, attr: 'data-bcast-page', noun: 'message' });
         $('kachat-bcast-rows').innerHTML = rows.length
             ? rows
                   .map(
@@ -5720,8 +5745,16 @@ async function loadBroadcastRows() {
         $('kachat-bcast-rows').innerHTML = `<tr><td colspan="5" class="muted">${
             e instanceof IndexerDown ? 'The indexer is not running.' : 'Could not load.'
         }</td></tr>`;
+        $('kachat-bcast-pager').innerHTML = '';
     }
 }
+
+$('kachat-bcast-pager').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-bcast-page]');
+    if (!btn || btn.disabled) return;
+    const page = Number(btn.dataset.bcastPage);
+    if (page && page !== bcastPage.page) loadBroadcastRows(page).catch(() => {});
+});
 
 /** The Chats tab's two halves read the same endpoint, differing only in what they show. */
 async function loadKachatChat(kind) {
@@ -6099,7 +6132,7 @@ function setKachatPolling(active) {
 
 // --- controls ---
 
-$('kachat-bcast-channel').addEventListener('change', loadBroadcastRows);
+$('kachat-bcast-channel').addEventListener('change', () => loadBroadcastRows(1));
 
 // ---- Block: addresses the indexer refuses everything from ----
 
@@ -6211,7 +6244,10 @@ $('kachat-jump').addEventListener('click', (event) => {
     const tile = event.target.closest('[data-goto]');
     if (tile) selectSubtab($('tab-kachat'), tile.dataset.goto);
 });
-$('kachat-bcast-refresh').addEventListener('click', loadKachatBroadcasts);
+$('kachat-bcast-refresh').addEventListener('click', () => {
+    bcastPage = { page: 1, total: 0 };
+    loadKachatBroadcasts();
+});
 
 $('kachat-recent-refresh').addEventListener('click', () => loadKachatKaposts({ fromStart: true }));
 $('kachat-recent-pager').addEventListener('click', (e) => {
