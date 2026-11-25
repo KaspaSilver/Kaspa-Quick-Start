@@ -184,7 +184,7 @@ export async function nodeSnapshot(client = rpc) {
             }
         }),
     );
-    out.pruningPointBlueScore = await pruningPointBlueScore(out.dag?.pruningPointHash);
+    out.pruningPointBlueScore = await pruningPointBlueScore(client, out.dag?.pruningPointHash);
     return out;
 }
 
@@ -194,16 +194,20 @@ export async function nodeSnapshot(client = rpc) {
  * the pruning point only moves every twelve hours or so, so the answer is kept
  * against its hash and the call really happens about twice a day.
  */
-let pruningPointCache = { hash: null, blueScore: null };
+// Asked of the node the hash came from, and kept per node: asking mainnet for
+// a testnet block failed on every testnet poll, and one shared cache had each
+// network evict the other's answer.
+const pruningPointCache = new WeakMap();
 
-async function pruningPointBlueScore(hash) {
+async function pruningPointBlueScore(client, hash) {
     if (!hash) return null;
-    if (pruningPointCache.hash === hash) return pruningPointCache.blueScore;
+    const cached = pruningPointCache.get(client);
+    if (cached?.hash === hash) return cached.blueScore;
     try {
-        const res = await rpc.call('getBlock', { hash, includeTransactions: false });
+        const res = await client.call('getBlock', { hash, includeTransactions: false });
         const score = Number(res?.block?.header?.blueScore ?? res?.header?.blueScore);
         if (!Number.isFinite(score)) return null;
-        pruningPointCache = { hash, blueScore: score };
+        pruningPointCache.set(client, { hash, blueScore: score });
         return score;
     } catch {
         return null;

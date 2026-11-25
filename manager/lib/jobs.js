@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { EventEmitter } from 'node:events';
 import { jobContext } from './jobcontext.js';
-import { killJob } from './dockerctl.js';
+import { cancelJob, forgetJob } from './dockerctl.js';
 
 /**
  * Runs the long operations the UI kicks off -- image builds, certificate
@@ -124,6 +124,10 @@ class JobRunner extends EventEmitter {
                     // this reports.
                     job.status = job.cancelled ? 'cancelled' : 'succeeded';
                     job.result = result ?? null;
+                    if (job.cancelled) {
+                        job.error = 'Cancelled.';
+                        log('! Cancelled.');
+                    }
                 },
                 (err) => {
                     // The error from a killed process describes the killing,
@@ -134,6 +138,7 @@ class JobRunner extends EventEmitter {
                 },
             )
             .finally(() => {
+                forgetJob(job.id);
                 job.finishedAt = new Date().toISOString();
                 this.emit('end', job);
                 this.history.unshift({ ...job, lines: job.lines.slice(-200) });
@@ -173,15 +178,18 @@ class JobRunner extends EventEmitter {
 
         // Marked first: whichever way the function ends after its processes
         // die, the end handler has to know this was asked for.
-        this.current.cancelled = true;
-        this.emit('line', { jobId: id, line: 'Cancelling. Docker is being asked to stop.' });
-        this.current.lines.push('Cancelling. Docker is being asked to stop.');
-        const killed = killJob(id);
+        const job = this.current;
+        job.cancelled = true;
+        const say = (line) => {
+            job.lines.push(line);
+            this.emit('line', { jobId: id, line });
+        };
+        say('Cancelling. Docker is being asked to stop.');
+        // Also refuses every command the job tries after this, so a step that
+        // was waiting on something else (a GitHub check) cannot go on to build.
+        const killed = cancelJob(id);
         if (!killed) {
-            this.emit('line', {
-                jobId: id,
-                line: 'Nothing was running to stop, so this ends as soon as the step in progress returns.',
-            });
+            say('Nothing was running to stop. The step in progress finishes, and nothing after it starts.');
         }
         return { cancelled: true, started: true, killed };
     }

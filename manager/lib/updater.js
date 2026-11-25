@@ -8,11 +8,19 @@ const REPO = process.env.UPSTREAM_REPO || 'kaspanet/rusty-kaspa';
 const API = `https://api.github.com/repos/${REPO}`;
 const TAG_RE = /^v?\d+\.\d+\.\d+/;
 
-/** Compares tags like v2.0.1 / v1.3.0-toc.5; pre-release tags sort below their release. */
+/**
+ * Compares tags like v2.0.1 / v1.3.0-toc.5; pre-release tags sort below their release.
+ *
+ * Pre-release parts are compared the semver way, one dot-separated identifier
+ * at a time: numbers as numbers, so toc.10 is newer than toc.9 (as text it sorted
+ * below, which offered a toc.10 node toc.9 as its "update"). A number sorts
+ * below a word, and when every shared identifier is equal the shorter list is
+ * the older one. Build metadata (+...) is ignored.
+ */
 export function compareVersions(a, b) {
     const parse = (v) => {
-        const m = /^v?(\d+)\.(\d+)\.(\d+)(?:-(.+))?$/.exec(String(v || '').trim());
-        return m ? { nums: [+m[1], +m[2], +m[3]], pre: m[4] ?? null } : null;
+        const m = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(String(v || '').trim());
+        return m ? { nums: [+m[1], +m[2], +m[3]], pre: m[4] ? m[4].split('.') : null } : null;
     };
     const pa = parse(a);
     const pb = parse(b);
@@ -20,10 +28,23 @@ export function compareVersions(a, b) {
     for (let i = 0; i < 3; i++) {
         if (pa.nums[i] !== pb.nums[i]) return pa.nums[i] < pb.nums[i] ? -1 : 1;
     }
-    if (pa.pre === pb.pre) return 0;
-    if (pa.pre === null) return 1; // 2.0.0 > 2.0.0-rc1
-    if (pb.pre === null) return -1;
-    return pa.pre < pb.pre ? -1 : 1;
+    if (!pa.pre && !pb.pre) return 0;
+    if (!pa.pre) return 1; // 2.0.0 > 2.0.0-rc1
+    if (!pb.pre) return -1;
+    const numeric = (id) => /^\d+$/.test(id);
+    for (let i = 0; i < Math.min(pa.pre.length, pb.pre.length); i++) {
+        const x = pa.pre[i];
+        const y = pb.pre[i];
+        if (x === y) continue;
+        if (numeric(x) && numeric(y)) {
+            if (Number(x) !== Number(y)) return Number(x) < Number(y) ? -1 : 1;
+            continue;
+        }
+        if (numeric(x)) return -1;
+        if (numeric(y)) return 1;
+        return x < y ? -1 : 1;
+    }
+    return Math.sign(pa.pre.length - pb.pre.length);
 }
 
 /**

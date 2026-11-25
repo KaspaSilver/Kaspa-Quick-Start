@@ -45,6 +45,22 @@ const phaseIndex = (key) => PHASES.findIndex((p) => p.key === key);
 const utxoFraction = (chunks) => 1 - Math.exp(-chunks / 45_000);
 
 /**
+ * `docker logs --timestamps` puts an RFC 3339 time with nanoseconds before each
+ * line. Milliseconds alone would call two lines from the same millisecond the
+ * same line, so the rest of the fraction is kept beside them.
+ */
+const DOCKER_STAMP = /^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)) /;
+
+function parseStamp(text) {
+    const ms = Date.parse(text);
+    if (!Number.isFinite(ms)) return null;
+    const fraction = (/\.(\d+)/.exec(text)?.[1] ?? '').padEnd(9, '0');
+    return { ms, ns: Number(fraction.slice(3, 9)) };
+}
+
+const isAfter = (a, b) => a.ms > b.ms || (a.ms === b.ms && a.ns > b.ns);
+
+/**
  * One tracker per node container: the mainnet node and the testnet-10 node each
  * follow their own log. Same phases and matchers -- testnet's kaspad logs the
  * same IBD lines.
@@ -112,12 +128,33 @@ export function createSyncTracker(container) {
         [/IBD with peer \S+ completed successfully/, () => enterPhase('blocks')],
     ];
 
-    function consume(line) {
+    // The log is followed with docker's own timestamps, and this is the newest
+    // one consumed. Reattaching every minute replays the last 50 lines: read
+    // again, they refreshed `updatedAt` (so "stale" could never turn on) and
+    // could put an older percentage back over a newer one. A line at or before
+    // this one has been seen. Kept across reset(): a recreated node's lines are
+    // all newer, and the old container's are exactly the ones to skip.
+    let lastStamp = null;
+
+    function consume(raw) {
+        const t = DOCKER_STAMP.exec(raw);
+        const line = t ? raw.slice(t[0].length) : raw;
+        let at = Date.now();
+        if (t) {
+            const stamp = parseStamp(t[1]);
+            if (stamp) {
+                if (lastStamp && !isAfter(stamp, lastStamp)) return;
+                lastStamp = stamp;
+                // When kaspad wrote it, not when it was read: the 400 lines
+                // replayed at start-up are not fresh progress either.
+                at = stamp.ms;
+            }
+        }
         for (const [re, apply] of MATCHERS) {
             const m = re.exec(line);
             if (!m) continue;
             apply(m);
-            state.updatedAt = Date.now();
+            state.updatedAt = at;
             state.lastLine = line.replace(/^\S+\s+/, '').trim().slice(0, 200);
             return;
         }
@@ -131,7 +168,7 @@ export function createSyncTracker(container) {
     function start(log = () => {}) {
         if (stop) return;
         try {
-            stop = streamLogs(container, consume, { tail: 400 });
+            stop = streamLogs(container, consume, { tail: 400, timestamps: true });
         } catch (err) {
             log(`sync progress: cannot follow kaspad logs: ${err.message}`);
         }
@@ -145,7 +182,7 @@ export function createSyncTracker(container) {
             } catch {
                 /* already gone */
             }
-            stop = streamLogs(container, consume, { tail: 50 });
+            stop = streamLogs(container, consume, { tail: 50, timestamps: true });
         }, 60_000);
         restartTimer.unref?.();
     }

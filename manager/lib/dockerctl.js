@@ -12,11 +12,24 @@ import { jobContext } from './jobcontext.js';
 const LIVE = new Set();
 
 /**
- * Ends the processes a job started. SIGTERM, because docker cleans up on it; a build that is killed leaves its finished layers in the
- * cache, so starting again picks up where this left off rather than at the
- * beginning.
+ * Jobs somebody cancelled, so nothing they ask for afterwards starts. Killing
+ * only what was running at that moment was not enough: a job cancelled during
+ * its GitHub check went on to run its two-hour build, recreate the container
+ * and write its record, while the queue said "cancelled". Every `run` checks
+ * this first. The runner forgets the id when the job ends.
  */
-export function killJob(jobId) {
+const CANCELLED = new Set();
+
+/**
+ * Cancels a job: marks it so later `run` calls refuse, then ends whatever it
+ * has running. SIGTERM, because docker cleans up on it; a build that is killed
+ * leaves its finished layers in the cache, so starting again picks up where
+ * this left off rather than at the beginning. Returns how many processes were
+ * signalled.
+ */
+export function cancelJob(jobId) {
+    if (!jobId) return 0;
+    CANCELLED.add(jobId);
     let killed = 0;
     for (const entry of LIVE) {
         if (entry.jobId !== jobId) continue;
@@ -28,6 +41,11 @@ export function killJob(jobId) {
         }
     }
     return killed;
+}
+
+/** Drops a finished job's cancelled mark. */
+export function forgetJob(jobId) {
+    CANCELLED.delete(jobId);
 }
 
 const KASPAD_CONTAINER = process.env.KASPAD_CONTAINER || 'kaspa-node-kaspad';
@@ -142,10 +160,21 @@ export class CommandError extends Error {
  * Never uses a shell, so arguments carrying user input cannot be re-parsed.
  */
 export function run(cmd, args, { onLine, timeoutMs = 15 * 60_000, cwd = STACK_LOCAL, env } = {}) {
+    // Whichever job's function this was called from, however far down.
+    const jobId = jobContext.getStore()?.id ?? null;
+    if (jobId && CANCELLED.has(jobId)) {
+        const what = [cmd, args[0]].filter(Boolean).join(' ');
+        const err = new CommandError(`Cancelled: ${what} was not started because the job was cancelled.`, {
+            code: -1,
+            stdout: '',
+            stderr: '',
+        });
+        err.cancelled = true;
+        return Promise.reject(err);
+    }
     return new Promise((resolve, reject) => {
         const child = spawn(cmd, args, { cwd, env: { ...process.env, ...env } });
-        // Whichever job's function this was called from, however far down.
-        const entry = { child, jobId: jobContext.getStore()?.id ?? null };
+        const entry = { child, jobId };
         if (entry.jobId) LIVE.add(entry);
         let stdout = '';
         let stderr = '';

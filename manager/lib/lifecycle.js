@@ -408,6 +408,20 @@ export async function uninstall(key, { keepData = false, onLine = () => {} } = {
     return composeUninstall(unit, { keepData, onLine });
 }
 
+/**
+ * Whether a container or volume is still on the machine. Only Docker saying
+ * "no such" means gone: any other failure (the daemon not answering) is not
+ * proof of anything, so it counts as still there.
+ */
+async function present(kind, name) {
+    try {
+        await docker([kind, 'inspect', name], { timeoutMs: 30_000 });
+        return true;
+    } catch (err) {
+        return !/no such/i.test(`${err.stderr || ''} ${err.message || ''}`);
+    }
+}
+
 /** The compose half of uninstall(). */
 export async function composeUninstall(unit, { keepData = false, onLine = () => {} } = {}) {
     const removed = { containers: [], volumes: [], images: [] };
@@ -418,22 +432,47 @@ export async function composeUninstall(unit, { keepData = false, onLine = () => 
     );
     // Anything compose missed, by name. A container created by an older version
     // of this stack is not in today's compose file but is still on the machine.
+    // It only counts as removed when `docker rm` says so: one that is still
+    // there means this uninstall did not happen, whatever the summary says.
+    const left = { containers: [], volumes: [] };
     for (const name of unit.containers) {
-        const state = await containerState(name);
-        if (!state.exists) continue;
-        await docker(['rm', '-f', name], { timeoutMs: 60_000 }).catch(() => {});
-        removed.containers.push(name);
+        if (!(await present('container', name))) continue;
+        await docker(['rm', '-f', name], { timeoutMs: 60_000 })
+            .then(() => removed.containers.push(name))
+            .catch((err) => {
+                onLine(`  ${name} was not removed: ${err.message}`);
+                left.containers.push(name);
+            });
     }
 
     if (keepData) {
         onLine(`Keeping ${unit.volumes.length} volume${unit.volumes.length === 1 ? '' : 's'}: ${unit.data}.`);
     } else {
         for (const volume of unit.volumes) {
+            // Never created (installed, never started) is already gone, not a failure.
+            if (!(await present('volume', volume))) continue;
             onLine(`Deleting volume ${volume}. This is not recoverable.`);
             await docker(['volume', 'rm', volume], { timeoutMs: 60_000 })
                 .then(() => removed.volumes.push(volume))
-                .catch((err) => onLine(`  ${volume} was not removed: ${err.message}`));
+                .catch((err) => {
+                    onLine(`  ${volume} was not removed: ${err.message}`);
+                    left.volumes.push(volume);
+                });
         }
+    }
+
+    // Stops here, before the images and before the caller puts the settings
+    // back to their defaults: a service whose containers or data are still on
+    // the machine is not uninstalled, and saying it was hid that until the
+    // next install tripped over them.
+    if (left.containers.length || left.volumes.length) {
+        const what = [
+            left.containers.length ? `container${left.containers.length === 1 ? '' : 's'} ${left.containers.join(', ')}` : null,
+            left.volumes.length ? `volume${left.volumes.length === 1 ? '' : 's'} ${left.volumes.join(', ')}` : null,
+        ]
+            .filter(Boolean)
+            .join(' and ');
+        throw new Error(`${unit.label} was not fully removed: ${what} could not be deleted. Nothing else was changed; try Uninstall again.`);
     }
 
     for (const image of unit.images) {
