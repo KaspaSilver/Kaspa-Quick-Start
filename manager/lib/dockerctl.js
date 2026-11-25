@@ -74,7 +74,7 @@ export const STACK_CONTAINERS = [
  * - Address profiles: the profiles follower's `[profiles]` lines (both networks;
  *   docs/KACHAT_PROFILES.md in K-Digital-Freedom-Indexer).
  * - Push service: the chat indexer's push lines (`[Push]`, `[PushRegistry]`,
- *   "Push register …") plus the processor's KaPosts push sends.
+ *   "Push register …") plus the processor's KaPost push sends.
  */
 const PUSH_MATCH = /push/i;
 export const FILTERED_LOG_SOURCES = [

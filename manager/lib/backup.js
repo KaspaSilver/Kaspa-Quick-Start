@@ -1,4 +1,4 @@
-// KaChat automatic backup: one combined, importable file per run — the KaPosts database
+// KaChat automatic backup: one combined, importable file per run — the KaPost database
 // (pg_dump) AND the chat store (handshakes, 1:1 chats, groups, push registrations) — written to a
 // host path the operator chooses, nightly at (server-local) 00:00.
 //
@@ -180,8 +180,8 @@ export async function runBackup(log = () => {}) {
             ],
             { env: secretEnv() },
         );
-        // 2) KaPosts DB dump → stage
-        progress = { step: 2, of: 3, label: 'Dumping KaPosts database…' };
+        // 2) KaPost DB dump → stage
+        progress = { step: 2, of: 3, label: 'Dumping KaPost database…' };
         await dumpDbToStage(mount, stage);
         // 3) tar both into one file, then prune to the newest `keep`
         progress = { step: 3, of: 3, label: 'Compressing into one file…' };
@@ -228,7 +228,7 @@ export async function restoreBackup(filePath, log = () => {}) {
             'sh', file, stage,
         ]);
         // DB: helper cats the dump → local pg_restore in the DB container (no password)
-        log('[restore] restoring KaPosts database');
+        log('[restore] restoring KaPost database');
         // pg_restore --clean warns noisily on a fresh DB; only a non-zero exit is fatal.
         await pipeP(
             ['run', '--rm', '-v', mount, IMG, 'cat', `${stage}/kaposts.dump`],

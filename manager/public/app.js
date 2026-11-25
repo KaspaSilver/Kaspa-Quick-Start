@@ -4869,8 +4869,8 @@ const KACHAT_TX_GROUPS = [
     ['group chats', ['gcomm', 'gctl']],
     ['public chats', ['bcast']],
     ['payments', ['pay']],
-    // Every KaPosts op the indexer reads (kasia-indexer FOREIGN_KACHAT_OPS), tips apart (KQS-030).
-    ['KaPosts', ['post', 'reply', 'quote', 'unquote', 'vote', 'upvote', 'downvote', 'follow', 'unfollow', 'block', 'unblock', 'edit', 'delete', 'poll', 'pollvote', 'broadcast']],
+    // Every KaPost op the indexer reads (kasia-indexer FOREIGN_KACHAT_OPS), tips apart (KQS-030).
+    ['KaPost', ['post', 'reply', 'quote', 'unquote', 'vote', 'upvote', 'downvote', 'follow', 'unfollow', 'block', 'unblock', 'edit', 'delete', 'poll', 'pollvote', 'broadcast']],
     ['tips', ['tip']],
     ['.kachat', ['name', 'offer', 'prices']],
     ['profiles', ['profile']],
@@ -4950,8 +4950,8 @@ async function loadKachatOverview() {
 
         $('kachat-jump-kaposts').textContent = fmtNum(s.posts ?? 0);
         $('kachat-jump-bcast').textContent = fmtNum(s.bcast_total ?? 0);
-        $('kachat-jump-chats').textContent = fmtNum(cm.contextual_messages ?? 0);
-        $('kachat-jump-groups').textContent = fmtNum(cm.group_messages ?? 0);
+        $('kachat-jump-chats').textContent = fmtNum((cm.contextual_messages ?? 0) + (cm.group_messages ?? 0));
+        $('kachat-jump-chats-sub').textContent = `${fmtNum(cm.group_messages ?? 0)} of them in groups`;
 
         $('kachat-stats').innerHTML = [
             ['posts', s.posts],
@@ -4976,7 +4976,7 @@ async function loadKachatOverview() {
             ['public chats, 30 days', fmtNum(s.bcast_total)],
             ['indexed last 5 min', fmtNum(s.ingest_last_5m)],
             ['chat store', kBytes(s.chat_store_bytes ?? 0)],
-            ['KaPosts database', kBytes(s.db_size_bytes)],
+            ['KaPost database', kBytes(s.db_size_bytes)],
         ]
             .map(([label, v]) => kTile(label, v, 'small'))
             .join('');
@@ -5066,7 +5066,6 @@ async function loadRecentPage(page) {
 }
 
 async function loadKachatKaposts() {
-    loadKachatFeatures();
     kapostsPage = { page: 1, total: 0 };
     try {
         await loadRecentPage(1);
@@ -5104,7 +5103,6 @@ const GAME_CHANNELS = {
 };
 
 async function loadKachatBroadcasts() {
-    loadKachatFeatures();
 
     let counts = {};
     let total = 0;
@@ -5379,14 +5377,11 @@ async function loadBroadcastRows() {
     }
 }
 
-/** Chats and group chats read the same endpoint, differing only in what they show. */
+/** The Chats tab's two halves read the same endpoint, differing only in what they show. */
 async function loadKachatChat(kind) {
     const tag = $(kind === 'group' ? 'kachat-group-tag' : 'kachat-chat-tag');
     const grid = $(kind === 'group' ? 'kachat-group-tiles' : 'kachat-chat-tiles');
-    if (kind === 'chat') {
-        loadKachatPersonal();
-        loadKachatFeatures();
-    }
+    if (kind === 'chat') loadKachatPersonal();
     if (kind === 'group') loadKachatGroupPersonal();
     try {
         const d = await kachat('chat-metrics');
@@ -5456,8 +5451,8 @@ async function loadKachatPersonal() {
 }
 
 /**
- * The group allowlist, on the Group chats panel for the same reason the address
- * list sits on Chats: it decides what gets stored there.
+ * The group allowlist, on the Chats tab beside the address list: like that list, it
+ * decides what gets stored there.
  */
 async function loadKachatGroupPersonal() {
     try {
@@ -5479,19 +5474,33 @@ async function loadKachatGroupPersonal() {
 // save would look like the setting had been accepted.
 const GROUP_ID_RE = /^[0-9a-f]{64}$/i;
 
+const FEATURE_MISSING =
+    'This indexer build cannot switch this on or off yet. Update the indexer under Updates once a build with it is out.';
+
 /**
- * The three "index this" switches. They sit on the tabs they govern rather than
- * in a settings list, so each of those tabs has to be able to read them without
- * Settings having been opened first.
+ * The "index this" switches, one card at the top of each tab they govern: KaPost,
+ * Public chats, Chats, KaPlay, Profiles. Each names its settings key in data-feature.
+ * A key the indexer does not report is one its build does not have, so that switch is
+ * greyed out and says so rather than pretending to work. Switched-off kinds are marked
+ * on Overview's Browse tiles too.
  */
 async function loadKachatFeatures() {
+    let s;
     try {
-        const s = await kachat('settings');
-        $('kachat-tg-kaposts').checked = Boolean(s.feature_kaposts);
-        $('kachat-tg-broadcasts').checked = Boolean(s.feature_broadcasts);
-        $('kachat-tg-chat').checked = Boolean(s.chat_indexer);
+        s = await kachat('settings');
     } catch {
-        /* the panel it sits on already reports the indexer being unreachable */
+        return; /* the tab it sits on already reports the indexer being unreachable */
+    }
+    for (const input of document.querySelectorAll('#tab-kachat input[data-feature]')) {
+        const known = input.dataset.feature in s;
+        input.disabled = !known;
+        if (known) input.checked = Boolean(s[input.dataset.feature]);
+        const note = input.closest('.feature-card').querySelector('.feature-note');
+        note.textContent = known ? '' : FEATURE_MISSING;
+        note.hidden = known;
+    }
+    for (const tile of document.querySelectorAll('#kachat-jump [data-feature]')) {
+        tile.classList.toggle('off', s[tile.dataset.feature] === false);
     }
 }
 
@@ -5551,7 +5560,6 @@ function renderKachatOffline() {
         'kachat-jump-kaposts',
         'kachat-jump-bcast',
         'kachat-jump-chats',
-        'kachat-jump-groups',
     ]) {
         $(id).textContent = '–';
     }
@@ -5562,6 +5570,7 @@ function refreshKachatPanel() {
     $('kachat-hero-net').textContent = networkView === 'testnet' ? 'Testnet-10' : 'Mainnet';
     if (!kachatRunning()) return renderKachatOffline();
     loadKachatHealth();
+    loadKachatFeatures();
     switch (activeSubtab('kachat')) {
         case 'kachat-overview':
             loadKachatOverview();
@@ -5574,8 +5583,6 @@ function refreshKachatPanel() {
             break;
         case 'kachat-chats':
             loadKachatChat('chat');
-            break;
-        case 'kachat-groups':
             loadKachatChat('group');
             break;
         case 'kachat-translate':
@@ -5596,7 +5603,7 @@ function refreshKachatPanel() {
 // ------------------------------------------------------------- translation ---
 
 /**
- * Server-side translation of KaPosts.
+ * Server-side translation of KaPost posts.
  *
  * The apps send a post and a target language to the indexer they are already
  * pointed at, and get it back translated; the work is done here by a
@@ -5754,7 +5761,7 @@ const blockAddressOk = (a) =>
 
 // The indexer's names for what it deleted, as this panel words them elsewhere.
 const BLOCK_KINDS = {
-    kaposts: 'KaPosts',
+    kaposts: 'KaPost',
     public_chats: 'public chats',
     chats: 'direct chats',
     groups: 'group chats',
@@ -5865,13 +5872,12 @@ $('kachat-recent-pager').addEventListener('click', (e) => {
     }
 });
 
-for (const [id, key, label] of [
-    ['kachat-tg-kaposts', 'feature_kaposts', 'KaPosts'],
-    ['kachat-tg-broadcasts', 'feature_broadcasts', 'Public chats'],
-    ['kachat-tg-chat', 'chat_indexer', 'The chat indexer'],
-]) {
-    $(id).addEventListener('change', (e) =>
-        saveKachatSettings({ [key]: e.target.checked }, `${label} ${e.target.checked ? 'on' : 'off'}.`),
+for (const input of document.querySelectorAll('#tab-kachat input[data-feature]')) {
+    input.addEventListener('change', () =>
+        saveKachatSettings(
+            { [input.dataset.feature]: input.checked },
+            `${input.dataset.label}: ${input.checked ? 'indexing' : 'not indexing'}.`,
+        ),
     );
 }
 
@@ -6066,7 +6072,7 @@ $('tab-kachat').addEventListener('click', async (event) => {
 
     try {
         if (d.kachatDelContent) {
-            if (!await askConfirm('Delete this KaPosts item from the index?\n\nThis removes the indexer\'s stored copy only. It is still on chain, and a re-index would bring it back. This cannot be undone here.')) return;
+            if (!await askConfirm('Delete this KaPost item from the index?\n\nThis removes the indexer\'s stored copy only. It is still on chain, and a re-index would bring it back. This cannot be undone here.')) return;
             await kachat('kaposts/delete', { method: 'POST', body: { tx_id: d.kachatDelContent } });
             toast('Deleted.');
             loadKachatKaposts();
@@ -7909,7 +7915,7 @@ function renderProfiles(data) {
 }
 
 // "Every profile save": the indexer's all-time /profiles/history, 25 a page, with the
-// same windowed numbered pager as KaPosts' "Recently indexed".
+// same windowed numbered pager as KaPost's "Recently indexed".
 let profilesHistory = { page: 1, total: 0, limit: 25, net: null };
 
 async function loadProfilesHistory(page = 1) {
@@ -8030,7 +8036,7 @@ function renderBackupStatus(s) {
         }, 2500);
     }
 }
-// ---- Recover missed KaPosts (Indexer, Export / Import): the processor's reindex ----
+// ---- Recover missed KaPost posts (Indexer, Export / Import): the processor's reindex ----
 
 /**
  * The processor walks the node's blocks on request and indexes the KaChat transactions it
@@ -8095,7 +8101,7 @@ $('kachat-reindex-retry')?.addEventListener('click', async () => {
 $('kachat-reindex')?.addEventListener('click', async () => {
     if (
         !(await askConfirm(
-            "Reindex KaPosts from the node's oldest block?\n\n" +
+            "Reindex KaPost posts from the node's oldest block?\n\n" +
                 'The processor walks every block the node still holds and indexes the KaChat transactions it finds. ' +
                 'Anything already indexed is skipped, and no notifications go out for old activity. ' +
                 'It takes a while and runs inside the indexer, so you can leave this page.',
@@ -8168,7 +8174,7 @@ $('backup-run')?.addEventListener('click', async () => {
 $('backup-restore')?.addEventListener('click', async () => {
     const p = $('backup-restore-path').value.trim();
     if (!p) return;
-    if (!await askConfirm(`Restore OVERWRITES the current KaPosts database and re-imports the chat store from:\n${p}\n\nContinue?`)) return;
+    if (!await askConfirm(`Restore OVERWRITES the current KaPost database and re-imports the chat store from:\n${p}\n\nContinue?`)) return;
     const el = $('backup-status'); el.hidden = false; el.textContent = 'Restoring… do not close this page.';
     try {
         await api('/api/kachat/backup/restore', { method: 'POST', body: { path: p } });
@@ -8540,7 +8546,7 @@ async function loadPushStats() {
     for (const k of Object.keys(env).sort()) rows.push([`APNs ${k}`, env[k]]);
     rows.push(['VoIP-capable', d.voip_capable ?? 0]);
     rows.push(['With primary addr', d.with_primary_address ?? 0]);
-    rows.push(['KaPosts on', d.kaposts_enabled ?? 0]);
+    rows.push(['KaPost on', d.kaposts_enabled ?? 0]);
     dl.innerHTML = rows
         .map(([k, v]) => `<div><dt>${escapeHtml(String(k))}</dt><dd>${escapeHtml(String(v))}</dd></div>`)
         .join('');

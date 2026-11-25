@@ -51,7 +51,7 @@ export const SERVICES = [
         // only ever be the thing at the root of a name.
         rootOnly: true,
         label: 'K-Digital-Freedom-Indexer',
-        detail: 'The KaPosts REST API, plus the chat and push endpoints, on one name.',
+        detail: 'The KaPost REST API, plus the chat and push endpoints, on one name.',
         afterNote:
             'Point KaChat clients at https://{domain}. Content, chat and push registration all answer there: the panel routes /handshakes, /contextual-messages, /payments, /self-stash, /group-messages, /group-control and /v1/push to the chat indexer, and everything else to the content API. The admin dashboard and the internal push injection point are never published.',
     },
@@ -64,7 +64,7 @@ export const SERVICES = [
         rootOnly: true,
         testnet: true,
         label: 'K-Digital-Freedom-Indexer (testnet-10)',
-        detail: 'The testnet indexer: KaPosts, chat and push, plus .kachat names when .kachat Domains is installed, on a name of its own.',
+        detail: 'The testnet indexer: KaPost, chat and push, plus .kachat names when .kachat Domains is installed, on a name of its own.',
         afterNote:
             'Send https://{domain} to the KaChat app owner: it becomes the apps\' testnet indexer. Install and start the testnet Kaspad and Indexer from the Testnet view if they are not running. Names answer here once .kachat Domains is installed and on (the proxy routes the names paths to it).',
     },

@@ -44,7 +44,7 @@ export const NETWORKS = {
         manifestFile: 'kachat-names-mainnet.json',
         envManifest: 'KACHAT_NAMES_MANIFEST_MAINNET',
         envPush: 'KACHAT_NAMES_PUSH_URL_MAINNET',
-        // The indexer's KaPosts push name lookup (IDX-029).
+        // The indexer's KaPost push name lookup (IDX-029).
         envIdentity: 'KACHAT_IDENTITY_URL_MAINNET',
         nodeUnit: 'node',
         indexerUnit: 'kachat',
@@ -71,7 +71,7 @@ export const NETWORKS = {
         manifestFile: 'kachat-names-testnet-10.json',
         envManifest: 'KACHAT_NAMES_MANIFEST_TESTNET',
         envPush: 'KACHAT_NAMES_PUSH_URL_TESTNET',
-        // The indexer's KaPosts push name lookup (IDX-029).
+        // The indexer's KaPost push name lookup (IDX-029).
         envIdentity: 'KACHAT_IDENTITY_URL_TESTNET',
         nodeUnit: 'node-testnet',
         indexerUnit: 'kachat-testnet',

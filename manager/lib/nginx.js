@@ -325,7 +325,7 @@ function corsBlock(cors, i) {
     lines.push(`${i}    add_header Content-Length 0 always;`);
     lines.push(`${i}    return 204;`);
     lines.push(`${i}}`);
-    // Strip anything the upstream sent for itself first. The KaPosts API answers
+    // Strip anything the upstream sent for itself first. The KaPost API answers
     // with its own `Access-Control-Allow-Origin: *`, and a response carrying two
     // Allow-Origin headers (its `*` and ours) is rejected by every browser as
     // surely as one carrying none -- so hide the upstream's and let the ones

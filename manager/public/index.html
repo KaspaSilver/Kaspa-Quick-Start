@@ -1116,7 +1116,7 @@
           <h2 class="hero-title">K-Digital-Freedom-Indexer <span id="kachat-state" class="tag">off</span></h2>
           <p class="hero-desc">
             Turns this node's chain data into the APIs K talks to: direct and group chats,
-            public chats, KaPosts and mentions. It reads the node you already run, so nothing
+            public chats, KaPost and mentions. It reads the node you already run, so nothing
             syncs twice.
           </p>
           <div class="hero-chips">
@@ -1134,10 +1134,9 @@
       <nav class="subnav" aria-label="K-Digital-Freedom-Indexer">
         <div class="subnav-group">
         <button class="subtab-btn active" data-subtab="kachat-overview">Overview</button>
-        <button class="subtab-btn" data-subtab="kachat-kaposts">KaPosts</button>
+        <button class="subtab-btn" data-subtab="kachat-kaposts">KaPost</button>
         <button class="subtab-btn" data-subtab="kachat-broadcasts">Public chats</button>
         <button class="subtab-btn" data-subtab="kachat-chats">Chats</button>
-        <button class="subtab-btn" data-subtab="kachat-groups">Group chats</button>
         <button class="subtab-btn" data-subtab="kachat-kaplay">KaPlay</button>
         <button class="subtab-btn" data-subtab="kachat-profiles">Profiles</button>
         </div>
@@ -1157,7 +1156,7 @@
       <div id="sub-kachat-overview" class="subtab active">
         <section>
           <h3 class="row-title">Last 24 hours</h3>
-          <!-- Every KaChat transaction of the last 24 hours: private chats, KaPosts and public chats. -->
+          <!-- Every KaChat transaction of the last 24 hours: private chats, KaPost and public chats. -->
           <div class="tiles">
             <div class="stat stat-feature">
               <span id="kachat-day">–</span><small>KaChat transactions</small>
@@ -1174,12 +1173,11 @@
         <section>
           <h3 class="row-title">Browse</h3>
           <div class="jump-tiles" id="kachat-jump">
-            <button type="button" class="jump" data-goto="kachat-kaposts"><b>KaPosts</b><span id="kachat-jump-kaposts">–</span><small>posts</small></button>
-            <button type="button" class="jump" data-goto="kachat-broadcasts"><b>Public chats</b><span id="kachat-jump-bcast">–</span><small>in 30 days</small></button>
-            <button type="button" class="jump" data-goto="kachat-chats"><b>Chats</b><span id="kachat-jump-chats">–</span><small>direct messages</small></button>
-            <button type="button" class="jump" data-goto="kachat-groups"><b>Group chats</b><span id="kachat-jump-groups">–</span><small>group messages</small></button>
-            <button type="button" class="jump" data-goto="kachat-kaplay"><b>KaPlay</b><span>Boards</span><small>chess, Snake, 2048</small></button>
-            <button type="button" class="jump" data-goto="kachat-profiles"><b>Profiles</b><span>Stats</span><small>avatars, bios, links</small></button>
+            <button type="button" class="jump" data-goto="kachat-kaposts" data-feature="feature_kaposts"><b>KaPost</b><span id="kachat-jump-kaposts">–</span><small>posts</small></button>
+            <button type="button" class="jump" data-goto="kachat-broadcasts" data-feature="feature_broadcasts"><b>Public chats</b><span id="kachat-jump-bcast">–</span><small>in 30 days</small></button>
+            <button type="button" class="jump" data-goto="kachat-chats" data-feature="chat_indexer"><b>Chats</b><span id="kachat-jump-chats">–</span><small id="kachat-jump-chats-sub">direct and group messages</small></button>
+            <button type="button" class="jump" data-goto="kachat-kaplay" data-feature="feature_kaplay"><b>KaPlay</b><span>Boards</span><small>chess, Snake, 2048</small></button>
+            <button type="button" class="jump" data-goto="kachat-profiles" data-feature="feature_profiles"><b>Profiles</b><span>Stats</span><small>avatars, bios, links</small></button>
           </div>
         </section>
 
@@ -1204,13 +1202,15 @@
       </div>
 
       <div id="sub-kachat-kaposts" class="subtab">
-        <article class="card">
+        <article class="card feature-card">
           <div class="toggle-row">
             <div class="toggle-text">
-              <strong>KaPosts</strong>
+              <strong>Index KaPost</strong>
+              <span class="muted">Posts, replies, quotes, reposts, votes, follows and tips. Off stops new ones being stored; what is here stays until you delete it.</span>
             </div>
-            <label class="switch"><input type="checkbox" id="kachat-tg-kaposts"><span class="track"></span></label>
+            <label class="switch"><input type="checkbox" id="kachat-tg-kaposts" data-feature="feature_kaposts" data-label="KaPost"><span class="track"></span></label>
           </div>
+          <p class="hint feature-note" hidden></p>
         </article>
 
         <article class="card span2">
@@ -1230,21 +1230,15 @@
       </div>
 
       <div id="sub-kachat-broadcasts" class="subtab">
-        <article class="card span2">
-          <div class="node-head">
-            <h3>Index public chats</h3>
-          </div>
-          <p class="muted">
-            Public channel chatter. Turning this off stops new public chats being
-            stored right away; rows you already have stay until you delete them.
-          </p>
-            <div class="toggle-row">
-              <div class="toggle-text">
-                <strong>Public chats</strong>
-                <span class="muted">Every curated room the indexer ships.</span>
-              </div>
-              <label class="switch"><input type="checkbox" id="kachat-tg-broadcasts"><span class="track"></span></label>
+        <article class="card feature-card">
+          <div class="toggle-row">
+            <div class="toggle-text">
+              <strong>Index public chats</strong>
+              <span class="muted">The public rooms switched on under Channels below. Off stops new messages being stored right away; what is here stays until you delete it.</span>
             </div>
+            <label class="switch"><input type="checkbox" id="kachat-tg-broadcasts" data-feature="feature_broadcasts" data-label="Public chats"><span class="track"></span></label>
+          </div>
+          <p class="hint feature-note" hidden></p>
         </article>
 
         <article class="card span2">
@@ -1294,103 +1288,87 @@
 
       </div>
 
+      <!--
+        Direct and group chats are one process in the indexer and one switch, so they are one
+        tab: the switch, then whose chats to keep, then what is stored.
+      -->
       <div id="sub-kachat-chats" class="subtab">
-        <!--
-          One card, personal indexing first: it decides whose chats get stored,
-          so it reads as the setting the numbers underneath are a result of.
-        -->
-        <article class="card span2">
-          <div class="node-section">
-            <div class="node-head">
-              <h3>Index only your own chats</h3>
-              <span id="kachat-personal-tag" class="tag">–</span>
-            </div>
-            <p class="muted">Keeps only your chats. Empty indexes everything.</p>
-            <label class="stack">Your addresses, one per line
-              <textarea id="kachat-personal-addrs" rows="2" placeholder="kaspa:q…"></textarea>
-            </label>
-            <div class="row">
-              <button type="button" id="kachat-personal-save" class="primary">Save and apply</button>
-            </div>
-            <p class="hint">
-              Groups match on ids, set those under Group chats. Saving restarts the indexer.
-            </p>
-          </div>
-
+        <article class="card feature-card">
           <div class="toggle-row">
             <div class="toggle-text">
-              <strong>Index chat and groups</strong>
-              <span class="muted">Covers groups too.</span>
+              <strong>Index chats</strong>
+              <span class="muted">Direct and group chats, with their handshakes and payments: one switch for both. Off stops the chat indexer; what is stored stays until you delete it.</span>
             </div>
-            <label class="switch"><input type="checkbox" id="kachat-tg-chat"><span class="track"></span></label>
+            <label class="switch"><input type="checkbox" id="kachat-tg-chat" data-feature="chat_indexer" data-label="Chats"><span class="track"></span></label>
           </div>
-
-          <div class="node-section">
-            <div class="node-head">
-              <h3>Direct chats</h3>
-              <span id="kachat-chat-tag" class="tag">–</span>
-            </div>
-            <p class="muted">Encrypted one to one messaging, live from your node.</p>
-            <div class="grid stats" id="kachat-chat-tiles"><p class="muted">Waiting for the chat indexer.</p></div>
-            <!--
-              The indexer reports thirty-odd counters, most of them internal
-              tallies sitting at zero. The ones worth a glance are tiles above;
-              the rest are here, folded away, so the panel fits on a screen.
-            -->
-            <details class="more" id="kachat-chat-more" hidden>
-              <summary>All indexer counters</summary>
-              <dl class="kv dense" id="kachat-chat-rest"></dl>
-            </details>
-          </div>
+          <p class="hint feature-note" hidden></p>
         </article>
-        <p class="hint">Purging the stored chat data is under the <strong>Delete</strong> tab.</p>
 
-      </div>
-
-      <div id="sub-kachat-groups" class="subtab">
         <article class="card span2">
-          <div class="node-section">
-            <div class="node-head">
-              <h3>Index only your own groups</h3>
-              <span id="kachat-group-personal-tag" class="tag">–</span>
+          <h3>Only your own</h3>
+          <p class="muted">
+            Leave these empty to index everybody's chats. Fill one in and the indexer keeps only
+            those. Saving restarts the chat indexer.
+          </p>
+          <div class="grid">
+            <div class="col">
+              <div class="node-head">
+                <strong>Your addresses</strong>
+                <span id="kachat-personal-tag" class="tag">–</span>
+              </div>
+              <label class="stack">One per line
+                <textarea id="kachat-personal-addrs" rows="3" placeholder="kaspa:q…"></textarea>
+              </label>
+              <div class="row">
+                <button type="button" id="kachat-personal-save" class="primary">Save addresses</button>
+              </div>
+              <p class="hint">Keeps the direct chats these addresses are part of.</p>
             </div>
-            <p class="muted">
-              A group message carries a blinded id that is specific to whoever sent
-              it, so one group has one id per member. List them and the indexer
-              keeps those groups. Leave it empty to keep all of them.
-            </p>
-            <label class="stack">Your blinded group ids, one per line
-              <textarea id="kachat-group-ids" rows="2" placeholder="64 hex characters, one per line"></textarea>
-            </label>
-            <div class="row">
-              <button type="button" id="kachat-group-save" class="primary">Save and apply</button>
+            <div class="col">
+              <div class="node-head">
+                <strong>Your groups</strong>
+                <span id="kachat-group-personal-tag" class="tag">–</span>
+              </div>
+              <label class="stack">Blinded group ids, one per line
+                <textarea id="kachat-group-ids" rows="3" placeholder="64 hex characters, one per line"></textarea>
+              </label>
+              <div class="row">
+                <button type="button" id="kachat-group-save" class="primary">Save groups</button>
+              </div>
+              <p class="hint">
+                Groups match on ids, not addresses: each member has their own blinded id for a
+                group. K knows them (it sends them when it registers for notifications). List
+                every member's id to keep the whole conversation, or only yours to keep what you
+                sent.
+              </p>
             </div>
-            <p class="hint">
-              K knows these ids, since it already sends them when it
-              registers for notifications. Nothing here can work them out for you:
-              they come from the group keys, which this indexer never sees. Saving
-              restarts the chat indexer.
-            </p>
-            <p class="hint">
-              List every member's id for a group and you keep the whole conversation;
-              list only your own and you keep only what you sent. K
-              knows all of them, because reading a group means asking for each
-              member's id in turn. Whatever you send is kept either way.
-            </p>
-          </div>
-
-          <div class="node-section">
-            <div class="node-head">
-              <h3>Group chats</h3>
-              <span id="kachat-group-tag" class="tag">–</span>
-            </div>
-            <p class="muted">
-              Group messaging and its control envelopes. The switch for it is on
-              the Chats tab, since one covers both.
-            </p>
-            <div class="grid stats" id="kachat-group-tiles"><p class="muted">Waiting for the chat indexer.</p></div>
           </div>
         </article>
+
+        <article class="card span2">
+          <div class="node-head">
+            <h3>Direct chats</h3>
+            <span id="kachat-chat-tag" class="tag">–</span>
+          </div>
+          <div class="grid stats" id="kachat-chat-tiles"><p class="muted">Waiting for the chat indexer.</p></div>
+          <!--
+            The indexer reports thirty-odd counters, most of them internal tallies sitting at
+            zero. The ones worth a glance are tiles above; the rest are folded away here.
+          -->
+          <details class="more" id="kachat-chat-more" hidden>
+            <summary>All indexer counters</summary>
+            <dl class="kv dense" id="kachat-chat-rest"></dl>
+          </details>
+        </article>
+
+        <article class="card span2">
+          <div class="node-head">
+            <h3>Group chats</h3>
+            <span id="kachat-group-tag" class="tag">–</span>
+          </div>
+          <div class="grid stats" id="kachat-group-tiles"><p class="muted">Waiting for the chat indexer.</p></div>
+        </article>
+        <p class="hint">Purging the stored chat data is under <strong>Delete</strong>.</p>
       </div>
 
       <!--
@@ -1400,6 +1378,16 @@
         chess leaderboard and GET /arcade/leaderboard.
       -->
       <div id="sub-kachat-kaplay" class="subtab">
+        <article class="card feature-card">
+          <div class="toggle-row">
+            <div class="toggle-text">
+              <strong>Index KaPlay</strong>
+              <span class="muted">Chess 1v1 and tournaments, games against the bots, and the Snake and 2048 scores. Off stops new games being stored; the boards keep what they have.</span>
+            </div>
+            <label class="switch"><input type="checkbox" id="kachat-tg-kaplay" data-feature="feature_kaplay" data-label="KaPlay"><span class="track"></span></label>
+          </div>
+          <p class="hint feature-note" hidden></p>
+        </article>
         <div class="node-head">
           <h3>KaPlay</h3>
           <span id="kaplay-state" class="tag">–</span>
@@ -1453,6 +1441,16 @@
         both networks. Read-only: the indexer's GET /profiles/stats.
       -->
       <div id="sub-kachat-profiles" class="subtab">
+        <article class="card feature-card">
+          <div class="toggle-row">
+            <div class="toggle-text">
+              <strong>Index profiles</strong>
+              <span class="muted">The avatar, banner, bio and links people stamp to their own address. Off stops new profile saves being stored; what is here stays.</span>
+            </div>
+            <label class="switch"><input type="checkbox" id="kachat-tg-profiles" data-feature="feature_profiles" data-label="Profiles"><span class="track"></span></label>
+          </div>
+          <p class="hint feature-note" hidden></p>
+        </article>
         <div class="node-head">
           <h3>Profiles</h3>
           <span id="profiles-state" class="tag">–</span>
@@ -1532,7 +1530,7 @@
           <h3>Automatic backup</h3>
           <p class="muted">
             Every night at 12&nbsp;AM (server time) this writes <strong>one</strong> combined,
-            restorable <code>.tar.gz</code> (the KaPosts database <em>and</em> the full chat store,
+            restorable <code>.tar.gz</code> (the KaPost database <em>and</em> the full chat store,
             1:1 chats, groups, handshakes, push registrations) to a folder on this machine, e.g.
             an external drive. Restore brings back everything from a single file.
           </p>
@@ -1561,12 +1559,12 @@
           <div id="backup-status" class="verdict" hidden></div>
         </article>
 
-        <!-- The KaPosts processor's reindex (K-Digital-Freedom-Indexer reindex.rs): for the time it was
+        <!-- The KaPost processor's reindex (K-Digital-Freedom-Indexer reindex.rs): for the time it was
              down, nothing it missed comes back by itself. -->
         <article class="card span2">
-          <h3>Recover missed KaPosts</h3>
+          <h3>Recover missed KaPost posts</h3>
           <p class="muted">
-            If the KaPosts processor was down (a red Processor tile on the Overview), the posts,
+            If the KaPost processor was down (a red Processor tile on the Overview), the posts,
             replies, votes, follows, profile updates and tips from that time were never indexed.
             This walks every block the node still holds, oldest first, and indexes the KaChat
             transactions in them. Anything already indexed is skipped, so it is safe to run any
@@ -1691,11 +1689,11 @@
               Nothing, beyond this. Translation is served from the indexer's own
               address -- the same one already set in the app under Settings,
               Connection Settings, KaPost Indexer -- so there is no second domain
-              to publish and no new setting for anybody to fill in. If the KaPosts
+              to publish and no new setting for anybody to fill in. If the KaPost
               API is reachable, so is translation.
             </p>
             <dl class="kv">
-              <div><dt>Endpoint</dt><dd><code>POST /translate</code> on the KaPosts API</dd></div>
+              <div><dt>Endpoint</dt><dd><code>POST /translate</code> on the KaPost API</dd></div>
               <div><dt>Languages offered</dt><dd><code>GET /translate/languages</code></dd></div>
               <div><dt>Identity</dt><dd>None. It is the one endpoint that takes no pubkey, and post text is never logged.</dd></div>
               <div><dt>Cache</dt><dd>Keyed on the post's transaction id and target language, kept permanently.</dd></div>
@@ -1718,7 +1716,7 @@
             <span id="kachat-block-tag" class="tag">–</span>
           </div>
           <p class="muted">
-            Nothing this address sends is indexed from now on: KaPosts, public chats, direct and
+            Nothing this address sends is indexed from now on: KaPost, public chats, direct and
             group chats, payments it sends, its profile, and its chess and arcade games. Whatever
             the indexer already has from it is deleted when you add it. It all stays on chain;
             this only decides what this indexer keeps and serves.
@@ -1749,21 +1747,21 @@
           </div>
           <p class="hint">
             Unblocking only lifts the block. What was deleted when the address was added does
-            not come back by itself; KaPosts can be recovered under Export / Import, Recover
-            missed KaPosts.
+            not come back by itself; KaPost posts can be recovered under Export / Import, Recover
+            missed KaPost posts.
           </p>
         </article>
       </div>
 
       <div id="sub-kachat-delete" class="subtab">
         <article class="card span2 danger-zone">
-          <h3>Delete KaPosts data</h3>
+          <h3>Delete KaPost data</h3>
           <p class="muted">
             This removes the indexer's stored copy only. The post is still on
             chain, and a re-index would bring it back. It happens immediately
             and cannot be undone from here.
           </p>
-          <label class="stack">Delete a KaPosts item by transaction id
+          <label class="stack">Delete a KaPost item by transaction id
             <span class="row">
               <input id="kachat-del-content" placeholder="content transaction id (hex)" size="40">
               <button type="button" id="kachat-del-content-btn" class="danger">Delete item</button>
@@ -1827,7 +1825,7 @@
               routes. To reach chat from outside, use Tunnel &amp; domains, which
               forwards only the public routes.
             </p>
-            <label class="check"><input type="checkbox" id="kachat-pub-api"> KaPosts REST API on 3080</label>
+            <label class="check"><input type="checkbox" id="kachat-pub-api"> KaPost REST API on 3080</label>
             <div class="row">
               <button type="button" id="kachat-save" class="primary">Apply settings</button>
             </div>
@@ -2561,7 +2559,7 @@
 
       <div id="sub-push-log" class="subtab">
       <div class="grid">
-        <!-- The indexer's push lines only (both the chat indexer and KaPosts sends). -->
+        <!-- The indexer's push lines only (both the chat indexer and KaPost sends). -->
         <div class="svclog span2" data-svclog="push" data-title="push service log"></div>
       </div>
       </div>

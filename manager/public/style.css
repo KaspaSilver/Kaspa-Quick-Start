@@ -1831,20 +1831,6 @@ details.more > summary:hover { color: var(--text); }
 .log-tile-head .zoom { border: 0; }
 .log-tile-head .zoom .zoom-btn { padding: 2px 5px; font-size: 12px; }
 
-/* Group chats carries the same shape as Chats: a setting above its numbers in
-   one card, so it gets the same tightening. */
-#sub-kachat-groups article.card { padding: 12px 18px; }
-#sub-kachat-groups .node-section { padding-top: 12px; margin-top: 12px; }
-#sub-kachat-groups .node-section p.muted { margin-bottom: 10px; }
-#sub-kachat-groups label.stack { margin-top: 8px; }
-#sub-kachat-groups .row { margin-top: 10px; }
-#sub-kachat-groups p.hint { margin-bottom: 0; }
-#sub-kachat-groups .grid.stats {
-    grid-template-columns: repeat(auto-fit, minmax(146px, 1fr));
-    gap: 10px;
-    margin-bottom: 0;
-}
-
 /* A column of cards inside a grid cell. Grid rows are a uniform height, so two
    cards stacked as separate grid items leave a gap when the card beside them is
    taller. Nesting them in one item keeps them together. */
@@ -3100,3 +3086,21 @@ body.dag-fullscreen { overflow: hidden; }
 .block-add label.stack { margin: 0; }
 .block-add label.stack:first-child { flex: 2 1 340px; }
 .block-add label.stack:nth-child(2) { flex: 1 1 200px; }
+
+/* The "index this" card at the top of each content tab. */
+.feature-card .toggle-text strong { font-size: 16px; }
+.feature-card .feature-note { margin-top: 10px; }
+/* A kind that is switched off, on Overview's Browse tiles. */
+.jump.off { opacity: 0.6; }
+.jump.off b::after {
+    content: "Off";
+    margin-left: 8px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 650;
+    vertical-align: 2px;
+}
+#sub-kachat-chats .col .node-head { margin-bottom: 0; }

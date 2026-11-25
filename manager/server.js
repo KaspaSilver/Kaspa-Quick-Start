@@ -760,7 +760,7 @@ route('PUT', /^\/api\/config$/, async (req, res) => {
 });
 
 // ---- KaChat automatic backup (Export/Import tab) --------------------------------
-// One combined, importable file per run (KaPosts DB + full chat store), written nightly at
+// One combined, importable file per run (KaPost DB + full chat store), written nightly at
 // 00:00 server time to an operator-chosen host path via a docker helper (see lib/backup.js).
 route('GET', /^\/api\/kachat\/backup$/, async (req, res) => {
     sendJson(res, 200, backup.status());
@@ -3897,7 +3897,7 @@ async function reconcileNamesRoutes() {
     for (const net of Object.keys(kachatDomains.NETWORKS)) {
         const N = kachatDomains.NETWORKS[net];
         const st = await dockerctl.containerState(N.container).catch(() => null);
-        // The indexer's KaPosts pushes name the actor from this server's /identity once it is
+        // The indexer's KaPost pushes name the actor from this server's /identity once it is
         // installed with a registry (IDX-029); without one, the lookup is off. Picked up the
         // next time the indexer container is recreated (its Update).
         const identity = st && kachatDomains.manifestSet(net) ? `http://${N.host}:3080` : '';
@@ -3966,7 +3966,7 @@ route('GET', /^\/api\/kachat-domains$/, async (req, res, match, url) => {
 
 /**
  * What the names server image is built from (docker/kachat-names/Dockerfile in K-Digital-Freedom-Indexer).
- * The rest of that repo is the chat/KaPosts indexer, which gets commits nearly every day; a
+ * The rest of that repo is the chat/KaPost indexer, which gets commits nearly every day; a
  * commit touching none of these changes nothing in the server, so it is not an update here.
  */
 const NAMES_SERVER_PATHS = ['kachat-webserver/', 'kachat-names/', 'kachat-names-follower/', 'docker/kachat-names/', 'Cargo.toml', 'Cargo.lock'];

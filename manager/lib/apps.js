@@ -32,7 +32,7 @@ export const APPS = {
         // works whether or not the port is published to the host.
         //
         // The indexer is two APIs on two ports and a client expects both under
-        // one name: the KaPosts content API answers on 3080 and takes the root,
+        // one name: the KaPost content API answers on 3080 and takes the root,
         // and the chat side -- handshakes, group traffic, push registration --
         // is a separate process on 8600. Upstream's INSTALL.md says to add
         // those as custom locations on the same proxy host, so the panel does
@@ -87,7 +87,7 @@ export const APPS = {
         },
         // Ports the container listens on, and whether publishing them is useful.
         ports: {
-            api: { port: 3080, label: 'KaPosts REST API' },
+            api: { port: 3080, label: 'KaPost REST API' },
             chat: { port: 8600, label: 'Chat indexer API' },
         },
         // The admin dashboard is never published: the panel proxies it instead,
@@ -198,7 +198,7 @@ export const DEFAULT_APPS_CONFIG = {
         // device gets (K-Digital-Freedom-Indexer docs/K_ALL_IN_ONE_PUSH.md), so there is no list of
         // other apps to send to any more.
         apns: { enabled: false, teamId: '', keyId: '', topic: 'com.kachat.app', environment: 'production' },
-        // Server-side translation of KaPosts. Its engine is a container of its
+        // Server-side translation of KaPost posts. Its engine is a container of its
         // own -- gigabytes of language models -- so this is only the setting;
         // whether the engine exists at all is the `translate` service.
         translate: {
