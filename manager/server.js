@@ -196,12 +196,15 @@ function sse(req, res) {
     };
     // A stream outlives the request that opened it, so its session is checked again on every
     // ping: Sign out everywhere or a new password ends open log and job streams too.
+    // Every 4 seconds, not 20: when Firefox sees the network change it closes any connection
+    // that carries nothing in the next 5 seconds, and it does not reopen an event stream it
+    // closed that way. A ping inside that window keeps the stream, at a few bytes a time.
     const token = requestToken(req);
     const keepAlive = setInterval(() => {
         if (res.writableEnded) return;
         if (authRequired() && !validateSession(token)) return res.end();
         res.write(': ping\n\n');
-    }, 20_000);
+    }, 4_000);
     const close = () => clearInterval(keepAlive);
     req.on('close', close);
     res.on('close', close);

@@ -1715,24 +1715,18 @@ async function refreshStatus() {
     $('stat-uptime').textContent = running ? fmtDuration(s.container.startedAt) : '–';
     $('stat-disk').textContent = fmtBytes(s.disk?.size);
 
-    // Two facts share this one field, and neither can stand in for the other.
-    // The size cannot say "switched off": absent bytes is also what a cold
-    // start looks like while the disk walk is still filling its cache, so the
-    // node's own answer decides first and the size only fills in the detail.
-    // It matters now that the index is a setting rather than something the
-    // entrypoint forced on -- a node running without one should say so.
-    const utxo = $('stat-utxo');
+    // Two facts, two fields, and neither can stand in for the other. The size
+    // cannot say "switched off": absent bytes is also what a cold start looks
+    // like while the disk walk is still filling its cache, so whether the index
+    // is on comes from the node's own answer. It matters now that the index is
+    // a setting rather than something the entrypoint forced on -- a node
+    // running without one should say so.
     const utxoBytes = s.dataSplit?.utxoindexBytes;
     const indexed = s.rpc.info ? Boolean(s.rpc.info.isUtxoIndexed) : null;
-    utxo.textContent =
-        indexed === false
-            ? 'disabled'
-            : Number.isFinite(utxoBytes)
-              ? fmtBytes(utxoBytes)
-              : indexed
-                ? 'enabled'
-                : '–';
-    utxo.classList.toggle('warn', indexed === false);
+    $('stat-utxo-size').textContent = indexed !== false && Number.isFinite(utxoBytes) ? fmtSize(utxoBytes) : '–';
+    const utxoIndex = $('stat-utxo-index');
+    utxoIndex.textContent = indexed === false ? 'disabled' : indexed ? 'enabled' : '–';
+    utxoIndex.classList.toggle('warn', indexed === false);
     renderPruning(s.pruning, running);
 
     $('stat-peers').textContent = fmtNum(s.peers.total);
@@ -9245,7 +9239,28 @@ function adoptRunningJob(job, note) {
 
 function connectJobs() {
     jobStream?.close();
-    jobStream = new EventSource('/api/jobs/stream');
+    const stream = new EventSource('/api/jobs/stream');
+    jobStream = stream;
+    // A browser that gives up on the stream for good (readyState CLOSED rather than
+    // retrying) would leave this page deaf to every job after it. Reopen it once the
+    // manager answers again; a signed-out page gets its 401 from api() and goes to sign-in
+    // instead. The snapshot a new stream starts with catches up on whatever was missed.
+    const reopen = () =>
+        setTimeout(async () => {
+            if (jobStream !== stream) return;
+            try {
+                await api('/api/jobs/current');
+            } catch {
+                // Not answering yet (restarting, a proxy in between): try again while the
+                // panel is still on screen.
+                if (!$('app').classList.contains('hidden')) reopen();
+                return;
+            }
+            if (jobStream === stream) connectJobs();
+        }, 5000);
+    stream.addEventListener('error', () => {
+        if (stream.readyState === EventSource.CLOSED) reopen();
+    });
     // A job already running when this page loaded: what it has printed so far
     // goes into the panel's log, so opening All logs shows it rather than
     // starting from the next line.
