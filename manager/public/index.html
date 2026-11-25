@@ -1077,7 +1077,6 @@
           <label>Coinbase tag suffix <input id="mining-tag" placeholder="optional"></label>
           <label class="check"><input type="checkbox" id="mining-logfile"> Write bridge log files</label>
           <label class="check" title="The stratum bridge has a small web page built into its binary: connected workers, their hashrate, shares accepted and rejected, and blocks found. This tab reads the same numbers from it over the internal network, so the page is only worth publishing if you want miners to see their own workers without a login here."><input type="checkbox" id="mining-dash"> Publish the bridge's own dashboard on port 3030</label>
-          <p class="error" id="mining-error" hidden></p>
           </article>
 
         </div>
@@ -3635,9 +3634,10 @@
           Both of these apply to this address only, and either can be changed
           later without redoing any of the above.
         </p>
-        <label class="check">
+        <label class="check" id="setup-auth-row">
           <input type="checkbox" id="setup-auth"> Ask for a username and password
         </label>
+        <p class="hint" id="setup-auth-grpc" hidden>gRPC apps can't sign in with a password. Use the address list below to limit who reaches it.</p>
         <div class="row" id="setup-auth-fields" hidden>
           <label class="inline">User <input id="setup-auth-user" size="14" autocomplete="off"></label>
           <label class="inline">Password <input id="setup-auth-pass" type="password" size="18" autocomplete="new-password"></label>
@@ -3692,8 +3692,9 @@
 
     <fieldset>
       <legend>Access control</legend>
-      <label class="check"><input type="checkbox" id="px-auth"> Require a username and password</label>
-      <div class="row">
+      <label class="check" id="px-auth-row"><input type="checkbox" id="px-auth"> Require a username and password</label>
+      <p class="hint" id="px-auth-grpc" hidden>gRPC apps can't sign in with a password. Use the IP allowlist below.</p>
+      <div class="row" id="px-auth-fields">
         <label>User <input id="px-user" autocomplete="off"></label>
         <label>Password <input id="px-pass" type="password" autocomplete="new-password" placeholder="unchanged"></label>
       </div>

@@ -61,6 +61,9 @@ async function api(path, { method = 'GET', body, headers = {} } = {}) {
         const detail = Array.isArray(data.details) ? `\n• ${data.details.join('\n• ')}` : '';
         throw new Error(`${data.error || res.statusText}${detail}`);
     }
+    // Saved, but something that should have followed did not (the tunnel's gRPC route,
+    // say). Said wherever it was asked from, since every caller would otherwise drop it.
+    if (Array.isArray(data.warnings) && data.warnings.length) toast(data.warnings.join(' '), 'bad');
     return data;
 }
 
@@ -564,6 +567,54 @@ function askConfirm(message) {
     });
 }
 
+/**
+ * askConfirm's shape with a password box: resolves with what was typed, or null on
+ * Cancel, Escape or a click outside. For the few things that need the password again
+ * even with a session, like showing a wallet key.
+ */
+function askPassword(message) {
+    return new Promise((resolve) => {
+        const [question, ...rest] = String(message).split('\n');
+        const dlg = document.createElement('dialog');
+        dlg.className = 'ask-dialog';
+        dlg.setAttribute('aria-labelledby', 'ask-q');
+        dlg.innerHTML = `<form class="ask-box card" method="dialog">
+            <h3 id="ask-q"></h3>
+            <p class="ask-detail muted"></p>
+            <label>Panel password <input type="password" autocomplete="current-password" required></label>
+            <div class="row ask-actions">
+              <button type="button" class="ghost" data-ask="no">Cancel</button>
+              <button type="submit" class="primary">Continue</button>
+            </div>
+          </form>`;
+        dlg.querySelector('#ask-q').textContent = question;
+        dlg.querySelector('.ask-detail').textContent = rest.join('\n').trim();
+        const input = dlg.querySelector('input');
+        let settled = false;
+        const done = (answer) => {
+            if (settled) return;
+            settled = true;
+            if (dlg.open) dlg.close();
+            dlg.remove();
+            resolve(answer);
+        };
+        dlg.addEventListener('cancel', (event) => {
+            event.preventDefault();
+            done(null);
+        });
+        dlg.addEventListener('click', (event) => {
+            if (event.target === dlg || event.target.closest?.('[data-ask="no"]')) done(null);
+        });
+        dlg.querySelector('form').addEventListener('submit', (event) => {
+            event.preventDefault();
+            if (input.value) done(input.value);
+        });
+        document.body.appendChild(dlg);
+        dlg.showModal();
+        input.focus();
+    });
+}
+
 // --- per-section logs ---
 
 /**
@@ -803,7 +854,17 @@ function refreshKaspadForView() {
     refreshStatus().catch(() => {});
     uninstallSignature = null;
     renderUninstallCards();
-    // The Indexer and Mining tabs read the viewed network's containers.
+    // The Indexer's check goes the same way: the mainnet and testnet indexers are checked apart,
+    // and Update (or Update all) must not rebuild the one that was never checked. Reset before
+    // the Updates sub-tab below re-checks the testnet one.
+    testnetIndexerUpdate = null;
+    $('kachat-update').disabled = true;
+    $('kachat-update-status').className = 'update-status';
+    $('kachat-update-status').textContent = 'Not checked yet.';
+    // The Indexer and Mining tabs read the viewed network's containers. An unsaved channel list
+    // and a KaPost page belong to the other network's indexer.
+    channelState.dirty = false;
+    kapostsPage = { page: 1, total: 0 };
     if (activeSubtab('kachat')) refreshKachatPanel();
     if (activeSubtab('kachat') === 'kachat-kaplay') loadKaplay();
     if (activeSubtab('kachat') === 'kachat-profiles') loadProfiles().catch(() => {});
@@ -870,7 +931,11 @@ function selectSubtab(section, name) {
     if (name === 'kachat-profiles') loadProfiles().catch(() => {});
     if (name === 'kachat-updates') loadTestnetIndexerUpdate().catch(() => {});
     else if (name === 'kachat-transfer') { loadBackup().catch(() => {}); loadReindex().catch(() => {}); refreshKachatPanel(); }
-    else if (name.startsWith('kachat-')) refreshKachatPanel();
+    else if (name.startsWith('kachat-')) {
+        // Opened afresh, "Recently indexed" starts on page 1; the poll after this keeps its page.
+        if (name === 'kachat-kaposts') kapostsPage = { page: 1, total: 0 };
+        refreshKachatPanel();
+    }
     // Its own call: refreshKachatPanel gives up when the indexer is not
     // running, and this screen works without it -- the engine it configures is
     // a different container.
@@ -1251,7 +1316,9 @@ function actionJobEnded(job) {
 const dismissedJobs = new Set();
 
 function closeAction() {
-    if (!pendingAction?.finished) return;
+    // The panel's own update reloads the page when it is done, and has no other way out until
+    // it says it failed: Escape and a job adopted over it would leave its result nowhere.
+    if (!pendingAction?.finished || pendingAction.panelUpdate) return;
     if (pendingAction.jobId) dismissedJobs.add(pendingAction.jobId);
     clearInterval(progressTimer);
     progressTimer = null;
@@ -1291,6 +1358,9 @@ document.addEventListener(
     'keydown',
     (event) => {
         if (!pendingAction) return;
+        // A question asked over the overlay ("Cancel job?") is a modal of its own: its Escape
+        // answers no and its Tab stays inside it, the browser's way.
+        if (document.querySelector('dialog.ask-dialog[open]')) return;
         if (event.key === 'Escape') {
             event.preventDefault();
             event.stopPropagation();
@@ -1455,6 +1525,8 @@ function settleQueueJob(job) {
  * stays usable the whole time. `noCancel`: once started it runs to the end.
  */
 let queueActionsInFlight = 0;
+// How many requests have come back with a job: what Update all counts as queued.
+let queueActionJobs = 0;
 
 async function queueAction({ title, request, onEnd, noCancel = false }) {
     const headers = { 'X-KQS-Queue': '1', 'X-KQS-Queue-Title': encodeURIComponent(title) };
@@ -1494,6 +1566,7 @@ async function queueAction({ title, request, onEnd, noCancel = false }) {
         } else toast(response?.message ?? `${title}: nothing to do.`);
         return { ok: true, status: 'succeeded' };
     }
+    queueActionJobs += 1;
     const ended = new Promise((resolve) => {
         const finish = (job) => {
             const result = { ...job, ok: job.status === 'succeeded' };
@@ -2386,17 +2459,20 @@ let bulkQueueing = false;
 
 /**
  * Resolves once the queueAction a press started has had its answer from the manager, so the
- * next press queues behind it, with whether it queued anything. A press that queues nothing
- * (its button had gone stale) is given up on after three seconds; anything else after twenty.
+ * next press queues behind it, with whether that answer was a job. A request that failed, or
+ * was answered on the spot, queued nothing. A press that starts no request (its button had
+ * gone stale) is given up on after three seconds; anything else after twenty.
  */
-function settledQueueing(before) {
+function settledQueueing(before, jobsBefore) {
     const began = Date.now();
     return new Promise((resolve) => {
         let started = false;
         const tick = () => {
             if (queueActionsInFlight > before) started = true;
             const waited = Date.now() - began;
-            if ((started && queueActionsInFlight <= before) || (!started && waited > 3000) || waited > 20_000) return resolve(started);
+            if ((started && queueActionsInFlight <= before) || (!started && waited > 3000) || waited > 20_000) {
+                return resolve(queueActionJobs > jobsBefore);
+            }
             setTimeout(tick, 150);
         };
         tick();
@@ -2421,21 +2497,25 @@ $('global-apps-update-all')?.addEventListener('click', async () => {
     bulkQueueing = true;
     button.disabled = true;
     let sent = 0;
+    let pressed = 0;
     try {
         for (const [i, a] of apps.entries()) {
             const target = $(a.update);
             if (!target || target.disabled) continue;
+            pressed += 1;
             button.textContent = `Queueing ${i + 1} of ${apps.length}…`;
             const before = queueActionsInFlight;
+            const jobsBefore = queueActionJobs;
             bulkConfirmed = true;
             try {
                 target.click(); // its own confirmation is answered by the one above
             } finally {
                 bulkConfirmed = false;
             }
-            if (await settledQueueing(before)) {
+            if (await settledQueueing(before, jobsBefore)) {
                 sent += 1;
                 // Queued: off until it is checked again, so a second Update all cannot queue it twice.
+                // One whose request failed stays pressable, to be tried again.
                 target.disabled = true;
             }
         }
@@ -2443,7 +2523,12 @@ $('global-apps-update-all')?.addEventListener('click', async () => {
         bulkQueueing = false;
         renderGlobalAppUpdates();
     }
-    toast(`${sent} update${sent === 1 ? '' : 's'} queued. They run one after another.`);
+    const missed = pressed - sent;
+    toast(
+        `${sent} update${sent === 1 ? '' : 's'} queued. They run one after another.` +
+            (missed ? ` ${missed} did not queue, and can be pressed again.` : ''),
+        missed ? 'bad' : '',
+    );
     selectTab('queue');
 });
 
@@ -4218,6 +4303,9 @@ function renderAppState(name, state) {
 // and then save its own placeholder as the branch.
 const REF_CUSTOM = '..custom';
 
+/** The pickers with a choice on them that has not been saved. */
+const refPicked = new Set();
+
 /** The ref an app should track: the chosen branch, or a typed one. */
 function appRef(name) {
     const select = $(`${name}-ref`);
@@ -4235,6 +4323,9 @@ function appRef(name) {
  */
 function fillRefPicker(name, refs, current) {
     const select = $(`${name}-ref`);
+    // A choice not saved yet survives the re-fill (every loadApps after a job does one); the
+    // saved ref only stands in when there is none, or it is no longer on offer.
+    const picked = refPicked.has(name) ? select.value : null;
     const groups = [];
     if (refs?.branches?.length) {
         groups.push(`<optgroup label="Branches">${refs.branches.map(opt).join('')}</optgroup>`);
@@ -4249,6 +4340,9 @@ function fillRefPicker(name, refs, current) {
     groups.push(`<option value="${REF_CUSTOM}">Something else…</option>`);
     select.innerHTML = groups.join('');
     select.value = current ?? 'main';
+    if (picked && [...select.options].some((o) => o.value === picked)) select.value = picked;
+    // Saved (or picked back): the config is the answer again.
+    if (appRef(name) === (current ?? 'main')) refPicked.delete(name);
     toggleRefCustom(name);
 }
 
@@ -4262,6 +4356,7 @@ function toggleRefCustom(name) {
 // has no branches to pick between.
 for (const name of ['kachat', 'desktop']) {
     $(`${name}-ref`).addEventListener('change', () => {
+        refPicked.add(name);
         toggleRefCustom(name);
         if ($(`${name}-ref`).value === REF_CUSTOM) $(`${name}-ref-custom`).focus();
     });
@@ -4295,14 +4390,14 @@ function loadRefPickers() {
 }
 
 async function loadRefPicker(name) {
-    const current = appsState?.config?.[name]?.ref ?? 'main';
     try {
         appRefs[name] = await api(`/api/apps/${name}/refs`);
     } catch {
         // Offline or rate limited: still offer what is configured, so the
         // picker never comes up empty and the ref cannot be lost on save.
     }
-    fillRefPicker(name, appRefs[name] ?? null, current);
+    // The config as it is now, not as it was before the wait: a save can land in between.
+    fillRefPicker(name, appRefs[name] ?? null, appsState?.config?.[name]?.ref ?? 'main');
 }
 
 function collectAppConfig(name) {
@@ -5237,10 +5332,16 @@ async function loadRecentPage(page) {
     renderRecentPager();
 }
 
-async function loadKachatKaposts() {
-    kapostsPage = { page: 1, total: 0 };
+/**
+ * The 8-second poll reloads the page being read. Page 1 again only on opening the sub-tab and
+ * on Refresh (`fromStart`); a page the list has since shrunk below goes to its last one.
+ */
+async function loadKachatKaposts({ fromStart = false } = {}) {
+    if (fromStart) kapostsPage = { page: 1, total: 0 };
     try {
-        await loadRecentPage(1);
+        await loadRecentPage(kapostsPage.page);
+        const pages = Math.max(1, Math.ceil(kapostsPage.total / KAPOSTS_PAGE));
+        if (kapostsPage.page > pages) await loadRecentPage(pages);
     } catch (e) {
         $('kachat-recent').innerHTML = `<tr><td colspan="5" class="muted">${
             e instanceof IndexerDown ? 'The indexer is not running.' : 'Could not load.'
@@ -5315,9 +5416,13 @@ async function loadKachatBroadcasts() {
         // "" and absent both arrive as an empty string, so the flag distinguishes
         // "not configured" from "configured to nothing" the way the indexer does.
         channelState.configured = typeof settings.broadcast_channels === 'string' && settings.broadcast_channels.length > 0;
-        channelState.tracked = channelState.configured
-            ? settings.broadcast_channels.split(/\s+/).filter(Boolean)
-            : [...channelState.defaults];
+        // The 8-second refresh comes through here too. A list with unsaved changes on it stays
+        // as the user left it, or Save would send the server's list straight back.
+        if (!channelState.dirty) {
+            channelState.tracked = channelState.configured
+                ? settings.broadcast_channels.split(/\s+/).filter(Boolean)
+                : [...channelState.defaults];
+        }
     } catch {
         $('kachat-channels').innerHTML = '<p class="muted">The indexer is not answering.</p>';
         return;
@@ -5325,7 +5430,7 @@ async function loadKachatBroadcasts() {
 
     channelState.counts = counts;
     channelState.total = total;
-    setChannelsDirty(false);
+    setChannelsDirty(!!channelState.dirty);
     renderChannels(counts, total);
     renderChannelSelects();
     await loadBroadcastRows();
@@ -6052,7 +6157,7 @@ $('kachat-jump').addEventListener('click', (event) => {
 });
 $('kachat-bcast-refresh').addEventListener('click', loadKachatBroadcasts);
 
-$('kachat-recent-refresh').addEventListener('click', loadKachatKaposts);
+$('kachat-recent-refresh').addEventListener('click', () => loadKachatKaposts({ fromStart: true }));
 $('kachat-recent-pager').addEventListener('click', (e) => {
     const btn = e.target.closest('button[data-recent-page]');
     if (!btn || btn.disabled) return;
@@ -7661,7 +7766,16 @@ $('bot-grid')?.addEventListener('click', async (ev) => {
         return;
     }
     if (act === 'reveal') {
-        const r = await api(`/api/bots/${id}/reveal`, { method: 'POST' });
+        // The manager asks for the password again before it hands out a key (audit #34):
+        // a session cookie on its own is not enough to empty a wallet.
+        const current = await askPassword("Show this bot's wallet key?\nAnyone with it can spend this bot's KAS. Enter the panel password to show it.");
+        if (current === null) return;
+        let r;
+        try {
+            r = await api(`/api/bots/${id}/reveal`, { method: 'POST', body: { current } });
+        } catch (e) {
+            return toast(e.message, 'bad');
+        }
         const box = card.querySelector('[data-bot-key]');
         box.hidden = false;
         box.innerHTML = `Wallet key: <code>${escapeHtml(r.privateKeyHex)}</code> <button type="button" class="ghost mini" data-copy="${escapeHtml(r.privateKeyHex)}">Copy</button><br><span class="hint">Import it into any Kaspa wallet to move what is left. Anyone with it can spend this bot's KAS.</span>`;
@@ -8268,12 +8382,23 @@ function renderReindex(v) {
     return running;
 }
 
+const reindexOnScreen = () =>
+    Boolean($('sub-kachat-transfer')?.classList.contains('active') && $('tab-kachat')?.classList.contains('active'));
+// Bumped by every call, so only the newest one re-arms: a Reindex or Retry click while a poll
+// is waiting on the indexer would otherwise leave two timers going.
+let reindexCall = 0;
+
 async function loadReindex() {
     clearTimeout(reindexTimer);
     reindexTimer = null;
-    if (!$('sub-kachat-transfer')?.classList.contains('active') || !$('tab-kachat')?.classList.contains('active')) return;
+    const call = ++reindexCall;
+    if (!reindexOnScreen()) return;
     try {
-        if (renderReindex(await kachat('kaposts/reindex'))) reindexTimer = setTimeout(() => loadReindex().catch(() => {}), 3000);
+        const running = renderReindex(await kachat('kaposts/reindex'));
+        // Checked again after the wait: the sub-tab may have been left while it was out.
+        if (running && call === reindexCall && reindexOnScreen()) {
+            reindexTimer = setTimeout(() => loadReindex().catch(() => {}), 3000);
+        }
     } catch (e) {
         $('kachat-reindex-state').textContent = e instanceof IndexerDown ? 'The indexer is not running.' : e.message;
     }
@@ -8482,7 +8607,15 @@ $('kd-check')?.addEventListener('click', async () => {
 });
 
 $('kd-update')?.addEventListener('click', async () => {
-    await queueAction({
+    // Asked like every other Update; Update all's one question answers this one for it.
+    if (
+        !await askConfirm(
+            'Update .kachat Domains?\n\nIt rebuilds the registry tooling and the names server, and brings each installed network\'s server back on the new build. The names are unavailable while that server restarts.',
+        )
+    ) {
+        return;
+    }
+    const result = await queueAction({
         title: 'Updating .kachat Domains',
         request: (headers) => api('/api/kachat-domains/update', { method: 'POST', headers }),
         onEnd: (job) => {
@@ -8490,7 +8623,8 @@ $('kd-update')?.addEventListener('click', async () => {
             loadNames().catch(() => {});
         },
     });
-    $('kd-update').disabled = true;
+    // Off until checked again, once it has run. A request that never got queued leaves it pressable.
+    if (result.id || result.ok) $('kd-update').disabled = true;
 });
 
 // ------------------------------------------------------ offer refund keeper ---
@@ -8865,6 +8999,12 @@ async function openSetup(key) {
     $('setup-after').textContent = (service?.afterNote ?? '').replace('{domain}', 'that name');
     $('setup-auth').checked = false;
     $('setup-auth-fields').hidden = true;
+    // gRPC apps cannot answer a password prompt, and the manager refuses one on a gRPC name:
+    // the allowlist is the lock there.
+    const grpc = service?.kind === 'grpc' || key === 'kaspad-grpc';
+    $('setup-auth').disabled = grpc;
+    $('setup-auth-row').hidden = grpc;
+    $('setup-auth-grpc').hidden = !grpc;
     $('setup-allowlist').value = '';
     // Something else on the network: the one thing the panel cannot know is where it is.
     $('setup-origin-row').hidden = !service?.multiple;
@@ -9048,7 +9188,7 @@ $('setup-run').addEventListener('click', async () => {
         domain: mode === 'existing' ? domain : undefined,
         subdomain: mode === 'existing' ? undefined : $('setup-subdomain').value.trim(),
         zoneId: mode === 'existing' ? undefined : $('setup-zone').value,
-        auth: $('setup-auth').checked
+        auth: $('setup-auth').checked && !$('setup-auth').disabled
             ? { enabled: true, user: $('setup-auth-user').value.trim(), password: $('setup-auth-pass').value }
             : { enabled: false },
         allowlist: $('setup-allowlist').value,
@@ -9146,7 +9286,16 @@ function openProxyDialog(proxy) {
 }
 
 const toggleCustomTarget = () => {
-    $('px-custom').hidden = $('px-target').value !== 'custom';
+    const kind = $('px-target').value;
+    $('px-custom').hidden = kind !== 'custom';
+    // No password on a gRPC name (the manager refuses one): its apps cannot answer the prompt.
+    // Unticked as well as hidden, so a host saved with one before can still be saved.
+    const grpc = kind === 'grpc' || Boolean(targetKinds[kind]?.grpc);
+    if (grpc) $('px-auth').checked = false;
+    $('px-auth').disabled = grpc;
+    $('px-auth-row').hidden = grpc;
+    $('px-auth-fields').hidden = grpc;
+    $('px-auth-grpc').hidden = !grpc;
 };
 $('px-target').addEventListener('change', toggleCustomTarget);
 
@@ -9539,8 +9688,9 @@ function pushJobLine(line) {
  * onto it was tied to the page.
  */
 function adoptRunningJob(job, note) {
-    // Watching something of our own that has not finished. That one wins.
-    if (pendingAction && !pendingAction.finished) return;
+    // Watching something of our own that has not finished. That one wins, and so does the
+    // panel's own update, which is not a job but must not be closed under it either.
+    if (pendingAction && (!pendingAction.finished || pendingAction.panelUpdate)) return;
     // Closed by hand once already. The job stream re-sends its snapshot every
     // time it reconnects, and a dropped connection is not a reason to put an
     // overlay back over somebody who has read it and moved on.
@@ -9588,7 +9738,12 @@ function connectJobs() {
     jobStream.addEventListener('snapshot', (event) => {
         const job = JSON.parse(event.data);
         loadUpdateQueue();
-        if (job.status !== 'running') return;
+        if (job.status !== 'running') {
+            // The overlay's own job ended while the stream was down, and its end event went with
+            // it: this is the only word of it, or the overlay waits for good.
+            if (pendingAction?.jobId === job.id) actionJobEnded(job);
+            return;
+        }
         for (const line of job.lines ?? []) pushJobLine(line);
         // Queued updates are watched on the Update Queue page, never in the overlay.
         if (job.queued) return;
@@ -9801,6 +9956,9 @@ const loadUpdateQueue = debounce(async () => {
     }
     for (const job of updateQueue.history ?? []) {
         if (queueEnds.has(job.id)) settleQueueJob(job);
+        // Same for the overlay: a job that ended during a reconnect, with another started since,
+        // is only in the history.
+        if (pendingAction?.jobId === job.id) actionJobEnded(job);
     }
     renderUpdateQueue();
 }, 200);
@@ -10362,7 +10520,8 @@ function showPanelUpdateOverlay(repo, ref, baseAt) {
     const close = $('action-close');
     // A finished sentinel keeps the job-stream handlers out of this overlay and
     // lets the shared Close button work without the job machinery.
-    pendingAction = { finished: true, jobId: null, resolve() {} };
+    // panelUpdate keeps Escape and job adoption off it until finish() hands it a way out.
+    pendingAction = { finished: true, jobId: null, panelUpdate: true, resolve() {} };
 
     $('action-title').textContent = `Updating the panel from ${repo}@${ref}`;
     $('action-note').textContent =
@@ -10413,6 +10572,7 @@ function showPanelUpdateOverlay(repo, ref, baseAt) {
 
     const finish = ({ failed, message } = {}) => {
         stopStream();
+        if (pendingAction) pendingAction.panelUpdate = false;
         if (message) append(message);
         $('action-spinner').hidden = true;
         $('action-bar').className = `action-bar${failed ? ' failed' : ''}`;
