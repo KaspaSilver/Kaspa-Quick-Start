@@ -383,7 +383,7 @@ Nextcloud's own pages are never needed:
   copy buttons, and app passwords made (shown once) and revoked.
 - **Shared media**: every link an account has made, with thumbnails, and Stop
   sharing, which K itself cannot do.
-- **KaChat folder**: every file K has backed up (contacts and
+- **K folder**: every file K has backed up (contacts and
   portfolio backups, sent media), read live, each one downloadable, and
   deletable one at a time (for good, not to Nextcloud's trash).
 - **Accounts**: one per person, each with its own space.

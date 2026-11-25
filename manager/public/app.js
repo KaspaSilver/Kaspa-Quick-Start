@@ -4619,15 +4619,16 @@ async function loadNextcloudFiles() {
         box.innerHTML = '<p class="muted">Nothing backed up yet. Once K is signed in to this account, its backups and sent media show up here.</p>';
         return;
     }
-    // Grouped by the folder each file sits in, the KaChat folder first and
-    // its media last, newest first inside each.
+    // Grouped by the folder each file sits in, K's own folder first and its media
+    // last, newest first inside each. The apps still name that folder "KaChat" on
+    // the account; "K" counts the same, for when they move to it.
     const groups = new Map();
     for (const f of files) {
         const dir = f.path.includes('/') ? f.path.slice(0, f.path.lastIndexOf('/')) : '';
         if (!groups.has(dir)) groups.set(dir, []);
         groups.get(dir).push(f);
     }
-    const rank = (d) => (d === 'KaChat' ? 0 : d.startsWith('KaChat/Media') ? 2 : 1);
+    const rank = (d) => (/^(KaChat|K)$/.test(d) ? 0 : /^(KaChat|K)\/Media(\/|$)/.test(d) ? 2 : 1);
     const dirs = [...groups.keys()].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
     const href = (f) => `/api/nextcloud/accounts/${encodeURIComponent(user)}/file?path=${encodeURIComponent(f.path)}`;
     box.innerHTML =
