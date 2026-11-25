@@ -1112,6 +1112,7 @@
         <button class="subtab-btn" data-subtab="kachat-chats">Chats</button>
         <button class="subtab-btn" data-subtab="kachat-groups">Group chats</button>
         <button class="subtab-btn" data-subtab="kachat-chess">Chess</button>
+        <button class="subtab-btn" data-subtab="kachat-arcade">Arcade</button>
         <button class="subtab-btn" data-subtab="kachat-profiles">Profiles</button>
         <button class="subtab-btn" data-subtab="kachat-translate" data-mainnet-only>Translation</button>
         <button class="subtab-btn" data-subtab="kachat-transfer">Export / Import</button>
@@ -1397,6 +1398,35 @@
             <p class="muted">Fewest of their own moves each player needed to checkmate each bot.</p>
             <p class="error" id="chess-bots-error" hidden></p>
             <div id="chess-bot-boards"><p class="muted">Loading…</p></div>
+          </article>
+        </div>
+      </div>
+
+      <!--
+        KaPlay Arcade: each player's best verified score at Snake and 2048, from the stamps K
+        sends to the hidden #kplay-arcade room. Read-only: the indexer's GET /arcade/leaderboard.
+      -->
+      <div id="sub-kachat-arcade" class="subtab">
+        <div class="node-head">
+          <h3>Arcade</h3>
+          <span id="arcade-state" class="tag">–</span>
+          <button class="ghost" id="arcade-refresh" style="margin-left:auto">Refresh</button>
+        </div>
+        <p class="error" id="arcade-error" hidden></p>
+        <div class="grid">
+          <article class="card span2">
+            <div class="node-head">
+              <select id="arcade-game" style="width:auto" aria-label="Game">
+                <option value="snake">Snake</option>
+                <option value="2048">2048</option>
+              </select>
+              <select id="arcade-period" style="margin-left:auto; width:auto" aria-label="Period">
+                <option value="month">This month</option>
+                <option value="all">All time</option>
+              </select>
+            </div>
+            <p class="muted" id="arcade-summary">Each player's best score. Every game here was replayed by the indexer and reaches the score it claims.</p>
+            <div id="arcade-board"><p class="muted">Loading…</p></div>
           </article>
         </div>
       </div>

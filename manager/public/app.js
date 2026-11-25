@@ -804,6 +804,7 @@ function refreshKaspadForView() {
     // The Indexer and Mining tabs read the viewed network's containers.
     if (activeSubtab('kachat')) refreshKachatPanel();
     if (activeSubtab('kachat') === 'kachat-chess') loadChess().catch(() => {});
+    if (activeSubtab('kachat') === 'kachat-arcade') loadArcade().catch(() => {});
     if (activeSubtab('kachat') === 'kachat-profiles') loadProfiles().catch(() => {});
     if (activeSubtab('kachat') === 'kachat-updates') loadTestnetIndexerUpdate().catch(() => {});
     // .kachat Domains installs and follows a registry per network.
@@ -864,6 +865,7 @@ function selectSubtab(section, name) {
     // Chess is its own read-only view (the leaderboard the indexer replays), so it
     // loads its own data rather than the general indexer-panel refresh.
     if (name === 'kachat-chess') loadChess().catch(() => {});
+    if (name === 'kachat-arcade') loadArcade().catch(() => {});
     if (name === 'kachat-profiles') loadProfiles().catch(() => {});
     if (name === 'kachat-updates') loadTestnetIndexerUpdate().catch(() => {});
     else if (name === 'kachat-transfer') { loadBackup().catch(() => {}); loadReindex().catch(() => {}); refreshKachatPanel(); }
@@ -7616,6 +7618,73 @@ function renderChessBots(data) {
             .join('') +
         '</div>';
 }
+
+// ---- KaPlay Arcade (Snake, 2048) ----
+
+// The indexer ranks the board (best score, then the earlier game), so its order is kept.
+async function loadArcade() {
+    const err = $('arcade-error');
+    err.hidden = true;
+    try {
+        const query = new URLSearchParams({ game: $('arcade-game').value, period: $('arcade-period').value });
+        if (networkView === 'testnet') query.set('net', 'testnet');
+        renderArcade(await api(`/api/arcade?${query}`));
+    } catch (e) {
+        err.textContent = e.message;
+        err.hidden = false;
+    }
+}
+
+function renderArcade(data) {
+    const state = $('arcade-state');
+    state.textContent = !data.installed ? 'not installed' : data.running ? 'live' : 'stopped';
+    state.className = data.installed && data.running ? 'tag ok' : 'tag off';
+
+    const err = $('arcade-error');
+    err.textContent = data.error || '';
+    err.hidden = !data.error;
+
+    const gameName = data.game === '2048' ? '2048' : 'Snake';
+    const summary = $('arcade-summary');
+    const box = $('arcade-board');
+    if (!data.installed || data.error) {
+        summary.textContent = "Each player's best score. Every game here was replayed by the indexer and reaches the score it claims.";
+        box.innerHTML = '';
+        return;
+    }
+    const games = `${fmtNum(data.games)} ${gameName} game${data.games === 1 ? '' : 's'}`;
+    // `since` is the start of a UTC calendar month, so it is shown in UTC: local time would make
+    // November 1 read as October 31 west of Greenwich.
+    const since = data.since
+        ? new Date(Number(data.since)).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })
+        : null;
+    summary.textContent = since
+        ? `${games} since ${since} (UTC). Each player's best score; every game was replayed and reaches its score.`
+        : `${games}. Each player's best score; every game was replayed and reaches its score.`;
+
+    const players = data.players || [];
+    if (!players.length) {
+        box.innerHTML = `<p class="muted">No ${escapeHtml(gameName)} games ${data.period === 'month' ? 'this month' : 'yet'}. They show up once people play it in K.</p>`;
+        return;
+    }
+    const explorer = networkView === 'testnet' ? 'https://explorer-tn10.kaspa.org/txs/' : 'https://explorer.kaspa.org/txs/';
+    box.innerHTML =
+        '<table class="blocks"><thead><tr><th>#</th><th>Player</th><th>Score</th><th>When</th></tr></thead><tbody>' +
+        players
+            .map((p, i) => {
+                const when = escapeHtml(chessWhen(p.at));
+                const whenCell = /^[0-9a-f]{64}$/i.test(p.tx || '')
+                    ? `<a href="${explorer}${p.tx}" target="_blank" rel="noreferrer noopener" title="Open this game's transaction">${when}</a>`
+                    : when;
+                return `<tr><td>${i + 1}</td><td class="mono" title="${escapeHtml(p.address)}">${escapeHtml(chessShort(p.address))}</td><td>${escapeHtml(fmtNum(p.score))}</td><td>${whenCell}</td></tr>`;
+            })
+            .join('') +
+        '</tbody></table>';
+}
+
+$('arcade-refresh').addEventListener('click', () => loadArcade().catch(() => {}));
+$('arcade-game').addEventListener('change', () => loadArcade().catch(() => {}));
+$('arcade-period').addEventListener('change', () => loadArcade().catch(() => {}));
 
 $('chess-refresh').addEventListener('click', () => loadChess().catch(() => {}));
 $('chess-bots-period').addEventListener('change', () => loadChess().catch(() => {}));

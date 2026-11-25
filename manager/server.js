@@ -3174,6 +3174,36 @@ route('GET', /^\/api\/chess$/, async (req, res, match, url) => {
     sendJson(res, 200, { installed: true, running: state.running, leaderboard, tournaments, bots, period, error, botsError });
 });
 
+// KaPlay Arcade boards (Snake, 2048): each address's best verified score, from the stamps in the
+// hidden #kplay-arcade room (KaChat-Indexer docs/KPLAY_ARCADE_LEADERBOARD.md §5). Read-only.
+route('GET', /^\/api\/arcade$/, async (req, res, match, url) => {
+    const testnet = url.searchParams.get('net') === 'testnet';
+    const origin = testnet ? CHESS_TESTNET_ORIGIN : CHESS_ORIGIN;
+    const game = url.searchParams.get('game') === '2048' ? '2048' : 'snake';
+    const period = url.searchParams.get('period') === 'month' ? 'month' : 'all';
+    const empty = { game, period, since: null, games: 0, players: [] };
+    const state = await dockerctl.containerState(testnet ? 'kaspa-node-kachat-testnet' : 'kaspa-node-kachat');
+    if (!state.exists) return sendJson(res, 200, { installed: false, running: false, ...empty });
+    let board = empty;
+    let error = null;
+    try {
+        const r = await fetch(`${origin}/arcade/leaderboard?game=${game}&period=${period}&limit=100`, { signal: AbortSignal.timeout(6000) });
+        if (r.ok) {
+            const d = await r.json();
+            board = { game, period, since: d.since ?? null, games: d.games ?? 0, players: d.players ?? [] };
+        } else if (r.status === 404) {
+            error = 'The indexer answered but not on /arcade/leaderboard. Update KaChat-Indexer to a build with the arcade boards.';
+        } else {
+            error = `The indexer answered ${r.status} for the arcade boards.`;
+        }
+    } catch {
+        error = state.running
+            ? 'Could not reach the KaChat indexer. It may still be starting.'
+            : 'The KaChat indexer is not running.';
+    }
+    sendJson(res, 200, { installed: true, running: state.running, ...board, error });
+});
+
 // Address profiles: the avatar / banner / bio / Linktree links people stamp to their own
 // address (a kchat:1:profile: self-send). They belong to the address, not to a .kachat name,
 // so this works on both networks. The indexer's profiles follower serves the numbers on
