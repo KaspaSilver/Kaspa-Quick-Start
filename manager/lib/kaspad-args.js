@@ -23,15 +23,15 @@ const level = (cfg, key) => {
  * stored. P2P and wRPC-JSON are always on -- the node needs one, this panel
  * needs the other. gRPC and wRPC-Borsh come on when a port is published (you
  * cannot map a host port to a listener that is not there) OR when a sibling
- * container speaks to it over the docker network: the stratum bridge dials
- * gRPC, the KaChat indexer, bot and .kachat Domains server dial wRPC-Borsh. Passing those needs in as
+ * container speaks to it over the docker network: the stratum bridge and a
+ * gRPC name under Tunnel & domains dial gRPC, the KaChat indexer, bot and .kachat Domains server dial wRPC-Borsh. Passing those needs in as
  * `siblings` keeps this the single source of truth for what is bound.
  */
 export function listeners(cfg, siblings = {}) {
     return {
         p2p: true,
         json: true,
-        grpc: level(cfg, 'grpc') !== 'off' || Boolean(siblings.mining) || Boolean(siblings.bot),
+        grpc: level(cfg, 'grpc') !== 'off' || Boolean(siblings.mining) || Boolean(siblings.bot) || Boolean(siblings.grpcPublished),
         borsh: level(cfg, 'borsh') !== 'off' || Boolean(siblings.indexer) || Boolean(siblings.bot) || Boolean(siblings.names),
     };
 }

@@ -2,9 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { CONF_DIR } from './paths.js';
-import { loadDomains, readJson, saveDomains, writeJson } from './store.js';
+import { loadDomains, loadProxies, readEnvFile, readJson, saveDomains, updateEnvFile, writeJson } from './store.js';
 import { compose, containerState } from './dockerctl.js';
-import { TUNNEL_PORT } from './nginx.js';
+import { GRPC_PORT, TUNNEL_PORT, grpcNames } from './nginx.js';
 import * as cf from './cloudflare-api.js';
 
 /**
@@ -51,6 +51,11 @@ const METRICS_URL = 'http://cloudflared:2000/ready';
 
 // What every route points at (nginx's tunnel listener, see nginx.js).
 export const TUNNEL_ORIGIN = `http://proxy:${TUNNEL_PORT}`;
+// Except a name carrying Kaspad gRPC (experimental): nginx's TLS HTTP/2 listener, because
+// cloudflared speaks HTTP/2 to an origin only over TLS. The certificate there is nginx's own
+// self-signed one, on the stack's network, so it is not checked.
+export const GRPC_ORIGIN = `https://proxy:${GRPC_PORT}`;
+const GRPC_ORIGIN_REQUEST = { http2Origin: true, noTLSVerify: true };
 
 const DEFAULT_CONFIG = { installId: null, accountId: null, accountName: null, tunnelId: null, tunnelName: null, zones: [] };
 
@@ -149,8 +154,18 @@ export function hostnameFor(subdomain, zone) {
 export const zoneFor = (hostname, zones) =>
     [...zones].sort((a, b) => b.name.length - a.name.length).find((z) => hostname === z.name || hostname.endsWith(`.${z.name}`)) ?? null;
 
-// Every name this panel holds goes to the same place; nginx tells them apart.
-const ingressFor = (domains) => domains.filter((d) => d.tunnel === 'on').map((d) => ({ hostname: d.domain, service: TUNNEL_ORIGIN }));
+// Every name this panel holds goes to the same place, nginx's tunnel listener, and nginx tells
+// them apart. A gRPC name goes to the gRPC listener instead, over HTTP/2.
+function ingressFor(domains) {
+    const grpc = new Set(grpcNames(loadProxies()));
+    return domains
+        .filter((d) => d.tunnel === 'on')
+        .map((d) =>
+            grpc.has(d.domain)
+                ? { hostname: d.domain, service: GRPC_ORIGIN, originRequest: GRPC_ORIGIN_REQUEST }
+                : { hostname: d.domain, service: TUNNEL_ORIGIN },
+        );
+}
 
 /** Test seam: lets a test run this without touching real containers. */
 const deps = { compose, containerState };
@@ -253,6 +268,51 @@ export async function removeName(record, onLine = () => {}) {
     } else if (record.tunnel === 'on') {
         onLine(`${record.domain} was set up in the Cloudflare dashboard, so its route and DNS record are still there. Remove them in the dashboard, or connect an API token first and the panel does it.`);
     }
+}
+
+/**
+ * Brings the tunnel in line with which names carry Kaspad gRPC (experimental): their routes
+ * point at the gRPC listener with HTTP/2 to the origin, and while there is one, the connector
+ * talks to Cloudflare over HTTP/2 rather than QUIC, which is what reports of gRPC through a
+ * tunnel say it needs. Called whenever the proxy hosts are saved; does nothing unless the
+ * set of gRPC names changed since last time, so ordinary saves cost no Cloudflare call.
+ */
+export async function syncGrpc(onLine = () => {}) {
+    const names = grpcNames(loadProxies()).sort();
+    const cfg = loadConfig();
+    const before = [...(cfg.grpcNames ?? [])].sort();
+    if (names.join(',') === before.join(',')) return;
+
+    if (mode() === 'connected') {
+        const { t, token } = connected();
+        await cf.putIngress(token, t.accountId, t.tunnelId, ingressFor(loadDomains()));
+        for (const name of names.filter((n) => !before.includes(n))) {
+            onLine(`${name}: its tunnel route now goes to the gRPC listener over HTTP/2.`);
+        }
+        for (const name of before.filter((n) => !names.includes(n))) {
+            onLine(`${name}: its tunnel route is back on the ordinary listener.`);
+        }
+    } else if (names.length) {
+        onLine(
+            `This tunnel was set up in the Cloudflare dashboard, so the route for ${names.join(', ')} has to be changed there: ` +
+                `service ${GRPC_ORIGIN}, and under Additional application settings, TLS, "No TLS Verify" and "HTTP2 connection" both on.`,
+        );
+    }
+    saveConfig({ ...loadConfig(), grpcNames: names });
+    await setTransport(names.length ? 'http2' : 'auto', onLine);
+}
+
+/** The connector's transport to Cloudflare (TUNNEL_TRANSPORT_PROTOCOL), recreated only on a change. */
+async function setTransport(protocol, onLine) {
+    if ((readEnvFile().KQS_TUNNEL_PROTOCOL || 'auto') === protocol) return;
+    updateEnvFile({ KQS_TUNNEL_PROTOCOL: protocol });
+    if (!(await deps.containerState(CONTAINER).catch(() => ({ running: false }))).running) return;
+    onLine(
+        protocol === 'http2'
+            ? 'Restarting the tunnel connector on HTTP/2, which gRPC needs. Every name drops for a few seconds.'
+            : 'No gRPC names left: restarting the tunnel connector on its usual transport. Every name drops for a few seconds.',
+    );
+    await startConnector(onLine);
 }
 
 // ------------------------------------------------------------ the connector --

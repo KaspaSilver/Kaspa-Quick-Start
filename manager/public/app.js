@@ -6546,9 +6546,14 @@ function renderPublishServices() {
                     ? `<span class="muted">${s.count} published, under Your names</span>`
                     : '<span class="muted">–</span>'
                 : s.url
-                ? `<a href="${escapeHtml(s.url)}" target="_blank" rel="noreferrer noopener">${escapeHtml(s.domain)}${
-                      s.path && s.path !== '/' ? escapeHtml(s.path) : ''
-                  }</a>${name && name.tunnel !== 'on' ? ' <span class="tag warn" title="See Your names below.">not on the tunnel</span>' : ''}${
+                ? `${
+                      // grpcs:// is for apps; a browser cannot open it, so it is shown, not linked.
+                      s.url.startsWith('grpcs://')
+                          ? `<code>${escapeHtml(s.url)}</code>`
+                          : `<a href="${escapeHtml(s.url)}" target="_blank" rel="noreferrer noopener">${escapeHtml(s.domain)}${
+                                s.path && s.path !== '/' ? escapeHtml(s.path) : ''
+                            }</a>`
+                  }${name && name.tunnel !== 'on' ? ' <span class="tag warn" title="See Your names below.">not on the tunnel</span>' : ''}${
                       proxy?.auth?.enabled ? ' <span class="tag">password</span>' : ''
                   }${(proxy?.allowlist || []).length ? ' <span class="tag">ip filter</span>' : ''}`
                 // The button beside this already says "Set up", so repeating

@@ -230,6 +230,8 @@ function nodeSiblings() {
         bot: Boolean(appsCfg.bot?.enabled),
         // The mainnet .kachat Domains server, from install to uninstall (KQS-016).
         names: readEnvFile().KACHAT_NAMES_NEEDS_NODE === '1',
+        // Kaspad gRPC published on a name (experimental): nginx dials the gRPC listener.
+        grpcPublished: nginx.grpcNames(loadProxies()).length > 0,
     };
 }
 
@@ -1309,6 +1311,8 @@ async function saveProxyList(list, cfg, onLine) {
     if (!proxyEnabled()) return;
     await nginx.reload();
     onLine?.('Reverse proxy reloaded.');
+    // A name taking on or giving up Kaspad gRPC changes its tunnel route, after nginx serves it.
+    await cloudflare.syncGrpc(onLine ?? log).catch((err) => (onLine ?? log)(`The tunnel route for gRPC was not updated: ${err.message}`));
 }
 
 route('POST', /^\/api\/proxies$/, async (req, res) => {
@@ -1844,7 +1848,13 @@ route('POST', /^\/api\/setup\/([a-z][a-z-]*)$/, async (req, res, match) => {
         if (extras.auth.enabled) onLine(`It will ask for a username and password (${extras.auth.user}).`);
         if (extras.allowlist.length) onLine(`Only these addresses will be let through: ${extras.allowlist.join(', ')}.`);
         await attachDomain(plan.service, record.domain, extras);
+        // gRPC's listener follows the published host (nodeSiblings), so it is checked once that exists.
+        if (key === 'kaspad-grpc') await ensureNodeListeners(onLine);
 
+        if (key === 'kaspad-grpc') {
+            onLine(`Done. Apps connect to grpcs://${record.domain} (port 443). Switch gRPC on for the domain in Cloudflare too: Network, gRPC.`);
+            return { domain: record.domain, url: `grpcs://${record.domain}` };
+        }
         onLine(`Done. https://${record.domain} is live. Cloudflare serves the HTTPS; it can take a minute for a brand-new name to resolve everywhere.`);
         return { domain: record.domain, url: `https://${record.domain}` };
     });

@@ -32,6 +32,19 @@ export const SERVICES = [
         afterNote: 'Wallets and KDX connect to wss://{domain}. Cloudflare serves the HTTPS, which is what makes that a wss and not a ws.',
     },
     {
+        // K for iPhone speaks gRPC to a node, not wRPC. Cloudflare does not support gRPC on a
+        // tunnel's public names, so this is an experiment: its name goes to a TLS HTTP/2
+        // listener of its own (nginx.js GRPC_PORT, cloudflare.js syncGrpc).
+        key: 'kaspad-grpc',
+        kind: 'grpc',
+        rootOnly: true,
+        ownName: true,
+        label: 'Kaspa node gRPC (experimental)',
+        detail: 'gRPC, for apps that only speak it, like K for iPhone. Cloudflare does not support gRPC through a tunnel, so it may not work, or may stop working. Needs a name of its own.',
+        afterNote:
+            'Apps connect to grpcs://{domain}, port 443. In Cloudflare, switch gRPC on for the domain (Network, gRPC), or the connection is refused. If it never connects, take this name off: nothing else depends on it. While it is published, the tunnel connector talks to Cloudflare over HTTP/2 instead of QUIC.',
+    },
+    {
         key: 'kachat',
         kind: 'kachat',
         // Its clients call absolute paths (/get-posts, /v1/push), so it can
@@ -146,6 +159,14 @@ export function pathFor(service, domain, proxies) {
     // Nothing else there: take the root, whoever you are.
     if (!others.length) return { path: '/', sharedWith: [] };
 
+    // gRPC's name has its own tunnel route and listener, so it shares with nothing either way.
+    const loner = service.ownName ? service : SERVICES.find((sv) => sv.ownName && others.some((p) => p.target?.kind === sv.kind));
+    if (loner) {
+        const err = new Error(`${loner.label} needs a name of its own, and ${domain} ${service.ownName ? 'already serves something else' : 'carries it'}.`);
+        err.details = [`Give ${service.label} another name.`];
+        throw err;
+    }
+
     const rootTaken = others.some((p) => (p.path ?? '/') === '/');
     if (!rootTaken) return { path: '/', sharedWith: others };
 
@@ -211,6 +232,9 @@ export function readiness({ nodeCfg = loadNodeConfig(), appsCfg = loadAppsConfig
         };
     }
 
+    // The node's gRPC listener comes on by itself once this is published (kaspad-args.js).
+    state['kaspad-grpc'] = { ready: true, reason: 'Experimental: Cloudflare does not support gRPC through a tunnel.' };
+
     // Whether the other machine answers is not something this one can know.
     state.custom = { ready: true };
 
@@ -247,8 +271,13 @@ export function overview({ proxies = loadProxies(), panelHasPassword = true } = 
             domain: proxy?.domain ?? null,
             proxyId: proxy?.id ?? null,
             path: proxy?.path ?? null,
-            // Always https: Cloudflare serves it at the edge, for every name on the tunnel.
-            url: proxy ? `https://${proxy.domain}${(proxy.path ?? '/') === '/' ? '' : proxy.path}` : null,
+            // Always https: Cloudflare serves it at the edge, for every name on the tunnel. gRPC
+            // too, but apps take it as grpcs://, and a browser opens neither.
+            url: !proxy
+                ? null
+                : service.kind === 'grpc'
+                  ? `grpcs://${proxy.domain}`
+                  : `https://${proxy.domain}${(proxy.path ?? '/') === '/' ? '' : proxy.path}`,
             ...ready[service.key],
         };
     });

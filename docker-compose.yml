@@ -492,7 +492,8 @@ services:
   # and without DNS showing its address. The panel makes the tunnel, its routes
   # and the DNS records with one API token (Tunnel & domains); every route
   # points at the proxy's tunnel listener (http://proxy:8081), and nginx decides
-  # what each name serves. The run token is written 0600 to
+  # what each name serves. A Kaspa node gRPC name (experimental) points at its
+  # TLS HTTP/2 listener instead (https://proxy:8443). The run token is written 0600 to
   # conf/cloudflare/tunnel.env. Same profile as the proxy: one app, one switch.
   cloudflared:
     image: cloudflare/cloudflared:2026.10.2
@@ -506,6 +507,10 @@ services:
     env_file:
       - path: ./conf/cloudflare/tunnel.env
         required: false
+    environment:
+      # http2 while a name carries Kaspad gRPC (experimental), auto (QUIC first) otherwise.
+      # The panel sets it (lib/cloudflare.js syncGrpc) and recreates the connector.
+      TUNNEL_TRANSPORT_PROTOCOL: ${KQS_TUNNEL_PROTOCOL:-auto}
     networks:
       - kaspa
     logging:

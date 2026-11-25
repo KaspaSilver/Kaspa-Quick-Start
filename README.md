@@ -266,8 +266,17 @@ otherwise hand-write it:
 Tunnel traffic arrives on the proxy's port 8081, which is never published to
 the host, so nginx there takes each visitor's real address from Cloudflare.
 Rate limits and allow-lists keep working per visitor. Uploads through
-Cloudflare's free plan are capped at 100 MB each, and kaspad's gRPC cannot go
-through a tunnel (publish wRPC Borsh instead; wallets and KDX use that).
+Cloudflare's free plan are capped at 100 MB each.
+
+**Kaspa node gRPC (experimental)** is for apps that only speak gRPC, like K for
+iPhone (`grpcs://your-name`). Cloudflare does not support gRPC on a tunnel's
+public names, so it may not work, or may stop working. It needs a name of its
+own. That name's route goes to a second nginx listener, 8443, which serves
+HTTP/2 over TLS with a self-signed certificate the panel makes and the route
+does not check, and passes it to kaspad's gRPC port. While a gRPC name exists,
+the tunnel connector talks to Cloudflare over HTTP/2 instead of QUIC, and
+switching that over restarts it. In Cloudflare, gRPC also has to be on for the
+domain (Network, gRPC). Wallets and KDX should keep using wRPC Borsh.
 
 Upgrading from a version that used DuckDNS: on its first start the panel
 removes every DuckDNS name and the services on it, closes ports 80 and 443,
