@@ -17,6 +17,8 @@ const BACKUP_CONFIG = path.join(CONF_DIR, 'backup.json');
 const IMG = 'postgres:17-alpine';
 const NET = 'kaspa-node-net';
 const DB = 'kaspa-node-kachat-db';
+// The indexer that writes into DB. Stopped while a restore replaces the database under it.
+const APP = 'kaspa-node-kachat';
 const CHAT_EXPORT_URL = 'http://kachat-app:8600/export';
 const CHAT_IMPORT_URL = 'http://kachat-app:8600/import-file';
 const DEFAULTS = { enabled: false, dest: '', keep: 14, last: null };
@@ -25,6 +27,8 @@ const DEFAULTS = { enabled: false, dest: '', keep: 14, last: null };
 // every script takes them as positional arguments ("$1"), never pasted into its text (KQS-019).
 // A ':' in the destination would also change the bind mount's options.
 const DEST_RE = /^\/[A-Za-z0-9._\/ -]+$/;
+// A finished backup only. One being written is a dot-file ending in .tmp (see runBackup), which
+// neither this nor the `kachat-backup-*.tar.gz` retention glob can ever match.
 const FILE_RE = /^kachat-backup-[0-9-]+\.tar\.gz$/;
 export const destProblem = (dest) =>
     !DEST_RE.test(dest) || dest.split('/').includes('..')
@@ -44,6 +48,12 @@ let running = false;
 let restoring = false;
 let timer = null;
 let progress = null; // { step, of, label } while a backup is in flight; null when idle
+
+// The server's own calendar date (YYYY-MM-DD). The nightly run is decided by the local hour, so
+// "already backed up today" must be the local day too: a UTC date made a daytime manual backup
+// count for the coming local night wherever UTC is already a day ahead (audit #29).
+const localDate = (d = new Date()) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 export function loadConfig() {
     return { ...DEFAULTS, ...(readJson(BACKUP_CONFIG, {}) || {}) };
@@ -162,6 +172,10 @@ export async function runBackup(log = () => {}) {
     const started = Date.now();
     const stamp = new Date().toISOString().replace(/:/g, '').replace('T', '-').slice(0, 15); // 20260927-0400
     const name = `kachat-backup-${stamp}.tar.gz`;
+    // The archive is written under this name and renamed to `name` only once tar has finished, so
+    // a full disk or a killed helper never leaves a cut-off file that looks like a good backup,
+    // gets restored, and pushes good ones out of the retention window (audit #30).
+    const tmp = `.${name}.tmp`;
     const mount = `${cfg.dest}:/w`;
     const stage = `/w/.kstage-${stamp}`;
     const keep = Math.max(1, Number(cfg.keep) || 14);
@@ -174,7 +188,8 @@ export async function runBackup(log = () => {}) {
             'docker',
             [
                 'run', '--rm', '--network', NET, '-e', 'KACHAT_INTERNAL_SECRET', '-v', mount, IMG, 'sh', '-c',
-                'umask 077 && rm -rf "$1" && mkdir -p "$1" && ' +
+                // Also clears .tmp archives a killed run left behind (never seen by retention).
+                'umask 077 && rm -rf "$1" /w/.kachat-backup-*.tar.gz.tmp && mkdir -p "$1" && ' +
                     'wget -q --header="x-internal-secret: $KACHAT_INTERNAL_SECRET" -O "$1/chat-store.export" "$2"',
                 'sh', stage, CHAT_EXPORT_URL,
             ],
@@ -189,17 +204,18 @@ export async function runBackup(log = () => {}) {
             'run', '--rm', '-v', mount, IMG, 'sh', '-c',
             // An empty part means its export failed quietly: no file then, rather than a bad one.
             'test -s "$2/kaposts.dump" && test -s "$2/chat-store.export" && ' +
-                'umask 077 && tar -czf "/w/$1" -C "$2" kaposts.dump chat-store.export && chmod 600 "/w/$1" && rm -rf "$2" && ' +
+                'umask 077 && tar -czf "/w/$4" -C "$2" kaposts.dump chat-store.export && chmod 600 "/w/$4" && ' +
+                'mv -f "/w/$4" "/w/$1" && rm -rf "$2" && ' +
                 'ls -t /w/kachat-backup-*.tar.gz 2>/dev/null | tail -n +"$3" | xargs -r rm -f',
-            'sh', name, stage, String(keep + 1),
+            'sh', name, stage, String(keep + 1), tmp,
         ]);
-        const last = { ok: true, at: Date.now(), date: new Date().toISOString().slice(0, 10), file: name, ms: Date.now() - started };
+        const last = { ok: true, at: Date.now(), date: localDate(), file: name, ms: Date.now() - started };
         saveConfig({ last });
         log(`[backup] done: ${name} (${last.ms} ms)`);
         return last;
     } catch (e) {
-        await spawnP('docker', ['run', '--rm', '-v', mount, IMG, 'sh', '-c', 'rm -rf "$1"', 'sh', stage]).catch(() => {});
-        const last = { ok: false, at: Date.now(), date: new Date().toISOString().slice(0, 10), error: e.message, ms: Date.now() - started };
+        await spawnP('docker', ['run', '--rm', '-v', mount, IMG, 'sh', '-c', 'rm -rf "$1" "/w/$2"', 'sh', stage, tmp]).catch(() => {});
+        const last = { ok: false, at: Date.now(), date: localDate(), error: e.message, ms: Date.now() - started };
         saveConfig({ last });
         log(`[backup] FAILED: ${e.message}`);
         throw e;
@@ -209,7 +225,29 @@ export async function runBackup(log = () => {}) {
     }
 }
 
-/** Restore a combined backup file (host path) — pg_restore the DB and re-import the chat store. */
+/**
+ * Wait until the chat indexer answers HTTP again after a start (any status will do: it is
+ * listening). The chat-store import needs it up; the indexer replays a while before it is.
+ */
+const waitForApp = () =>
+    spawnP('docker', [
+        'run', '--rm', '--network', NET, IMG, 'sh', '-c',
+        'i=0; while [ $i -lt 90 ]; do wget -q -S -O /dev/null "$1" 2>&1 | grep -q "HTTP/" && exit 0; ' +
+            'i=$((i+1)); sleep 2; done; echo "the chat indexer did not answer within 3 minutes" >&2; exit 1',
+        'sh', 'http://kachat-app:8600/',
+    ]);
+
+/**
+ * Restore a combined backup file (host path) — pg_restore the DB and re-import the chat store.
+ *
+ * `--clean` drops what is there before recreating it, so this used to be able to leave the live
+ * database with its tables dropped: a bad dump, or a lock held by the indexer that kept writing
+ * the whole time, stopped it halfway (audit #4). Now, in order: the dump is checked to be one
+ * pg_restore can read before anything is touched; the indexer (the only writer) is stopped; the
+ * restore runs as one transaction that stops at the first error, so it lands whole or not at
+ * all; and the indexer is started again whatever happened. Refusing a restore while the Update
+ * Queue may be rebuilding KaChat is the caller's part (server.js).
+ */
 export async function restoreBackup(filePath, log = () => {}) {
     if (!filePath) throw new Error('No backup file path given.');
     const bad = fileProblem(filePath);
@@ -227,15 +265,48 @@ export async function restoreBackup(filePath, log = () => {}) {
             'umask 077 && rm -rf "$2" && mkdir -p "$2" && tar -xzf "/w/$1" -C "$2"',
             'sh', file, stage,
         ]);
+        // Both parts there, and the dump readable from end to end (--list walks its table of
+        // contents), while the live database is still untouched.
+        log('[restore] checking the backup');
+        await spawnP('docker', [
+            'run', '--rm', '-v', mount, IMG, 'sh', '-c',
+            'test -s "$1/chat-store.export" || { echo "the backup has no chat store" >&2; exit 1; }; ' +
+                'test -s "$1/kaposts.dump" || { echo "the backup has no database dump" >&2; exit 1; }; ' +
+                'pg_restore --list "$1/kaposts.dump" >/dev/null',
+            'sh', stage,
+        ]).catch((e) => {
+            throw new Error(`The backup file is damaged or incomplete; nothing was changed. (${e.message})`);
+        });
+
         // DB: helper cats the dump → local pg_restore in the DB container (no password)
-        log('[restore] restoring KaPost database');
-        // pg_restore --clean warns noisily on a fresh DB; only a non-zero exit is fatal.
-        await pipeP(
-            ['run', '--rm', '-v', mount, IMG, 'cat', `${stage}/kaposts.dump`],
-            ['exec', '-i', DB, 'pg_restore', '-U', 'kachat', '-d', 'kachat', '--clean', '--if-exists'],
-            'pg_restore',
-        );
-        // Chat store: POST the export back to the indexer's /import-file
+        log('[restore] stopping the KaChat indexer for the database restore');
+        try {
+            // -t 90: the compose file's stop_grace_period. Killing it mid-compaction corrupts its store.
+            await spawnP('docker', ['stop', '-t', '90', APP]);
+            log('[restore] restoring KaPost database');
+            // --clean warns noisily on a fresh DB; only a non-zero exit is fatal. One
+            // transaction, first error ends it: a failure rolls back to the database as it was.
+            await pipeP(
+                ['run', '--rm', '-v', mount, IMG, 'cat', `${stage}/kaposts.dump`],
+                [
+                    'exec', '-i', DB, 'pg_restore', '-U', 'kachat', '-d', 'kachat',
+                    '--clean', '--if-exists', '--single-transaction', '--exit-on-error',
+                ],
+                'pg_restore',
+            );
+        } finally {
+            // Always, even when the stop itself failed: one that fails partway may still have stopped it.
+            log('[restore] starting the KaChat indexer again');
+            await spawnP('docker', ['start', APP]).catch((e) =>
+                log(`[restore] could not start the KaChat indexer: ${e.message}. Start KaChat from the panel.`),
+            );
+        }
+
+        // Chat store: POST the export back to the indexer's /import-file, once it answers again
+        log('[restore] waiting for the KaChat indexer');
+        await waitForApp().catch((e) => {
+            throw new Error(`The database is restored, but the chat store is not: ${e.message}. Restore again once KaChat is running.`);
+        });
         log('[restore] restoring chat store');
         await spawnP(
             'docker',
@@ -269,7 +340,7 @@ export function scheduleBackup(log = () => {}, { deferWhile = () => false } = {}
         const cfg = loadConfig();
         if (!cfg.enabled || !cfg.dest || running || restoring || deferWhile()) return;
         const now = new Date();
-        const today = now.toISOString().slice(0, 10);
+        const today = localDate(now);
         const alreadyToday = cfg.last && cfg.last.ok && cfg.last.date === today;
         const missed = !cfg.last || Date.now() - (cfg.last.at || 0) > 25 * 3600 * 1000;
         if (!alreadyToday && (now.getHours() === 0 || missed)) {

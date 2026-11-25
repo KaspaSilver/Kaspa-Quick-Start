@@ -98,22 +98,155 @@ export const DEFAULT_MANAGER_CONFIG = {
 
 // ------------------------------------------------------------------- io ----
 
-// Exported so modules with their own config file (bridge.js) reuse the same
-// defaults-merging behaviour instead of reimplementing it.
-export function readJson(file, fallback) {
+// Said once per file and problem, not on every read: readJson runs on every
+// status poll, and the same broken file would otherwise flood the log.
+const warned = new Set();
+function warnOnce(message) {
+    if (warned.has(message)) return;
+    warned.add(message);
+    console.error(new Date().toISOString(), `[store] WARNING: ${message}`);
+}
+
+const modeOf = (file) => {
     try {
-        const raw = fs.readFileSync(file, 'utf8');
-        return mergeDefaults(JSON.parse(raw), fallback);
+        return fs.statSync(file).mode & 0o777;
     } catch {
-        return structuredClone(fallback);
+        return undefined;
+    }
+};
+
+/**
+ * Replaces a whole file so that a failure at any point leaves the old one as it
+ * was. `writeFileSync` onto the file itself empties it first, and a full disk --
+ * common once the chain has filled it -- then leaves it empty: an empty node.json
+ * became defaults and kaspad was recreated without archival, an empty
+ * proxies.json unpublished every name (audit #3). Here the new content goes to a
+ * temp file beside it, is flushed to disk, and only then renamed over the old one
+ * (a rename within one directory is atomic), as bots.js does for bots.json.
+ *
+ * Never for a file bind-mounted on its own (.env): a rename there swaps the
+ * file out from under the mount. See updateEnvFile.
+ */
+export function writeFileAtomic(file, data, { mode } = {}) {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const tmp = `${file}.tmp`;
+    // The rename makes a new inode, which would otherwise come out with default
+    // permissions and the panel's owner: an existing file keeps both.
+    let old = null;
+    try {
+        old = fs.statSync(file);
+    } catch {
+        /* first write */
+    }
+    const finalMode = mode ?? (old ? old.mode & 0o777 : undefined);
+    // A temp file left by a crash may have other permissions, or be a link: start clean.
+    fs.rmSync(tmp, { force: true });
+    let fd;
+    try {
+        fd = fs.openSync(tmp, 'wx', finalMode ?? 0o666);
+        const buf = Buffer.isBuffer(data) ? data : Buffer.from(String(data), 'utf8');
+        for (let off = 0; off < buf.length; ) off += fs.writeSync(fd, buf, off, buf.length - off, off);
+        // open()'s mode is narrowed by the umask; set exactly what was asked for.
+        if (finalMode !== undefined) fs.fchmodSync(fd, finalMode);
+        if (old) {
+            try {
+                fs.fchownSync(fd, old.uid, old.gid);
+            } catch {
+                /* not root, or a filesystem without owners (Docker Desktop) */
+            }
+        }
+        fs.fsyncSync(fd);
+        fs.closeSync(fd);
+        fd = undefined;
+        fs.renameSync(tmp, file);
+    } catch (e) {
+        if (fd !== undefined) fs.closeSync(fd);
+        fs.rmSync(tmp, { force: true });
+        throw e;
+    }
+    // Flush the rename itself, so a power cut right after cannot bring back the old name.
+    try {
+        const dir = fs.openSync(path.dirname(file), 'r');
+        try {
+            fs.fsyncSync(dir);
+        } finally {
+            fs.closeSync(dir);
+        }
+    } catch {
+        /* not every filesystem lets a directory be synced; the file itself already is */
     }
 }
 
+/** One JSON file, told apart: missing, empty, broken, or parsed (with its text). */
+function readJsonFile(file) {
+    let raw;
+    try {
+        raw = fs.readFileSync(file, 'utf8');
+    } catch (e) {
+        return e.code === 'ENOENT' ? { missing: true } : { why: `unreadable (${e.code || e.message})` };
+    }
+    if (!raw.trim()) return { empty: true, why: 'empty' };
+    try {
+        return { ok: true, value: JSON.parse(raw), raw };
+    } catch {
+        // Not the parser's message: it quotes the file, and some of these hold secrets.
+        return { why: 'not valid JSON' };
+    }
+}
+
+// Exported so modules with their own config file (bridge.js) reuse the same
+// defaults-merging behaviour instead of reimplementing it.
+//
+// Defaults stand in only for a file that is not there. A broken one used to turn
+// into defaults silently, and the next save wrote them back over whatever the
+// owner had set (audit #3). Now it falls back to the copy writeJson kept before
+// its last write, and says so; with no good copy either, a file that still has
+// content is refused rather than overwritten -- it may be a hand edit with a
+// typo, and it is the owner's to fix. An empty one with no copy (left by a
+// version before this one) has nothing left to protect, so it gets defaults,
+// loudly.
+export function readJson(file, fallback) {
+    const got = readJsonFile(file);
+    if (got.ok) return mergeDefaults(got.value, fallback);
+    if (got.missing) return structuredClone(fallback);
+    const bak = readJsonFile(`${file}.bak`);
+    if (bak.ok) {
+        warnOnce(`${file} is ${got.why}; using ${file}.bak, the copy from before its last save. The next save rewrites it.`);
+        return mergeDefaults(bak.value, fallback);
+    }
+    if (got.empty) {
+        warnOnce(`${file} is empty and there is no good ${path.basename(file)}.bak; its settings are back to defaults.`);
+        return structuredClone(fallback);
+    }
+    // Damaged with nothing to fall back on. Refusing to start would leave the owner with no
+    // panel to fix anything from, and handing back defaults would have the next save write
+    // them over the only copy. So the damaged file is set aside under its own name, kept for
+    // recovery, and the panel carries on from defaults.
+    const aside = `${file}.damaged-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+    try {
+        fs.renameSync(file, aside);
+        warnOnce(`${file} is ${got.why}, and there is no good ${path.basename(file)}.bak. It was moved to ${aside} so nothing overwrites it; its settings are back to defaults until it is restored from there.`);
+    } catch (e) {
+        warnOnce(`${file} is ${got.why}, there is no good ${path.basename(file)}.bak, and it could not be set aside (${e.message}); its settings are back to defaults.`);
+    }
+    return structuredClone(fallback);
+}
+
 export function writeJson(file, value, { mode } = {}) {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, { encoding: 'utf8', ...(mode ? { mode } : {}) });
-    // `mode` only applies when the file is created; an existing one is tightened too.
-    if (mode) fs.chmodSync(file, mode);
+    const data = `${JSON.stringify(value, null, 2)}\n`;
+    // The file as it is now becomes the .bak readJson falls back on -- but only a
+    // good one: a broken file must never overwrite the last good copy. Best
+    // effort; the write itself is already safe without it.
+    const current = readJsonFile(file);
+    if (current.ok) {
+        try {
+            writeFileAtomic(`${file}.bak`, current.raw, { mode: mode ?? modeOf(file) });
+        } catch (e) {
+            warnOnce(`could not keep ${file}.bak: ${e.message}`);
+        }
+    }
+    // `mode` is set on every write, so an existing file is tightened too.
+    writeFileAtomic(file, data, { mode });
 }
 
 // Recursive defaults fill so a config written by an older version keeps working
@@ -169,14 +302,45 @@ export const saveDomains = (list) => writeJson(DOMAINS_FILE, list);
 
 // ------------------------------------------------------------- .env file ----
 
+// The copy of .env from before the panel's last change to it. A plain sibling
+// file, not a mount, so it may be replaced by rename.
+const ENV_BAK = `${ENV_FILE}.bak`;
+const ENV_KEY_RE = /^\s*[A-Za-z_][A-Za-z0-9_]*\s*=/m;
+// Good enough to build on: some KEY= line, and no NULs (what a cut-off write
+// can leave behind on some filesystems).
+const envLooksGood = (raw) => typeof raw === 'string' && !raw.includes('\0') && ENV_KEY_RE.test(raw);
+
+/**
+ * .env's text, and where it came from. A .env that is there but empty or
+ * unreadable as an env file falls back to .env.bak when that one is good: .env
+ * holds the admin password hash, the session secret and the database
+ * passwords, and without them the panel would offer to set a new password
+ * (audit #3). `disk` is what the file holds now, whatever it is.
+ */
+function readEnvRaw() {
+    let disk = null;
+    try {
+        disk = fs.readFileSync(ENV_FILE, 'utf8');
+    } catch {
+        return { raw: '', disk: null, good: false };
+    }
+    if (envLooksGood(disk)) return { raw: disk, disk, good: true };
+    let bak = null;
+    try {
+        bak = fs.readFileSync(ENV_BAK, 'utf8');
+    } catch {
+        /* no copy */
+    }
+    if (envLooksGood(bak)) {
+        warnOnce(`${ENV_FILE} is ${disk.trim() ? 'unreadable as an env file' : 'empty'}; using ${ENV_BAK}, the copy from before the panel's last change. The next change rewrites .env from it.`);
+        return { raw: bak, disk, good: false };
+    }
+    return { raw: disk, disk, good: false };
+}
+
 export function readEnvFile() {
     const out = {};
-    let raw;
-    try {
-        raw = fs.readFileSync(ENV_FILE, 'utf8');
-    } catch {
-        return out;
-    }
+    const { raw } = readEnvRaw();
     for (const line of raw.split(/\r?\n/)) {
         const match = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
         if (!match) continue;
@@ -187,18 +351,22 @@ export function readEnvFile() {
 
 // Rewrites in place, preserving comments and key order. The file is a bind
 // mount of a single host file, so it must never be replaced via rename.
+//
+// In place cannot be atomic, so it is made safe in steps (audit #3): the whole
+// new text is built first; the current file is copied to .env.bak (copied --
+// .env itself stays where it is) and that copy must succeed before .env is
+// touched; then .env is overwritten through one descriptor, cut to length and
+// flushed. If that write fails partway, the old text is put back, which fits in
+// the space the file already had; readEnvRaw covers what is left (a crash
+// mid-write) from the .bak.
 export function updateEnvFile(updates) {
     // One value per line, so a line break in a value would write keys of its own -- an
     // ADMIN_PASSWORD_HASH= among them (KQS-010). Nothing legitimate contains one.
     for (const [key, value] of Object.entries(updates)) {
         if (/[\r\n\0]/.test(String(value))) throw new Error(`Refusing to write ${key}: the value contains a line break.`);
     }
-    let raw = '';
-    try {
-        raw = fs.readFileSync(ENV_FILE, 'utf8');
-    } catch {
-        /* first write */
-    }
+    const current = readEnvRaw();
+    const raw = current.raw;
     const lines = raw.split(/\r?\n/);
     const remaining = new Map(Object.entries(updates));
 
@@ -212,7 +380,46 @@ export function updateEnvFile(updates) {
     });
 
     for (const [key, value] of remaining) next.push(`${key}=${value}`);
-    fs.writeFileSync(ENV_FILE, `${next.join('\n').replace(/\n+$/, '')}\n`, 'utf8');
+    const body = Buffer.from(`${next.join('\n').replace(/\n+$/, '')}\n`, 'utf8');
+
+    // Only a good .env replaces the copy; a bad one must never overwrite the last
+    // good .bak. 0600: it holds the same secrets, and only the panel reads it.
+    if (current.good) {
+        try {
+            writeFileAtomic(ENV_BAK, current.disk, { mode: 0o600 });
+        } catch (e) {
+            throw new Error(`Not changing .env: could not first keep a copy of it as .env.bak (${e.message}).`);
+        }
+    }
+
+    let fd;
+    try {
+        fd = fs.openSync(ENV_FILE, 'r+');
+    } catch (e) {
+        if (e.code !== 'ENOENT') throw e;
+        fd = fs.openSync(ENV_FILE, 'w'); // first write
+    }
+    try {
+        try {
+            for (let off = 0; off < body.length; ) off += fs.writeSync(fd, body, off, body.length - off, off);
+            fs.ftruncateSync(fd, body.length);
+            fs.fsyncSync(fd);
+        } catch (e) {
+            if (current.disk !== null) {
+                try {
+                    const old = Buffer.from(current.disk, 'utf8');
+                    for (let off = 0; off < old.length; ) off += fs.writeSync(fd, old, off, old.length - off, off);
+                    fs.ftruncateSync(fd, old.length);
+                    fs.fsyncSync(fd);
+                } catch {
+                    /* .env.bak still holds it, and readEnvRaw falls back on it */
+                }
+            }
+            throw e;
+        }
+    } finally {
+        fs.closeSync(fd);
+    }
 }
 
 /**

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { CONF_DIR } from './paths.js';
+import { writeFileAtomic } from './store.js';
 
 /**
  * The block notifier's settings, one of which is a wallet key.
@@ -91,15 +92,45 @@ const HEX64_RE = /^[0-9a-f]{64}$/i;
 // it is interpolated into: `ciph_msg:1:comm:<alias>:<body>`.
 const ALIAS_RE = /^[A-Za-z0-9._-]{1,64}$/;
 
-/** Parses the env file into a plain object. Missing file is not an error. */
-export function readEnv() {
-    if (!fs.existsSync(ENV_FILE)) return {};
+// The copy of bot.env from before its last save. It holds the wallet key too,
+// so it is 0600 like the file itself.
+const ENV_BAK = `${ENV_FILE}.bak`;
+
+const parseEnv = (raw) => {
     const out = {};
-    for (const line of fs.readFileSync(ENV_FILE, 'utf8').split('\n')) {
+    for (const line of raw.split('\n')) {
         const match = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim());
         if (match) out[match[1]] = match[2];
     }
     return out;
+};
+const readParsed = (file) => {
+    try {
+        const raw = fs.readFileSync(file, 'utf8');
+        return raw.includes('\0') ? {} : parseEnv(raw);
+    } catch {
+        return {};
+    }
+};
+
+let warnedBak = false;
+
+/**
+ * Parses the env file into a plain object. Missing file is not an error. One
+ * that is there but holds no settings (emptied by a failed write before writes
+ * were made safe) falls back to bot.env.bak: losing this file loses the wallet
+ * key (audit #3).
+ */
+export function readEnv() {
+    if (!fs.existsSync(ENV_FILE)) return {};
+    const out = readParsed(ENV_FILE);
+    if (Object.keys(out).length) return out;
+    const bak = readParsed(ENV_BAK);
+    if (Object.keys(bak).length && !warnedBak) {
+        warnedBak = true;
+        console.error(new Date().toISOString(), `[bot] WARNING: ${ENV_FILE} holds no settings; using ${ENV_BAK}, the copy from before its last save.`);
+    }
+    return bak;
 }
 
 /** True when a wallet key is stored, which is all anybody is told about it. */
@@ -271,11 +302,22 @@ function writeEnvFile(values) {
             .join('\n') +
         '\n';
 
-    fs.mkdirSync(BOT_DIR, { recursive: true });
-    fs.writeFileSync(ENV_FILE, body, { mode: 0o600 });
-    // Set every time, not only on creation: a file from an earlier version, or
+    // Replaced whole by temp file + rename, never emptied in place: a full disk
+    // would otherwise leave it empty and the wallet key gone (audit #3). Safe
+    // here because bot.env is not bind-mounted on its own -- compose reads it as
+    // an env_file, and the bot mounts the conf/bot folder, not this file.
+    // The current file, if it holds anything, is kept as bot.env.bak first; an
+    // empty one never replaces a good copy.
+    if (Object.keys(readParsed(ENV_FILE)).length) {
+        try {
+            writeFileAtomic(ENV_BAK, fs.readFileSync(ENV_FILE), { mode: 0o600 });
+        } catch {
+            /* best effort: the write below is safe without it */
+        }
+    }
+    // 0600 every time, not only on creation: a file from an earlier version, or
     // restored from a backup, must not stay readable by everything on the box.
-    fs.chmodSync(ENV_FILE, 0o600);
+    writeFileAtomic(ENV_FILE, body, { mode: 0o600 });
 }
 
 /** The address the bot sends from, if one has been recorded. */
