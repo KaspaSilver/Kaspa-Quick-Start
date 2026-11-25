@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import { CONF_DIR } from './paths.js';
 
 /**
- * The KaChat indexer's push credentials: an Apple .p8 (iOS / APNs) and a Firebase
+ * The K-Digital-Freedom-Indexer's push credentials: an Apple .p8 (iOS / APNs) and a Firebase
  * service-account.json (Android / FCM).
  *
  * These authenticate as someone's own app: Apple and Google hand them over once,

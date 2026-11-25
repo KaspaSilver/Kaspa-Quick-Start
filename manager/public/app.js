@@ -705,7 +705,7 @@ document.addEventListener('click', (event) => {
 // --- network view (Mainnet / Testnet) ---
 //
 // Testnet narrows the nav to the services a testnet deployment uses -- the node,
-// mining, the KaChat indexer and the (shared) proxy -- and, crucially, re-points the
+// mining, the K-Digital-Freedom-Indexer and the (shared) proxy -- and, crucially, re-points the
 // shared Kaspad/Mining/Indexer switches, install buttons and health dots at the
 // parallel *-testnet units, so both networks run side by side from one panel. The
 // choice is remembered across reloads.
@@ -1476,7 +1476,7 @@ const SERVICE_ACTIONS = {
 const SERVICE_NAMES = {
     node: 'the node',
     mining: 'mining',
-    kachat: 'KaChat-Indexer',
+    kachat: 'K-Digital-Freedom-Indexer',
     desktop: 'KaChat-Desktop',
     kassigner: 'KasSigner',
     extension: 'the K Extension',
@@ -1767,7 +1767,7 @@ async function renderTestnetPorts() {
  * -- this just stops the UI offering something it will reject.
  */
 /**
- * Mining and the KaChat indexer both read the chain, so neither does anything
+ * Mining and the K-Digital-Freedom-Indexer both read the chain, so neither does anything
  * useful until the node is running and caught up.
  *
  * That used to be enforced by locking the sections: the nav item refused to
@@ -4821,7 +4821,7 @@ function renderTestnetIndexerState() {
 async function loadTestnetIndexerUpdate() {
     if (networkView !== 'testnet') return;
     const status = $('kachat-update-status');
-    setUpdateStatus(status, 'checking', 'Checking KaChat-Indexer…');
+    setUpdateStatus(status, 'checking', 'Checking K-Digital-Freedom-Indexer…');
     try {
         const r = await api('/api/kachat-testnet/update');
         testnetIndexerUpdate = r;
@@ -4848,7 +4848,7 @@ document.addEventListener(
         event.preventDefault();
         if (id === 'kachat-check') return void loadTestnetIndexerUpdate();
         if (id === 'kachat-update') {
-            if (!await askConfirm('Update the testnet-10 indexer?\n\nIt rebuilds KaChat-Indexer and recreates only the testnet indexer. Indexed data is kept.')) return;
+            if (!await askConfirm('Update the testnet-10 indexer?\n\nIt rebuilds K-Digital-Freedom-Indexer and recreates only the testnet indexer. Indexed data is kept.')) return;
             return void queueAction({
                 title: 'Updating the testnet indexer',
                 request: (headers) => api('/api/kachat-testnet/update', { method: 'POST', headers }),
@@ -6828,14 +6828,14 @@ async function loadServices() {
         if (TESTNET_UNIT_VALUES.has(key) || key.endsWith('-testnet')) continue;
         // Push has no container, so it gets no Install button or "stopped = red" treatment: just
         // the switch (on = master flag) and a dot that reads grey off, green on, amber on-but-no-keys.
-        // It runs inside the KaChat indexer, so until that is installed the switch is locked and
+        // It runs inside the K-Digital-Freedom-Indexer, so until that is installed the switch is locked and
         // the tab sends you to the indexer instead.
         if (key === 'push') {
             const installed = Boolean(state?.installed);
             const on = installed && Boolean(state?.running);
             setNavSwitch('push', on, { disabled: !installed });
             const label = navSwitch('push')?.closest('.switch');
-            if (label) label.title = installed ? 'Turn the push service on or off' : 'Install the KaChat indexer first: it is what sends the pushes';
+            if (label) label.title = installed ? 'Turn the push service on or off' : 'Install the K-Digital-Freedom-Indexer first: it is what sends the pushes';
             setNavHealth('push', !on ? 'absent' : state?.configured ? 'ok' : 'warn');
             renderPushGate(installed);
             continue;
@@ -6974,7 +6974,7 @@ function renderInstallGate(key, state) {
 }
 
 /**
- * The Push tab's cover while no KaChat indexer is installed. Push has nothing to install of its
+ * The Push tab's cover while no K-Digital-Freedom-Indexer is installed. Push has nothing to install of its
  * own (it runs inside the indexer), so instead of an Install button it points to the indexer.
  */
 function renderPushGate(installed) {
@@ -6988,9 +6988,9 @@ function renderPushGate(installed) {
     gate.className = 'install-gate';
     gate.innerHTML = `
       <div class="install-gate-card">
-        <h3>Push Service needs the KaChat indexer</h3>
-        <p class="muted">Push notifications are sent by the KaChat indexer, so there is nothing to install here on its own. Install the indexer on its tab, and this tab and the switch in the sidebar open up.</p>
-        <button class="primary big" data-push-goto="kachat">Go to KaChat indexer</button>
+        <h3>Push Service needs the K-Digital-Freedom-Indexer</h3>
+        <p class="muted">Push notifications are sent by the K-Digital-Freedom-Indexer, so there is nothing to install here on its own. Install the indexer on its tab, and this tab and the switch in the sidebar open up.</p>
+        <button class="primary big" data-push-goto="kachat">Go to K-Digital-Freedom-Indexer</button>
       </div>`;
     gate.querySelector('[data-push-goto]').addEventListener('click', () => document.querySelector('.nav-item[data-tab="kachat"]')?.click());
     section.appendChild(gate);
@@ -7489,7 +7489,7 @@ $('bot-update').addEventListener('click', async () => {
 
 // ------------------------------------------------------------------- KaPlay ---
 
-// Read-only views of KaPlay's boards: the chess leaderboard the KaChat indexer replays from
+// Read-only views of KaPlay's boards: the chess leaderboard the K-Digital-Freedom-Indexer replays from
 // #chess-arena, and the arcade scores from #kplay-arcade.
 const chessShort = (addr) => {
     const s = String(addr ?? '');
@@ -7921,7 +7921,7 @@ function renderBackupStatus(s) {
 
 /**
  * The processor walks the node's blocks on request and indexes the KaChat transactions it
- * finds (kachat-indexer reindex.rs); the admin API carries the request and its status. Polled
+ * finds (K-Digital-Freedom-Indexer reindex.rs); the admin API carries the request and its status. Polled
  * every few seconds while it runs, and only while this card is on screen.
  */
 let reindexTimer = null;
@@ -8067,7 +8067,7 @@ $('backup-restore')?.addEventListener('click', async () => {
 
 // -------------------------------------------------------------------- push ---
 // The Push Service panel: FCM (Android) + APNs (iPhone) credentials for the
-// KaChat indexer. Loaded on arrival, saved through /api/push.
+// K-Digital-Freedom-Indexer. Loaded on arrival, saved through /api/push.
 // --- .kachat names registry (testnet) ---
 
 // --- .kachat Domains (installable registry tooling; Overview / Updates / Uninstall) ---
@@ -8099,22 +8099,22 @@ async function loadKachatDomains(indexerStatus = null) {
         );
     }
     if (d.revision) rows.push(['Registry tooling', short(d.revision)]);
-    if (d.serverBuilt) rows.push(['Server (KaChat-Indexer)', short(d.serverBuilt)]);
+    if (d.serverBuilt) rows.push(['Server (K-Digital-Freedom-Indexer)', short(d.serverBuilt)]);
     $('kd-facts').innerHTML = rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('');
     const note = $('kd-note');
     const live = indexerStatus?.manifestRegistryCovenantId;
     const where = networkView === 'testnet' ? 'testnet' : 'mainnet';
     const view = networkView === 'testnet' ? 'Testnet' : 'Mainnet';
     const push = d.indexerInstalled
-        ? ` Name pushes go out through the ${where} KaChat Indexer's push service.`
-        : ' No KaChat Indexer here, so it sends no name pushes (nothing else is missing).';
+        ? ` Name pushes go out through the ${where} K-Digital-Freedom-Indexer's push service.`
+        : ' No K-Digital-Freedom-Indexer here, so it sends no name pushes (nothing else is missing).';
     if (!d.nodeInstalled) {
-        note.textContent = `Install the ${where} Kaspad first (Kaspad, in this ${view} view). That node is all .kachat Domains needs: it runs its own names server and database, with no KaChat Indexer.`;
+        note.textContent = `Install the ${where} Kaspad first (Kaspad, in this ${view} view). That node is all .kachat Domains needs: it runs its own names server and database, with no K-Digital-Freedom-Indexer.`;
     } else if (sm && live && live.toLowerCase() !== String(sm.registryCovenantId).toLowerCase()) {
         note.textContent = `Warning: the server follows registry ${live.slice(0, 12)}…, not the verified ${String(sm.registryCovenantId).slice(0, 12)}…. Run Updates → Update to hand it over.`;
     } else if (!d.installed) {
         note.textContent =
-            'Installing builds the registry tooling (once, shared by both networks) and the names server, which only compiles the names parts of KaChat-Indexer. It needs only the node.';
+            'Installing builds the registry tooling (once, shared by both networks) and the names server, which only compiles the names parts of K-Digital-Freedom-Indexer. It needs only the node.';
     } else if (!sm) {
         note.textContent = `Installed. There is no ${d.network} registry yet, so there is nothing to start. Updates → Update picks one up once kachat-domains publishes it.`;
     } else if (!d.running) {
@@ -8149,11 +8149,11 @@ $('kd-check')?.addEventListener('click', async () => {
         $('kd-update').disabled = !r.updateAvailable;
         status.className = `update-status ${r.updateAvailable ? 'available' : 'current'}`;
         // Which half moved: the registry tooling, the names server's own code, or neither.
-        // KaChat-Indexer commits that touch nothing the server is built from are not an update.
+        // K-Digital-Freedom-Indexer commits that touch nothing the server is built from are not an update.
         const what = [r.toolingUpdate ? 'the registry tooling' : '', r.serverUpdate ? "the names server's code" : ''].filter(Boolean).join(' and ');
         status.textContent = r.updateAvailable
             ? `A newer version of ${what || '.kachat Domains'} is available.`
-            : 'Up to date. New KaChat-Indexer commits that leave the names server untouched are not counted.';
+            : 'Up to date. New K-Digital-Freedom-Indexer commits that leave the names server untouched are not counted.';
     } catch (e) {
         status.className = 'update-status error';
         status.textContent = e.message;
@@ -8265,7 +8265,7 @@ async function loadNames() {
             return;
         }
         // A start block the node has pruned never comes back by itself
-        // (kachat-indexer docs/KACHAT_NAMES_PRUNED_START.md).
+        // (K-Digital-Freedom-Indexer docs/KACHAT_NAMES_PRUNED_START.md).
         const pruned = s.error === 'start_block_pruned';
         if (tag) {
             tag.textContent = pruned ? 'stuck' : s.synced ? 'synced' : 'syncing';
@@ -8287,7 +8287,7 @@ async function loadNames() {
                         s.manifestPriceCovenantId ? `, price covenant ${s.manifestPriceCovenantId.slice(0, 12)}…` : ', fixed prices'
                     }.${
                         // The node had pruned the start block, so the indexer rebuilt the
-                        // registry from the Kaspa REST API (kachat-indexer PRUNED_START.md §3).
+                        // registry from the Kaspa REST API (K-Digital-Freedom-Indexer PRUNED_START.md §3).
                         s.bootstrappedAt
                             ? ` Rebuilt from the Kaspa REST API at DAA ${fmtNum(s.bootstrappedAt)}: offers made before then show up once they are accepted, declined or refunded.`
                             : ''

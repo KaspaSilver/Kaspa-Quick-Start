@@ -9,7 +9,7 @@ import { TARGET_KINDS } from './nginx.js';
  *
  * The old proxy screen asked the question the other way round -- add a domain,
  * then pick an upstream from a list of ports -- which meant knowing that the
- * KaChat indexer answers on 3080 before you could publish it. A service is the
+ * K-Digital-Freedom-Indexer answers on 3080 before you could publish it. A service is the
  * thing a person actually wants to put on a domain, so a service is what this
  * lists, and the port behind it is nobody's business but this file's.
  *
@@ -50,7 +50,7 @@ export const SERVICES = [
         // Its clients call absolute paths (/get-posts, /v1/push), so it can
         // only ever be the thing at the root of a name.
         rootOnly: true,
-        label: 'KaChat indexer',
+        label: 'K-Digital-Freedom-Indexer',
         detail: 'The KaPosts REST API, plus the chat and push endpoints, on one name.',
         afterNote:
             'Point KaChat clients at https://{domain}. Content, chat and push registration all answer there: the panel routes /handshakes, /contextual-messages, /payments, /self-stash, /group-messages, /group-control and /v1/push to the chat indexer, and everything else to the content API. The admin dashboard and the internal push injection point are never published.',
@@ -63,21 +63,21 @@ export const SERVICES = [
         kind: 'kachat-testnet',
         rootOnly: true,
         testnet: true,
-        label: 'KaChat indexer (testnet-10)',
+        label: 'K-Digital-Freedom-Indexer (testnet-10)',
         detail: 'The testnet indexer: KaPosts, chat and push, plus .kachat names when .kachat Domains is installed, on a name of its own.',
         afterNote:
             'Send https://{domain} to the KaChat app owner: it becomes the apps\' testnet indexer. Install and start the testnet Kaspad and Indexer from the Testnet view if they are not running. Names answer here once .kachat Domains is installed and on (the proxy routes the names paths to it).',
     },
     {
         // The .kachat Domains server on a name of its own: for a machine that runs it without
-        // a KaChat indexer. On an indexer's name its paths are routed there automatically.
+        // a K-Digital-Freedom-Indexer. On an indexer's name its paths are routed there automatically.
         key: 'kachat-names',
         kind: 'kachat-names',
         rootOnly: true,
         label: '.kachat Domains',
-        detail: 'The .kachat names, profiles and identity API, for a server without the KaChat indexer.',
+        detail: 'The .kachat names, profiles and identity API, for a server without the K-Digital-Freedom-Indexer.',
         afterNote:
-            'https://{domain} now answers /names, /market, /offers, /profiles and /identity. If this machine also publishes the KaChat indexer, you do not need this: the indexer name already routes those paths to .kachat Domains.',
+            'https://{domain} now answers /names, /market, /offers, /profiles and /identity. If this machine also publishes the K-Digital-Freedom-Indexer, you do not need this: the indexer name already routes those paths to .kachat Domains.',
     },
     {
         key: 'kachat-names-testnet',
@@ -195,7 +195,7 @@ export function pathFor(service, domain, proxies) {
  */
 // The node's wRPC-Borsh listener is not a stored switch any more: it is on when
 // the port is published (local or public) or when a sibling that speaks it -- the
-// KaChat indexer or bot -- is enabled. Same rule the args writer uses.
+// K-Digital-Freedom-Indexer or bot -- is enabled. Same rule the args writer uses.
 const borshReachable = (nodeCfg, appsCfg) =>
     nodeCfg?.expose?.borsh !== 'off' || Boolean(appsCfg?.kachat?.enabled) || Boolean(appsCfg?.bot?.enabled);
 
@@ -206,7 +206,7 @@ export function readiness({ nodeCfg = loadNodeConfig(), appsCfg = loadAppsConfig
         ? { ready: true }
         : {
               ready: false,
-              reason: 'The wRPC Borsh listener is off. Set wRPC Borsh to Local under Kaspad, Ports, or enable the KaChat indexer.',
+              reason: 'The wRPC Borsh listener is off. Set wRPC Borsh to Local under Kaspad, Ports, or enable the K-Digital-Freedom-Indexer.',
           };
 
     for (const key of ['kachat', 'desktop', 'nextcloud']) {
@@ -288,7 +288,7 @@ export function overview({ proxies = loadProxies(), panelHasPassword = true } = 
  * the order the wizard will do it.
  *
  * This is deliberately a plan rather than a checklist: someone setting up a
- * public address should not have to know that the KaChat indexer needs its
+ * public address should not have to know that the K-Digital-Freedom-Indexer needs its
  * containers running, that a Borsh listener has to be bound, or that the name
  * needs a DNS record into the tunnel. They should say "publish
  * this on that name" once, see what that entails, and agree to it.
@@ -317,7 +317,7 @@ export function setupPlan(
         steps.push({
             key: 'borsh',
             label: "Make the node's wRPC Borsh reachable",
-            detail: 'That is the endpoint being published. Set wRPC Borsh to Local under Kaspad, Ports, or enable the KaChat indexer. Either turns the listener on. The node restarts to pick it up.',
+            detail: 'That is the endpoint being published. Set wRPC Borsh to Local under Kaspad, Ports, or enable the K-Digital-Freedom-Indexer. Either turns the listener on. The node restarts to pick it up.',
             done: borshReachable(nodeCfg, appsCfg),
         });
     }

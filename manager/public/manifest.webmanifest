@@ -1,7 +1,7 @@
 {
   "name": "Kaspa Quick Start",
   "short_name": "Kaspa QS",
-  "description": "Control panel for your Kaspa node, KaChat indexer and bot.",
+  "description": "Control panel for your Kaspa node, K-Digital-Freedom-Indexer and bot.",
   "id": "/",
   "start_url": "/",
   "scope": "/",

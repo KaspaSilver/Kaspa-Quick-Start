@@ -42,7 +42,7 @@ export { KASPAD_CONTAINER, PROXY_CONTAINER, BRIDGE_CONTAINER, KACHAT_CONTAINER, 
 export const STACK_CONTAINERS = [
     { key: 'kaspad', label: 'kaspad', name: KASPAD_CONTAINER },
     { key: 'bridge', label: 'stratum bridge', name: BRIDGE_CONTAINER },
-    { key: 'kachat', label: 'kachat indexer', name: KACHAT_CONTAINER },
+    { key: 'kachat', label: 'K-Digital-Freedom-Indexer', name: KACHAT_CONTAINER },
     { key: 'kachat-db', label: 'kachat postgres', name: 'kaspa-node-kachat-db' },
     { key: 'kachat-names', label: '.kachat Domains', name: 'kaspa-node-kachat-names' },
     { key: 'kachat-names-db', label: '.kachat Domains postgres', name: 'kaspa-node-kachat-names-db' },
@@ -59,7 +59,7 @@ export const STACK_CONTAINERS = [
     { key: 'kaspad-testnet', label: 'kaspad (testnet)', name: 'kaspa-node-kaspad-testnet' },
     { key: 'bridge-testnet', label: 'stratum bridge (testnet)', name: 'kaspa-node-bridge-testnet' },
     { key: 'cpuminer-testnet', label: 'cpu miner (testnet)', name: 'kaspa-node-cpuminer-testnet' },
-    { key: 'kachat-testnet', label: 'kachat indexer (testnet)', name: 'kaspa-node-kachat-testnet' },
+    { key: 'kachat-testnet', label: 'K-Digital-Freedom-Indexer (testnet)', name: 'kaspa-node-kachat-testnet' },
     { key: 'kachat-db-testnet', label: 'kachat postgres (testnet)', name: 'kaspa-node-kachat-db-testnet' },
     { key: 'kachat-names-testnet', label: '.kachat Domains (testnet)', name: 'kaspa-node-kachat-names-testnet' },
     { key: 'kachat-names-db-testnet', label: '.kachat Domains postgres (testnet)', name: 'kaspa-node-kachat-names-db-testnet' },
@@ -72,7 +72,7 @@ export const STACK_CONTAINERS = [
  * right after the container it reads.
  *
  * - Address profiles: the profiles follower's `[profiles]` lines (both networks;
- *   docs/KACHAT_PROFILES.md in KaChat-Indexer).
+ *   docs/KACHAT_PROFILES.md in K-Digital-Freedom-Indexer).
  * - Push service: the chat indexer's push lines (`[Push]`, `[PushRegistry]`,
  *   "Push register …") plus the processor's KaPosts push sends.
  */

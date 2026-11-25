@@ -27,7 +27,7 @@ export const imageTag = () => `kaspa-one-click/kachat-domains:${imageTagFor(ref(
 /**
  * .kachat Domains on one network is two things: the shared tool image above (verifies and
  * publishes the manifest), and that network's own names server -- a Postgres plus the
- * KaChat-Indexer `kachat-names` image (names follower, profiles follower, names-only API;
+ * K-Digital-Freedom-Indexer `kachat-names` image (names follower, profiles follower, names-only API;
  * docs/KACHAT_NAMES_STANDALONE.md there). It needs the node and nothing else: no KaChat
  * Indexer. `compose` is the lifecycle shape of that server, `marker` the .env flag the proxy
  * reads to route the names paths on the indexer's name to it.

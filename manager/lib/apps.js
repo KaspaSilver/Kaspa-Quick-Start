@@ -9,7 +9,7 @@ import { docker } from './dockerctl.js';
 import { ALLOWED_PATHS as NEXTCLOUD_ALLOWED_PATHS, BROWSER_CORS as NEXTCLOUD_BROWSER_CORS } from './nextcloud.js';
 
 /**
- * The optional applications that ride along with the node: the KaChat indexer,
+ * The optional applications that ride along with the node: the K-Digital-Freedom-Indexer,
  * the KaChat desktop client and K Nextcloud. All are upstream projects of ours,
  * all live behind a compose profile so they do not exist until switched on, and
  * all track a git ref the panel can move forward.
@@ -20,8 +20,8 @@ export const APPS_PORTS_OVERRIDE = path.join(CONF_DIR, 'apps-ports.yml');
 
 export const APPS = {
     kachat: {
-        label: 'KaChat-Indexer',
-        repo: 'KaspaSilver/KaChat-Indexer',
+        label: 'K-Digital-Freedom-Indexer',
+        repo: 'KaspaSilver/K-Digital-Freedom-Indexer',
         profile: 'kachat',
         services: ['kachat-db', 'kachat-app'],
         // Reads live chain data, so it is pointless before the node has synced.
@@ -167,7 +167,7 @@ export const KACHAT_TESTNET_PUBLISH = { ...APPS.kachat.publish, hostname: 'kacha
 
 /**
  * The .kachat Domains servers (names follower + names-only API, docs/KACHAT_NAMES_STANDALONE.md
- * in KaChat-Indexer). Published on a name of their own, or riding on the indexer's name: the
+ * in K-Digital-Freedom-Indexer). Published on a name of their own, or riding on the indexer's name: the
  * paths in NAMES_ROUTES are what the apps call for names, and the proxy sends them here
  * whenever this network has .kachat Domains installed.
  */
@@ -195,7 +195,7 @@ export const DEFAULT_APPS_CONFIG = {
         // Apple push (iOS). Non-secret identifiers only -- the .p8 key file lives
         // in conf/push/, written by the Push Service panel, never in this file.
         // Push is for K alone (com.kachat.app): the indexer decides which pushes each
-        // device gets (KaChat-Indexer docs/K_ALL_IN_ONE_PUSH.md), so there is no list of
+        // device gets (K-Digital-Freedom-Indexer docs/K_ALL_IN_ONE_PUSH.md), so there is no list of
         // other apps to send to any more.
         apns: { enabled: false, teamId: '', keyId: '', topic: 'com.kachat.app', environment: 'production' },
         // Server-side translation of KaPosts. Its engine is a container of its
@@ -261,7 +261,7 @@ export function reservedHostPorts() {
  * including a list that merely resembles one.
  */
 const SUPERSEDED_LANGUAGE_SETS = new Set([
-    // Before the indexer added Vietnamese (KaChat-Indexer a3ef567).
+    // Before the indexer added Vietnamese (K-Digital-Freedom-Indexer a3ef567).
     'en,es,pt,fr,de,ru,zh,ja,ko,ar',
 ]);
 

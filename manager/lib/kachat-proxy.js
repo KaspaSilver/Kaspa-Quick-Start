@@ -1,5 +1,5 @@
 /**
- * Pass-through to the KaChat indexer's admin API.
+ * Pass-through to the K-Digital-Freedom-Indexer's admin API.
  *
  * The panel used to frame upstream's own dashboard page, which meant rewriting
  * its HTML so its absolute `/api/...` calls did not land on this panel instead.
@@ -83,7 +83,7 @@ async function proxy(req, res, url, mount, origin) {
         // A shape the panel can read, so every KaChat screen can say "not
         // running yet" rather than failing to parse an error page.
         res.writeHead(502, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: `The KaChat indexer is not answering: ${err.message}`, unreachable: true }));
+        res.end(JSON.stringify({ error: `The K-Digital-Freedom-Indexer is not answering: ${err.message}`, unreachable: true }));
         return;
     }
 

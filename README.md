@@ -10,7 +10,7 @@ bind and which ports to publish before you press Start. **To go public, switch
 on the ports you want in the panel and open them on your router.**
 A stratum bridge is included, so miners and ASICs can point straight at your
 node, with a dashboard for hashrate, workers and blocks found. The
-[KaChat indexer](https://github.com/KaspaSilver/KaChat-Indexer), K Nextcloud and
+[K-Digital-Freedom-Indexer](https://github.com/KaspaSilver/K-Digital-Freedom-Indexer), K Nextcloud and
 the [block notifier bot](https://github.com/KaspaSilver/Kaspa-Block-Notifier) can
 be switched on from the same panel, each tracking its own source.
 
@@ -195,7 +195,7 @@ publishes nothing at all. Each row carries two independent switches, and both
 matter:
 
 * **On** binds the listener inside the stack. It is what the stratum bridge
-  (gRPC) and the KaChat indexer (wRPC Borsh) need over the internal network, and
+  (gRPC) and the K-Digital-Freedom-Indexer (wRPC Borsh) need over the internal network, and
   both tell you which one is missing when you switch them on.
 * **Public** maps it to a host port, which is the line between private and
   public.
@@ -258,7 +258,7 @@ again puts them back.
 Behind the tunnel, nginx decides what each name serves, the way you would
 otherwise hand-write it:
 
-- the node's wRPC (websockets included), the KaChat indexer with its chat and
+- the node's wRPC (websockets included), the K-Digital-Freedom-Indexer with its chat and
   push routes, the apps, the panel itself, or any other machine on your network
 - several services on one name, each on its own path
 - optional username/password, IP allow-lists and per-IP rate limits
@@ -320,7 +320,7 @@ there yet. The API refuses to enable them for the same reason, so the greying is
 a courtesy rather than the actual rule. Nextcloud is never gated; it has nothing
 to do with the chain.
 
-**KaChat-Indexer.** Runs the [KaChat indexer](https://github.com/KaspaSilver/KaChat-Indexer)
+**K-Digital-Freedom-Indexer.** Runs the [K-Digital-Freedom-Indexer](https://github.com/KaspaSilver/K-Digital-Freedom-Indexer)
 and gives you the whole thing here: Overview, KaPosts, Broadcasts, Chats, Group
 chats, Export / Import and Settings, built into this panel rather than framed
 from somewhere else. The indexer is the engine and this is the interface to it,
@@ -335,7 +335,7 @@ nginx-proxy-manager are not used, since this stack already provides all three
 own container.
 
 The first build compiles the indexer from Rust source and takes a while; follow
-it under Logs → kachat indexer.
+it under Logs → K-Digital-Freedom-Indexer.
 
 **Push Service.** Push notifications for K, the all-in-one app (chats, groups,
 Wallet, KaPost, Public Chats rooms, KaPlay and `.kachat` names), sent by the
@@ -437,7 +437,7 @@ conf/proxies.json      proxy host definitions
 conf/mining.json       mining settings from the panel
 conf/bridge.yaml       generated stratum bridge config
 conf/bridge-ports.yml  generated compose override for stratum ports
-conf/apps.json         KaChat indexer / K Nextcloud settings from the panel
+conf/apps.json         K-Digital-Freedom-Indexer / K Nextcloud settings from the panel
 conf/apps-ports.yml    generated compose override for their ports
 conf/*-build.json      which upstream commit each app image was built from
 conf/cloudflare/       the tunnel: its tokens (0600) and which account it is on
@@ -457,7 +457,7 @@ bind-mounting a RocksDB database into Docker Desktop is painfully slow.
 | `proxy`   | `nginx:1.27-alpine`           | what each public name serves (only when Tunnel & domains is on) |
 | `cloudflared` | `cloudflare/cloudflared`  | the Cloudflare Tunnel: public names with no open port (only when Tunnel & domains is on and connected) |
 | `bridge`  | built from the release binary | stratum server for miners (only when mining is on) |
-| `kachat-app` + `kachat-db` | built from KaChat-Indexer | chat/KaPosts indexer and its Postgres (only when KaChat is on) |
+| `kachat-app` + `kachat-db` | built from K-Digital-Freedom-Indexer | chat/KaPosts indexer and its Postgres (only when KaChat is on) |
 | `nextcloud` + db/redis | `nextcloud:stable` + ffmpeg | K Nextcloud: media links and backups for K (only when it is on) |
 | `libretranslate` | `libretranslate/libretranslate` | translates KaPosts for the indexer, offline (only when Translation is installed) |
 | `kachat-bot` | built from Kaspa-Block-Notifier | messages your phone when this node finds a block (only when KaChat Bot is installed) |

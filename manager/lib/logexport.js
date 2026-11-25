@@ -38,7 +38,7 @@ export const PRESETS = {
             ['kachat-testnet', KAPOSTS_PUSH, 'KaPosts processor push lines (testnet)'],
         ],
     },
-    indexer: { label: 'KaChat indexer', sections: [['kachat', null, null], ['kachat-testnet', null, null]] },
+    indexer: { label: 'K-Digital-Freedom-Indexer', sections: [['kachat', null, null], ['kachat-testnet', null, null]] },
     database: { label: 'KaChat database', sections: [['kachat-db', null, null], ['kachat-db-testnet', null, null]] },
     node: { label: 'Node', sections: [['kaspad', null, null], ['kaspad-testnet', null, null]] },
     everything: { label: 'Everything', sections: null },

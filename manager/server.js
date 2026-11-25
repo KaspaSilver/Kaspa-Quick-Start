@@ -348,7 +348,7 @@ function recordAppliedArgs() {
 /**
  * Whether the node is far enough along for the services that depend on it.
  *
- * The stratum bridge and the KaChat indexer both read live chain data: started
+ * The stratum bridge and the K-Digital-Freedom-Indexer both read live chain data: started
  * against a syncing node they either serve stale work to miners or index a
  * chain that is not there yet. The panel greys them out for the same reason,
  * but the check lives here too -- the UI is a courtesy, this is the rule.
@@ -3144,7 +3144,7 @@ route('GET', /^\/api\/kachat\/translate$/, async (req, res) => {
 
 // Chess Tournaments (5.1) stats. The indexer replays the #chess-arena broadcast channel and
 // serves the leaderboard on its content API (kachat-app:3080); the panel just fetches and
-// displays it. The bot boards come from #chess-bots (KaChat-Indexer
+// displays it. The bot boards come from #chess-bots (K-Digital-Freedom-Indexer
 // docs/CHESS_BOT_LEADERBOARD.md). Read-only: nothing here changes the stack.
 const CHESS_ORIGIN = process.env.KACHAT_CONTENT_ORIGIN || 'http://kachat-app:3080';
 const CHESS_TESTNET_ORIGIN = 'http://kachat-app-testnet:3080';
@@ -3173,22 +3173,22 @@ route('GET', /^\/api\/chess$/, async (req, res, match, url) => {
         if (ts.ok) tournaments = (await ts.json()).tournaments ?? [];
         if (bb.ok) bots = (await bb.json()).bots ?? [];
         if (!lb.ok && !ts.ok) {
-            error = 'The indexer answered but not on /chess. Update KaChat-Indexer to a build with chess support.';
+            error = 'The indexer answered but not on /chess. Update K-Digital-Freedom-Indexer to a build with chess support.';
         } else if (bb.status === 404) {
-            botsError = 'The indexer answered but not on /chess/bots/leaderboard. Update KaChat-Indexer to a build with bot leaderboards.';
+            botsError = 'The indexer answered but not on /chess/bots/leaderboard. Update K-Digital-Freedom-Indexer to a build with bot leaderboards.';
         } else if (!bb.ok) {
             botsError = `The indexer answered ${bb.status} for the bot boards.`;
         }
     } catch {
         error = state.running
-            ? 'Could not reach the KaChat indexer. It may still be starting.'
-            : 'The KaChat indexer is not running.';
+            ? 'Could not reach the K-Digital-Freedom-Indexer. It may still be starting.'
+            : 'The K-Digital-Freedom-Indexer is not running.';
     }
     sendJson(res, 200, { installed: true, running: state.running, leaderboard, tournaments, bots, period, error, botsError });
 });
 
 // KaPlay Arcade boards (Snake, 2048): each address's best verified score, from the stamps in the
-// hidden #kplay-arcade room (KaChat-Indexer docs/KPLAY_ARCADE_LEADERBOARD.md §5). Read-only.
+// hidden #kplay-arcade room (K-Digital-Freedom-Indexer docs/KPLAY_ARCADE_LEADERBOARD.md §5). Read-only.
 route('GET', /^\/api\/arcade$/, async (req, res, match, url) => {
     const testnet = url.searchParams.get('net') === 'testnet';
     const origin = testnet ? CHESS_TESTNET_ORIGIN : CHESS_ORIGIN;
@@ -3205,14 +3205,14 @@ route('GET', /^\/api\/arcade$/, async (req, res, match, url) => {
             const d = await r.json();
             board = { game, period, since: d.since ?? null, games: d.games ?? 0, players: d.players ?? [] };
         } else if (r.status === 404) {
-            error = 'The indexer answered but not on /arcade/leaderboard. Update KaChat-Indexer to a build with the arcade boards.';
+            error = 'The indexer answered but not on /arcade/leaderboard. Update K-Digital-Freedom-Indexer to a build with the arcade boards.';
         } else {
             error = `The indexer answered ${r.status} for the arcade boards.`;
         }
     } catch {
         error = state.running
-            ? 'Could not reach the KaChat indexer. It may still be starting.'
-            : 'The KaChat indexer is not running.';
+            ? 'Could not reach the K-Digital-Freedom-Indexer. It may still be starting.'
+            : 'The K-Digital-Freedom-Indexer is not running.';
     }
     sendJson(res, 200, { installed: true, running: state.running, ...board, error });
 });
@@ -3220,7 +3220,7 @@ route('GET', /^\/api\/arcade$/, async (req, res, match, url) => {
 // Address profiles: the avatar / banner / bio / Linktree links people stamp to their own
 // address (a kchat:1:profile: self-send). They belong to the address, not to a .kachat name,
 // so this works on both networks. The indexer's profiles follower serves the numbers on
-// GET /profiles/stats (kachat-indexer docs/KACHAT_PROFILES.md); read-only here.
+// GET /profiles/stats (K-Digital-Freedom-Indexer docs/KACHAT_PROFILES.md); read-only here.
 route('GET', /^\/api\/profiles$/, async (req, res, match, url) => {
     // ?net=testnet reads the testnet-10 indexer instead.
     const testnet = url.searchParams.get('net') === 'testnet';
@@ -3236,7 +3236,7 @@ route('GET', /^\/api\/profiles$/, async (req, res, match, url) => {
         if (r.ok) {
             stats = await r.json();
         } else if (r.status === 404) {
-            error = 'The indexer answered but not on /profiles/stats. Update KaChat-Indexer to a build with the profiles follower.';
+            error = 'The indexer answered but not on /profiles/stats. Update K-Digital-Freedom-Indexer to a build with the profiles follower.';
         } else if (r.status === 503) {
             error = 'The indexer is not following profiles yet (its profiles follower is off or still starting).';
         } else {
@@ -3244,8 +3244,8 @@ route('GET', /^\/api\/profiles$/, async (req, res, match, url) => {
         }
     } catch {
         error = state.running
-            ? 'Could not reach the KaChat indexer. It may still be starting.'
-            : 'The KaChat indexer is not running.';
+            ? 'Could not reach the K-Digital-Freedom-Indexer. It may still be starting.'
+            : 'The K-Digital-Freedom-Indexer is not running.';
     }
     sendJson(res, 200, { installed: true, running: state.running, stats, error });
 });
@@ -3265,7 +3265,7 @@ route('GET', /^\/api\/profiles\/history$/, async (req, res, match, url) => {
         if (r.ok) return sendJson(res, 200, { ...(await r.json()), page, limit });
         const error =
             r.status === 404
-                ? 'This indexer has no profile history yet. Update KaChat-Indexer.'
+                ? 'This indexer has no profile history yet. Update K-Digital-Freedom-Indexer.'
                 : r.status === 400
                   ? 'That is not a Kaspa address.'
                   : r.status === 503
@@ -3273,7 +3273,7 @@ route('GET', /^\/api\/profiles\/history$/, async (req, res, match, url) => {
                     : `The indexer answered ${r.status}.`;
         sendJson(res, 200, { total: 0, items: [], page, limit, error });
     } catch {
-        sendJson(res, 200, { total: 0, items: [], page, limit, error: 'Could not reach the KaChat indexer.' });
+        sendJson(res, 200, { total: 0, items: [], page, limit, error: 'Could not reach the K-Digital-Freedom-Indexer.' });
     }
 });
 
@@ -3660,7 +3660,7 @@ route('POST', /^\/api\/services\/([a-z0-9-]+)\/install$/, async (req, res, match
             bridge.writeBridgeFiles(miningCfg, loadNodeConfig());
         }
 
-        // The testnet indexer is built from KaChat-Indexer at KACHAT_REF; record which
+        // The testnet indexer is built from K-Digital-Freedom-Indexer at KACHAT_REF; record which
         // commit, so its Updates tab can say whether it is behind.
         const upstream =
             match[1] === 'kachat-testnet'
@@ -3673,7 +3673,7 @@ route('POST', /^\/api\/services\/([a-z0-9-]+)\/install$/, async (req, res, match
 });
 
 // ---- Testnet-10 indexer updates. It builds its own image (kaspa-one-click/
-// kachat-testnet:<KACHAT_REF>, kachat-audits KQS-008) from KaChat-Indexer and recreates
+// kachat-testnet:<KACHAT_REF>, kachat-audits KQS-008) from K-Digital-Freedom-Indexer and recreates
 // only the testnet indexer; mainnet's image and container are never touched.
 route('GET', /^\/api\/kachat-testnet\/update$/, async (req, res) => {
     const ref = readEnvFile().KACHAT_REF || 'main';
@@ -3702,7 +3702,7 @@ route('POST', /^\/api\/kachat-testnet\/update$/, async (req, res) => {
     const ref = readEnvFile().KACHAT_REF || 'main';
     const job = jobs.start('Update the testnet indexer', async (onLine) => {
         const upstream = await selfservice.latestCommit({ repo: apps.APPS.kachat.repo, ref }).catch(() => null);
-        onLine(`Building KaChat-Indexer@${ref}${upstream ? ` (${upstream.shortSha})` : ''} for the testnet indexer.`);
+        onLine(`Building K-Digital-Freedom-Indexer@${ref}${upstream ? ` (${upstream.shortSha})` : ''} for the testnet indexer.`);
         await dockerctl.compose(['build', 'kachat-app-testnet'], { onLine, profile: 'testnet-kachat', timeoutMs: 120 * 60_000 });
         if ((await lifecycle.status('kachat-testnet'))?.running) {
             onLine('Recreating the testnet indexer on the new build.');
@@ -3860,7 +3860,7 @@ async function namesNodeListener(onLine) {
     await ensureNodeListeners(onLine);
 }
 
-/** Name pushes go to this network's KaChat indexer push service when there is one. */
+/** Name pushes go to this network's K-Digital-Freedom-Indexer push service when there is one. */
 async function namesPushTarget(net) {
     const N = kachatDomains.NETWORKS[net];
     const indexer = await lifecycle.status(N.indexerUnit).catch(() => null);
@@ -3965,7 +3965,7 @@ route('GET', /^\/api\/kachat-domains$/, async (req, res, match, url) => {
 });
 
 /**
- * What the names server image is built from (docker/kachat-names/Dockerfile in KaChat-Indexer).
+ * What the names server image is built from (docker/kachat-names/Dockerfile in K-Digital-Freedom-Indexer).
  * The rest of that repo is the chat/KaPosts indexer, which gets commits nearly every day; a
  * commit touching none of these changes nothing in the server, so it is not an update here.
  */
@@ -3976,7 +3976,7 @@ route('GET', /^\/api\/kachat-domains\/check$/, async (req, res) => {
         const env = readEnvFile();
         const [latest, server, revision] = await Promise.all([
             selfservice.latestCommit({ repo: kachatDomains.REPO, ref: kachatDomains.ref() }),
-            selfservice.latestCommit({ repo: 'KaspaSilver/KaChat-Indexer', ref: env.KACHAT_REF || 'main' }),
+            selfservice.latestCommit({ repo: apps.APPS.kachat.repo, ref: env.KACHAT_REF || 'main' }),
             kachatDomains.installedRevision(),
         ]);
         const built = env.KACHAT_NAMES_SERVER_COMMIT || null;
@@ -3984,7 +3984,7 @@ route('GET', /^\/api\/kachat-domains\/check$/, async (req, res) => {
         // from; an unreadable comparison counts as touching (never claim up to date on a guess).
         let serverUpdate = Boolean(built) && built !== server.sha;
         if (serverUpdate) {
-            const files = await selfservice.changedFiles({ repo: 'KaspaSilver/KaChat-Indexer', base: built, head: server.sha });
+            const files = await selfservice.changedFiles({ repo: apps.APPS.kachat.repo, base: built, head: server.sha });
             if (files) serverUpdate = files.some((f) => NAMES_SERVER_PATHS.some((p) => f === p || f.startsWith(p)));
         }
         sendJson(res, 200, {
@@ -4001,13 +4001,13 @@ route('GET', /^\/api\/kachat-domains\/check$/, async (req, res) => {
     }
 });
 
-/** Build the names server image for one network, recording the KaChat-Indexer commit. */
+/** Build the names server image for one network, recording the K-Digital-Freedom-Indexer commit. */
 async function buildNamesServer(net, onLine, { fresh = false } = {}) {
     const N = kachatDomains.NETWORKS[net];
     const env = readEnvFile();
     // Read before the build, like every other build record (KQS-007).
-    const latest = await selfservice.latestCommit({ repo: 'KaspaSilver/KaChat-Indexer', ref: env.KACHAT_REF || 'main' }).catch(() => null);
-    onLine(`Building the ${N.label} .kachat Domains server from KaChat-Indexer${latest ? ` (${latest.sha.slice(0, 12)})` : ''}. Only the names parts are compiled.`);
+    const latest = await selfservice.latestCommit({ repo: apps.APPS.kachat.repo, ref: env.KACHAT_REF || 'main' }).catch(() => null);
+    onLine(`Building the ${N.label} .kachat Domains server from K-Digital-Freedom-Indexer${latest ? ` (${latest.sha.slice(0, 12)})` : ''}. Only the names parts are compiled.`);
     // An update rebuilds without the cache: the context is a git ref, and the same ref string
     // would otherwise reuse the layers of the commit it pointed at last time.
     await dockerctl.compose(['build', ...(fresh ? ['--no-cache'] : []), ...N.compose.buildable], {
@@ -4121,7 +4121,7 @@ for (const net of Object.keys(kachatDomains.NETWORKS)) {
 }
 
 // Update: rebuild the tooling, verify and publish again, rebuild each installed network's
-// server from KaChat-Indexer, and bring a running one back on the new image -- restarting it
+// server from K-Digital-Freedom-Indexer, and bring a running one back on the new image -- restarting it
 // for a new manifest only when the registry or manifest actually changed. A failed publish
 // keeps the previous manifests.
 route('POST', /^\/api\/kachat-domains\/update$/, async (req, res) => {
@@ -4211,7 +4211,7 @@ route('GET', /^\/api\/names\/stats$/, async (req, res, match, url) => {
 });
 
 // -------------------------------------------------------------------- push --
-// Mobile push for the KaChat indexer: Android via Firebase (FCM) and iPhone via
+// Mobile push for the K-Digital-Freedom-Indexer: Android via Firebase (FCM) and iPhone via
 // Apple (APNs). The non-secret identifiers live
 // in apps.json/.env, the key files are written 0600 under conf/push/ and
 // bind-mounted into the indexer. Only relevant to whoever operates the KaChat
@@ -4362,7 +4362,7 @@ route('POST', /^\/api\/push\/config$/, async (req, res) => {
         if (current.kachat.enabled || testnetRunning) {
             const job = jobs.start('Apply push settings', async (onLine) => {
                 if (current.kachat.enabled) {
-                    onLine('Restarting the KaChat indexer so it picks up the new push settings...');
+                    onLine('Restarting the K-Digital-Freedom-Indexer so it picks up the new push settings...');
                     await dockerctl.compose(['up', '-d', '--force-recreate', 'kachat-app'], {
                         onLine,
                         profile: apps.APPS.kachat.profile,

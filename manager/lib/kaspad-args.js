@@ -24,7 +24,7 @@ const level = (cfg, key) => {
  * needs the other. gRPC and wRPC-Borsh come on when a port is published (you
  * cannot map a host port to a listener that is not there) OR when a sibling
  * container speaks to it over the docker network: the stratum bridge and a
- * gRPC name under Tunnel & domains dial gRPC, the KaChat indexer, bot and .kachat Domains server dial wRPC-Borsh. Passing those needs in as
+ * gRPC name under Tunnel & domains dial gRPC, the K-Digital-Freedom-Indexer, bot and .kachat Domains server dial wRPC-Borsh. Passing those needs in as
  * `siblings` keeps this the single source of truth for what is bound.
  */
 export function listeners(cfg, siblings = {}) {
@@ -246,7 +246,7 @@ export function portMatrix(cfg, siblings = {}) {
             publicNote: 'Publishing on 0.0.0.0 exposes it beyond this machine.',
         }),
         row('borsh', p.borsh, 'wRPC Borsh', {
-            localNote: 'Reachable from this machine on 127.0.0.1. The KaChat indexer uses wRPC Borsh.',
+            localNote: 'Reachable from this machine on 127.0.0.1. The K-Digital-Freedom-Indexer uses wRPC Borsh.',
             publicNote: 'Publishing on 0.0.0.0 exposes it to Rusty/KDX style clients beyond this machine.',
         }),
         row('json', p.json, 'wRPC JSON', {

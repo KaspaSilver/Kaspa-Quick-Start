@@ -39,7 +39,7 @@ export const DEFAULT_NODE_CONFIG = {
     //
     // gRPC and wRPC-Borsh start off. Their in-container listener is not set here
     // at all: it follows whatever needs it (the stratum bridge needs gRPC, the
-    // KaChat indexer needs wRPC-Borsh), worked out when the args are written so
+    // K-Digital-Freedom-Indexer needs wRPC-Borsh), worked out when the args are written so
     // a feature nobody uses never leaves a listener bound.
     expose: { p2p: 'local', grpc: 'off', borsh: 'off', json: 'local' },
     flags: {

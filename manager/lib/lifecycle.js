@@ -50,7 +50,7 @@ export const UNITS = {
         data: 'the entire synced blockchain, which is tens of gigabytes and days of syncing to replace',
     },
     kachat: {
-        label: 'KaChat-Indexer',
+        label: 'K-Digital-Freedom-Indexer',
         profile: 'kachat',
         services: ['kachat-db', 'kachat-app'],
         containers: ['kaspa-node-kachat', 'kaspa-node-kachat-db'],
@@ -182,7 +182,7 @@ export const UNITS = {
         data: 'the testnet-10 synced chain',
     },
     'kachat-testnet': {
-        label: 'KaChat Indexer (testnet-10)',
+        label: 'K-Digital-Freedom-Indexer (testnet-10)',
         tab: 'kachat',
         profile: 'testnet-kachat',
         services: ['kachat-db-testnet', 'kachat-app-testnet'],
