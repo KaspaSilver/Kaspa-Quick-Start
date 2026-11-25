@@ -6,10 +6,21 @@ import path from 'node:path';
 import { CONF_DIR } from './paths.js';
 import { readEnvFile, updateEnvFile } from './store.js';
 
-// A sign-in never runs out: it ends only on Sign out, Sign out everywhere or a new
-// password. Browsers keep a cookie at most about 400 days, so the panel sends it
-// again each time it is opened (see refreshedCookie).
-const COOKIE_MAX_AGE_S = 400 * 24 * 60 * 60;
+// A sign-in lasts SESSION_MAX_AGE_MS from when its token was issued, and opening the panel
+// swaps an older token for a fresh one (refreshedCookie), so a panel in use never signs out
+// while one left alone for a month does. Before, sessions never ran out at all, and a signed-
+// out cookie came back to life once its nonce fell off the bounded revoked list; now the
+// list only has to outlast a token's own lifetime. Sign out, Sign out everywhere and a new
+// password still end sessions at once.
+const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+// How old a token gets before opening the panel replaces it. Not every request: a fresh
+// token each time would make every open tab's cookie a different one for no gain.
+const SESSION_RENEW_AFTER_MS = 24 * 60 * 60 * 1000;
+// Tokens issued before sessions could expire count from this moment instead of their own
+// `issued`, so an existing sign-in gets a full lifetime (and a renewal on the next open)
+// rather than being dropped by the update that introduced the limit.
+const SESSION_LEGACY_FLOOR = Date.parse('2026-11-26T00:00:00Z');
+const COOKIE_MAX_AGE_S = SESSION_MAX_AGE_MS / 1000;
 const COOKIE_NAME = 'kaspa_node_session';
 const SCRYPT_KEYLEN = 32;
 
@@ -102,8 +113,8 @@ export function issueSession() {
 }
 
 // Sign out ends that one session for good, not just this browser's copy of the cookie: its
-// nonce goes on this list, which a session is checked against. Sessions never run out on
-// their own, so a copied cookie would otherwise outlive the sign-out.
+// nonce goes on this list, which a session is checked against. A copied cookie would
+// otherwise live on until it expires (SESSION_MAX_AGE_MS).
 const REVOKED_FILE = path.join(CONF_DIR, 'revoked-sessions.json');
 const REVOKED_MAX = 2000;
 let revoked = new Set();
@@ -136,14 +147,19 @@ export function revokeAllSessions() {
     saveRevoked();
 }
 
-export function validateSession(token) {
+/** When a token was issued, for expiry: the legacy floor for tokens older than expiry itself. */
+const issuedAt = (issued) => Math.max(Number(issued), SESSION_LEGACY_FLOOR);
+
+export function validateSession(token, now = Date.now()) {
     if (!token) return false;
     const parts = token.split('.');
     if (parts.length !== 3) return false;
     const [issued, nonce, sig] = parts;
     if (!/^[0-9a-f]+$/.test(sig) || revoked.has(nonce)) return false;
-    // No time check: the signature alone decides. Sign out everywhere and a new
-    // password change the epoch the signature is bound to, which ends it.
+    // The time check before the signature only saves the HMAC: `issued` is signed, so an
+    // altered one fails below anyway. Sign out everywhere and a new password change the epoch
+    // the signature is bound to, which ends a session before its time.
+    if (!/^\d{1,15}$/.test(issued) || now - issuedAt(issued) > SESSION_MAX_AGE_MS) return false;
     const expected = sign(`${issued}.${nonce}`);
     const a = Buffer.from(sig, 'hex');
     const b = Buffer.from(expected, 'hex');
@@ -186,9 +202,17 @@ export const clearCookie = () => `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=St
 export const requestToken = (req) => parseCookies(req.headers.cookie || '')[COOKIE_NAME];
 export const isAuthenticated = (req) => validateSession(requestToken(req));
 
-/** The caller's own valid session cookie sent again with a fresh lifetime, or null. */
-export const refreshedCookie = (req, { secure }) =>
-    validateSession(requestToken(req)) ? sessionCookie(requestToken(req), { secure }) : null;
+/**
+ * The caller's session cookie sent again, or null when it has none that is valid. A token
+ * past SESSION_RENEW_AFTER_MS is swapped for a new one, which is what makes the lifetime
+ * slide while the panel is in use. The old token is not revoked: it simply runs out.
+ */
+export function refreshedCookie(req, { secure }, now = Date.now()) {
+    const token = requestToken(req);
+    if (!validateSession(token, now)) return null;
+    const fresh = now - issuedAt(token.split('.')[0]) > SESSION_RENEW_AFTER_MS ? issueSession().token : token;
+    return sessionCookie(fresh, { secure });
+}
 
 export { COOKIE_NAME };
 
@@ -234,6 +258,12 @@ export async function verifyPasswordAsync(password) {
 // minute. Past that rate every *wrong* answer is slowed down instead (up to 5 s), so guessing
 // gets slower for everyone while the right password still signs in. Locks are written to
 // conf/ so a restart does not reset them.
+//
+// The spacing between checks during a burst is kept per client too. One queue for everyone
+// let ~50 wrong tries a minute, spread over 10 addresses, fill it for good, and the owner got
+// "Busy checking other sign-ins" with the right password. Each client now waits behind its
+// own earlier tries only, so a guesser's many parallel requests still go one at a time, and
+// a stranger's queue is never the owner's.
 const PER_CLIENT_FAILS = 5;
 const GLOBAL_SLOW_AFTER = 30;
 const LOCK_MS = 60_000;
@@ -242,7 +272,7 @@ const THROTTLE_FILE = path.join(CONF_DIR, 'login-throttle.json');
 const failures = new Map(); // client -> { count, first, lockedUntil }
 let globalFails = { count: 0, first: 0 };
 let inFlight = 0;
-let nextStart = 0; // during a burst, when the next password check may begin
+const nextStart = new Map(); // client -> during a burst, when its next password check may begin
 const MAX_WAIT_MS = 15_000;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -348,17 +378,22 @@ function burstSpacing(now) {
 }
 
 /**
- * Runs `fn` once a slot is free; null when the wait would be too long. In a burst the checks
- * start one at a time, spaced out, so many requests in parallel guess no faster than one
- * after another. Outside a burst a busy moment is waited out briefly rather than refused.
+ * Runs `fn` once a slot is free; null when the wait would be too long. In a burst one client's
+ * checks start one at a time, spaced out, so its many requests in parallel guess no faster than
+ * one after another. Outside a burst a busy moment is waited out briefly rather than refused.
+ *
+ * `key` is the caller's clientKey(). Without one every caller shares a single queue, which is
+ * the old behaviour and the one that let strangers crowd the owner out.
  */
-export async function withLoginSlot(fn) {
+export async function withLoginSlot(fn, key = '*') {
     const now = Date.now();
     const spacing = burstSpacing(now);
     if (spacing) {
-        const at = Math.max(now, nextStart);
+        const at = Math.max(now, nextStart.get(key) || 0);
         if (at - now > MAX_WAIT_MS) return null;
-        nextStart = at + spacing;
+        nextStart.set(key, at + spacing);
+        // Clients whose turn has passed hold nothing, so the map stays as small as the burst.
+        if (nextStart.size > 10_000) for (const [k, t] of nextStart) if (t <= now) nextStart.delete(k);
         if (at > now) await sleep(at - now);
     }
     const deadline = Date.now() + 5000;

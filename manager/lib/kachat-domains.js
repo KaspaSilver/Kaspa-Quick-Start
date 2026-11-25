@@ -169,13 +169,47 @@ export async function build(sha, onLine) {
 }
 
 /**
+ * Which summary files exist right now, and which write of each: inode and mtime, since
+ * `publish` replaces a file by temp + rename. Compared before and after a run, it tells a
+ * summary written by this run from one an earlier run left behind.
+ */
+function summaryStamps() {
+    const stamps = new Map();
+    for (const file of [SUMMARY_FILE, ...Object.keys(NETWORKS).map(summaryFile)]) {
+        try {
+            const st = fs.statSync(path.join(NAMES_DIR, file));
+            stamps.set(file, `${st.ino}:${st.mtimeMs}:${st.size}`);
+        } catch {
+            /* not written yet */
+        }
+    }
+    return stamps;
+}
+
+/**
+ * The networks this run published: their verified summary is there now, and its file was
+ * (re)written since `before`. The pre-per-network images write only SUMMARY_FILE, so that
+ * one counts for the network it names.
+ */
+function publishedSince(before) {
+    const after = summaryStamps();
+    const changed = (file) => after.has(file) && after.get(file) !== before.get(file);
+    return Object.keys(NETWORKS).filter((net) => {
+        const s = summaryFor(net);
+        if (!s) return false;
+        return changed(summaryFile(net)) || (changed(SUMMARY_FILE) && summary()?.network === NETWORKS[net].network);
+    });
+}
+
+/**
  * Verify, then publish the manifest into conf/names. `publish` writes nothing unless the
  * manifest matches the contracts (atomic temp + rename), so a failure leaves the previous,
- * still-verified manifest in place. Returns the new summary.
+ * still-verified manifest in place. Returns the networks this run published.
  */
 export async function publish(onLine) {
     fs.mkdirSync(NAMES_DIR, { recursive: true });
     onLine('Verifying each network\'s manifest against the contract source, then publishing it.');
+    const before = summaryStamps();
     try {
         await docker(['run', '--rm', '-v', `${hostPath('conf', 'names')}:/names`, imageTag(), 'publish', '/names'], {
             onLine,
@@ -184,11 +218,24 @@ export async function publish(onLine) {
     } catch (err) {
         // `publish` verifies each network on its own: one that fails gets nothing written and
         // keeps its previous verified manifest, while the others are still published, and
-        // the exit is 1 (docs/KQS.md §5). Only nothing verified anywhere is a failure here.
-        if (!Object.keys(NETWORKS).some((n) => summaryFor(n))) throw err;
-        onLine(`A network failed verification and keeps its previous manifest: ${err.message}`);
+        // the exit is 1 (docs/KQS.md §5). Judged by what this run wrote, not by what is on
+        // disk: a summary from an earlier run made a total failure read as a partial one.
+        const done = publishedSince(before);
+        if (!done.length) {
+            onLine('No network verified this time. Each keeps the manifest it had before, if it had one.');
+            throw err;
+        }
+        const failed = Object.keys(NETWORKS).filter((n) => !done.includes(n));
+        onLine(
+            `Published ${done.map((n) => NETWORKS[n].label).join(' and ')}. ` +
+                `${failed.map((n) => NETWORKS[n].label).join(' and ')} failed verification or has no registry, and keeps its previous manifest: ${err.message}`,
+        );
+        return done;
     }
+    // A clean exit means every network the tool knows verified. One that has no registry yet
+    // (mainnet, today) writes nothing, which is not a failure; nothing verified anywhere is.
     if (!Object.keys(NETWORKS).some((n) => summaryFor(n))) throw new Error('publish finished but wrote no verified summary.');
+    return publishedSince(before);
 }
 
 /** One line naming what a summary verified. */

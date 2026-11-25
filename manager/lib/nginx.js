@@ -48,16 +48,21 @@ export const TARGET_KINDS = {
     borsh: { label: 'Kaspad wRPC Borsh', websocket: true, grpc: false },
     json: { label: 'Kaspad wRPC JSON', websocket: true, grpc: false },
     grpc: { label: 'Kaspad gRPC (experimental)', websocket: false, grpc: true },
-    manager: { label: 'This control panel', websocket: false, grpc: false },
+    manager: { label: 'This control panel', websocket: false, grpc: false, httpsOnly: true },
     bridge: { label: 'Stratum bridge dashboard', websocket: false, grpc: false },
     kachat: { label: 'K-Digital-Freedom-Indexer API', websocket: true, grpc: false },
     'kachat-testnet': { label: 'K-Digital-Freedom-Indexer API (testnet-10)', websocket: true, grpc: false },
     'kachat-names': { label: '.kachat Domains API', websocket: false, grpc: false },
     'kachat-names-testnet': { label: '.kachat Domains API (testnet-10)', websocket: false, grpc: false },
     desktop: { label: 'KaChat Desktop', websocket: true, grpc: false },
-    nextcloud: { label: 'K Nextcloud', websocket: false, grpc: false },
+    nextcloud: { label: 'K Nextcloud', websocket: false, grpc: false, httpsOnly: true },
     custom: { label: 'Custom host:port', websocket: false, grpc: false },
 };
+// httpsOnly: a sign-in page. Reached as http://, its password and cookie would cross from
+// Cloudflare's edge to the visitor in clear text, so it redirects to https and sends HSTS
+// (httpsBlock). Left off the APIs: a wallet or script given ws:// or http:// follows no
+// redirect, and would simply stop working.
+
 
 /**
  * Checks a bare domain name, for the places that hold one without a proxy host
@@ -69,6 +74,22 @@ export function validateDomainName(name) {
     if (!domain) return { domain, error: 'Domain is required.' };
     if (domain.length > 253 || !DOMAIN_RE.test(domain)) return { domain, error: `"${domain}" is not a valid domain name.` };
     return { domain, error: null };
+}
+
+/** No rate limit: what the form and the defaults store for "none". */
+const rateLimitOff = (value) => value === null || value === undefined || value === '' || value === 0 || value === false;
+const MAX_RATE_LIMIT = 100_000;
+
+/**
+ * The rate limit to render, as a whole number of requests a second, or null for none.
+ * Rendering goes through this too, so a value saved before validation checked it (2.5,
+ * -1, "abc") is left out of the file instead of making nginx refuse it.
+ */
+export function rateLimitOf(proxy) {
+    const raw = proxy?.rateLimit;
+    if (rateLimitOff(raw) || !['number', 'string'].includes(typeof raw)) return null;
+    const n = typeof raw === 'string' ? (/^\s*\d+\s*$/.test(raw) ? Number(raw) : NaN) : raw;
+    return Number.isInteger(n) && n >= 1 && n <= MAX_RATE_LIMIT ? n : null;
 }
 
 /** Throws on anything that would let a value escape into the nginx grammar. */
@@ -133,6 +154,23 @@ export function validateProxy(proxy, { existing = [], panelHasPassword = true, n
         const port = Number(proxy.target.port);
         if (!Number.isInteger(port) || port < 1 || port > 65535) errors.push('Custom target port must be 1-65535.');
         if (!['http', 'https'].includes(proxy.target.scheme || 'http')) errors.push('Custom scheme must be http or https.');
+    }
+
+    // The gRPC listener has no place for either (renderGrpcDomain): a password would be
+    // accepted here and then published without one. gRPC clients cannot answer a browser's
+    // basic-auth prompt anyway, so it is refused rather than rendered.
+    if (proxy.target?.kind === 'grpc') {
+        if (proxy.auth?.enabled) {
+            errors.push('Kaspad gRPC cannot ask for a username and password: gRPC apps have no way to send one. Untick it, and use an IP allowlist to limit who can connect.');
+        }
+        if (String(proxy.customSnippet ?? '').trim()) errors.push('Kaspad gRPC does not take a custom nginx snippet.');
+    }
+
+    // Off is null, '' or 0 (what the form sends for an empty box). Anything else has to be a
+    // whole number of requests a second: nginx refuses `rate=2.5r/s`, and a file it refuses
+    // takes every public name down with it on the next proxy start.
+    if (!rateLimitOff(proxy.rateLimit) && rateLimitOf(proxy) === null) {
+        errors.push(`Rate limit must be a whole number of requests per second, from 1 to ${MAX_RATE_LIMIT}, or empty for none.`);
     }
 
     if (proxy.auth?.enabled) {
@@ -396,9 +434,35 @@ function browserCorsBlock(cors, proxy, i) {
     return lines;
 }
 
+/**
+ * Sends a visitor who came in over http:// back to https://, and tells the browser to
+ * stay there (HSTS), for a target marked httpsOnly.
+ *
+ * Decided by $tunnel_proto, the scheme the visitor used at Cloudflare's edge: the tunnel
+ * listener itself is plain http, so $scheme would redirect every request, forever. A
+ * request with no X-Forwarded-Proto counts as https (see BASE_CONF), so this can never
+ * loop. 308 rather than 301 so a POST or a WebDAV PUT keeps its method and body.
+ *
+ * At the top of the location, for the reason corsBlock() is: it has to run before
+ * passTo()'s `rewrite ... break`. No includeSubDomains: other names in the zone may be
+ * served elsewhere, and this one cannot speak for them.
+ */
+function httpsBlock(proxy, i) {
+    if (!TARGET_KINDS[proxy.target?.kind]?.httpsOnly) return [];
+    return [
+        `${i}if ($tunnel_proto = http) {`,
+        `${i}    return 308 https://$host$request_uri;`,
+        `${i}}`,
+        // Ours is the only one, like the CORS headers: two HSTS headers are one too many.
+        `${i}proxy_hide_header Strict-Transport-Security;`,
+        `${i}add_header Strict-Transport-Security "max-age=31536000" always;`,
+    ];
+}
+
 function locationBlock(up, proxy, indent = '        ', { strip = null, cors = null } = {}) {
     const i = indent;
     const lines = [];
+    lines.push(...httpsBlock(proxy, i));
     // CORS first: the preflight short-circuit has to precede passTo()'s rewrite.
     lines.push(...corsBlock(cors, i));
     lines.push(...passTo(up, proxy, i, strip));
@@ -449,7 +513,7 @@ function locationBlock(up, proxy, indent = '        ', { strip = null, cors = nu
     }
     for (const entry of proxy.allowlist ?? []) lines.push(`${i}allow ${String(entry).trim()};`);
     if ((proxy.allowlist ?? []).length) lines.push(`${i}deny all;`);
-    if (proxy.rateLimit) lines.push(`${i}limit_req zone=kz_${proxy.id} burst=${Number(proxy.rateLimit) * 2} nodelay;`);
+    if (rateLimitOf(proxy)) lines.push(`${i}limit_req zone=kz_${proxy.id} burst=${rateLimitOf(proxy) * 2} nodelay;`);
     return lines.join('\n');
 }
 
@@ -583,8 +647,8 @@ export function renderDomain(domain, hosts, nodeConfig, { namesOn = {} } = {}) {
 
     const out = ['# Generated by the Kaspa Node Control panel - edits here are overwritten.'];
     for (const proxy of live) {
-        if (proxy.rateLimit) {
-            out.push(`limit_req_zone $binary_remote_addr zone=kz_${proxy.id}:10m rate=${Number(proxy.rateLimit)}r/s;`);
+        if (rateLimitOf(proxy)) {
+            out.push(`limit_req_zone $binary_remote_addr zone=kz_${proxy.id}:10m rate=${rateLimitOf(proxy)}r/s;`);
         }
         const browserCors = publishOf(proxy.target?.kind)?.browserCors;
         if (browserCors && publishOf(proxy.target?.kind)?.onlyPaths && normalizePath(proxy.path) === '/') {
@@ -634,8 +698,8 @@ function renderGrpcDomain(domain, proxy, nodeConfig) {
     const variable = `$up_${proxy.id}`;
     const out = ['# Generated by the Kaspa Node Control panel - edits here are overwritten.'];
     out.push('# Kaspad gRPC (experimental): its tunnel route points at this listener, over HTTP/2.');
-    if (proxy.rateLimit) {
-        out.push(`limit_req_zone $binary_remote_addr zone=kz_${proxy.id}:10m rate=${Number(proxy.rateLimit)}r/s;`);
+    if (rateLimitOf(proxy)) {
+        out.push(`limit_req_zone $binary_remote_addr zone=kz_${proxy.id}:10m rate=${rateLimitOf(proxy)}r/s;`);
     }
     out.push('');
     out.push('server {');
@@ -664,7 +728,7 @@ function renderGrpcDomain(domain, proxy, nodeConfig) {
     out.push('        client_max_body_size 0;');
     for (const entry of proxy.allowlist ?? []) out.push(`        allow ${String(entry).trim()};`);
     if ((proxy.allowlist ?? []).length) out.push('        deny all;');
-    if (proxy.rateLimit) out.push(`        limit_req zone=kz_${proxy.id} burst=${Number(proxy.rateLimit) * 2} nodelay;`);
+    if (rateLimitOf(proxy)) out.push(`        limit_req zone=kz_${proxy.id} burst=${rateLimitOf(proxy) * 2} nodelay;`);
     out.push('    }');
     out.push('}');
     return `${out.join('\n')}\n`;

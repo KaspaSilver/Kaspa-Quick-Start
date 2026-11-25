@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { CONF_DIR } from './paths.js';
 import { ports } from './kaspad-args.js';
-import { readJson, writeJson, loadTestnetNodeConfig } from './store.js';
+import { readJson, writeJson, loadTestnetNodeConfig, readEnvFile } from './store.js';
+import { reservedHostPorts, loadAppsConfig } from './apps.js';
 
 export const BRIDGE_CONFIG_FILE = path.join(CONF_DIR, 'bridge.yaml');
 export const BRIDGE_PORTS_OVERRIDE = path.join(CONF_DIR, 'bridge-ports.yml');
@@ -42,6 +43,27 @@ export const saveBridgeConfig = (cfg) => writeJson(MINING_STATE_FILE, cfg);
 
 // -------------------------------------------------------------- validation --
 
+/**
+ * Host ports the rest of the stack publishes, which a stratum listener (published on
+ * 0.0.0.0) would collide with: docker refuses the second binding, and the bridge, or
+ * whatever started after it, does not come up. The panel's own port is the one compose
+ * publishes (GUI_PORT), and KaChat Desktop's is the one its settings chose.
+ */
+function stackHostPorts() {
+    const taken = reservedHostPorts();
+    // The stratum default is in there for the other apps' benefit, not against the bridge itself.
+    for (const [port, what] of taken) if (/stratum/.test(what)) taken.delete(port);
+    const gui = Number(readEnvFile().GUI_PORT || process.env.GUI_PORT || 8080);
+    if (Number.isInteger(gui)) taken.set(gui, 'this control panel');
+    try {
+        const desktop = loadAppsConfig().desktop;
+        if (desktop?.enabled && Number.isInteger(desktop.hostPort)) taken.set(desktop.hostPort, 'KaChat Desktop');
+    } catch {
+        /* no apps config yet: nothing of theirs is published */
+    }
+    return taken;
+}
+
 export function validateBridgeConfig(input) {
     const errors = [];
     const cfg = structuredClone(DEFAULT_BRIDGE_CONFIG);
@@ -79,6 +101,7 @@ export function validateBridgeConfig(input) {
     if (rawInstances.length > 8) errors.push('At most 8 stratum ports are supported.');
 
     const seenPorts = new Set();
+    const stackPorts = stackHostPorts();
     cfg.instances = rawInstances.slice(0, 8).map((raw, index) => {
         const label = `Stratum port #${index + 1}`;
         // Testnet-10 mining listens on the same ports + 100, so they have to fit too.
@@ -92,6 +115,12 @@ export function validateBridgeConfig(input) {
         if (port >= 2114 && port <= 2114 + 8) errors.push(`Port ${port} is reserved for the bridge's metrics endpoints.`);
         if (port + TESTNET_STRATUM_OFFSET === DASHBOARD_PORT) {
             errors.push(`Port ${port} would put testnet mining on ${DASHBOARD_PORT}, the testnet bridge's dashboard.`);
+        }
+        if (stackPorts.has(port)) errors.push(`Port ${port} is already used by ${stackPorts.get(port)}. Pick another.`);
+        else if (stackPorts.has(port + TESTNET_STRATUM_OFFSET)) {
+            errors.push(
+                `Port ${port} would put testnet mining on ${port + TESTNET_STRATUM_OFFSET}, which ${stackPorts.get(port + TESTNET_STRATUM_OFFSET)} already uses. Pick another.`,
+            );
         }
 
         const diff = int(`${label} starting difficulty`, raw?.minShareDiff, 1, 1_000_000_000, 2048);
