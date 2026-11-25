@@ -518,6 +518,8 @@ setTimeout(() => {
  * suppressed. The first line of the message is the question; the rest is detail.
  */
 function askConfirm(message) {
+    // Update all has already asked about every app it presses Update for.
+    if (bulkConfirmed) return Promise.resolve(true);
     return new Promise((resolve) => {
         const [question, ...rest] = String(message).split('\n');
         // A real modal <dialog>, not a positioned div: other screens (the publish wizard,
@@ -1461,7 +1463,10 @@ async function queueAction({ title, request, onEnd, noCancel = false }) {
     // a glance and keep the small popup, as does anything asked for while the screen is
     // already busy or from the Update Queue page, which shows the same thing itself.
     const follow =
-        /^(Updating|Rebuilding|Installing)\b/.test(title) && !pendingAction && !$('tab-queue')?.classList.contains('active');
+        !bulkQueueing &&
+        /^(Updating|Rebuilding|Installing)\b/.test(title) &&
+        !pendingAction &&
+        !$('tab-queue')?.classList.contains('active');
     if (follow) {
         const action = openAction({ key: null, title, note: 'It runs in the manager: closing this, or the tab, never stops it.' });
         action.background = true;
@@ -1506,7 +1511,7 @@ async function queueAction({ title, request, onEnd, noCancel = false }) {
     if (follow && pendingAction && !pendingAction.finished) {
         if (ahead) actionAppend(`Waiting: ${ahead} ahead of it in the Update Queue.`);
         adoptActionJob(response.jobId);
-    } else {
+    } else if (!bulkQueueing) {
         // A small log popup rather than a toast, which is easy to miss: it shows the first lines
         // and goes away on its own; the topbar badge keeps the count.
         queuePeek.show(response.jobId, title, ahead ? `waiting, ${ahead} ahead of it` : 'starting');
@@ -2339,7 +2344,17 @@ function renderGlobalAppUpdates() {
         row.querySelector('[data-f="build"]').textContent = $(a.build)?.textContent?.trim() || '';
         if (a.update) row.querySelector(`[data-press="${a.update}"]`).disabled = Boolean($(a.update)?.disabled);
     }
+    const ready = updatableApps().length;
+    const all = $('global-apps-update-all');
+    if (all && !bulkQueueing) {
+        all.disabled = ready === 0;
+        all.textContent = ready ? `Update all (${ready})` : 'Update all';
+        all.title = ready ? '' : 'Check all first: this updates the apps a check found an update for.';
+    }
 }
+
+/** The listed apps whose own Update button a check has made pressable. */
+const updatableApps = () => runningApps().filter((a) => a.update && $(a.update) && !$(a.update).disabled);
 
 $('global-app-updates')?.addEventListener('click', (event) => {
     const press = event.target.closest('[data-press]');
@@ -2357,6 +2372,78 @@ $('global-app-updates')?.addEventListener('click', (event) => {
 
 $('global-apps-check-all')?.addEventListener('click', () => {
     for (const a of runningApps()) $(a.check)?.click();
+});
+
+/*
+ * Update all: one question for the lot, then each app's own Update button, pressed one at a
+ * time. Each is let through to the manager before the next is pressed, so the Update Queue
+ * gets them in list order and runs them one after another, every one through its app's usual
+ * update. The Update Queue page opens at the end, where they can all be watched.
+ */
+let bulkConfirmed = false;
+let bulkQueueing = false;
+
+/**
+ * Resolves once the queueAction a press started has had its answer from the manager, so the
+ * next press queues behind it, with whether it queued anything. A press that queues nothing
+ * (its button had gone stale) is given up on after three seconds; anything else after twenty.
+ */
+function settledQueueing(before) {
+    const began = Date.now();
+    return new Promise((resolve) => {
+        let started = false;
+        const tick = () => {
+            if (queueActionsInFlight > before) started = true;
+            const waited = Date.now() - began;
+            if ((started && queueActionsInFlight <= before) || (!started && waited > 3000) || waited > 20_000) return resolve(started);
+            setTimeout(tick, 150);
+        };
+        tick();
+    });
+}
+
+$('global-apps-update-all')?.addEventListener('click', async () => {
+    const apps = updatableApps();
+    if (!apps.length || bulkQueueing) return;
+    const label = (a) => el('.label', document.querySelector(`.nav-item[data-tab="${a.tab}"]`))?.textContent || a.tab;
+    if (
+        !await askConfirm(
+            `Update ${apps.length} app${apps.length === 1 ? '' : 's'}?\n\n` +
+                'They go into the Update Queue and run one after another, in this order:\n\n' +
+                `${apps.map((a) => `• ${label(a)}`).join('\n')}\n\n` +
+                'Each one is unavailable while it rebuilds; the rest keep running.',
+        )
+    ) {
+        return;
+    }
+    const button = $('global-apps-update-all');
+    bulkQueueing = true;
+    button.disabled = true;
+    let sent = 0;
+    try {
+        for (const [i, a] of apps.entries()) {
+            const target = $(a.update);
+            if (!target || target.disabled) continue;
+            button.textContent = `Queueing ${i + 1} of ${apps.length}…`;
+            const before = queueActionsInFlight;
+            bulkConfirmed = true;
+            try {
+                target.click(); // its own confirmation is answered by the one above
+            } finally {
+                bulkConfirmed = false;
+            }
+            if (await settledQueueing(before)) {
+                sent += 1;
+                // Queued: off until it is checked again, so a second Update all cannot queue it twice.
+                target.disabled = true;
+            }
+        }
+    } finally {
+        bulkQueueing = false;
+        renderGlobalAppUpdates();
+    }
+    toast(`${sent} update${sent === 1 ? '' : 's'} queued. They run one after another.`);
+    selectTab('queue');
 });
 
 $('check-update').addEventListener('click', async () => {
