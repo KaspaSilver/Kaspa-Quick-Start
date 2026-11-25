@@ -1149,6 +1149,7 @@
         <button class="subtab-btn quiet" data-subtab="kachat-updates">Updates</button>
         <button class="subtab-btn quiet" data-subtab="kachat-log">Logs</button>
         <button class="subtab-btn quiet" data-subtab="kachat-block">Block</button>
+        <button class="subtab-btn quiet" data-subtab="kachat-wordfilter">Word filter</button>
         <button class="subtab-btn quiet danger" data-subtab="kachat-delete">Delete</button>
         <button class="subtab-btn quiet danger" data-subtab="kachat-uninstall">Uninstall</button>
         </div>
@@ -1754,6 +1755,84 @@
             not come back by itself; KaPost posts can be recovered under Export / Import, Recover
             missed KaPost posts.
           </p>
+        </article>
+      </div>
+
+      <!--
+        Word filter: public chats and KaPosts containing a listed word are not stored. The list
+        and the switch live in the indexer (kachat-admin /api/word-filter, feature_word_filter);
+        adding a word leaves stored messages alone, so a preview of what the list now catches
+        follows every change, and deleting those is a separate step.
+      -->
+      <div id="sub-kachat-wordfilter" class="subtab">
+        <article class="card span2 feature-card">
+          <div class="toggle-row">
+            <div class="toggle-text">
+              <strong>Filter words</strong>
+              <span class="muted">Public chats and KaPosts that contain a word on the list are not stored, so no app reading this indexer shows them. Off stops checking new messages; the list is kept.</span>
+            </div>
+            <label class="switch"><input type="checkbox" id="kachat-tg-wordfilter" data-feature="feature_word_filter" data-label="Word filter" data-on-text="Word filter on." data-off-text="Word filter off: new messages are not checked."><span class="track"></span></label>
+          </div>
+          <p class="hint feature-note" hidden></p>
+        </article>
+
+        <article class="card span2">
+          <div class="node-head">
+            <h3>Add words</h3>
+          </div>
+          <label class="stack">One per line or separated by commas
+            <textarea id="kachat-wf-new" rows="3" placeholder="scam*&#10;rug pull" spellcheck="false"></textarea>
+          </label>
+          <div class="row">
+            <button type="button" id="kachat-wf-add" class="primary">Add to the list</button>
+          </div>
+          <p class="error" id="kachat-wf-error" hidden></p>
+          <div id="kachat-wf-result" class="verdict" hidden></div>
+          <p class="hint">
+            Whole words only, so <code>ass</code> does not catch "class". A <code>*</code> at the
+            end catches any ending: <code>scam*</code> catches scams and scammer. Several words
+            catch that exact phrase. Capitals, accents, stretched letters ("sooo") and swaps like
+            0 for o are matched too. Direct and group chats, profiles, .kachat names and KaPlay's
+            game rooms are not checked.
+          </p>
+        </article>
+
+        <article class="card span2">
+          <div class="node-head">
+            <h3>Already stored</h3>
+            <span id="kachat-wf-scan-tag" class="tag">–</span>
+            <button type="button" id="kachat-wf-scan" class="ghost" style="margin-left:auto">Check stored messages</button>
+          </div>
+          <p class="muted">
+            The list only stops new messages. This finds what the indexer already has that the list
+            catches now, so you can see it before deleting it.
+          </p>
+          <div id="kachat-wf-scan-result" hidden>
+            <div class="scroll-x">
+              <table class="blocks">
+                <thead><tr><th>When</th><th>Where</th><th>Word</th><th>Message</th></tr></thead>
+                <tbody id="kachat-wf-matches"></tbody>
+              </table>
+            </div>
+            <div class="row">
+              <button type="button" id="kachat-wf-purge" class="danger">Delete these</button>
+              <span class="muted" id="kachat-wf-more"></span>
+            </div>
+          </div>
+          <div id="kachat-wf-purged" class="verdict" hidden></div>
+          <p class="hint">
+            Deleted messages are kept out for good, and removing a word later does not bring them
+            back. They are still on the Kaspa chain, where other indexers and apps can show them.
+          </p>
+        </article>
+
+        <article class="card span2">
+          <div class="node-head">
+            <h3>The list</h3>
+            <span id="kachat-wf-tag" class="tag">–</span>
+            <input id="kachat-wf-search" type="search" placeholder="find a word" aria-label="Find a word" style="margin-left:auto; width:auto; max-width:220px">
+          </div>
+          <div id="kachat-wf-words" class="wf-words"><p class="muted">Loading…</p></div>
         </article>
       </div>
 

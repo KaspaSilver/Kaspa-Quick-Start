@@ -5911,7 +5911,7 @@ function renderKachatOffline() {
     ]) {
         $(id).innerHTML = `<tr><td colspan="${span}" class="muted">${message}</td></tr>`;
     }
-    for (const id of ['kachat-services', 'kachat-chat-tiles', 'kachat-group-tiles']) {
+    for (const id of ['kachat-services', 'kachat-chat-tiles', 'kachat-group-tiles', 'kachat-wf-words']) {
         $(id).innerHTML = `<p class="muted">${message}</p>`;
     }
     for (const id of ['kachat-stats', 'kachat-activity']) $(id).innerHTML = '';
@@ -5969,6 +5969,9 @@ function refreshKachatPanel() {
             break;
         case 'kachat-block':
             loadKachatBlocklist();
+            break;
+        case 'kachat-wordfilter':
+            loadWordFilter();
             break;
         case 'kachat-kaplay':
             loadKaplayRooms();
@@ -6240,6 +6243,164 @@ $('kachat-block-rows').addEventListener('click', async (event) => {
 });
 
 $('kachat-block-refresh').addEventListener('click', () => loadKachatBlocklist());
+
+// ---- Word filter: public chats and KaPosts with a listed word are not stored ----
+
+const WF_OLD_BUILD = 'This indexer build has no word filter yet. Update the indexer under Updates once a build with it is out.';
+let wordFilterWords = [];
+
+function setWfTag(id, text, cls = '') {
+    const tag = $(id);
+    tag.textContent = text;
+    tag.className = `tag ${cls}`;
+}
+
+function renderWordFilterWords() {
+    const box = $('kachat-wf-words');
+    const find = $('kachat-wf-search').value.trim().toLowerCase();
+    const shown = find ? wordFilterWords.filter((w) => w.word.includes(find)) : wordFilterWords;
+    if (!wordFilterWords.length) {
+        box.innerHTML = '<p class="muted">The list is empty, so nothing is filtered.</p>';
+        return;
+    }
+    if (!shown.length) {
+        box.innerHTML = `<p class="muted">No word on the list contains "${escapeHtml(find)}".</p>`;
+        return;
+    }
+    box.innerHTML = shown
+        .map(
+            (w) =>
+                `<span class="wf-word" title="Added ${escapeHtml(w.added_at ? new Date(Number(w.added_at)).toLocaleString() : '')}">` +
+                `${escapeHtml(w.word)}<button type="button" data-wf-remove="${escapeHtml(w.word)}" title="Remove from the list" aria-label="Remove ${escapeHtml(w.word)}">✕</button></span>`,
+        )
+        .join('');
+}
+
+async function loadWordFilter() {
+    let r;
+    try {
+        r = await kachat('word-filter');
+    } catch (e) {
+        const old = e.status === 404;
+        setWfTag('kachat-wf-tag', old ? 'needs an update' : 'unavailable', old ? 'warn' : 'off');
+        for (const id of ['kachat-wf-add', 'kachat-wf-scan']) $(id).disabled = old;
+        $('kachat-wf-words').innerHTML = `<p class="muted">${escapeHtml(old ? WF_OLD_BUILD : e instanceof IndexerDown ? 'The indexer is not running.' : e.message)}</p>`;
+        return;
+    }
+    for (const id of ['kachat-wf-add', 'kachat-wf-scan']) $(id).disabled = false;
+    wordFilterWords = r.words ?? [];
+    const n = wordFilterWords.length;
+    setWfTag('kachat-wf-tag', `${fmtNum(n)} ${n === 1 ? 'entry' : 'entries'}${r.enabled === false ? ', switched off' : ''}`, r.enabled === false ? 'off' : 'ok');
+    renderWordFilterWords();
+}
+
+/** The dry run: what the list catches among stored messages now. Nothing is deleted. */
+async function scanWordFilter() {
+    const button = $('kachat-wf-scan');
+    button.disabled = true;
+    $('kachat-wf-purged').hidden = true;
+    setWfTag('kachat-wf-scan-tag', 'checking…');
+    try {
+        const r = await kachat('word-filter/purge', { method: 'POST', body: { dry_run: true } });
+        const matches = r.matches ?? [];
+        const total = r.total ?? matches.length;
+        const parts = [];
+        if (r.public_chats) parts.push(`${fmtNum(r.public_chats)} public chat${r.public_chats === 1 ? '' : 's'}`);
+        if (r.kaposts) parts.push(`${fmtNum(r.kaposts)} KaPost${r.kaposts === 1 ? '' : 's'}`);
+        setWfTag('kachat-wf-scan-tag', total ? `${parts.join(', ')} caught` : 'nothing caught', total ? 'warn' : 'ok');
+        $('kachat-wf-scan-result').hidden = !total;
+        $('kachat-wf-matches').innerHTML = matches
+            .map(
+                (m) => `<tr>
+                  <td class="muted" title="${escapeHtml(kTime(m.timestamp))}">${escapeHtml(kAge(Date.now() - m.timestamp))}</td>
+                  <td>${m.kind === 'public_chat' ? `#${escapeHtml(m.channel || '')}` : 'KaPost'}</td>
+                  <td><code>${escapeHtml(m.word)}</code></td>
+                  <td>${escapeHtml(m.preview) || '<span class="muted">–</span>'}</td>
+                </tr>`,
+            )
+            .join('');
+        $('kachat-wf-more').textContent = total > matches.length ? `The ${fmtNum(matches.length)} newest are listed; all ${fmtNum(total)} are deleted.` : '';
+        $('kachat-wf-purge').textContent = `Delete ${total === 1 ? 'this message' : `these ${fmtNum(total)} messages`}`;
+        $('kachat-wf-purge').dataset.total = String(total);
+    } catch (e) {
+        setWfTag('kachat-wf-scan-tag', 'failed', 'off');
+        $('kachat-wf-scan-result').hidden = true;
+        toast(e.status === 404 ? WF_OLD_BUILD : e instanceof IndexerDown ? 'The indexer is not running.' : e.message, 'bad');
+    } finally {
+        button.disabled = false;
+    }
+}
+
+$('kachat-wf-add').addEventListener('click', async () => {
+    const error = $('kachat-wf-error');
+    const result = $('kachat-wf-result');
+    error.hidden = true;
+    result.hidden = true;
+    const words = $('kachat-wf-new').value.trim();
+    if (!words) return;
+    const button = $('kachat-wf-add');
+    button.disabled = true;
+    try {
+        const r = await kachat('word-filter/add', { method: 'POST', body: { words } });
+        const invalid = r.invalid ?? [];
+        result.className = invalid.length ? 'verdict bad' : 'verdict ok';
+        result.innerHTML =
+            `${r.added ? `Added ${fmtNum(r.added)}.` : 'Nothing new: those are already on the list.'} ` +
+            (invalid.length ? `Not added, not a word the filter can use: ${invalid.map((w) => `<code>${escapeHtml(w)}</code>`).join(', ')}. ` : '') +
+            (r.added ? 'A new word only stops new messages, so what is already stored is being checked under Already stored.' : '');
+        result.hidden = false;
+        $('kachat-wf-new').value = '';
+        if (r.added) scanWordFilter();
+    } catch (e) {
+        error.textContent = e.status === 404 ? WF_OLD_BUILD : e instanceof IndexerDown ? 'The indexer is not running.' : e.message;
+        error.hidden = false;
+    } finally {
+        button.disabled = false;
+        loadWordFilter();
+    }
+});
+
+$('kachat-wf-words').addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-wf-remove]');
+    if (!button) return;
+    const word = button.dataset.wfRemove;
+    if (!await askConfirm(`Remove "${word}" from the list?
+
+New messages with it are stored again from now on. Messages already deleted because of it do not come back.`)) return;
+    button.disabled = true;
+    try {
+        await kachat('word-filter/remove', { method: 'POST', body: { word } });
+        toast(`Removed "${word}".`);
+    } catch (e) {
+        toast(e instanceof IndexerDown ? 'The indexer is not running.' : e.message, 'bad');
+    }
+    loadWordFilter();
+});
+
+$('kachat-wf-search').addEventListener('input', renderWordFilterWords);
+$('kachat-wf-scan').addEventListener('click', scanWordFilter);
+
+$('kachat-wf-purge').addEventListener('click', async () => {
+    const total = Number($('kachat-wf-purge').dataset.total) || 0;
+    if (!await askConfirm(`Delete ${total === 1 ? 'this stored message' : `these ${fmtNum(total)} stored messages`}?
+
+The indexer deletes them and keeps them out for good. They are still on the Kaspa chain. This cannot be undone here.`)) return;
+    const button = $('kachat-wf-purge');
+    button.disabled = true;
+    try {
+        const r = await kachat('word-filter/purge', { method: 'POST', body: {} });
+        const done = $('kachat-wf-purged');
+        done.className = 'verdict ok';
+        done.textContent = `Deleted ${fmtNum(r.public_chats ?? 0)} public chat${r.public_chats === 1 ? '' : 's'} and ${fmtNum(r.kaposts ?? 0)} KaPost${r.kaposts === 1 ? '' : 's'}.`;
+        done.hidden = false;
+        $('kachat-wf-scan-result').hidden = true;
+        setWfTag('kachat-wf-scan-tag', 'nothing caught', 'ok');
+    } catch (e) {
+        toast(e instanceof IndexerDown ? 'The indexer is not running.' : e.message, 'bad');
+    } finally {
+        button.disabled = false;
+    }
+});
 $('kachat-jump').addEventListener('click', (event) => {
     const tile = event.target.closest('[data-goto]');
     if (tile) selectSubtab($('tab-kachat'), tile.dataset.goto);
@@ -6263,7 +6424,8 @@ for (const input of document.querySelectorAll('#tab-kachat input[data-feature]')
     input.addEventListener('change', () =>
         saveKachatSettings(
             { [input.dataset.feature]: input.checked },
-            `${input.dataset.label}: ${input.checked ? 'indexing' : 'not indexing'}.`,
+            (input.checked ? input.dataset.onText : input.dataset.offText) ??
+                `${input.dataset.label}: ${input.checked ? 'indexing' : 'not indexing'}.`,
         ),
     );
 }

@@ -3170,3 +3170,25 @@ body.dag-fullscreen { overflow: hidden; }
     vertical-align: 2px;
 }
 #sub-kachat-chats .col .node-head { margin-bottom: 0; }
+
+/* Word filter: the list as removable chips. */
+.wf-words { display: flex; flex-wrap: wrap; gap: 6px; }
+.wf-word {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px 4px 3px 10px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+}
+.wf-word button {
+    padding: 0 6px;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+}
+.wf-word button:hover { color: var(--danger); }
