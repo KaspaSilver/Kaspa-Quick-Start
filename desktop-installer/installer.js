@@ -22,6 +22,10 @@ const RAW = 'https://raw.githubusercontent.com/KaspaSilver/Kaspa-Quick-Start/mai
 const runDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'kqs-'));
 const sh = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`; // single-quote for POSIX shells
 const osa = (s) => `"${String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`; // AppleScript string
+// A PowerShell single-quoted string: nothing inside is special except the quote
+// itself, written twice. PowerShell also ends one on the typographic quotes, so
+// those are doubled too. Backslashes stay as they are.
+const psq = (s) => `'${String(s).replace(/['\u2018\u2019\u201A\u201B]/g, '$&$&')}'`;
 
 function stackDir() { return path.join(os.homedir(), '.kaspa-node'); }
 
@@ -40,14 +44,20 @@ function posixBootstrap(scriptFile, args, logFile, doneFile, { toLog = false } =
   const uid = process.getuid ? process.getuid() : 0;
   const gid = process.getgid ? process.getgid() : 0;
   // Downloaded to a file first, never piped: `curl | bash` reports bash's exit code, so
-  // an offline machine "succeeded", and a transfer cut short ran half a script. The file
-  // sits in this run's private directory, next to the log.
-  const file = path.join(path.dirname(logFile), scriptFile);
+  // an offline machine "succeeded", and a transfer cut short ran half a script.
+  //
+  // Downloaded by the elevated shell itself, into a folder mktemp makes for root (0700,
+  // root's, in the sticky /tmp). This run's private directory belongs to the user, so
+  // anything running as the user could have swapped the script between the download
+  // and root running it (KQS audit #17). The script still comes from main: the repo
+  // has no release tags to pin it to and no published hash to check it against.
   const runline =
-    `if curl -fsSL ${RAW}/${scriptFile} -o ${sh(file)}; then ` +
-    `bash ${sh(file)}${args.length ? ` ${args.map(sh).join(' ')}` : ''}; code=$?; ` +
+    `code=1; stage=; ` +
+    `if ! stage=$(mktemp -d /tmp/kqs-root.XXXXXXXX); then stage=; echo "[installer] could not make a private folder for ${scriptFile}."; ` +
+    `elif curl -fsSL ${RAW}/${scriptFile} -o "$stage/${scriptFile}"; then ` +
+    `bash "$stage/${scriptFile}"${args.length ? ` ${args.map(sh).join(' ')}` : ''}; code=$?; ` +
     `else code=$?; echo "[installer] could not download ${scriptFile} (curl exit $code). Check the internet connection and try again."; fi; ` +
-    `rm -f ${sh(file)}`;
+    `if [ -n "$stage" ]; then rm -rf "$stage"; fi`;
   const pathline = process.platform === 'darwin' ? `export PATH=${sh(macDockerPath())}:"$PATH"; ` : '';
   // KASPA_YES so nothing waits on a prompt; KASPA_STACK_DIR so a root-run script
   // still targets the real user's home; chown so anything left behind stays theirs,
@@ -76,8 +86,9 @@ function posixBootstrap(scriptFile, args, logFile, doneFile, { toLog = false } =
 }
 
 function launchWindows(scriptFile, args, logFile, doneFile, cap) {
-  const win = (p) => p.replace(/\\/g, '\\\\');
   const argline = args.join(' ');
+  // The script is fetched by the elevated process and run from memory, so there is
+  // no file on disk for anything running as the user to swap before it runs.
   // `*> file` streams every stream to the log live (the redirect flushes as the
   // script runs, so the app tails it in real time). Under Windows PowerShell it
   // writes UTF-16 -- the app decodes the log as UTF-16 on Windows to match (a
@@ -87,9 +98,9 @@ function launchWindows(scriptFile, args, logFile, doneFile, cap) {
   // non-zero even on success.
   const inner =
     `$ErrorActionPreference='Continue'; ` +
-    `try { & ([scriptblock]::Create((irm ${RAW}/${scriptFile}))) ${argline} *> '${win(logFile)}'; $c=0 } ` +
-    `catch { $_ | Out-File -Append -Encoding utf8 '${win(logFile)}'; $c=1 }; ` +
-    `if ($null -eq $c) { $c = 0 }; Set-Content -Encoding ascii -Path '${win(doneFile)}' -Value $c`;
+    `try { & ([scriptblock]::Create((irm ${RAW}/${scriptFile}))) ${argline} *> ${psq(logFile)}; $c=0 } ` +
+    `catch { $_ | Out-File -Append -Encoding utf8 ${psq(logFile)}; $c=1 }; ` +
+    `if ($null -eq $c) { $c = 0 }; Set-Content -Encoding ascii -LiteralPath ${psq(doneFile)} -Value $c`;
   const b64 = Buffer.from(inner, 'utf16le').toString('base64');
   // -Wait is the fix for the false "cancelled": without it, Start-Process returns
   // the instant the elevated process is launched (not when it finishes), so the

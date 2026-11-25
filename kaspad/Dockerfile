@@ -16,6 +16,9 @@ FROM alpine:3.21 AS bin-amd64
 ARG KASPAD_VERSION
 ARG REPO_URL
 RUN apk add --no-cache curl unzip ca-certificates
+# No checksum check: KASPAD_VERSION (and REPO_URL) come from .env, set by the
+# panel's updater, so no hash can be fixed in this file. A checksum fetched from
+# the same release would prove no more than the HTTPS download already does.
 RUN set -eux; \
     mkdir -p /out; \
     url="${REPO_URL}/releases/download/${KASPAD_VERSION}/rusty-kaspa-${KASPAD_VERSION}-linux-amd64.zip"; \

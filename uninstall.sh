@@ -85,6 +85,12 @@ confirm() {
 SUDO=""
 if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then SUDO="sudo"; fi
 
+# The named volumes in docker-compose.yml's volumes: block, exactly. Keep in step.
+STACK_VOLUMES="kaspa-node-data kaspa-node-bridge-data kaspa-node-kachat-db-data kaspa-node-kachat-app-data
+kaspa-node-nextcloud-db-data kaspa-node-nextcloud-data kaspa-node-libretranslate-models
+kaspa-node-testnet-data kaspa-node-bridge-testnet-data kaspa-node-kachat-db-testnet-data
+kaspa-node-kachat-app-testnet-data kaspa-node-kachat-names-db-data kaspa-node-kachat-names-db-testnet-data"
+
 DOCKER_SUDO=""
 if command -v docker >/dev/null 2>&1; then
     docker info >/dev/null 2>&1 || DOCKER_SUDO="$SUDO"
@@ -197,9 +203,16 @@ else
 
     if [ "$KEEP_DATA" = "0" ]; then
         say "Removing data volumes"
-        # Sweep by name prefix so a newly-added data volume can't be missed.
-        vols="$(d volume ls -q --filter 'name=kaspa-node-' 2>/dev/null || true)"
+        # This stack's volumes only: whatever compose labelled as project kaspa-node
+        # (so a newly added volume can't be missed), plus the exact names from
+        # docker-compose.yml's volumes: block in case one was created without that
+        # label. Never a name match: docker's name filter matches anywhere in the
+        # name, and took another project's my-kaspa-node-backup with it.
+        # shellcheck disable=SC2086
+        vols="$( { d volume ls -q --filter 'label=com.docker.compose.project=kaspa-node' 2>/dev/null; \
+                   printf '%s\n' $STACK_VOLUMES; } | sort -u )" || vols=""
         for volume in $vols; do
+            d volume inspect "$volume" >/dev/null 2>&1 || continue
             d volume rm -f "$volume" >/dev/null 2>&1 && ok "removed volume $volume" || true
         done
     fi
@@ -252,6 +265,16 @@ if [ -d "$STACK_DIR" ]; then
             warn "If it holds only Kaspa Quick Start files, delete it yourself."
         fi
     fi
+fi
+
+# install.sh may have turned Docker's userland proxy off in daemon.json (for real
+# peer IPs on inbound P2P). It records nothing about whether it did or the setting
+# was already there, and undoing it means restarting Docker, which stops everyone
+# else's containers. So it is left, and said.
+if [ "$(uname -s)" = Linux ] && grep -qE '"userland-proxy"[[:space:]]*:[[:space:]]*false' /etc/docker/daemon.json 2>/dev/null; then
+    warn "Docker's /etc/docker/daemon.json still has \"userland-proxy\": false (and maybe \"shutdown-timeout\": 180),"
+    warn "which the installer sets for inbound P2P peers unless it was there already. It was left as it is."
+    warn "To undo it, delete those lines and run: sudo systemctl restart docker"
 fi
 
 if [ "$KEEP_DATA" = "1" ]; then

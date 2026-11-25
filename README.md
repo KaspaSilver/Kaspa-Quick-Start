@@ -47,8 +47,10 @@ if you want to reach it from elsewhere.
 On Linux the installer also sets `"userland-proxy": false` in
 `/etc/docker/daemon.json`, so the node sees its peers' real addresses, and
 restarts Docker to apply it. That restart stops every running container, so if
-containers other than Kaspa Quick Start's are running it asks first (`--yes`
-answers yes).
+containers other than Kaspa Quick Start's are running it asks first, and only a
+typed yes counts. Run without a terminal or with `--yes`, it leaves Docker alone
+and prints the two steps to do yourself; `--restart-docker` has it restart
+Docker anyway.
 
 The node itself is not running at that point, and that is deliberate. Syncing
 the chain costs hours and tens of gigabytes, and publishing a port is a

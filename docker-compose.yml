@@ -308,7 +308,15 @@ services:
       NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD:-}
       # The published name is added by the panel when there is one.
       NEXTCLOUD_TRUSTED_DOMAINS: nextcloud localhost
-      TRUSTED_PROXIES: 172.16.0.0/12
+      # The proxy reaches Nextcloud over kaspa-node-net, whose subnet Docker
+      # picks from its address pools: 172.16.0.0/12 by default, 192.168.0.0/16
+      # once those run out, 10.0.0.0/8 or anything else a daemon.json sets. All
+      # three private ranges, rather than pinning the network's subnet: changing
+      # it would make compose refuse to touch an existing install until every
+      # container is removed, and a fixed range can clash with networks already
+      # on the machine. Nextcloud publishes no port, so only containers on this
+      # network can reach it to claim a forwarded address.
+      TRUSTED_PROXIES: 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
       # A single upload from KaChat is one request, and Cloudflare stops a
       # request at 100 MB on its free plan anyway.
       PHP_UPLOAD_LIMIT: 1G
@@ -449,7 +457,10 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${STACK_DIR}:/stack
     ports:
-      - "${MANAGER_BIND:-0.0.0.0}:${GUI_PORT:-8080}:8080"
+      # Loopback when .env has no MANAGER_BIND: the panel drives the Docker
+      # socket, so a lost key must not open it to the network. The installers
+      # always write it, and the panel changes it.
+      - "${MANAGER_BIND:-127.0.0.1}:${GUI_PORT:-8080}:8080"
     networks:
       - kaspa
     # No depends_on: kaspad, deliberately. The panel is what starts the node,

@@ -55,6 +55,10 @@ KASPAD_VERSION="${KASPA_VERSION:-}"
 ADMIN_PASSWORD="${KASPA_ADMIN_PASSWORD:-}"
 CLEAR_PASSWORD=0
 ASSUME_YES="${KASPA_YES:-0}"
+# Restarting Docker stops every container on the machine, so --yes does not cover
+# it when other people's containers are running; only this, or a person at a
+# terminal, does.
+RESTART_DOCKER="${KASPA_RESTART_DOCKER:-0}"
 SKIP_DOCKER_INSTALL="${KASPA_SKIP_DOCKER_INSTALL:-0}"
 
 PROJECT="kaspa-node"
@@ -71,6 +75,7 @@ while [ $# -gt 0 ]; do
         --stack-repo) STACK_REPO="$2"; shift 2 ;;
         --stack-ref) STACK_REF="$2"; shift 2 ;;
         --yes|-y) ASSUME_YES=1; shift ;;
+        --restart-docker) RESTART_DOCKER=1; shift ;;
         --skip-docker-install) SKIP_DOCKER_INSTALL=1; shift ;;
         --help|-h)
             cat <<'USAGE'
@@ -87,6 +92,9 @@ Usage: install.sh [options]
   --stack-ref <ref>     Branch or tag of that repo
   --yes, -y             Do not ask for confirmation, and do not offer to
                         open the panel at the end
+  --restart-docker      Restart Docker to apply the inbound-P2P setting even
+                        when other containers are running (Linux). Without
+                        it, only a yes typed at a terminal restarts Docker.
   --skip-docker-install Fail instead of installing Docker
 USAGE
             exit 0 ;;
@@ -116,6 +124,17 @@ confirm() {
     printf '%s [Y/n] ' "$1" > /dev/tty
     local reply; read -r reply < /dev/tty || reply=""
     case "$reply" in ""|y|Y|yes|YES) return 0 ;; *) return 1 ;; esac
+}
+
+# A yes only a person can give. --yes and KASPA_YES (the desktop app always sets
+# it) answer no here, and so does a terminal that is missing, exists but cannot be
+# opened (pkexec, a detached run), or cannot be read.
+confirm_tty() {
+    [ "$ASSUME_YES" = "1" ] && return 1
+    { : > /dev/tty; } 2>/dev/null || return 1
+    printf '%s [y/N] ' "$1" > /dev/tty 2>/dev/null || return 1
+    local reply; read -r reply < /dev/tty 2>/dev/null || return 1
+    case "$reply" in y|Y|yes|YES) return 0 ;; *) return 1 ;; esac
 }
 
 # ------------------------------------------------------------- environment --
@@ -435,8 +454,11 @@ print("__NOCHANGE__" if d == before else json.dumps(d, indent=2))
         warn "Enabling inbound P2P means changing $f and restarting Docker."
         warn "That restart stops every running container, and these are not part of Kaspa Quick Start: $others"
         warn "Any of them without a restart policy stays stopped until you start it again."
-        if ! confirm "Restart Docker now?"; then
-            warn "Left $f and Docker alone. For inbound P2P peers, set \"userland-proxy\": false there and restart Docker when it suits you."
+        if [ "$RESTART_DOCKER" != "1" ] && ! confirm_tty "Restart Docker now?"; then
+            warn "Left $f and Docker alone. For inbound P2P peers, when it suits you, write this to $f:"
+            printf '%s\n' "$content" | sed 's/^/        /' >&2
+            warn "then run: sudo systemctl restart docker"
+            warn "Or re-run this installer with --restart-docker to have it do both."
             return 0
         fi
     fi
@@ -600,6 +622,10 @@ fetch_stack() {
     printf '%s\n' "Kaspa Quick Start install directory. uninstall.sh deletes this folder only while this file is in it." \
         > "$STACK_DIR/$STACK_MARKER"
 
+    # The indexer's run-*.sh as they were, to tell below whether this refresh changed them.
+    local kachat_before
+    kachat_before="$(cat "$STACK_DIR"/kachat/run-*.sh 2>/dev/null | cksum)"
+
     # Only these are replaced wholesale on a re-install. conf/ holds generated
     # state (node.json, proxies.json) and proxy/ the vhosts made from it --
     # wiping either would cost the user real work.
@@ -623,6 +649,21 @@ fetch_stack() {
     fi
     # Not left to whatever the copy preserved.
     chmod +x "$STACK_DIR/kaspad/entrypoint.sh" "$STACK_DIR/kachat/run-admin.sh" "$STACK_DIR/uninstall.sh" 2>/dev/null || true
+
+    # The indexers mount each run-*.sh as a single file, and a single-file bind
+    # mount holds on to the file it was started with: the copy above made new
+    # files, so a running indexer keeps the old scripts until it starts again. A
+    # restart remounts them. Only when they changed, and only the two indexers that
+    # mount them; a stopped one picks them up whenever it is next started.
+    if [ "$(cat "$STACK_DIR"/kachat/run-*.sh 2>/dev/null | cksum)" != "$kachat_before" ]; then
+        local c
+        for c in $($DOCKER_SUDO docker ps --format '{{.Names}}' 2>/dev/null \
+                   | grep -xE 'kaspa-node-kachat(-testnet)?' || true); do
+            say "Restarting $c so it runs the updated indexer scripts"
+            $DOCKER_SUDO docker restart "$c" >/dev/null 2>&1 \
+                || warn "Could not restart $c. Restart it from the panel so it picks up the new scripts."
+        done
+    fi
 
     # The manager writes nginx's configuration into these as soon as it boots,
     # which is before the proxy can be switched on.
@@ -917,6 +958,11 @@ case "$AUTH_STATE" in
         fi
         ;;
 esac
+# Quoted for the shell it will be pasted into: a folder with a space in it is
+# otherwise two arguments. uninstall.sh does not look for itself, so a folder
+# other than the default has to be named.
+UNINSTALL_CMD="bash $(printf '%q' "$STACK_DIR/uninstall.sh")"
+[ "$STACK_DIR" = "${HOME:-}/.kaspa-node" ] || UNINSTALL_CMD+=" --dir $(printf '%q' "$STACK_DIR")"
 cat <<SUMMARY
 
   First run        Only the panel is installed. Open it and press Install on
@@ -956,7 +1002,7 @@ cat <<SUMMARY
 
   Everything lives in ${STACK_DIR}
   Remove it all with:
-      bash ${STACK_DIR}/uninstall.sh
+      ${UNINSTALL_CMD}
 
 SUMMARY
 printf '%s─────────────────────────────────────────────────%s\n\n' "$DIM" "$R"

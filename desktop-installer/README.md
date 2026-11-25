@@ -10,6 +10,8 @@ copy-paste commands keep working unchanged.
 
 1. **Install** button → runs the platform install script **elevated** (one
    password / UAC prompt) and **headless** (`KASPA_YES=1` / `-Yes`).
+   Headless never restarts Docker while other people's containers are running:
+   on Linux the log then says how to apply the inbound-P2P setting by hand.
 2. Streams the script's `==>` steps and full log into a progress view.
 3. On success, shows **`http://localhost:<port>`** (parsed from the script output,
    so it reflects the auto-picked port) and an **Open the control panel** button.

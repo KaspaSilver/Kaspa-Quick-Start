@@ -1,0 +1,9 @@
+# Files a Linux shell or a Linux container reads keep LF endings on every
+# checkout, a Windows one with core.autocrlf=true included. A run-*.sh with CRLF
+# endings fails on its first line ("bad interpreter") and the indexer it starts
+# crash-loops. The rest here are built or parsed on Linux and stay LF to match.
+*.sh            text eol=lf
+Dockerfile      text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+.githooks/*     text eol=lf

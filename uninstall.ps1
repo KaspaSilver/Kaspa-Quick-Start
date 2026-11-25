@@ -47,6 +47,12 @@ function Confirm-Step {
 
 $StackDir = $Dir.TrimEnd('\', '/')
 
+# The named volumes in docker-compose.yml's volumes: block, exactly. Keep in step.
+$StackVolumes = @('kaspa-node-data', 'kaspa-node-bridge-data', 'kaspa-node-kachat-db-data', 'kaspa-node-kachat-app-data',
+                  'kaspa-node-nextcloud-db-data', 'kaspa-node-nextcloud-data', 'kaspa-node-libretranslate-models',
+                  'kaspa-node-testnet-data', 'kaspa-node-bridge-testnet-data', 'kaspa-node-kachat-db-testnet-data',
+                  'kaspa-node-kachat-app-testnet-data', 'kaspa-node-kachat-names-db-data', 'kaspa-node-kachat-names-db-testnet-data')
+
 # A folder install.ps1 made: it writes .kqs-install into every install. Older
 # installs, from before that marker, are known by their compose file and the
 # panel's source beside it. Anything else is never deleted, whatever -Dir says.
@@ -141,9 +147,18 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
 
     if (-not $Keep) {
         Say 'Removing data volumes'
-        # Sweep by name prefix so a newly-added data volume can't be missed.
-        $vols = & docker volume ls -q --filter 'name=kaspa-node-' 2>$null | Where-Object { $_ }
+        # This stack's volumes only: whatever compose labelled as project kaspa-node
+        # (so a newly added volume can't be missed), plus the exact names from
+        # docker-compose.yml's volumes: block in case one was created without that
+        # label. Never a name match: docker's name filter matches anywhere in the
+        # name, and took another project's my-kaspa-node-backup with it.
+        $vols = @()
+        $vols += & docker volume ls -q --filter 'label=com.docker.compose.project=kaspa-node' 2>$null
+        $vols += $StackVolumes
+        $vols = $vols | Where-Object { $_ } | Sort-Object -Unique
         foreach ($volume in $vols) {
+            & docker volume inspect $volume 2>&1 | Out-Null
+            if ($LASTEXITCODE -ne 0) { continue }
             & docker volume rm -f $volume 2>&1 | Out-Null
             if ($LASTEXITCODE -eq 0) { Ok "removed volume $volume" }
         }

@@ -475,9 +475,15 @@ services:
 '@
     }
 
-    # The entrypoint is copied into a Linux image, so it must keep LF endings.
-    $entry = Join-Path $StackDir 'kaspad\entrypoint.sh'
-    if (Test-Path $entry) { Write-TextFile $entry ([System.IO.File]::ReadAllText($entry)) }
+    # Scripts that run inside Linux containers must keep LF endings: the entrypoint
+    # is copied into the kaspad image, and the indexers mount kachat\run-*.sh. A
+    # checkout made without .gitattributes gives them CRLF, and a CRLF run-*.sh
+    # fails on its first line, so the indexer crash-loops.
+    $lfScripts = @(Join-Path $StackDir 'kaspad\entrypoint.sh')
+    $lfScripts += @(Get-ChildItem -Path (Join-Path $StackDir 'kachat') -Filter '*.sh' -File -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+    foreach ($lf in $lfScripts) {
+        if (Test-Path -LiteralPath $lf) { Write-TextFile $lf ([System.IO.File]::ReadAllText($lf)) }
+    }
 
     if ($tmp) { Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue }
     Ok "Stack files are in $StackDir"
