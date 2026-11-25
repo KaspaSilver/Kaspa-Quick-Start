@@ -854,6 +854,7 @@ function selectSubtab(section, name) {
     if (section.id === 'tab-kassigner') section.classList.toggle('factory-open', name === 'kassigner-factory');
     // A log card only streams while it is on screen.
     syncSvcLog();
+    if (section.id === 'tab-kachat') $('kachat-hero').classList.toggle('compact', name !== 'kachat-overview');
     // The world map is fetched the first time "Am I public?" is opened.
     if (name === 'public') loadPublicMap().catch(() => {});
     // The go-public wizard reads live state each time it is opened.
@@ -4891,19 +4892,23 @@ function kachatDayBreakdown(d) {
     return (parts.join(', ') || 'none yet') + since;
 }
 
-async function loadKachatOverview() {
+/** The hero's chips: health and freshness, read on every Indexer subtab. */
+async function loadKachatHealth() {
+    const dot = $('kachat-hero-dot');
     try {
         const health = await kachat('health');
-        const tag = $('kachat-health-tag');
-        tag.textContent = kWords(health.status) || 'unknown';
-        tag.className = `tag ${kDot(health.status) === 'ok' ? 'ok' : kDot(health.status) === 'bad' ? 'off' : ''}`;
+        $('kachat-health-tag').textContent = kWords(health.status) || 'unknown';
+        dot.className = `svc-dot ${kDot(health.status)}`;
         $('kachat-lag').textContent = kAge(health.node_lag_ms);
         $('kachat-newest-tx').textContent = kTime(health.newest_transaction_time);
         $('kachat-newest-content').textContent = kTime(health.newest_content_time);
     } catch (e) {
         $('kachat-health-tag').textContent = e instanceof IndexerDown ? 'not running' : 'error';
-        $('kachat-health-tag').className = 'tag off';
+        dot.className = 'svc-dot bad';
     }
+}
+
+async function loadKachatOverview() {
 
     // Services: the indexer's own subservices, plus the translation engine the
     // panel runs alongside it. The dot carries online/down; the name leads.
@@ -4931,8 +4936,6 @@ async function loadKachatOverview() {
             /* the chat indexer is a separate process and may lag behind */
         }
 
-        $('kachat-ingest').textContent = `${fmtNum(s.ingest_last_60m)} items`;
-
         // The headline figures. ingest_last_60m counts transactions the block
         // ingester stored in the last hour, so it sits at zero while the ingest
         // is still backfilling history and only becomes a live rate once it has
@@ -4946,6 +4949,11 @@ async function loadKachatOverview() {
         $('kachat-5m').textContent = fmtNum(s.ingest_last_5m);
         $('kachat-messages').textContent = fmtNum(cm.contextual_messages ?? 0);
         $('kachat-blocks').textContent = fmtNum(cm.blocks_processed ?? 0);
+
+        $('kachat-jump-kaposts').textContent = fmtNum(s.posts ?? 0);
+        $('kachat-jump-bcast').textContent = fmtNum(s.bcast_total ?? 0);
+        $('kachat-jump-chats').textContent = fmtNum(cm.contextual_messages ?? 0);
+        $('kachat-jump-groups').textContent = fmtNum(cm.group_messages ?? 0);
 
         $('kachat-stats').innerHTML = [
             ['posts', s.posts],
@@ -5522,8 +5530,9 @@ function renderKachatOffline() {
     for (const id of ['kachat-stats', 'kachat-activity']) $(id).innerHTML = '';
     // Stale counters under a fold nobody opened would outlive the indexer.
     $('kachat-chat-more').hidden = true;
+    $('kachat-health-tag').textContent = 'not running';
+    $('kachat-hero-dot').className = 'svc-dot';
     for (const id of [
-        'kachat-health-tag',
         'kachat-chat-tag',
         'kachat-group-tag',
         'kachat-personal-tag',
@@ -5536,11 +5545,14 @@ function renderKachatOffline() {
         'kachat-lag',
         'kachat-newest-tx',
         'kachat-newest-content',
-        'kachat-ingest',
         'kachat-hour',
         'kachat-5m',
         'kachat-messages',
         'kachat-blocks',
+        'kachat-jump-kaposts',
+        'kachat-jump-bcast',
+        'kachat-jump-chats',
+        'kachat-jump-groups',
     ]) {
         $(id).textContent = '–';
     }
@@ -5548,7 +5560,9 @@ function renderKachatOffline() {
 
 /** Loads whichever KaChat panel is on screen, and only that one. */
 function refreshKachatPanel() {
+    $('kachat-hero-net').textContent = networkView === 'testnet' ? 'Testnet-10' : 'Mainnet';
     if (!kachatRunning()) return renderKachatOffline();
+    loadKachatHealth();
     switch (activeSubtab('kachat')) {
         case 'kachat-overview':
             loadKachatOverview();
@@ -5728,6 +5742,10 @@ function setKachatPolling(active) {
 // --- controls ---
 
 $('kachat-bcast-channel').addEventListener('change', loadBroadcastRows);
+$('kachat-jump').addEventListener('click', (event) => {
+    const tile = event.target.closest('[data-goto]');
+    if (tile) selectSubtab($('tab-kachat'), tile.dataset.goto);
+});
 $('kachat-bcast-refresh').addEventListener('click', loadKachatBroadcasts);
 
 $('kachat-recent-refresh').addEventListener('click', loadKachatKaposts);

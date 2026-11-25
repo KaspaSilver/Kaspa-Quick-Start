@@ -8,7 +8,7 @@
      (Brave's Night Mode, Dark Reader) darken white areas such as QR codes until they cannot
      be scanned, so they are asked to leave this page alone. -->
 <meta name="darkreader-lock">
-<meta name="theme-color" content="#050b0d">
+<meta name="theme-color" content="#070b0c">
 <title>Kaspa Quick Start</title>
 <link rel="stylesheet" href="/style.css">
 <!-- A file, not an inline data URI: replace manager/public/favicon.png to
@@ -1105,7 +1105,34 @@
       because that API binds to loopback inside its own container.
     -->
     <section id="tab-kachat" class="tab">
+      <!--
+        The hero: what the indexer is and whether it is well, above every subtab, so the
+        state never has to be looked for. The chips are the freshness readings; the
+        volume figures are Overview's.
+      -->
+      <header class="hero" id="kachat-hero">
+        <div class="hero-text">
+          <p class="hero-kicker">K · Indexer · <span id="kachat-hero-net">Mainnet</span></p>
+          <h2 class="hero-title">KaChat-Indexer <span id="kachat-state" class="tag">off</span></h2>
+          <p class="hero-desc">
+            Turns this node's chain data into the APIs K talks to: direct and group chats,
+            public chats, KaPosts and mentions. It reads the node you already run, so nothing
+            syncs twice.
+          </p>
+          <div class="hero-chips">
+            <span class="chip"><span class="svc-dot" id="kachat-hero-dot"></span><span id="kachat-health-tag">–</span></span>
+            <span class="chip"><small>Node lag</small><b id="kachat-lag">–</b></span>
+            <span class="chip"><small>Newest transaction</small><b id="kachat-newest-tx">–</b></span>
+            <span class="chip"><small>Newest content</small><b id="kachat-newest-content">–</b></span>
+          </div>
+          <div id="kachat-notice" class="verdict" hidden></div>
+        </div>
+        <img class="hero-mark" src="kaspa-mark.png" alt="" width="160" height="160">
+      </header>
+
+      <!-- What people use, then looking after the indexer itself: one row when it fits, two when it does not. -->
       <nav class="subnav" aria-label="KaChat indexer">
+        <div class="subnav-group">
         <button class="subtab-btn active" data-subtab="kachat-overview">Overview</button>
         <button class="subtab-btn" data-subtab="kachat-kaposts">KaPosts</button>
         <button class="subtab-btn" data-subtab="kachat-broadcasts">Public chats</button>
@@ -1113,70 +1140,66 @@
         <button class="subtab-btn" data-subtab="kachat-groups">Group chats</button>
         <button class="subtab-btn" data-subtab="kachat-kaplay">KaPlay</button>
         <button class="subtab-btn" data-subtab="kachat-profiles">Profiles</button>
-        <button class="subtab-btn" data-subtab="kachat-translate" data-mainnet-only>Translation</button>
-        <button class="subtab-btn" data-subtab="kachat-transfer">Export / Import</button>
-        <button class="subtab-btn" data-subtab="kachat-delete">Delete</button>
-        <button class="subtab-btn" data-subtab="kachat-settings" data-mainnet-only>Settings</button>
-        <button class="subtab-btn" data-subtab="kachat-updates">Updates</button>
-        <button class="subtab-btn" data-subtab="kachat-log">Logs</button>
-        <button class="subtab-btn" data-subtab="kachat-uninstall">Uninstall</button>
+        </div>
+        <div class="subnav-group manage">
+        <span class="subnav-label">Manage</span>
+        <button class="subtab-btn quiet" data-subtab="kachat-settings" data-mainnet-only>Settings</button>
+        <button class="subtab-btn quiet" data-subtab="kachat-translate" data-mainnet-only>Translation</button>
+        <button class="subtab-btn quiet" data-subtab="kachat-transfer">Export / Import</button>
+        <button class="subtab-btn quiet" data-subtab="kachat-updates">Updates</button>
+        <button class="subtab-btn quiet" data-subtab="kachat-log">Logs</button>
+        <button class="subtab-btn quiet danger" data-subtab="kachat-delete">Delete</button>
+        <button class="subtab-btn quiet danger" data-subtab="kachat-uninstall">Uninstall</button>
+        </div>
       </nav>
 
       <div id="sub-kachat-overview" class="subtab active">
-        <article class="card toggle-bar">
-          <div class="toggle-row">
-            <div class="toggle-text">
-              <strong>KaChat-Indexer</strong>
-              <span class="muted">
-                Turns this node's chain data into the APIs K and the other clients talk to:
-                direct and group chats, public chats, KaPosts and mentions. It reads
-                the node you are already running, so nothing syncs twice.
-              </span>
-            </div>
-            <span id="kachat-state" class="tag">off</span>
-          </div>
-          <div id="kachat-notice" class="verdict" hidden></div>
-          <p class="error" id="kachat-error" hidden></p>
-        </article>
-
-        <article class="card span2" id="kachat-live">
-          <div class="node-head">
-            <h3>Services</h3>
-            <span id="kachat-health-tag" class="tag">–</span>
-          </div>
-          <div class="services-grid" id="kachat-services"><p class="muted">Waiting for the indexer.</p></div>
-
-          <h3>Pipeline</h3>
+        <section>
+          <h3 class="row-title">Last 24 hours</h3>
           <!-- Every KaChat transaction of the last 24 hours: private chats, KaPosts and public chats. -->
-          <div class="stat stat-wide">
-            <span id="kachat-day">–</span><small>KaChat transactions, last 24 hours</small>
-            <small class="stat-sub" id="kachat-day-detail"></small>
-          </div>
-          <div class="grid stats">
-            <div class="stat"><span id="kachat-hour">–</span><small>transactions, last hour</small></div>
-            <div class="stat"><span id="kachat-5m">–</span><small>transactions, last 5 minutes</small></div>
+          <div class="tiles">
+            <div class="stat stat-feature">
+              <span id="kachat-day">–</span><small>KaChat transactions</small>
+              <small class="stat-sub" id="kachat-day-detail"></small>
+            </div>
+            <div class="stat"><span id="kachat-hour">–</span><small>last hour</small></div>
+            <div class="stat"><span id="kachat-5m">–</span><small>last 5 minutes</small></div>
             <div class="stat"><span id="kachat-messages">–</span><small>direct messages</small></div>
             <div class="stat"><span id="kachat-blocks">–</span><small>blocks processed</small></div>
           </div>
+        </section>
 
-          <dl class="kv nodestats">
-            <div><dt>Node to ingest lag</dt><dd id="kachat-lag">–</dd></div>
-            <div><dt>Newest transaction</dt><dd id="kachat-newest-tx">–</dd></div>
-            <div><dt>Newest content</dt><dd id="kachat-newest-content">–</dd></div>
-            <div><dt>Indexed last hour</dt><dd id="kachat-ingest">–</dd></div>
-          </dl>
-          <p class="hint">
-            Freshness comes from the transactions the node hands over. Chat
-            content can lag behind that quite legitimately, because it only moves
-            when somebody actually posts.
-          </p>
+        <!-- The rest of the indexer, one tile each, with the number that says what is in it. -->
+        <section>
+          <h3 class="row-title">Browse</h3>
+          <div class="jump-tiles" id="kachat-jump">
+            <button type="button" class="jump" data-goto="kachat-kaposts"><b>KaPosts</b><span id="kachat-jump-kaposts">–</span><small>posts</small></button>
+            <button type="button" class="jump" data-goto="kachat-broadcasts"><b>Public chats</b><span id="kachat-jump-bcast">–</span><small>in 30 days</small></button>
+            <button type="button" class="jump" data-goto="kachat-chats"><b>Chats</b><span id="kachat-jump-chats">–</span><small>direct messages</small></button>
+            <button type="button" class="jump" data-goto="kachat-groups"><b>Group chats</b><span id="kachat-jump-groups">–</span><small>group messages</small></button>
+            <button type="button" class="jump" data-goto="kachat-kaplay"><b>KaPlay</b><span>Boards</span><small>chess, Snake, 2048</small></button>
+            <button type="button" class="jump" data-goto="kachat-profiles"><b>Profiles</b><span>Stats</span><small>avatars, bios, links</small></button>
+          </div>
+        </section>
 
-          <h3>Content indexed</h3>
-          <div class="grid stats" id="kachat-stats"></div>
-
-          <h3>Activity</h3>
-          <div class="grid stats" id="kachat-activity"></div>
-        </article>
+        <div class="grid">
+          <article class="card span2" id="kachat-live">
+            <h3>Services</h3>
+            <div class="services-grid" id="kachat-services"><p class="muted">Waiting for the indexer.</p></div>
+            <p class="hint">
+              Freshness above comes from the transactions the node hands over. Chat content can
+              lag behind that quite legitimately, because it only moves when somebody posts.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Content indexed</h3>
+            <div class="grid stats" id="kachat-stats"></div>
+          </article>
+          <article class="card">
+            <h3>Activity</h3>
+            <div class="grid stats" id="kachat-activity"></div>
+          </article>
+        </div>
       </div>
 
       <div id="sub-kachat-kaposts" class="subtab">
