@@ -5519,7 +5519,7 @@ function renderKachatOffline() {
     for (const id of ['kachat-services', 'kachat-chat-tiles', 'kachat-group-tiles']) {
         $(id).innerHTML = `<p class="muted">${message}</p>`;
     }
-    for (const id of ['kachat-stats', 'kachat-activity', 'kachat-bcast-tiles']) $(id).innerHTML = '';
+    for (const id of ['kachat-stats', 'kachat-activity']) $(id).innerHTML = '';
     // Stale counters under a fold nobody opened would outlive the indexer.
     $('kachat-chat-more').hidden = true;
     for (const id of [
