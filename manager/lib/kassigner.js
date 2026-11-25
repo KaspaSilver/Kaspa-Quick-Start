@@ -3,6 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { CONF_DIR, STACK_LOCAL, hostPath } from './paths.js';
 import { docker } from './dockerctl.js';
+import { github } from './github.js';
 
 /**
  * KasSigner: an air-gapped signing device, not a service.
@@ -126,7 +127,7 @@ const RELEASE_CACHE_MS = 10 * 60_000;
 export async function listReleases({ force = false } = {}) {
     if (!force && releaseCache.value && Date.now() - releaseCache.at < RELEASE_CACHE_MS) return releaseCache.value;
 
-    const res = await fetch(`${API}/releases?per_page=20`, { headers: ghHeaders, signal: AbortSignal.timeout(15_000) });
+    const res = await github(`${API}/releases?per_page=20`);
     if (!res.ok) {
         throw new Error(`GitHub returned ${res.status}${res.status === 403 ? ' (rate limit, try again shortly)' : ''}`);
     }

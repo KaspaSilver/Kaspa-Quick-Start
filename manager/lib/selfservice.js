@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import { docker } from './dockerctl.js';
 import { COMPOSE_FILE, CONF_DIR, PORTS_OVERRIDE, STACK_HOST, STACK_LOCAL } from './paths.js';
+import { github } from './github.js';
 
 /*
  * Two jobs that cannot run where every other job runs.
@@ -213,11 +214,6 @@ const CODE_ITEMS = [
     'README.md',
 ];
 
-const ghHeaders = {
-    Accept: 'application/vnd.github+json',
-    'User-Agent': 'kaspa-quick-start-panel',
-};
-
 /**
  * GitHub, with the first lookup allowed to miss.
  *
@@ -232,7 +228,7 @@ async function ghFetch(url) {
     let lastErr;
     for (let attempt = 1; attempt <= 4; attempt++) {
         try {
-            return await fetch(url, { headers: ghHeaders, signal: AbortSignal.timeout(15_000) });
+            return await github(url);
         } catch (err) {
             lastErr = err;
             if (attempt < 4) await new Promise((r) => setTimeout(r, 1500 * attempt));

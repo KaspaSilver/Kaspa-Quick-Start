@@ -2,6 +2,7 @@ import http from 'node:http';
 
 import { docker } from './dockerctl.js';
 import { machine } from './host.js';
+import { github } from './github.js';
 
 /**
  * NFC Card (github.com/KaspaSilver/KaChat-NFC): loads the KaChat-NFC applet onto a Java Card, so
@@ -245,10 +246,7 @@ let releaseCache = { at: 0, value: null };
 /** The newest KaChat-NFC release, cached for 10 minutes (GitHub's API limit is per address). */
 export async function latestRelease({ force = false } = {}) {
     if (!force && releaseCache.value && Date.now() - releaseCache.at < 10 * 60_000) return releaseCache.value;
-    const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
-        headers: { accept: 'application/vnd.github+json', 'user-agent': 'kaspa-quick-start' },
-        signal: AbortSignal.timeout(15_000),
-    });
+    const res = await github(`https://api.github.com/repos/${REPO}/releases/latest`);
     if (!res.ok) {
         const hint = res.status === 403 ? ' (GitHub API rate limit, try again shortly)' : '';
         throw new Error(`GitHub returned ${res.status} for ${REPO} releases${hint}`);
@@ -277,10 +275,7 @@ async function appletVersionAt(ref) {
 }
 
 async function githubApi(path) {
-    const res = await fetch(`https://api.github.com/repos/${REPO}${path}`, {
-        headers: { accept: 'application/vnd.github+json', 'user-agent': 'kaspa-quick-start' },
-        signal: AbortSignal.timeout(15_000),
-    });
+    const res = await github(`https://api.github.com/repos/${REPO}${path}`);
     if (!res.ok) {
         const hint = res.status === 403 ? ' (GitHub API rate limit, try again shortly)' : '';
         throw new Error(`GitHub returned ${res.status} for ${REPO}${hint}`);

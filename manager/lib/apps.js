@@ -7,6 +7,7 @@ import { readJson, writeJson, updateEnvFile, readEnvFile, NETWORKS, imageTagFor 
 export { imageTagFor };
 import { docker } from './dockerctl.js';
 import { ALLOWED_PATHS as NEXTCLOUD_ALLOWED_PATHS, BROWSER_CORS as NEXTCLOUD_BROWSER_CORS } from './nextcloud.js';
+import { github } from './github.js';
 
 /**
  * The optional applications that ride along with the node: the K-Digital-Freedom-Indexer,
@@ -620,12 +621,6 @@ export function renderAppsPortsOverride(cfg) {
 
 // --------------------------------------------------------------- upstream --
 
-const ghHeaders = {
-    Accept: 'application/vnd.github+json',
-    'User-Agent': 'kaspa-one-click-node-manager',
-    'X-GitHub-Api-Version': '2022-11-28',
-};
-
 /**
  * How far the tracked branch has moved since the running image was built. These
  * projects publish no releases, so the honest unit is "commits behind", not a
@@ -643,7 +638,7 @@ const refsCache = new Map();
 const REFS_CACHE_MS = 10 * 60_000;
 
 async function ghList(url, take) {
-    const res = await fetch(url, { headers: ghHeaders, signal: AbortSignal.timeout(15_000) });
+    const res = await github(url);
     if (!res.ok) {
         const hint = res.status === 403 ? ' (GitHub rate limit, try again shortly)' : '';
         throw new Error(`GitHub returned ${res.status}${hint}`);
@@ -732,10 +727,7 @@ export async function checkUpstream(name, cfg) {
     if (app.image) return checkImageUpstream(app);
     const ref = name === 'bot' ? botRef(cfg) : cfg[name].ref;
 
-    const res = await fetch(`https://api.github.com/repos/${app.repo}/commits/${encodeURIComponent(ref)}`, {
-        headers: ghHeaders,
-        signal: AbortSignal.timeout(15_000),
-    });
+    const res = await github(`https://api.github.com/repos/${app.repo}/commits/${encodeURIComponent(ref)}`);
     if (!res.ok) {
         const hint = res.status === 403 ? ' (GitHub API rate limit - try again shortly)' : '';
         throw new Error(`GitHub returned ${res.status} for ${app.repo}@${ref}${hint}`);

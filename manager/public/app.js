@@ -879,6 +879,7 @@ function selectSubtab(section, name) {
     // the tab that shows it is opened rather than on every page load.
     if (name === 'updates') loadReleasePicker().catch(() => {});
     if (name === 'kassigner-updates') loadKassignerReleases().catch(() => {});
+    if (name === 'kachat-updates' || name === 'desktop-updates') loadRefPicker(name.split('-')[0]).catch(() => {});
     setGlobalAppUpdates(name === 'global-update');
     if (name === 'names-rules') loadNamesRules().catch(() => {});
     if (name === 'names-refunds') loadKeeper().catch(() => {});
@@ -4270,6 +4271,7 @@ for (const name of ['kachat', 'desktop']) {
         button.disabled = true;
         try {
             const refs = await api(`/api/apps/${name}/refs?force=1`);
+            appRefs[name] = refs;
             fillRefPicker(name, refs, appsState?.config?.[name]?.ref);
             toast(`${refs.branches.length} branch${refs.branches.length === 1 ? '' : 'es'} on ${refs.repo}.`);
         } catch (e) {
@@ -4280,18 +4282,27 @@ for (const name of ['kachat', 'desktop']) {
     });
 }
 
-/** Loads the pickers from cache when the apps page does. */
-async function loadRefPickers() {
-    for (const name of ['kachat', 'desktop']) {
-        const current = appsState?.config?.[name]?.ref ?? 'main';
-        try {
-            fillRefPicker(name, await api(`/api/apps/${name}/refs`), current);
-        } catch {
-            // Offline or rate limited: still offer what is configured, so the
-            // picker never comes up empty and the ref cannot be lost on save.
-            fillRefPicker(name, null, current);
-        }
+/**
+ * The branch pickers. Every reload of the apps list (page load, after every job) used to
+ * ask GitHub for both apps' branches and tags, four requests a time out of the sixty an
+ * hour GitHub allows an address. Now the list is only fetched when an Updates tab with a
+ * picker is opened; everywhere else the picker is filled from what this page already has.
+ */
+const appRefs = {};
+
+function loadRefPickers() {
+    for (const name of ['kachat', 'desktop']) fillRefPicker(name, appRefs[name] ?? null, appsState?.config?.[name]?.ref ?? 'main');
+}
+
+async function loadRefPicker(name) {
+    const current = appsState?.config?.[name]?.ref ?? 'main';
+    try {
+        appRefs[name] = await api(`/api/apps/${name}/refs`);
+    } catch {
+        // Offline or rate limited: still offer what is configured, so the
+        // picker never comes up empty and the ref cannot be lost on save.
     }
+    fillRefPicker(name, appRefs[name] ?? null, current);
 }
 
 function collectAppConfig(name) {

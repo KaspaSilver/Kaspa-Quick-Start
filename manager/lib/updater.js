@@ -2,16 +2,11 @@ import { compose, containerState, imageVersion, KASPAD_CONTAINER, BRIDGE_CONTAIN
 import { readEnvFile, updateEnvFile, loadManagerConfig, saveManagerConfig } from './store.js';
 import { rpc, rpcTestnet } from './rpc.js';
 import { loadBridgeConfig } from './bridge.js';
+import { github } from './github.js';
 
 const REPO = process.env.UPSTREAM_REPO || 'kaspanet/rusty-kaspa';
 const API = `https://api.github.com/repos/${REPO}`;
 const TAG_RE = /^v?\d+\.\d+\.\d+/;
-
-const ghHeaders = {
-    Accept: 'application/vnd.github+json',
-    'User-Agent': 'kaspa-one-click-node-manager',
-    'X-GitHub-Api-Version': '2022-11-28',
-};
 
 /** Compares tags like v2.0.1 / v1.3.0-toc.5; pre-release tags sort below their release. */
 export function compareVersions(a, b) {
@@ -67,7 +62,7 @@ export async function runningVersion({ testnet = false } = {}) {
  */
 export async function checkLatest({ includePrereleases = false, testnet = false } = {}) {
     const url = includePrereleases ? `${API}/releases?per_page=20` : `${API}/releases/latest`;
-    const res = await fetch(url, { headers: ghHeaders, signal: AbortSignal.timeout(15_000) });
+    const res = await github(url);
     if (!res.ok) {
         const hint = res.status === 403 ? ' (GitHub API rate limit - try again in a few minutes)' : '';
         throw new Error(`GitHub returned ${res.status}${hint}`);
@@ -129,10 +124,7 @@ export async function listReleases({ force = false } = {}) {
     if (!force && releasesCache.value && Date.now() - releasesCache.at < RELEASES_CACHE_MS) {
         return releasesCache.value;
     }
-    const res = await fetch(`${API}/releases?per_page=50`, {
-        headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'kaspa-one-click-panel' },
-        signal: AbortSignal.timeout(15_000),
-    });
+    const res = await github(`${API}/releases?per_page=50`);
     if (!res.ok) {
         const hint = res.status === 403 ? ' (GitHub rate limit, try again shortly)' : '';
         throw new Error(`GitHub returned ${res.status}${hint}`);
