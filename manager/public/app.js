@@ -803,8 +803,7 @@ function refreshKaspadForView() {
     renderUninstallCards();
     // The Indexer and Mining tabs read the viewed network's containers.
     if (activeSubtab('kachat')) refreshKachatPanel();
-    if (activeSubtab('kachat') === 'kachat-chess') loadChess().catch(() => {});
-    if (activeSubtab('kachat') === 'kachat-arcade') loadArcade().catch(() => {});
+    if (activeSubtab('kachat') === 'kachat-kaplay') loadKaplay();
     if (activeSubtab('kachat') === 'kachat-profiles') loadProfiles().catch(() => {});
     if (activeSubtab('kachat') === 'kachat-updates') loadTestnetIndexerUpdate().catch(() => {});
     // .kachat Domains installs and follows a registry per network.
@@ -862,10 +861,9 @@ function selectSubtab(section, name) {
     // The ROI calculator seeds itself from the connected miners on open.
     if (name === 'mining-roi') loadRoi().catch(() => {});
     // A KaChat panel loads when it is opened rather than all of them upfront.
-    // Chess is its own read-only view (the leaderboard the indexer replays), so it
-    // loads its own data rather than the general indexer-panel refresh.
-    if (name === 'kachat-chess') loadChess().catch(() => {});
-    if (name === 'kachat-arcade') loadArcade().catch(() => {});
+    // KaPlay is its own read-only view (the chess and arcade boards the indexer replays),
+    // so it loads its own data rather than the general indexer-panel refresh.
+    if (name === 'kachat-kaplay') loadKaplay();
     if (name === 'kachat-profiles') loadProfiles().catch(() => {});
     if (name === 'kachat-updates') loadTestnetIndexerUpdate().catch(() => {});
     else if (name === 'kachat-transfer') { loadBackup().catch(() => {}); loadReindex().catch(() => {}); refreshKachatPanel(); }
@@ -7477,9 +7475,10 @@ $('bot-update').addEventListener('click', async () => {
     });
 });
 
-// ------------------------------------------------------------ chess service ---
+// ------------------------------------------------------------------- KaPlay ---
 
-// Read-only view of the chess leaderboard the KaChat indexer replays from #chess-arena.
+// Read-only views of KaPlay's boards: the chess leaderboard the KaChat indexer replays from
+// #chess-arena, and the arcade scores from #kplay-arcade.
 const chessShort = (addr) => {
     const s = String(addr ?? '');
     return s.length > 24 ? `${s.slice(0, 12)}…${s.slice(-6)}` : s;
@@ -7492,6 +7491,18 @@ const chessWhen = (ms) => {
         return '–';
     }
 };
+
+// Both boards come from the same indexer, so either answer sets the one tag.
+function setKaplayState(data) {
+    const state = $('kaplay-state');
+    state.textContent = !data.installed ? 'not installed' : data.running ? 'live' : 'stopped';
+    state.className = data.installed && data.running ? 'tag ok' : 'tag off';
+}
+
+function loadKaplay() {
+    loadChess().catch(() => {});
+    loadArcade().catch(() => {});
+}
 
 async function loadChess() {
     const err = $('chess-error');
@@ -7507,17 +7518,7 @@ async function loadChess() {
 }
 
 function renderChess(data) {
-    const state = $('chess-state');
-    if (!data.installed) {
-        state.textContent = 'not installed';
-        state.className = 'tag off';
-    } else if (!data.running) {
-        state.textContent = 'stopped';
-        state.className = 'tag off';
-    } else {
-        state.textContent = 'live';
-        state.className = 'tag ok';
-    }
+    setKaplayState(data);
 
     const err = $('chess-error');
     if (data.error) {
@@ -7624,8 +7625,6 @@ function renderChessBots(data) {
         '</div>';
 }
 
-// ---- KaPlay Arcade (Snake, 2048) ----
-
 // The indexer ranks the board (best score, then the earlier game), so its order is kept.
 async function loadArcade() {
     const err = $('arcade-error');
@@ -7641,9 +7640,7 @@ async function loadArcade() {
 }
 
 function renderArcade(data) {
-    const state = $('arcade-state');
-    state.textContent = !data.installed ? 'not installed' : data.running ? 'live' : 'stopped';
-    state.className = data.installed && data.running ? 'tag ok' : 'tag off';
+    setKaplayState(data);
 
     const err = $('arcade-error');
     err.textContent = data.error || '';
@@ -7687,11 +7684,10 @@ function renderArcade(data) {
         '</tbody></table>';
 }
 
-$('arcade-refresh').addEventListener('click', () => loadArcade().catch(() => {}));
+$('kaplay-refresh').addEventListener('click', loadKaplay);
 $('arcade-game').addEventListener('change', () => loadArcade().catch(() => {}));
 $('arcade-period').addEventListener('change', () => loadArcade().catch(() => {}));
 
-$('chess-refresh').addEventListener('click', () => loadChess().catch(() => {}));
 $('chess-bots-period').addEventListener('change', () => loadChess().catch(() => {}));
 $('chess-bot-boards').addEventListener('click', (event) => {
     const link = event.target.closest('[data-chess-goto]');

@@ -1111,8 +1111,7 @@
         <button class="subtab-btn" data-subtab="kachat-broadcasts">Public chats</button>
         <button class="subtab-btn" data-subtab="kachat-chats">Chats</button>
         <button class="subtab-btn" data-subtab="kachat-groups">Group chats</button>
-        <button class="subtab-btn" data-subtab="kachat-chess">Chess</button>
-        <button class="subtab-btn" data-subtab="kachat-arcade">Arcade</button>
+        <button class="subtab-btn" data-subtab="kachat-kaplay">KaPlay</button>
         <button class="subtab-btn" data-subtab="kachat-profiles">Profiles</button>
         <button class="subtab-btn" data-subtab="kachat-translate" data-mainnet-only>Translation</button>
         <button class="subtab-btn" data-subtab="kachat-transfer">Export / Import</button>
@@ -1370,26 +1369,32 @@
         </article>
       </div>
 
-      <div id="sub-kachat-chess" class="subtab">
+      <!--
+        KaPlay, the games in K. Chess: the 1v1 and tournament boards the indexer replays, and
+        the bot boards from #chess-bots. Arcade: each player's best verified score at Snake and
+        2048, from the stamps K sends to the hidden #kplay-arcade room. Read-only: the indexer's
+        chess leaderboard and GET /arcade/leaderboard.
+      -->
+      <div id="sub-kachat-kaplay" class="subtab">
         <div class="node-head">
-          <h3>Chess</h3>
-          <span id="chess-state" class="tag">–</span>
-          <button class="ghost" id="chess-refresh" style="margin-left:auto">Refresh</button>
+          <h3>KaPlay</h3>
+          <span id="kaplay-state" class="tag">–</span>
+          <button class="ghost" id="kaplay-refresh" style="margin-left:auto">Refresh</button>
         </div>
         <p class="error" id="chess-error" hidden></p>
         <div class="grid">
           <article class="card">
-            <h3>1v1</h3>
+            <h3>Chess · 1v1</h3>
             <div id="chess-duel-board"><p class="muted">Loading…</p></div>
           </article>
           <article class="card">
-            <h3>Tournaments</h3>
+            <h3>Chess · Tournaments</h3>
             <div id="chess-tournament-board"><p class="muted">Loading…</p></div>
           </article>
           <!-- KaPlay's bot games: each player's fewest moves to checkmate each bot level. -->
           <article class="card span2">
             <div class="node-head">
-              <h3>Against the bots</h3>
+              <h3>Chess · Against the bots</h3>
               <select id="chess-bots-period" style="margin-left:auto; width:auto" aria-label="Period">
                 <option value="all">All time</option>
                 <option value="month">This month</option>
@@ -1399,32 +1404,19 @@
             <p class="error" id="chess-bots-error" hidden></p>
             <div id="chess-bot-boards"><p class="muted">Loading…</p></div>
           </article>
-        </div>
-      </div>
-
-      <!--
-        KaPlay Arcade: each player's best verified score at Snake and 2048, from the stamps K
-        sends to the hidden #kplay-arcade room. Read-only: the indexer's GET /arcade/leaderboard.
-      -->
-      <div id="sub-kachat-arcade" class="subtab">
-        <div class="node-head">
-          <h3>Arcade</h3>
-          <span id="arcade-state" class="tag">–</span>
-          <button class="ghost" id="arcade-refresh" style="margin-left:auto">Refresh</button>
-        </div>
-        <p class="error" id="arcade-error" hidden></p>
-        <div class="grid">
           <article class="card span2">
             <div class="node-head">
-              <select id="arcade-game" style="width:auto" aria-label="Game">
+              <h3>Arcade</h3>
+              <select id="arcade-game" style="margin-left:auto; width:auto" aria-label="Game">
                 <option value="snake">Snake</option>
                 <option value="2048">2048</option>
               </select>
-              <select id="arcade-period" style="margin-left:auto; width:auto" aria-label="Period">
+              <select id="arcade-period" style="width:auto" aria-label="Period">
                 <option value="month">This month</option>
                 <option value="all">All time</option>
               </select>
             </div>
+            <p class="error" id="arcade-error" hidden></p>
             <p class="muted" id="arcade-summary">Each player's best score. Every game here was replayed by the indexer and reaches the score it claims.</p>
             <div id="arcade-board"><p class="muted">Loading…</p></div>
           </article>
