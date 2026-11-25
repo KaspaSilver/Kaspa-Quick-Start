@@ -2298,12 +2298,12 @@ ul.plain li { margin: 8px 0; color: var(--muted); font-size: 13.5px; }
     box-shadow: 0 1px 0 rgba(125, 216, 202, 0.1) inset, var(--glow-soft), 0 12px 32px -20px rgba(0, 0, 0, 0.9);
 }
 
-/* Primary buttons carry a touch more ring; the update button is the loudest
-   thing on its page. */
+/* Primary buttons carry a touch more ring; the panel's Update button is the
+   loudest thing on its page, but only once a check has found an update. */
 button.primary { transition: box-shadow .2s ease, background .2s ease, transform .08s ease; }
 button.primary:active:not(:disabled) { transform: translateY(1px); }
-#global-update-btn { box-shadow: 0 0 24px -7px var(--accent-glow); }
-#global-update-btn:hover:not(:disabled) { box-shadow: 0 0 32px -3px var(--accent-glow); }
+#global-update-btn.ready { box-shadow: 0 0 24px -7px var(--accent-glow); }
+#global-update-btn.ready:hover:not(:disabled) { box-shadow: 0 0 32px -3px var(--accent-glow); }
 
 /* State tags get a matching halo so "on"/"key saved" reads lit, not just tinted. */
 .tag.ok { box-shadow: 0 0 16px -8px var(--ok); }
@@ -2314,7 +2314,7 @@ button.primary:active:not(:disabled) { transform: translateY(1px); }
     .update-status.available { animation: none; box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent); }
     .nav-dot.ok, .nav-dot.warn, .nav-dot.bad,
     .switch input:checked + .track,
-    #global-update-btn, #global-update-btn:hover:not(:disabled),
+    #global-update-btn.ready, #global-update-btn.ready:hover:not(:disabled),
     .tag.ok, .tag.warn { box-shadow: none; }
 }
 

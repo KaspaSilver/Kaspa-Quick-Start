@@ -10158,6 +10158,14 @@ async function loadGlobal() {
  * hours, server side, switchable below). The page only reads its answer, and this button
  * asks GitHub there and then.
  */
+/**
+ * The Update button stays a plain one until a check says there is something to update to:
+ * filled and lit only then, so it never looks like an update is waiting when nobody knows.
+ */
+function markPanelUpdate(ready) {
+    $('global-update-btn').className = ready ? 'primary ready' : 'ghost';
+}
+
 $('global-check-btn').addEventListener('click', async () => {
     const button = $('global-check-btn');
     const repo = $('global-repo').value.trim();
@@ -10169,6 +10177,7 @@ $('global-check-btn').addEventListener('click', async () => {
         const q = new URLSearchParams({ repo, ref });
         const r = await api(`/api/system/panel-latest?${q}`);
         const when = r.latest.date ? new Date(r.latest.date).toLocaleString() : 'unknown date';
+        markPanelUpdate(r.upToDate === false);
         if (r.upToDate === true) {
             setUpdateStatus(el, 'current', `Up to date: ${ref} is at ${r.latest.shortSha}, ${when}.`);
         } else if (r.upToDate === false) {
@@ -10180,6 +10189,7 @@ $('global-check-btn').addEventListener('click', async () => {
             setUpdateStatus(el, 'info', `${ref} is at ${r.latest.shortSha} (${when}). This install has no recorded commit, so there is nothing to compare it against yet.`);
         }
     } catch (e) {
+        markPanelUpdate(false);
         setUpdateStatus(el, 'error', e.message);
     } finally {
         button.disabled = false;
