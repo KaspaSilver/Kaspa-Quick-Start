@@ -2,6 +2,7 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import net from 'node:net';
+import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
@@ -73,7 +74,6 @@ import {
     issueSession,
     revokeAllSessions,
     sessionCookie,
-    verifyPassword,
     verifyPasswordAsync,
     clientKey,
     loginBlockedFor,
@@ -524,7 +524,7 @@ route(
         const key = clientKey(req);
         const wait = loginBlockedFor(key);
         if (wait) return fail(res, 429, `Too many wrong passwords. Try again in ${wait} s.`);
-        const ok = await withLoginSlot(() => verifyPasswordAsync(String(body.password ?? '')));
+        const ok = await withLoginSlot(() => verifyPasswordAsync(String(body.password ?? '')), key);
         if (ok === null) return fail(res, 429, 'Busy checking other sign-ins. Try again in a moment.');
         if (!ok) {
             // Held back so the endpoint is not a fast password oracle, longer while the panel
@@ -540,6 +540,34 @@ route(
     },
     { auth: false },
 );
+
+/**
+ * The password asked for again, checked the way sign-in checks it: the same per-client
+ * lock-out, the same queue and the same held-back wrong answer (KQS-005, KQS-017), so a
+ * session cannot be turned into a fast way to guess it. Answers the request itself and
+ * returns false when it is not the password.
+ */
+async function confirmPassword(req, res, password) {
+    const key = clientKey(req);
+    const wait = loginBlockedFor(key);
+    if (wait) {
+        fail(res, 429, `Too many wrong passwords. Try again in ${wait} s.`);
+        return false;
+    }
+    const ok = await withLoginSlot(() => verifyPasswordAsync(String(password ?? '')), key);
+    if (ok === null) {
+        fail(res, 429, 'Busy checking other sign-ins. Try again in a moment.');
+        return false;
+    }
+    if (!ok) {
+        await new Promise((r) => setTimeout(r, recordLoginFailure(key)));
+        // 403, not 401: 401 means "signed out" to the page, and this session is still good.
+        fail(res, 403, 'That is not the current password.');
+        return false;
+    }
+    recordLoginSuccess(key);
+    return true;
+}
 
 route(
     'POST',
@@ -753,7 +781,7 @@ route('PUT', /^\/api\/config$/, async (req, res) => {
     if (errors.length) return fail(res, 400, 'The configuration has problems.', { details: errors });
 
     saveNodeConfig(cfg);
-    const job = jobs.start('Apply node configuration', (onLine) => applyNodeConfig(cfg, onLine));
+    const job = startJob('Apply node configuration', (onLine) => applyNodeConfig(cfg, onLine));
     // The auto-follow flag may have just changed; (re)arm the watcher to match.
     scheduleExternalIpWatch(log);
     sendJson(res, 202, { ok: true, jobId: job.id, config: cfg });
@@ -782,7 +810,7 @@ route('PUT', /^\/api\/kachat\/backup$/, async (req, res) => {
     }
     if (dest && backup.destProblem(dest)) return fail(res, 400, backup.destProblem(dest));
     backup.saveConfig({ enabled, dest, keep });
-    backup.scheduleBackup(log, { deferWhile: () => jobs.busy });
+    backup.scheduleBackup(log, { deferWhile: () => jobs.busy || Boolean(replacing) });
     sendJson(res, 200, backup.status());
 });
 
@@ -803,6 +831,12 @@ route('POST', /^\/api\/kachat\/backup\/restore$/, async (req, res) => {
         dockerctl.containerState('kaspa-node-kachat'),
     ]);
     if (!db.running || !chat.running) return fail(res, 409, 'Start KaChat first. A restore writes into its database and chat store.');
+    // A restore stops and restarts the indexer; an update or rebuild in the queue could
+    // recreate its database container in the middle of it (audit #4).
+    const queued = [...(jobs.busy ? [jobs.snapshot()] : []), ...jobs.pending].map((j) => j.name);
+    if (queued.length) {
+        return fail(res, 409, 'The Update Queue is busy. A restore stops and restarts the indexer, so wait for it to finish first (System, Update Queue).', { details: queued });
+    }
     try {
         const result = await backup.restoreBackup(filePath, log);
         sendJson(res, 200, result);
@@ -854,14 +888,14 @@ function scheduleExternalIpWatch(log = () => {}) {
         if (!cfg.peering?.externalipAuto) return;
         const ip = await network.publicIp().catch(() => null);
         if (!ip || ip === cfg.peering.externalip) return;
-        // Something else is mid-job. Persist nothing and leave the difference in
-        // place, so the next tick sees it still needs doing and retries.
-        if (jobs.busy) return;
+        // Something else is mid-job, or the panel is being replaced. Persist nothing and
+        // leave the difference in place, so the next tick sees it still needs doing and retries.
+        if (jobs.busy || replacing) return;
 
         const was = cfg.peering.externalip || '(none)';
         cfg.peering.externalip = ip;
         saveNodeConfig(cfg);
-        jobs.start(`External IP changed (${was} → ${ip}): updating the node`, (onLine) => applyNodeConfig(cfg, onLine));
+        startJob(`External IP changed (${was} → ${ip}): updating the node`, (onLine) => applyNodeConfig(cfg, onLine));
         log(`external-ip: ${was} -> ${ip}`);
     };
 
@@ -891,7 +925,7 @@ route('POST', /^\/api\/ports\/(p2p|grpc|borsh|json)$/, async (req, res, match) =
     if (!changes.length) return sendJson(res, 200, { ok: true, unchanged: true });
 
     saveNodeConfig(cfg);
-    const job = jobs.start(`${before.name} (${before.port})`, (onLine) => {
+    const job = startJob(`${before.name} (${before.port})`, (onLine) => {
         for (const change of changes) onLine(change);
         return applyNodeConfig(cfg, onLine);
     });
@@ -965,7 +999,7 @@ route('PUT', /^\/api\/config-testnet$/, async (req, res) => {
     // Published ports are managed from the Ports table; keep them.
     cfg.expose = loadTestnetNodeConfig().expose ?? cfg.expose;
     saveTestnetNodeConfig(cfg);
-    const job = jobs.start('Apply testnet node configuration', async (onLine) => {
+    const job = startJob('Apply testnet node configuration', async (onLine) => {
         const args = writeTestnetArgsFile(cfg);
         renderTestnetPortsOverride(cfg);
         onLine(`kaspad (testnet) arguments: ${args.join(' ')}`);
@@ -1003,7 +1037,7 @@ route('POST', /^\/api\/ports-testnet\/(p2p|grpc|borsh|json)$/, async (req, res, 
     if (!changes.length) return sendJson(res, 200, { ok: true, unchanged: true });
 
     saveTestnetNodeConfig(cfg);
-    const job = jobs.start(`Testnet ${before.name} (${before.port})`, async (onLine) => {
+    const job = startJob(`Testnet ${before.name} (${before.port})`, async (onLine) => {
         for (const change of changes) onLine(change);
         renderTestnetPortsOverride(cfg);
         const state = await lifecycle.status('node-testnet').catch(() => null);
@@ -1019,7 +1053,7 @@ route('POST', /^\/api\/ports-testnet\/(p2p|grpc|borsh|json)$/, async (req, res, 
 
 route('POST', /^\/api\/node\/(start|stop|restart)$/, async (req, res, match) => {
     const action = match[1];
-    const job = jobs.start(`${action} node`, async (onLine) => {
+    const job = startJob(`${action} node`, async (onLine) => {
         if (action === 'start') {
             await dockerctl.compose(['up', '-d', KASPAD_SERVICE], { onLine });
             // It has just been created from the arguments file as it stands, so
@@ -1279,7 +1313,7 @@ route('POST', /^\/api\/update\/apply$/, async (req, res) => {
         return sendJson(res, 200, { ok: true, alreadyCurrent: true, version });
     }
 
-    const job = jobs.start(`Update ${testnet ? 'the testnet kaspad' : 'kaspad'} to ${version}`, (onLine) =>
+    const job = startJob(`Update ${testnet ? 'the testnet kaspad' : 'kaspad'} to ${version}`, (onLine) =>
         updater.applyUpdate(version, onLine, { testnet }),
     );
     sendJson(res, 202, { ok: true, jobId: job.id, version });
@@ -1302,21 +1336,72 @@ route('GET', /^\/api\/proxies$/, async (req, res) => {
     });
 });
 
+/**
+ * Saves the proxy hosts and brings everything that follows them in line. Throws when nginx
+ * rejects the result, and the caller rolls back. What comes after nginx took it -- the
+ * tunnel's gRPC route, the node's gRPC listener -- does not undo a save that is live, so a
+ * failure there is returned as a warning: in the job log through onLine, and for the caller
+ * to put in its answer (audit #12). It used to reach the server log only.
+ */
 async function saveProxyList(list, cfg, onLine) {
+    const say = onLine ?? log;
+    const warnings = [];
+    const warn = (line) => {
+        warnings.push(line);
+        say(line);
+    };
+    const grpcBefore = nginx.grpcNames(loadProxies()).sort().join(',');
     saveProxies(list);
     nginx.writeAll(list, cfg, renderOptions());
-    // K Nextcloud trusts the name it is published on and builds its links
-    // from it, so a name added, moved or taken off reaches it too. In the
-    // background: it is a few dozen occ calls, and it only acts on a change.
-    nextcloud.applyPublicHost(onLine ?? log).catch((err) => log(`K Nextcloud was not told about its name: ${err.message}`));
     // With the proxy off the files are still written, so switching it on later
-    // brings up everything that was configured meanwhile.
-    if (!proxyEnabled()) return;
-    await nginx.reload();
-    onLine?.('Reverse proxy reloaded.');
-    // A name taking on or giving up Kaspad gRPC changes its tunnel route, after nginx serves it.
-    await cloudflare.syncGrpc(onLine ?? log).catch((err) => (onLine ?? log)(`The tunnel route for gRPC was not updated: ${err.message}`));
+    // brings up everything that was configured meanwhile (applyProxyState syncs the tunnel).
+    if (proxyEnabled()) {
+        await nginx.reload();
+        onLine?.('Reverse proxy reloaded.');
+        // A name taking on or giving up Kaspad gRPC changes its tunnel route, after nginx serves it.
+        await cloudflare
+            .syncGrpc(say)
+            .catch((err) => warn(`The tunnel route for gRPC was not updated: ${err.message} It is tried again on the next save and when the panel starts.`));
+    }
+    // Only once nginx has taken the hosts: told first, Nextcloud kept trusting a name that
+    // nginx then refused and the caller rolled back (audit #28).
+    tellNextcloud(onLine);
+    // Kaspad's gRPC listener follows the published gRPC hosts (nodeSiblings). Only the setup
+    // wizard used to turn it on, so a gRPC host added here answered 502 (audit #13).
+    if (nginx.grpcNames(list).sort().join(',') !== grpcBefore) await followGrpcListener(onLine, warn);
+    return warnings;
 }
+
+/**
+ * K Nextcloud trusts the name it is published on and builds its links from it, so a name
+ * added, moved or taken off reaches it too -- after a save nginx accepted, and again after a
+ * rollback. In the background: it is a few dozen occ calls, and it only acts on a change.
+ */
+function tellNextcloud(onLine) {
+    nextcloud.applyPublicHost(onLine ?? log).catch((err) => log(`K Nextcloud was not told about its name: ${err.message}`));
+}
+
+/**
+ * Brings the node's listeners in line after the gRPC hosts changed. Inside a job it is done
+ * there and then; from a plain request it is queued, because it can recreate the node.
+ */
+async function followGrpcListener(onLine, warn) {
+    if (onLine) {
+        await ensureNodeListeners(onLine).catch((err) => warn(`The node's gRPC listener was not brought in line: ${err.message}`));
+        return;
+    }
+    writeArgsFile(loadNodeConfig(), nodeSiblings());
+    if (!argsDrifted()) return;
+    try {
+        startJob("Bring the node's gRPC listener in line", (line) => ensureNodeListeners(line));
+        warn('The node is being restarted so its gRPC listener matches the published names (System, Update Queue).');
+    } catch (err) {
+        warn(`The node's gRPC listener was not brought in line: ${err.message}`);
+    }
+}
+
+/** The body of a successful proxy save, with what did not follow it when something did not. */
+const withWarnings = (body, warnings) => (warnings?.length ? { ...body, warnings } : body);
 
 route('POST', /^\/api\/proxies$/, async (req, res) => {
     const body = await readBody(req);
@@ -1334,20 +1419,23 @@ route('POST', /^\/api\/proxies$/, async (req, res) => {
     };
 
     const errors = nginx.validateProxy(proxy, { existing: list, panelHasPassword: authConfigured(), names: domainNames() });
+    if (proxy.target?.kind === 'custom') errors.push(...[await customTargetProblem(proxy.target.host, proxy.target.port)].filter(Boolean));
     if (errors.length) return fail(res, 400, 'The proxy host has problems.', { details: errors });
 
     nginx.storeBasicAuth(proxy);
     list.push(proxy);
 
+    let warnings;
     try {
-        await saveProxyList(list, loadNodeConfig());
+        warnings = await saveProxyList(list, loadNodeConfig());
     } catch (err) {
         // Roll back so a config nginx rejects never stays on disk.
         saveProxies(list.filter((p) => p.id !== proxy.id));
         nginx.writeAll(loadProxies(), loadNodeConfig(), renderOptions());
+        tellNextcloud();
         return fail(res, 400, `nginx rejected the configuration: ${err.message}`);
     }
-    sendJson(res, 201, { ok: true, proxy: { ...proxy, auth: undefined } });
+    sendJson(res, 201, withWarnings({ ok: true, proxy: { ...proxy, auth: undefined } }, warnings));
 });
 
 route('PUT', /^\/api\/proxies\/([a-f0-9]{12})$/, async (req, res, match) => {
@@ -1366,28 +1454,31 @@ route('PUT', /^\/api\/proxies\/([a-f0-9]{12})$/, async (req, res, match) => {
     };
 
     const errors = nginx.validateProxy(proxy, { existing: list, panelHasPassword: authConfigured(), names: domainNames() });
+    if (proxy.target?.kind === 'custom') errors.push(...[await customTargetProblem(proxy.target.host, proxy.target.port)].filter(Boolean));
     if (errors.length) return fail(res, 400, 'The proxy host has problems.', { details: errors });
 
     nginx.storeBasicAuth(proxy);
     list[index] = proxy;
 
+    let warnings;
     try {
-        await saveProxyList(list, loadNodeConfig());
+        warnings = await saveProxyList(list, loadNodeConfig());
     } catch (err) {
         list[index] = previous;
         saveProxies(list);
         nginx.writeAll(list, loadNodeConfig(), renderOptions());
+        tellNextcloud();
         return fail(res, 400, `nginx rejected the configuration: ${err.message}`);
     }
-    sendJson(res, 200, { ok: true, proxy: { ...proxy, auth: undefined } });
+    sendJson(res, 200, withWarnings({ ok: true, proxy: { ...proxy, auth: undefined } }, warnings));
 });
 
 route('DELETE', /^\/api\/proxies\/([a-f0-9]{12})$/, async (req, res, match) => {
     const list = loadProxies();
     const next = list.filter((p) => p.id !== match[1]);
     if (next.length === list.length) return fail(res, 404, 'No such proxy host.');
-    await saveProxyList(next, loadNodeConfig());
-    sendJson(res, 200, { ok: true });
+    const warnings = await saveProxyList(next, loadNodeConfig());
+    sendJson(res, 200, withWarnings({ ok: true }, warnings));
 });
 
 route('POST', /^\/api\/proxy\/enabled$/, async (req, res) => {
@@ -1395,7 +1486,7 @@ route('POST', /^\/api\/proxy\/enabled$/, async (req, res) => {
     const enabled = Boolean(body.enabled);
     if (enabled === proxyEnabled()) return sendJson(res, 200, { ok: true, unchanged: true });
 
-    const job = jobs.start(enabled ? 'Start reverse proxy' : 'Stop reverse proxy', (onLine) =>
+    const job = startJob(enabled ? 'Start reverse proxy' : 'Stop reverse proxy', (onLine) =>
         applyProxyState(enabled, onLine),
     );
     sendJson(res, 202, { ok: true, jobId: job.id });
@@ -1428,6 +1519,59 @@ function refuseWhileQueueBusy(res, what) {
     return true;
 }
 
+/**
+ * Set while a sidecar replaces or removes this panel (audit #10): an update, a restart for a
+ * new port or bind, or Remove everything. Whatever starts then is killed half way when this
+ * container goes, an uninstall that cannot be cancelled and the nightly backup included, so
+ * no request changes anything (handleRequest), no job starts (startJob), and the backup and
+ * Nextcloud's cron wait. Cleared when the sidecar is gone without having replaced us -- an
+ * update that failed and rolled back leaves this same panel running.
+ */
+let replacing = null;
+
+function markReplacing(what, container) {
+    replacing = { what, container };
+    if (!container) return;
+    const watch = setInterval(async () => {
+        const state = await dockerctl.containerState(container).catch(() => null);
+        if (!state || state.running) return;
+        clearInterval(watch);
+        if (replacing?.container === container) replacing = null;
+        log(`${container} finished; this panel is still the one running`);
+    }, 3_000);
+    watch.unref?.();
+}
+
+const replacingMessage = () =>
+    `${replacing.what} is under way and this panel restarts when it is done. Anything started now would be cut off half way, so try again once the panel is back.`;
+
+/**
+ * Hands the panel to a sidecar: `start` is one of selfservice's updatePanel, restartManager or
+ * teardown. Marked before it is called, so nothing slips in while it gets going; unmarked if it
+ * never started.
+ */
+async function replacePanel(what, start) {
+    if (replacing) throw Object.assign(new Error(replacingMessage()), { status: 409 });
+    markReplacing(what, null);
+    try {
+        const started = await start();
+        markReplacing(what, started.container);
+        return started;
+    } catch (err) {
+        replacing = null;
+        throw err;
+    }
+}
+
+/**
+ * jobs.start, refused while the panel is being replaced. Requests are already turned away at
+ * the door then; this covers a request that was mid-way when it began, and the timers.
+ */
+function startJob(name, fn) {
+    if (replacing) throw Object.assign(new Error(replacingMessage()), { httpStatus: 409 });
+    return jobs.start(name, fn);
+}
+
 route('POST', /^\/api\/panel\/port$/, async (req, res) => {
     const body = await readBody(req);
     const wanted = Number(body.port);
@@ -1438,7 +1582,13 @@ route('POST', /^\/api\/panel\/port$/, async (req, res) => {
     if (refuseWhileQueueBusy(res, 'Changing the panel port')) return;
 
     updateEnvFile({ GUI_PORT: String(wanted) });
-    await selfservice.restartManager();
+    try {
+        await replacePanel('Moving the panel to another port', () => selfservice.restartManager());
+    } catch (err) {
+        // Not applied, so not saved either: .env would otherwise say a port nothing listens on.
+        updateEnvFile({ GUI_PORT: env.GUI_PORT ?? '' });
+        return fail(res, err.status ?? 500, err.message);
+    }
     sendJson(res, 202, { ok: true, port: wanted, restarting: true });
 });
 
@@ -1457,8 +1607,14 @@ route('POST', /^\/api\/panel\/bind$/, async (req, res) => {
     const wanted = lan ? '0.0.0.0' : '127.0.0.1';
     if (managerBind() === wanted) return sendJson(res, 200, { ok: true, unchanged: true, bind: wanted });
     if (refuseWhileQueueBusy(res, 'Changing who can open the panel')) return;
+    const before = readEnvFile().MANAGER_BIND;
     updateEnvFile({ MANAGER_BIND: wanted });
-    await selfservice.restartManager();
+    try {
+        await replacePanel('Changing who can open the panel', () => selfservice.restartManager());
+    } catch (err) {
+        updateEnvFile({ MANAGER_BIND: before ?? '' });
+        return fail(res, err.status ?? 500, err.message);
+    }
     sendJson(res, 202, { ok: true, restarting: true, bind: wanted });
 });
 
@@ -1604,14 +1760,14 @@ route('POST', /^\/api\/publish\/([a-z][a-z-]*)$/, async (req, res, match) => {
     if (!wanted) {
         if (index < 0) return sendJson(res, 200, { ok: true, unchanged: true });
         const [removed] = list.splice(index, 1);
-        await saveProxyList(list, loadNodeConfig());
-        return sendJson(res, 200, { ok: true, domain: null, was: removed.domain });
+        const warnings = await saveProxyList(list, loadNodeConfig());
+        return sendJson(res, 200, withWarnings({ ok: true, domain: null, was: removed.domain }, warnings));
     }
 
     if (!domainNames().includes(wanted)) return fail(res, 400, `${wanted} is not one of your names.`, { details: ['Set it up from a service first.'] });
     try {
-        const proxy = await attachDomain(service, wanted);
-        sendJson(res, 200, { ok: true, domain: wanted, proxyId: proxy.id });
+        const { proxy, warnings } = await attachDomain(service, wanted);
+        sendJson(res, 200, withWarnings({ ok: true, domain: wanted, proxyId: proxy.id }, warnings));
     } catch (err) {
         fail(res, 400, err.message, err.details ? { details: err.details } : undefined);
     }
@@ -1620,9 +1776,9 @@ route('POST', /^\/api\/publish\/([a-z][a-z-]*)$/, async (req, res, match) => {
 /**
  * Attaches a name to a service, creating the proxy host if there is not one.
  * Shared by the dropdown on the services page and by the setup wizard, so both
- * produce exactly the same proxy host.
+ * produce exactly the same proxy host. Returns it with saveProxyList's warnings.
  */
-async function attachDomain(service, domain, extras = null) {
+async function attachDomain(service, domain, extras = null, onLine = undefined) {
     const list = loadProxies();
     // A service published many times (something else on the network) adds a host each time.
     const index = service.multiple ? -1 : list.findIndex((p) => p.target?.kind === service.kind);
@@ -1670,17 +1826,19 @@ async function attachDomain(service, domain, extras = null) {
     if (index >= 0) list[index] = proxy;
     else list.push(proxy);
 
+    let warnings;
     try {
-        await saveProxyList(list, loadNodeConfig());
+        warnings = await saveProxyList(list, loadNodeConfig(), onLine);
     } catch (cause) {
         // Roll back so a configuration nginx rejects never stays on disk.
         const rolled = loadProxies().filter((p) => p.id !== proxy.id);
         if (previous) rolled.push(previous);
         saveProxies(rolled);
         nginx.writeAll(rolled, loadNodeConfig(), renderOptions());
+        tellNextcloud(onLine);
         throw new Error(`nginx rejected the configuration: ${cause.message}`);
     }
-    return proxy;
+    return { proxy, warnings };
 }
 
 // ------------------------------------------------------- cloudflare tunnel --
@@ -1694,7 +1852,7 @@ route('POST', /^\/api\/cloudflare\/connect$/, async (req, res) => {
     const body = await readBody(req);
     const token = String(body.token ?? '').trim();
     if (!token) return fail(res, 400, 'Paste the API token from Cloudflare first.');
-    const job = jobs.start('Connect Cloudflare', async (onLine) => {
+    const job = startJob('Connect Cloudflare', async (onLine) => {
         // The tunnel delivers every request to nginx, so it has to be there to answer.
         if (!proxyEnabled()) {
             onLine('Starting the reverse proxy, which answers for every name on the tunnel.');
@@ -1708,7 +1866,7 @@ route('POST', /^\/api\/cloudflare\/connect$/, async (req, res) => {
 });
 
 route('POST', /^\/api\/cloudflare\/disconnect$/, async (req, res) => {
-    const job = jobs.start('Disconnect Cloudflare', (onLine) => cloudflare.disconnect(onLine));
+    const job = startJob('Disconnect Cloudflare', (onLine) => cloudflare.disconnect(onLine));
     sendJson(res, 202, { ok: true, jobId: job.id });
 });
 
@@ -1725,7 +1883,7 @@ function mergeProxyConfig() {
  * at the top of the site), and never localhost, which inside the proxy's
  * container is the proxy.
  */
-function customTarget(raw) {
+async function customTarget(raw) {
     let url;
     try {
         url = new URL(String(raw ?? '').trim());
@@ -1741,8 +1899,66 @@ function customTarget(raw) {
         throw new Error("Use this machine's network address, like 192.168.1.20, not localhost. The proxy runs in its own container, where localhost is the proxy.");
     }
     const scheme = url.protocol.slice(0, -1);
-    return { kind: 'custom', scheme, host, port: Number(url.port) || (scheme === 'https' ? 443 : 80) };
+    const port = Number(url.port) || (scheme === 'https' ? 443 : 80);
+    const problem = await customTargetProblem(host, port);
+    if (problem) throw new Error(problem);
+    return { kind: 'custom', scheme, host, port };
 }
+
+/**
+ * Why a custom target is not "something else on your network", or null. The proxy sits on
+ * the stack's own network, where a container's name or address reaches it directly: set to
+ * manager:8080 it would put the panel (the Docker socket) on the internet past everything
+ * that guards publishing it (audit #35). Checked for the wizard and the advanced screen alike.
+ */
+async function customTargetProblem(host, port) {
+    const name = String(host ?? '').toLowerCase().replace(/^\[|\]$/g, '').replace(/\.+$/, '');
+    if (name.startsWith('kaspa-node-') || stackHostnames().has(name)) {
+        return `${host} is part of this stack, not something else on your network. Publish it from its own service instead.`;
+    }
+    if (net.isIPv4(name) && stackSubnets().some((n) => inSubnet(name, n))) {
+        return `${host} is an address on this stack's own Docker network. Use the address the device has on your home network, like 192.168.1.20.`;
+    }
+    const own = await network.hostAddresses().catch(() => []);
+    if (Number(port) === (Number(readEnvFile().GUI_PORT) || 8080) && own.some((a) => a.ip === name)) {
+        return 'That is this panel. It cannot be published as something else on the network.';
+    }
+    return null;
+}
+
+// Never a custom target, even if the compose file cannot be read.
+const STACK_NAMES = ['manager', 'proxy', 'cloudflared', 'kaspad', 'kaspad-testnet', 'bridge', 'bridge-testnet', 'kachat-app', 'kachat-app-testnet', 'kachat-db', 'kachat-db-testnet', 'nextcloud', 'nextcloud-db', 'nextcloud-redis', 'kachat-desktop', 'kachat-bot', 'libretranslate', 'cpuminer-testnet', 'kachat-names', 'kachat-names-testnet', 'kachat-names-db', 'kachat-names-db-testnet'];
+
+/**
+ * Every name the stack's network answers to: each service, its hostname and its container
+ * name, read from the compose file so a service added later is covered without a list here.
+ */
+function stackHostnames(compose = readProc(COMPOSE_FILE)) {
+    const names = new Set(STACK_NAMES);
+    let inServices = false;
+    for (const line of compose.split('\n')) {
+        if (/^\S/.test(line)) inServices = /^services:\s*$/.test(line);
+        const service = inServices && /^ {2}([A-Za-z0-9._-]+):\s*$/.exec(line);
+        if (service) names.add(service[1].toLowerCase());
+        const named = /^\s+(?:hostname|container_name):\s*["']?([A-Za-z0-9._-]+)["']?\s*$/.exec(line);
+        if (named) names.add(named[1].toLowerCase());
+    }
+    return names;
+}
+
+/** The IPv4 networks this container is attached to (its routes with no gateway), as [network, mask]. */
+function stackSubnets(v4 = readProc('/proc/net/route')) {
+    const le = (hex) => [6, 4, 2, 0].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    const out = [];
+    for (const line of v4.split('\n').slice(1)) {
+        const [, dest, gw, , , , , mask] = line.trim().split(/\s+/);
+        if (!/^[0-9A-Fa-f]{8}$/.test(dest ?? '') || dest === '00000000' || gw !== '00000000' || !/^[0-9A-Fa-f]{8}$/.test(mask ?? '')) continue;
+        out.push([le(dest), le(mask)]);
+    }
+    return out;
+}
+
+const inSubnet = (ip, [netAddr, mask]) => ip.split('.').every((o, i) => (Number(o) & mask[i]) === netAddr[i]);
 
 route('GET', /^\/api\/setup\/([a-z][a-z-]*)$/, async (req, res, match) => {
     const tunnel = await cloudflare.status();
@@ -1791,7 +2007,7 @@ route('POST', /^\/api\/setup\/([a-z][a-z-]*)$/, async (req, res, match) => {
     let target = null;
     if (key === 'custom') {
         try {
-            target = customTarget(body.origin);
+            target = await customTarget(body.origin);
         } catch (err) {
             return fail(res, 400, err.message);
         }
@@ -1809,7 +2025,7 @@ route('POST', /^\/api\/setup\/([a-z][a-z-]*)$/, async (req, res, match) => {
             .filter(Boolean),
     };
 
-    const job = jobs.start(`Publish ${what} on ${wanted}`, async (onLine) => {
+    const job = startJob(`Publish ${what} on ${wanted}`, async (onLine) => {
         // --- the name -------------------------------------------------------
         let record = existing;
         if (record?.tunnel === 'on') {
@@ -1850,8 +2066,10 @@ route('POST', /^\/api\/setup\/([a-z][a-z-]*)$/, async (req, res, match) => {
         onLine(`Publishing ${what} on ${record.domain}.`);
         if (extras.auth.enabled) onLine(`It will ask for a username and password (${extras.auth.user}).`);
         if (extras.allowlist.length) onLine(`Only these addresses will be let through: ${extras.allowlist.join(', ')}.`);
-        await attachDomain(plan.service, record.domain, extras);
-        // gRPC's listener follows the published host (nodeSiblings), so it is checked once that exists.
+        // In this job's log: the tunnel's gRPC route and the node's gRPC listener follow the
+        // new host inside saveProxyList, and what did not work out is said there.
+        await attachDomain(plan.service, record.domain, extras, onLine);
+        // A listener that still is not there fails the setup rather than ending on "Done".
         if (key === 'kaspad-grpc') await ensureNodeListeners(onLine);
 
         if (key === 'kaspad-grpc') {
@@ -1989,7 +2207,7 @@ route('PUT', /^\/api\/cpuminer$/, async (req, res) => {
     const state = await lifecycle.status('cpuminer-testnet');
     if (!state?.running) return sendJson(res, 200, { ok: true, config: cfg });
     // Running: recreate it on the new address / threads.
-    const job = jobs.start('Apply testnet miner settings', (onLine) => lifecycle.setRunning('cpuminer-testnet', true, onLine));
+    const job = startJob('Apply testnet miner settings', (onLine) => lifecycle.setRunning('cpuminer-testnet', true, onLine));
     sendJson(res, 202, { ok: true, config: cfg, jobId: job.id });
 });
 
@@ -2051,6 +2269,11 @@ async function applyProxyState(enabled, onLine = () => {}) {
         return;
     }
     nginx.writeAll(loadProxies(), loadNodeConfig(), renderOptions());
+    // Hosts saved while the proxy was off never synced the tunnel's gRPC routes (audit #12).
+    // Before the connector starts, so a transport it needs is in .env when it is created
+    // rather than costing it a second restart. A failure is said, not fatal: the proxy
+    // itself is fine, and the next save or start tries again.
+    await cloudflare.syncGrpc(onLine).catch((err) => onLine(`The tunnel route for gRPC was not updated: ${err.message}`));
     // The connector only with a run token; connecting the Cloudflare account writes one.
     const services = lifecycle.UNITS.proxy.services;
     onLine(services.includes('cloudflared') ? 'Starting the reverse proxy and the tunnel connector.' : 'Starting the reverse proxy. The tunnel connector starts once Cloudflare is connected.');
@@ -2149,7 +2372,7 @@ route('PUT', /^\/api\/mining$/, async (req, res) => {
     if (blockers.length) return fail(res, 409, 'Mining cannot start yet.', { details: blockers });
 
     bridge.saveBridgeConfig(cfg);
-    const job = jobs.start(cfg.enabled ? 'Start stratum bridge' : 'Stop stratum bridge', (onLine) =>
+    const job = startJob(cfg.enabled ? 'Start stratum bridge' : 'Stop stratum bridge', (onLine) =>
         applyMiningConfig(cfg, onLine),
     );
     sendJson(res, 202, { ok: true, jobId: job.id, config: cfg });
@@ -2191,7 +2414,7 @@ route('POST', /^\/api\/mining\/(start|stop|restart)$/, async (req, res, match) =
     const cfg = bridge.loadBridgeConfig();
     if (!cfg.enabled) return fail(res, 409, 'Mining is switched off. Enable it first.');
 
-    const job = jobs.start(`${action} stratum bridge`, async (onLine) => {
+    const job = startJob(`${action} stratum bridge`, async (onLine) => {
         if (action === 'start') await dockerctl.compose(['up', '-d', 'bridge'], { onLine, profile: 'mining' });
         else if (action === 'stop') await dockerctl.compose(['stop', 'bridge'], { onLine, profile: 'mining' });
         else await dockerctl.compose(['restart', 'bridge'], { onLine, profile: 'mining' });
@@ -2308,7 +2531,7 @@ route('POST', /^\/api\/kachat-nfc\/server\/start$/, async (req, res) => {
     if ((await kachatNfc.hostKind()) !== 'linux') {
         return fail(res, 409, 'This server runs Docker Desktop, which cannot reach USB. Install the helper on your computer instead.');
     }
-    const job = jobs.start('Start the NFC helper', (onLine) => kachatNfc.startServerHelper(onLine));
+    const job = startJob('Start the NFC helper', (onLine) => kachatNfc.startServerHelper(onLine));
     sendJson(res, 202, { ok: true, jobId: job.id });
 });
 
@@ -2320,7 +2543,7 @@ route('POST', /^\/api\/kachat-nfc\/server\/stop$/, async (req, res) => {
 
 route('POST', /^\/api\/kachat-nfc\/server\/remove$/, async (req, res) => {
     if (refuseWhileNfcWrites(res)) return;
-    const job = jobs.start('Remove the NFC helper', (onLine) => kachatNfc.removeServerHelper(onLine));
+    const job = startJob('Remove the NFC helper', (onLine) => kachatNfc.removeServerHelper(onLine));
     sendJson(res, 202, { ok: true, jobId: job.id });
 });
 
@@ -2382,7 +2605,7 @@ route('GET', /^\/api\/extension\/latest$/, async (req, res) => {
 
 /** Update and Rebuild are the same thing: build the branch as it is now. */
 route('POST', /^\/api\/extension\/build$/, async (req, res) => {
-    const job = jobs.start('Build the K Extension', (onLine) => extension.build(onLine));
+    const job = startJob('Build the K Extension', (onLine) => extension.build(onLine));
     sendJson(res, 202, { ok: true, jobId: job.id });
 });
 
@@ -2417,7 +2640,7 @@ route('PUT', /^\/api\/kassigner$/, async (req, res) => {
         kassigner.disable();
         return sendJson(res, 200, { ok: true, state: kassigner.loadState() });
     }
-    const job = jobs.start('Fetch and verify KasSigner firmware', (onLine) =>
+    const job = startJob('Fetch and verify KasSigner firmware', (onLine) =>
         kassigner.prepare(body.tag || null, onLine),
     );
     sendJson(res, 202, { ok: true, jobId: job.id });
@@ -2432,7 +2655,7 @@ route('PUT', /^\/api\/kassigner$/, async (req, res) => {
  */
 route('POST', /^\/api\/kassigner\/verify$/, async (req, res) => {
     const body = await readBody(req);
-    const job = jobs.start('Verify KasSigner firmware', (onLine) => kassigner.verify(body.tag || null, onLine));
+    const job = startJob('Verify KasSigner firmware', (onLine) => kassigner.verify(body.tag || null, onLine));
     sendJson(res, 202, { ok: true, jobId: job.id });
 });
 
@@ -2458,7 +2681,7 @@ route('POST', /^\/api\/kassigner\/flash$/, async (req, res) => {
     const state = kassigner.loadState();
     if (!state.enabled) return fail(res, 409, 'Switch KasSigner on first, so the firmware is downloaded and checked.');
 
-    const job = jobs.start(`Write firmware to ${body.port}`, (onLine) =>
+    const job = startJob(`Write firmware to ${body.port}`, (onLine) =>
         kassigner.flash({ port: body.port, board: body.board, image: body.image || 'full', onLine }),
     );
     sendJson(res, 202, { ok: true, jobId: job.id });
@@ -2473,7 +2696,7 @@ route('POST', /^\/api\/kassigner\/factory-restore$/, async (req, res) => {
     const body = await readBody(req);
     if (!kassigner.FACTORY[body.board]) return fail(res, 400, 'There is no factory firmware for that board here.');
 
-    const job = jobs.start(`Restore factory firmware to ${body.port}`, (onLine) =>
+    const job = startJob(`Restore factory firmware to ${body.port}`, (onLine) =>
         kassigner.restoreFactory({ port: body.port, board: body.board, onLine }),
     );
     sendJson(res, 202, { ok: true, jobId: job.id });
@@ -2524,11 +2747,18 @@ route('PUT', /^\/api\/apps\/(kachat|desktop|nextcloud)$/, async (req, res, match
     if (blockers.length) return fail(res, 409, `${apps.APPS[name].label} cannot start yet.`, { details: blockers });
 
     apps.saveAppsConfig(cfg);
-    const job = jobs.start(`${cfg[name].enabled ? 'Start' : 'Stop'} ${apps.APPS[name].label}`, async (onLine) => {
+    // All this job keeps of the request is what it was for: on or off, at which ref. A job
+    // can wait in the queue, and the whole document captured here would then be written
+    // back over settings saved meanwhile -- push keys, the other apps (audit #11).
+    const { enabled, ref } = cfg[name];
+    const job = startJob(`${enabled ? 'Start' : 'Stop'} ${apps.APPS[name].label}`, async (onLine) => {
+        const live = apps.loadAppsConfig();
+        live[name] = { ...live[name], enabled, ref };
+
         // Remember how this turned out. The job itself only lives in memory, so
         // without a record on disk a failed build is indistinguishable from one
         // that is still running as soon as the manager restarts.
-        apps.writeLastRun(name, { ok: null, error: null, enabled: cfg[name].enabled });
+        apps.writeLastRun(name, { ok: null, error: null, enabled });
 
         // Docker's own error says which build step died but not why; the reason
         // is a line the compiler printed further up, which only ever appears in
@@ -2542,14 +2772,14 @@ route('PUT', /^\/api\/apps\/(kachat|desktop|nextcloud)$/, async (req, res, match
         };
 
         try {
-            const result = await applyAppConfig(name, cfg, capture);
-            apps.writeLastRun(name, { ok: true, error: null, enabled: cfg[name].enabled });
+            const result = await applyAppConfig(name, live, capture);
+            apps.writeLastRun(name, { ok: true, error: null, enabled });
             return result;
         } catch (err) {
             apps.writeLastRun(name, {
                 ok: false,
                 error: `${output.join('\n')}\n${err.message}`,
-                enabled: cfg[name].enabled,
+                enabled,
             });
             throw err;
         }
@@ -2796,7 +3026,7 @@ route('PUT', /^\/api\/bot$/, async (req, res) => {
         return sendJson(res, 200, { ok: true, config: bot.readConfig(), restarted: false });
     }
 
-    const job = jobs.start('Restart KaChat Bot', async (onLine) => {
+    const job = startJob('Restart KaChat Bot', async (onLine) => {
         onLine('Recreating the bot so it reads the new settings.');
         await dockerctl.compose(['up', '-d', '--no-deps', '--force-recreate', 'kachat-bot'], {
             onLine,
@@ -2843,7 +3073,7 @@ route('POST', /^\/api\/bot\/test$/, async (req, res) => {
     if (!bot.readConfig().complete) {
         return fail(res, 409, 'Fill in and save the mining address, alias, receiver key and wallet first.');
     }
-    const job = jobs.start('Send a test notification', async (onLine) => {
+    const job = startJob('Send a test notification', async (onLine) => {
         onLine('Sending a test notification through the bot. This is a real message and costs a small fee.');
         await dockerctl.compose(
             ['run', '--rm', '-T', '--no-deps', '--entrypoint', 'python', 'kachat-bot', 'watcher.py', '--test'],
@@ -2905,7 +3135,7 @@ route('POST', /^\/api\/bot\/wallet$/, async (req, res) => {
         const wallet = await botGenerateWallet(cfg.bot.network);
         const saved = bot.saveWallet({ privateKeyHex: wallet.privateKeyHex, address: wallet.address });
         if (state.running) {
-            const job = jobs.start('Load the new wallet into the bot', async (onLine) => {
+            const job = startJob('Load the new wallet into the bot', async (onLine) => {
                 onLine(`New sending wallet: ${saved.address}`);
                 await dockerctl.compose(['up', '-d', '--no-deps', '--force-recreate', 'kachat-bot'], {
                     onLine,
@@ -2922,11 +3152,14 @@ route('POST', /^\/api\/bot\/wallet$/, async (req, res) => {
 });
 
 /**
- * Hands back the wallet key. Only reachable on the loopback panel, and only
- * when asked -- the same treatment as the Nextcloud admin password. It is the
- * user's own key, and backing it up is the whole point of showing it.
+ * Hands back the wallet key, only when asked and only with the panel password typed
+ * again (audit #34): a session left signed in on some browser is not the owner, and a
+ * key once shown can empty the wallet with no way back. It is the user's own key, and
+ * backing it up is the whole point of showing it.
  */
 route('POST', /^\/api\/bot\/wallet\/reveal$/, async (req, res) => {
+    const body = await readBody(req);
+    if (!(await confirmPassword(req, res, body.current))) return;
     const key = bot.walletKey();
     if (!key) return fail(res, 404, 'No wallet key is stored.');
     sendJson(res, 200, { privateKeyHex: key });
@@ -3047,7 +3280,7 @@ route('POST', /^\/api\/bots\/([a-z0-9-]+)\/sweep$/, async (req, res, match) => {
     const problem = bots.payoutProblem(to, apps.loadAppsConfig().bot.network);
     if (problem) return fail(res, 409, problem);
     if (!(await botImageBuilt())) return fail(res, 409, 'Rebuild the KaChat Bot first (Bot, Updates, Rebuild).');
-    const job = jobs.start(`Send ${b.type} bot funds to your wallet`, async (onLine) => {
+    const job = startJob(`Send ${b.type} bot funds to your wallet`, async (onLine) => {
         onLine(`Sending everything in ${b.address} to ${to}.`);
         bots.ownBotState(); // the one-off runs as the bot user (BOT-008/009)
         const { stdout } = await dockerctl.compose(
@@ -3093,8 +3326,10 @@ route('GET', /^\/api\/bots\/([a-z0-9-]+)\/history$/, async (req, res, match) => 
     sendJson(res, 200, { messages: bots.history(match[1], 50) });
 });
 
-/** The bot's own key, to move what is left in its wallet with any Kaspa wallet. */
+/** The bot's own key, to move what is left in its wallet with any Kaspa wallet. Password again, as above. */
 route('POST', /^\/api\/bots\/([a-z0-9-]+)\/reveal$/, async (req, res, match) => {
+    const body = await readBody(req);
+    if (!(await confirmPassword(req, res, body.current))) return;
     const b = bots.findBot(match[1]);
     if (!b) return fail(res, 404, 'No such bot.');
     sendJson(res, 200, { privateKeyHex: b.privateKeyHex, address: b.address });
@@ -3332,7 +3567,7 @@ route('PUT', /^\/api\/kachat\/translate$/, async (req, res) => {
             message: 'Saved. The translation engine will load these the next time it starts.',
         });
 
-    const job = jobs.start('Reload the translation engine', async (onLine) => {
+    const job = startJob('Reload the translation engine', async (onLine) => {
         onLine(`Languages: ${languages.split(',').join(', ')}.`);
         // The engine only auto-downloads models onto an empty volume, so once
         // it has run once, adding a language and restarting would just reload
@@ -3392,7 +3627,9 @@ route('POST', /^\/api\/apps\/(kachat|desktop|nextcloud|bot)\/update$/, async (re
     if (!cfg[name].enabled) return fail(res, 409, `${apps.APPS[name].label} is switched off.`);
 
     const app = apps.APPS[name];
-    const job = jobs.start(`Update ${app.label}`, async (onLine) => {
+    const job = startJob(`Update ${app.label}`, async (onLine) => {
+        // Read when it runs, not when it was queued: the ref may have moved since.
+        const cfg = apps.loadAppsConfig();
         onLine(
             app.image
                 ? `Rebuilding ${app.label} on the current ${app.image}, plus what this stack adds to it...`
@@ -3443,7 +3680,7 @@ route('POST', /^\/api\/apps\/(kachat|desktop|nextcloud|bot)\/update$/, async (re
 route('POST', /^\/api\/apps\/(kachat|desktop|nextcloud)\/(start|stop|restart)$/, async (req, res, match) => {
     const [, name, action] = match;
     const app = apps.APPS[name];
-    const job = jobs.start(`${action} ${app.label}`, async (onLine) => {
+    const job = startJob(`${action} ${app.label}`, async (onLine) => {
         const verb = action === 'start' ? ['up', '-d'] : [action];
         await dockerctl.compose([...verb, ...app.services], { onLine, profile: app.profile, timeoutMs: 10 * 60_000 });
         if (name === 'nextcloud' && action !== 'stop') await nextcloudAfterStart(onLine);
@@ -3530,9 +3767,103 @@ const renderOptions = () => ({
     namesOn: { kachat: kachatDomains.routed('mainnet'), 'kachat-testnet': kachatDomains.routed('testnet') },
 });
 
-/** Where the panel's own port is published, which .env records. */
-const managerBind = () => (readEnvFile().MANAGER_BIND || '0.0.0.0').trim();
+/**
+ * Where the panel's own port is published, which .env records. A missing key means this
+ * machine only, as the installer and the compose file default it: a panel that lost the
+ * line must not fall open to the network (audit #2).
+ */
+const managerBind = () => (readEnvFile().MANAGER_BIND || '127.0.0.1').trim();
 const isLoopbackBind = () => ['127.0.0.1', '::1', 'localhost'].includes(managerBind());
+
+const bareIp = (ip) => String(ip || '').replace(/^::ffff:/i, '');
+const isLoopbackIp = (ip) => {
+    const n = normalIp(ip);
+    return /^127\./.test(n) || n === '0:0:0:0:0:0:0:1';
+};
+
+/**
+ * The gateways of the networks this container sits on, from the kernel's routing tables.
+ * A port Docker publishes reaches the container from there: docker-proxy dials in from the
+ * bridge's own address, and without it the loopback NAT rewrites the source to it too.
+ */
+function containerGateways(v4 = readProc('/proc/net/route'), v6 = readProc('/proc/net/ipv6_route')) {
+    const out = new Set();
+    // Iface Destination Gateway ...: hex, little-endian; the default route is destination 0.
+    for (const line of v4.split('\n').slice(1)) {
+        const [, dest, gw] = line.trim().split(/\s+/);
+        if (dest !== '00000000' || !/^[0-9A-Fa-f]{8}$/.test(gw ?? '') || gw === '00000000') continue;
+        out.add([6, 4, 2, 0].map((i) => parseInt(gw.slice(i, i + 2), 16)).join('.'));
+    }
+    // dest plen src splen nexthop ...: 32 hex digits each, big-endian; default is ::/0.
+    for (const line of v6.split('\n')) {
+        const [dest, plen, , , hop] = line.trim().split(/\s+/);
+        if (dest !== '0'.repeat(32) || plen !== '00' || !/^[0-9a-f]{32}$/i.test(hop ?? '') || /^0+$/.test(hop)) continue;
+        const groups = hop.match(/.{4}/g).map((g) => parseInt(g, 16).toString(16));
+        out.add(normalIp(groups.join(':')));
+    }
+    return out;
+}
+
+function readProc(file) {
+    try {
+        return fs.readFileSync(file, 'utf8');
+    } catch {
+        return '';
+    }
+}
+
+/** An address in one spelling, so the same IPv6 address written two ways compares equal. */
+function normalIp(ip) {
+    const bare = bareIp(ip).toLowerCase();
+    if (!net.isIPv6(bare)) return bare;
+    const [head, tail = ''] = bare.split('::');
+    const left = head ? head.split(':') : [];
+    const right = bare.includes('::') && tail ? tail.split(':') : [];
+    const groups = bare.includes('::') ? [...left, ...Array(8 - left.length - right.length).fill('0'), ...right] : left;
+    return groups.map((g) => parseInt(g, 16).toString(16)).join(':');
+}
+
+/** True when every host address the panel's own port is published on is a loopback one. */
+async function publishedOnLoopbackOnly() {
+    const mine = (await dockerctl.publishedPorts('kaspa-node-manager')).filter((p) => p.container === '8080/tcp');
+    if (!mine.length) return false;
+    return mine.every((p) => isLoopbackIp(String(p.host).replace(/:\d+$/, '').replace(/^\[|\]$/g, '')));
+}
+
+/** Whether an IPv4 address sits inside one of this container's own networks. */
+function onOwnNetwork(peer) {
+    const toInt = (ip) => ip.split('.').reduce((n, o) => (n << 8) + Number(o), 0) >>> 0;
+    if (!net.isIPv4(peer)) return false;
+    for (const addrs of Object.values(os.networkInterfaces())) {
+        for (const a of addrs ?? []) {
+            if (a.family !== 'IPv4' || a.internal || !a.cidr) continue;
+            const bits = Number(a.cidr.split('/')[1]);
+            const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
+            if ((toInt(peer) & mask) === (toInt(a.address) & mask)) return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Whether this connection comes from this machine itself, decided by the socket (audit #1).
+ *
+ * A loopback peer is a process in the panel's own network namespace. Otherwise the port
+ * has to be published on loopback only, both as .env says and as Docker actually has it:
+ * then a connection from outside the container can only have come from this machine, by
+ * whatever address Docker presents it from (the network's gateway on Linux, something of
+ * its own on Docker Desktop). What is left to refuse is another container on the stack's
+ * network dialling the panel directly, which arrives from an address on that network that
+ * is not its gateway. On 0.0.0.0 every LAN visitor arrives the same way as the owner, so
+ * there the answer is no.
+ */
+async function peerIsThisMachine(req) {
+    const peer = normalIp(req.socket?.remoteAddress);
+    if (isLoopbackIp(peer)) return true;
+    if (!isLoopbackBind()) return false;
+    if (onOwnNetwork(peer) && !containerGateways().has(peer)) return false;
+    return publishedOnLoopbackOnly().catch(() => false);
+}
 
 /**
  * Sets or changes the panel's own password. It cannot be removed (KQS-001).
@@ -3540,11 +3871,13 @@ const isLoopbackBind = () => ['127.0.0.1', '::1', 'localhost'].includes(managerB
  * The hash lives in .env and auth reads it live, so it is in force at once.
  *
  * The first password: with none set, the route is open (nothing else is), but
- * only for a request addressed to this machine itself -- localhost or one of its
- * own IPs. A web page that rebinds its own domain to 127.0.0.1 arrives with its
- * domain in Host and is refused, so it cannot set a password before the owner
- * does. Changing an existing one needs a session and the current password, so a
- * borrowed session cannot lock the owner out.
+ * only to a connection from this machine (peerIsThisMachine) that is also
+ * addressed to it -- localhost or one of its own IPs. The Host header is the
+ * caller's to write, so it is no proof of where a request came from; it is
+ * checked for what it does prove: a web page that rebinds its own domain to
+ * 127.0.0.1 arrives with its domain in Host and is refused, so it cannot set a
+ * password before the owner does. Changing an existing one needs a session and
+ * the current password, so a borrowed session cannot lock the owner out.
  */
 async function hostIsThisMachine(req) {
     const host = String(req.headers.host || '')
@@ -3556,6 +3889,19 @@ async function hostIsThisMachine(req) {
     return own.some((a) => a.ip === host);
 }
 
+/** What the first-run screen says when the first password is refused: what to do instead. */
+function firstPasswordRefusal() {
+    const port = Number(readEnvFile().GUI_PORT) || 8080;
+    if (!isLoopbackBind()) {
+        return (
+            `This panel is open to the network (${managerBind()}) and has no password yet, so it will not take one from a browser: ` +
+            `anyone who reached it first could set it. On the machine running the panel, run the installer again with --password <your password>, ` +
+            `or with --bind 127.0.0.1 and then open http://localhost:${port} there.`
+        );
+    }
+    return `Set the first password on the machine running the panel itself: open http://localhost:${port} in a browser there.`;
+}
+
 route(
     'POST',
     /^\/api\/auth\/password$/,
@@ -3563,13 +3909,12 @@ route(
     const body = await readBody(req);
     if (authConfigured()) {
         if (!isAuthenticated(req)) return fail(res, 401, 'Not signed in.');
-    } else if (!(await hostIsThisMachine(req))) {
-        return fail(res, 403, 'Set the first password from this machine (http://localhost) or its own IP address.');
+    } else if (!(await peerIsThisMachine(req)) || !(await hostIsThisMachine(req))) {
+        return fail(res, 403, firstPasswordRefusal());
     }
 
-    if (authConfigured() && !verifyPassword(String(body.current || ''))) {
-        return fail(res, 403, 'That is not the current password.');
-    }
+    // Throttled like sign-in: a session alone must not make this a fast password oracle.
+    if (authConfigured() && !(await confirmPassword(req, res, body.current))) return;
 
     if (body.clear) return fail(res, 400, 'The panel always needs a password. It can be changed, not removed.');
 
@@ -3628,11 +3973,11 @@ route('POST', /^\/api\/services\/([a-z0-9-]+)\/install$/, async (req, res, match
     if (unit.runnable === false) {
         // Not a container: installing it means fetching and verifying the
         // firmware, which is what its own endpoint has always done.
-        const job = jobs.start(`Install ${unit.label}`, (onLine) => kassigner.prepare(null, onLine));
+        const job = startJob(`Install ${unit.label}`, (onLine) => kassigner.prepare(null, onLine));
         return sendJson(res, 202, { ok: true, jobId: job.id });
     }
 
-    const job = jobs.start(`Install ${unit.label}`, async (onLine) => {
+    const job = startJob(`Install ${unit.label}`, async (onLine) => {
         // Whatever the service needs written before it starts. Enabling it in
         // the apps config keeps the rest of the panel agreeing with reality.
         const appsCfg = apps.loadAppsConfig();
@@ -3700,7 +4045,7 @@ route('POST', /^\/api\/kachat-testnet\/update$/, async (req, res) => {
     const state = await lifecycle.status('kachat-testnet');
     if (!state?.installed) return fail(res, 409, 'The testnet indexer is not installed yet.');
     const ref = readEnvFile().KACHAT_REF || 'main';
-    const job = jobs.start('Update the testnet indexer', async (onLine) => {
+    const job = startJob('Update the testnet indexer', async (onLine) => {
         const upstream = await selfservice.latestCommit({ repo: apps.APPS.kachat.repo, ref }).catch(() => null);
         onLine(`Building K-Digital-Freedom-Indexer@${ref}${upstream ? ` (${upstream.shortSha})` : ''} for the testnet indexer.`);
         await dockerctl.compose(['build', 'kachat-app-testnet'], { onLine, profile: 'testnet-kachat', timeoutMs: 120 * 60_000 });
@@ -3728,7 +4073,7 @@ route('POST', /^\/api\/services\/([a-z0-9-]+)\/(start|stop)$/, async (req, res, 
     const state = await lifecycle.status(match[1]);
     if (!state.installed) return fail(res, 409, `${unit.label} is not installed yet.`);
 
-    const job = jobs.start(`${running ? 'Start' : 'Stop'} ${unit.label}`, async (onLine) => {
+    const job = startJob(`${running ? 'Start' : 'Stop'} ${unit.label}`, async (onLine) => {
         await lifecycle.setRunning(match[1], running, onLine);
         // The first start is also when K Nextcloud sets itself up and makes its account.
         if (running && match[1] === 'nextcloud') await nextcloudAfterStart(onLine);
@@ -3754,7 +4099,9 @@ route('POST', /^\/api\/services\/([a-z0-9-]+)\/uninstall$/, async (req, res, mat
     }
 
     const keepData = body.keepData === true;
-    const job = jobs.start(`Uninstall ${unit.label}`, async (onLine) => {
+    const job = startJob(`Uninstall ${unit.label}`, async (onLine) => {
+        // Throws when anything of it is still on the machine, which ends the job here: the
+        // settings below are reset only for a service that really is gone.
         const removed = await lifecycle.uninstall(match[1], { keepData, onLine });
         if (match[1] === 'nextcloud') nextcloud.forget({ keepData }, onLine);
 
@@ -4159,7 +4506,7 @@ route('POST', /^\/api\/kachat-domains\/update$/, async (req, res) => {
         if ((await dockerctl.containerState(kachatDomains.NETWORKS[n].container)).exists) nets.push(n);
     }
     if (!nets.length) return fail(res, 409, 'Install .kachat Domains first.');
-    const job = jobs.start('Update .kachat Domains', async (onLine) => {
+    const job = startJob('Update .kachat Domains', async (onLine) => {
         const latest = await selfservice.latestCommit({ repo: kachatDomains.REPO, ref: kachatDomains.ref() });
         await kachatDomains.build(latest.sha, onLine);
         const before = Object.fromEntries(nets.map((n) => [n, kachatDomains.summaryFor(n)]));
@@ -4334,7 +4681,7 @@ route('POST', /^\/api\/push\/webpush\/setup$/, async (req, res) => {
     // The indexer reads env at startup; recreate it if it runs, else it applies at next start.
     const running = Boolean((await lifecycle.status(N.unit).catch(() => null))?.running);
     if (!running) return sendJson(res, 200, { ok: true, applied: 'next start' });
-    const job = jobs.start(`Apply the ${net} Web Push key`, async (onLine) => {
+    const job = startJob(`Apply the ${net} Web Push key`, async (onLine) => {
         onLine(`Restarting the ${net} indexer so it reads the new Web Push key...`);
         await dockerctl.compose(['up', '-d', '--force-recreate', N.host], {
             onLine,
@@ -4389,7 +4736,7 @@ route('POST', /^\/api\/push\/config$/, async (req, res) => {
         // the push keys and the switch too); one that is stopped picks them up when it starts.
         const testnetRunning = Boolean((await lifecycle.status('kachat-testnet').catch(() => null))?.running);
         if (current.kachat.enabled || testnetRunning) {
-            const job = jobs.start('Apply push settings', async (onLine) => {
+            const job = startJob('Apply push settings', async (onLine) => {
                 if (current.kachat.enabled) {
                     onLine('Restarting the K-Digital-Freedom-Indexer so it picks up the new push settings...');
                     await dockerctl.compose(['up', '-d', '--force-recreate', 'kachat-app'], {
@@ -4544,14 +4891,18 @@ route('POST', /^\/api\/system\/panel-update$/, async (req, res) => {
     const body = await readBody(req);
     if (refuseWhileQueueBusy(res, 'Updating the panel')) return;
     try {
-        const started = await selfservice.updatePanel({
-            repo: String(body.repo || 'KaspaSilver/Kaspa-Quick-Start').trim(),
-            ref: String(body.ref || 'main').trim(),
-        });
+        // A second click while the first update's sidecar runs is a 409 (audit #9): starting
+        // another would kill that one mid-copy (selfservice detach).
+        const started = await replacePanel('A panel update', () =>
+            selfservice.updatePanel({
+                repo: String(body.repo || 'KaspaSilver/Kaspa-Quick-Start').trim(),
+                ref: String(body.ref || 'main').trim(),
+            }),
+        );
         log(`panel update started in ${started.container}`);
         sendJson(res, 200, started);
     } catch (err) {
-        fail(res, 400, err.message);
+        fail(res, err.status ?? 400, err.message);
     }
 });
 
@@ -4704,7 +5055,7 @@ route('POST', /^\/api\/system\/disk-cache\/clean$/, async (req, res) => {
     const body = await readBody(req);
     const clean = CACHE_CLEANS[String(body.what || '')];
     if (!clean) return fail(res, 400, 'Unknown clean-up.');
-    const job = jobs.start(clean.title, async (onLine) => {
+    const job = startJob(clean.title, async (onLine) => {
         if (clean.run) await clean.run(onLine);
         for (const args of clean.steps ?? []) {
             onLine(`$ docker ${args.join(' ')}`);
@@ -4743,6 +5094,9 @@ route('POST', /^\/api\/system\/teardown$/, async (req, res) => {
     if (String(body.confirm || '') !== 'DELETE EVERYTHING') {
         return fail(res, 400, 'Type DELETE EVERYTHING to confirm.');
     }
+    // First, like every other way of replacing the panel (audit #25): the job that shows
+    // the removal would only queue behind what runs, and the removal kills that anyway.
+    if (refuseWhileQueueBusy(res, 'Removing everything')) return;
     // The bot wallets' keys go with conf/bot. Only once the page has shown which ones
     // still hold KAS, and the owner said go ahead anyway.
     if (body.walletsOk !== true) {
@@ -4754,7 +5108,7 @@ route('POST', /^\/api\/system\/teardown$/, async (req, res) => {
         }
     }
     try {
-        const started = await selfservice.teardown();
+        const started = await replacePanel('Remove everything', () => selfservice.teardown());
         log(`teardown started in ${started.container}; this panel is about to go away`);
 
         // The removal runs in a container of its own, because it has to delete
@@ -4763,6 +5117,7 @@ route('POST', /^\/api\/system\/teardown$/, async (req, res) => {
         // what happened, so it is followed and republished as a job -- which is
         // what puts it on the overlay, right up until the step that removes
         // this panel and takes the log with it.
+        // jobs.start, not startJob: this is the one job meant to run while the panel goes.
         const job = jobs.start('Remove everything', async (onLine) => {
             onLine('Removing everything this stack put on the machine. Docker itself is left installed.');
             onLine('This panel goes last, and its disappearing is what finishing looks like.');
@@ -4773,7 +5128,9 @@ route('POST', /^\/api\/system\/teardown$/, async (req, res) => {
             }
 
             await new Promise((resolve) => {
-                const stop = dockerctl.streamLogs(started.container, onLine, { tail: 0 });
+                // From its first line: it starts before this attaches, and with tail 0 the
+                // opening lines (the containers removed) were never shown.
+                const stop = dockerctl.streamLogs(started.container, onLine, { tail: 'all' });
                 // Nothing here resolves in the ordinary case: this container is
                 // removed part-way through and the process ends with it. The
                 // timeout is only so a teardown that somehow fails to reach us
@@ -4791,7 +5148,7 @@ route('POST', /^\/api\/system\/teardown$/, async (req, res) => {
 
         sendJson(res, 202, { ...started, jobId: job.id });
     } catch (err) {
-        fail(res, 400, err.message);
+        fail(res, err.status ?? 400, err.message);
     }
 });
 
@@ -4946,6 +5303,12 @@ async function handleRequest(req, res) {
         return fail(res, 401, 'Not signed in.');
     }
 
+    // Nothing changes while a sidecar replaces this panel (audit #10), refused here before a
+    // route saves a setting it then cannot apply. Sign-in and Cancel still work.
+    if (replacing && match.auth && !['GET', 'HEAD'].includes(req.method) && !/^\/api\/jobs\/[a-z0-9-]+\/cancel$/.test(url.pathname)) {
+        return fail(res, 409, replacingMessage());
+    }
+
     try {
         // An Update or Rebuild button asks for its job to go to the Update Queue
         // (and names it the way the button does).
@@ -4959,7 +5322,9 @@ async function handleRequest(req, res) {
         await requestContext.run(asked, () => match.handler(req, res, match.pattern.exec(url.pathname), url));
     } catch (err) {
         log('request failed', url.pathname, err);
-        if (!res.headersSent) fail(res, 500, err.message || 'Internal error');
+        // A refusal thrown from inside a route (startJob while the panel is being replaced)
+        // carries its own status.
+        if (!res.headersSent) fail(res, err.httpStatus ?? 500, err.message || 'Internal error');
     }
 }
 
@@ -5180,17 +5545,27 @@ async function bootstrap() {
     }
 
     if (mgr.proxy.enabled) await closeOldPorts().catch((e) => log('could not close the old proxy ports:', e.message));
+    // A tunnel gRPC change that failed last time (or was saved with the proxy off) is retried
+    // at every start (audit #12). In the background: it may call Cloudflare and restart the connector.
+    if (mgr.proxy.enabled) cloudflare.syncGrpc(log).catch((e) => log(`The tunnel route for gRPC was not updated: ${e.message}`));
+    // Booted by a panel update or restart whose sidecar is still finishing (an update waits for
+    // this panel to answer, and rolls back to the old one if it never does): until it is done,
+    // this panel can still be replaced, so it holds off as the one that started it did.
+    selfservice
+        .runningSidecar()
+        .then((name) => name && markReplacing(selfservice.SIDECARS[name], name))
+        .catch(() => {});
 
     syncProgress.start(log);
     testnetSync.start(log);
     scheduleExternalIpWatch(log);
-    backup.scheduleBackup(log, { deferWhile: () => jobs.busy });
+    backup.scheduleBackup(log, { deferWhile: () => jobs.busy || Boolean(replacing) });
     startHashrateWatch();
     startLowBalanceWatch();
     startMiningStatsPersist();
     startPanelUpdateCheck();
     // K Nextcloud's background jobs: there are almost no page loads to run them from.
-    setInterval(() => !jobs.busy && nextcloud.runCron().catch(() => {}), 5 * 60_000).unref?.();
+    setInterval(() => !jobs.busy && !replacing && nextcloud.runCron().catch(() => {}), 5 * 60_000).unref?.();
     // The NFC helper runs only while its page is open; one left from before a restart goes, and
     // so does any image built for an older release.
     kachatNfc.stopServerHelper().then(() => kachatNfc.removeOldImages()).catch(() => {});

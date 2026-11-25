@@ -266,13 +266,24 @@ export function publicHost() {
 }
 
 let appliedHost;
+let applying = Promise.resolve();
 /**
  * After a name is published, moved or taken off: the trusted name and the
  * address its links carry follow. Only does anything when the name changed
  * since the last time, and only to a running Nextcloud; a stopped one picks
  * it up at its next start.
+ *
+ * One at a time, each reading the hosts when its turn comes: a save that nginx
+ * rejected is rolled back and applied again, and that second call has to land
+ * after the first, or Nextcloud keeps the name that never went live.
  */
-export async function applyPublicHost(onLine = () => {}) {
+export function applyPublicHost(onLine = () => {}) {
+    const run = applying.then(() => applyHostNow(onLine));
+    applying = run.catch(() => {});
+    return run;
+}
+
+async function applyHostNow(onLine) {
     const host = publicHost();
     if (host === appliedHost) return;
     if (!isInstalled() || !(await deps.containerState(CONTAINER)).running) return;

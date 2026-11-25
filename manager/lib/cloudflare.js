@@ -298,13 +298,16 @@ export async function syncGrpc(onLine = () => {}) {
                 `service ${GRPC_ORIGIN}, and under Additional application settings, TLS, "No TLS Verify" and "HTTP2 connection" both on.`,
         );
     }
-    saveConfig({ ...loadConfig(), grpcNames: names });
     await setTransport(names.length ? 'http2' : 'auto', onLine);
+    // Recorded only once all of it took: the record is what says "nothing to do" next time,
+    // so saved ahead of a transport switch that then failed, the switch was never retried.
+    saveConfig({ ...loadConfig(), grpcNames: names });
 }
 
 /** The connector's transport to Cloudflare (TUNNEL_TRANSPORT_PROTOCOL), recreated only on a change. */
 async function setTransport(protocol, onLine) {
-    if ((readEnvFile().KQS_TUNNEL_PROTOCOL || 'auto') === protocol) return;
+    const stored = readEnvFile().KQS_TUNNEL_PROTOCOL ?? '';
+    if ((stored || 'auto') === protocol) return;
     updateEnvFile({ KQS_TUNNEL_PROTOCOL: protocol });
     if (!(await deps.containerState(CONTAINER).catch(() => ({ running: false }))).running) return;
     onLine(
@@ -312,7 +315,14 @@ async function setTransport(protocol, onLine) {
             ? 'Restarting the tunnel connector on HTTP/2, which gRPC needs. Every name drops for a few seconds.'
             : 'No gRPC names left: restarting the tunnel connector on its usual transport. Every name drops for a few seconds.',
     );
-    await startConnector(onLine);
+    try {
+        await startConnector(onLine);
+    } catch (err) {
+        // Back to what the running connector has, so the next try sees a change to make
+        // rather than a .env that already says it was made.
+        updateEnvFile({ KQS_TUNNEL_PROTOCOL: stored });
+        throw err;
+    }
 }
 
 // ------------------------------------------------------------ the connector --

@@ -146,6 +146,11 @@ export function lastUpdate() {
  * and Windows.
  */
 async function detach({ name, image, script, bind }) {
+    // One at a time, and never on top of a run still going. The `rm -f` below is for a
+    // run that died and left its name behind; on a live one it killed a panel update
+    // mid-copy, and that update's rollback then restored half-new files (audit #9).
+    const running = await runningSidecar();
+    if (running) throw sidecarBusy(running);
     // A run that died mid-way would still hold the name.
     await docker(['rm', '-f', name], { timeoutMs: 30_000 }).catch(() => {});
 
@@ -161,6 +166,28 @@ async function detach({ name, image, script, bind }) {
     const { stdout } = await docker(args, { timeoutMs: 60_000 });
     return stdout.trim().slice(0, 12);
 }
+
+// The sidecars that replace or remove this panel. Exported so the server can tell, after it
+// has itself been replaced, that the run which replaced it is still finishing.
+export const SIDECARS = {
+    'kaspa-node-panel-update': 'A panel update',
+    'kaspa-node-panel-restart': 'A panel restart',
+    'kaspa-node-teardown': 'Remove everything',
+};
+
+/** The name of the sidecar that is running now, or null. */
+export async function runningSidecar() {
+    for (const name of Object.keys(SIDECARS)) {
+        const { stdout } = await docker(['inspect', '--format', '{{.State.Running}}', name], { timeoutMs: 30_000 }).catch(() => ({ stdout: '' }));
+        if (stdout.trim() === 'true') return name;
+    }
+    return null;
+}
+
+const sidecarBusy = (name) =>
+    Object.assign(new Error(`${SIDECARS[name] ?? name} is still running (${name}). Wait for it to finish; the panel comes back on its own when it does.`), {
+        status: 409,
+    });
 
 // --------------------------------------------------------- panel restart ---
 
