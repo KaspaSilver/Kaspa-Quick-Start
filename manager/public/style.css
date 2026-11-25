@@ -1097,6 +1097,8 @@ table.instances td:last-child { width: 40px; text-align: right; }
    somebody to queue a second job behind it on the same docker daemon. Covering
    everything is the honest version -- one thing is happening, this is it, and
    the way out is for it to finish. */
+/* Laid out the way a TV box shows an update: the whole screen, a teal light from the top
+   left, no box -- the mark and title, a thick bar with its percentage, the steps, the log. */
 .action-overlay {
     position: fixed;
     inset: 0;
@@ -1104,9 +1106,13 @@ table.instances td:last-child { width: 40px; text-align: right; }
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 24px;
-    background: rgb(0 0 0 / 0.55);
-    backdrop-filter: blur(7px);
+    padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+    background:
+        radial-gradient(ellipse at 28% 12%, color-mix(in srgb, var(--accent-glow) 20%, transparent), transparent 62%),
+        radial-gradient(ellipse at 90% 100%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 55%),
+        color-mix(in srgb, var(--bg) 94%, transparent);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
 }
 /* display:flex would otherwise beat the hidden attribute. */
 .action-overlay[hidden] { display: none; }
@@ -1114,26 +1120,65 @@ table.instances td:last-child { width: 40px; text-align: right; }
 .action-card {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    width: min(760px, 100%);
-    max-height: 86vh;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    padding: 22px 24px;
-    box-shadow: 0 24px 70px rgb(0 0 0 / 0.55);
+    gap: 16px;
+    width: min(900px, 100%);
+    max-height: 100%;
 }
 .action-card p { margin: 0; }
-.action-head { display: flex; align-items: center; gap: 10px; }
-.action-head h3 { margin: 0; font-size: 17px; }
-/* The log grows to fill the card rather than being a fixed height: a stop
+.action-head { display: flex; align-items: center; gap: 18px; }
+.action-heading { min-width: 0; }
+.action-kicker {
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 750;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+}
+.action-head h3 { margin: 2px 0 0; font-size: 30px; line-height: 1.15; font-weight: 800; letter-spacing: -0.02em; overflow-wrap: anywhere; }
+.action-note { font-size: 15px; }
+/* The mark, lit, with the spinner as a ring round it while the job runs. */
+.action-mark { position: relative; flex: none; display: grid; place-items: center; width: 64px; height: 64px; }
+.action-mark img { width: 44px; height: 44px; filter: drop-shadow(0 0 14px var(--accent-glow)); }
+.action-mark .spinner { position: absolute; inset: 0; width: auto; height: auto; border-width: 2px; }
+.action-progress { display: grid; gap: 8px; margin-top: 6px; }
+.action-meta { display: flex; justify-content: space-between; align-items: baseline; color: var(--muted); }
+.action-pct { color: var(--text); font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.action-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.action-steps li {
+    padding: 10px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--muted);
+    font-weight: 650;
+    font-size: 14px;
+    opacity: 0.7;
+}
+.action-steps li.now {
+    opacity: 1;
+    color: var(--text);
+    border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+    background: color-mix(in srgb, var(--accent) 14%, var(--panel));
+}
+.action-steps li.done { opacity: 1; color: var(--ok); }
+.action-steps li.done::before { content: "✓ "; }
+.action-steps li.failed { opacity: 1; color: var(--danger); border-color: color-mix(in srgb, var(--danger) 50%, transparent); }
+@media (max-width: 600px) {
+    .action-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .action-head h3 { font-size: 23px; }
+}
+/* The log grows to fill the screen rather than being a fixed height: a stop
    prints four lines and should not open a screen of empty black. */
 .action-log {
     flex: 1 1 auto;
     height: auto;
     min-height: 8rem;
-    max-height: 60vh;
+    max-height: 46vh;
     font-size: 12px;
+    background: color-mix(in srgb, var(--bg) 80%, black);
+}
+@media (prefers-color-scheme: light) {
+    .action-log { background: var(--panel); }
 }
 
 .spinner {
@@ -2181,14 +2226,15 @@ ul.plain li { margin: 8px 0; color: var(--muted); font-size: 13.5px; }
 .action-foot {
     display: flex;
     align-items: center;
-    gap: 12px;
+    justify-content: flex-end;
+    gap: 10px;
 }
+.action-foot #action-hide { margin-right: auto; }
 .action-bar {
     flex: 1 1 auto;
-    height: 8px;
+    height: 12px;
     border-radius: 999px;
-    background: var(--panel-2);
-    border: 1px solid var(--line);
+    background: color-mix(in srgb, var(--text) 10%, transparent);
     overflow: hidden;
 }
 .action-bar[hidden] { display: none; }
@@ -2197,7 +2243,8 @@ ul.plain li { margin: 8px 0; color: var(--muted); font-size: 13.5px; }
     height: 100%;
     width: 0;
     border-radius: inherit;
-    background: var(--accent);
+    background: linear-gradient(90deg, var(--accent), var(--accent-glow));
+    box-shadow: 0 0 16px -2px var(--accent-glow);
     /* Eased in CSS rather than by the animation loop: the loop sets a target a
        few times a second and the browser draws the movement between. */
     transition: width 420ms ease-out;
@@ -2206,24 +2253,18 @@ ul.plain li { margin: 8px 0; color: var(--muted); font-size: 13.5px; }
    two minutes reads as a hung panel. The stripes say work is happening without
    claiming any progress the log has not reported. */
 .action-bar.working > span {
-    background-image: linear-gradient(
-        115deg,
-        color-mix(in srgb, var(--accent) 55%, transparent) 25%,
-        var(--accent) 25%,
-        var(--accent) 50%,
-        color-mix(in srgb, var(--accent) 55%, transparent) 50%,
-        color-mix(in srgb, var(--accent) 55%, transparent) 75%,
-        var(--accent) 75%
-    );
-    background-size: 22px 22px;
+    background-image:
+        repeating-linear-gradient(115deg, rgb(255 255 255 / 0.2) 0 8px, transparent 8px 16px),
+        linear-gradient(90deg, var(--accent), var(--accent-glow));
+    background-size: 36px 100%, 100% 100%;
     animation: bar-stripes 0.9s linear infinite;
 }
-.action-bar.failed > span { background: var(--warn); background-image: none; animation: none; }
-@keyframes bar-stripes { to { background-position: 22px 0; } }
+.action-bar.failed > span { background: var(--warn); background-image: none; box-shadow: none; animation: none; }
+@keyframes bar-stripes { to { background-position: 36px 0, 0 0; } }
 @media (prefers-reduced-motion: reduce) {
     .action-bar.working > span { animation: none; }
 }
-.action-foot .mono { font-family: var(--mono); font-size: 12px; min-width: 4.5rem; text-align: right; }
+.action-meta .mono { font-family: var(--mono); font-size: 12.5px; }
 
 /* The message preview on the bot's setup tab. Short, so it sizes to what is in
    it rather than opening a screen of black under a two-line message. */

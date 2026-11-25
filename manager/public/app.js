@@ -1042,6 +1042,33 @@ const BUILDKIT_DONE = /^(#\d+) DONE\b/;
 
 let progressTimer = null;
 
+const ACTION_STEPS = ['start', 'work', 'finish', 'end'];
+
+/**
+ * The four steps under the bar and the percentage beside it. Both are read off the
+ * bar's own position, so they claim nothing the log has not said: Starting until the
+ * first mark, Working through the build or pull, Finishing once containers are being
+ * made, then how it ended. `pct` null leaves the percentage out (the panel's own
+ * update has no position to give).
+ */
+function renderActionSteps({ phase, outcome = null, pct = null }) {
+    const at = ACTION_STEPS.indexOf(outcome ? 'end' : phase);
+    const stoppedAt = ACTION_STEPS.indexOf(phase);
+    for (const li of document.querySelectorAll('#action-steps li')) {
+        const i = ACTION_STEPS.indexOf(li.dataset.step);
+        let cls = i < at ? 'done' : i === at ? 'now' : '';
+        if (outcome === 'succeeded' && i === at) cls = 'done';
+        // A failure or a cancel marks the step it stopped in, and the end says which.
+        if (outcome && outcome !== 'succeeded') cls = i < stoppedAt ? 'done' : i === stoppedAt || i === at ? 'failed' : '';
+        li.className = cls;
+        if (li.dataset.step === 'end') li.textContent = { failed: 'Failed', cancelled: 'Cancelled' }[outcome] ?? 'Done';
+    }
+    $('action-pct').textContent =
+        outcome === 'failed' ? 'Failed' : outcome === 'cancelled' ? 'Cancelled' : pct === null ? '' : `${Math.round(pct * 100)}%`;
+}
+
+const phaseAt = (fraction) => (fraction >= 0.85 ? 'finish' : fraction >= 0.05 ? 'work' : 'start');
+
 function resetProgress() {
     const bar = $('action-bar');
     const fill = $('action-bar-fill');
@@ -1049,6 +1076,7 @@ function resetProgress() {
     bar.className = 'action-bar working';
     bar.setAttribute('aria-valuenow', '0');
     fill.style.width = '0%';
+    renderActionSteps({ phase: 'start', pct: 0 });
 
     clearInterval(progressTimer);
     progressTimer = setInterval(tickElapsed, 1000);
@@ -1065,6 +1093,7 @@ function setProgress(fraction) {
     pendingAction.progress = next;
     $('action-bar-fill').style.width = `${(next * 100).toFixed(1)}%`;
     $('action-bar').setAttribute('aria-valuenow', String(Math.round(next * 100)));
+    renderActionSteps({ phase: phaseAt(next), pct: next });
 }
 
 /** Reads one log line for anything that says where the job has got to. */
@@ -1120,6 +1149,7 @@ function openAction({ key, title, note }) {
     cancel.hidden = true;
     cancel.disabled = false;
     cancel.textContent = 'Cancel';
+    $('action-hide').hidden = true;
     resetProgress();
     $('action-overlay').hidden = false;
     return action;
@@ -1152,6 +1182,8 @@ function adoptActionJob(jobId) {
     // Nothing can be cancelled until there is something to name, and some
     // things are not cancellable at all.
     $('action-cancel').hidden = pendingAction.cancellable === false;
+    // A queued update runs in the manager either way, so it can be handed back to the queue.
+    $('action-hide').hidden = !pendingAction.background;
     for (const line of earlyLines.get(jobId) ?? []) actionAppend(line);
     earlyLines.clear();
     const ended = earlyEnds.get(jobId);
@@ -1175,6 +1207,7 @@ function finishAction(job) {
     pendingAction.finished = true;
     $('action-spinner').hidden = true;
     $('action-cancel').hidden = true;
+    $('action-hide').hidden = true;
     $('action-title').textContent = `${pendingAction.title}: ${cancelled ? 'cancelled' : ok ? 'done' : 'failed'}`;
 
     // Full either way: the bar tracks the job reaching its end, not the job
@@ -1186,6 +1219,11 @@ function finishAction(job) {
     $('action-bar').className = `action-bar${ok || cancelled ? '' : ' failed'}`;
     $('action-bar-fill').style.width = '100%';
     $('action-bar').setAttribute('aria-valuenow', '100');
+    renderActionSteps({
+        phase: phaseAt(pendingAction.progress ?? 0),
+        outcome: ok ? 'succeeded' : cancelled ? 'cancelled' : 'failed',
+        pct: 1,
+    });
 
     const close = $('action-close');
     close.disabled = false;
@@ -1228,6 +1266,21 @@ function closeAction() {
 }
 
 $('action-close').addEventListener('click', closeAction);
+
+// An update followed on this screen goes on running in the manager; this only stops watching
+// it here. The Update Queue keeps its log, and the page is usable again at once.
+$('action-hide').addEventListener('click', () => {
+    const action = pendingAction;
+    if (!action?.background || action.finished) return;
+    if (action.jobId) dismissedJobs.add(action.jobId);
+    clearInterval(progressTimer);
+    progressTimer = null;
+    $('action-overlay').hidden = true;
+    pendingAction = null;
+    earlyLines.clear();
+    earlyEnds.clear();
+    toast(`${action.title}: still running. System, Update Queue shows it.`);
+});
 
 // Escape is the usual way out of a dialog, and here it must not be one until
 // the job has finished. Capturing, so nothing else sees the key first.
@@ -1403,12 +1456,24 @@ let queueActionsInFlight = 0;
 async function queueAction({ title, request, onEnd, noCancel = false }) {
     const headers = { 'X-KQS-Queue': '1', 'X-KQS-Queue-Title': encodeURIComponent(title) };
     if (noCancel) headers['X-KQS-No-Cancel'] = '1';
+    // An update, rebuild or install clicked anywhere opens the update screen on its job,
+    // from before the request so not even its first lines are missed. Starts and stops are
+    // a glance and keep the small popup, as does anything asked for while the screen is
+    // already busy or from the Update Queue page, which shows the same thing itself.
+    const follow =
+        /^(Updating|Rebuilding|Installing)\b/.test(title) && !pendingAction && !$('tab-queue')?.classList.contains('active');
+    if (follow) {
+        const action = openAction({ key: null, title, note: 'It runs in the manager: closing this, or the tab, never stops it.' });
+        action.background = true;
+        action.cancellable = !noCancel;
+    }
     let response;
     queueActionsInFlight += 1;
     try {
         response = await request(headers);
     } catch (e) {
-        toast(`${title}: ${e.message}`, 'bad');
+        if (follow) finishAction({ status: 'failed', error: e.message });
+        else toast(`${title}: ${e.message}`, 'bad');
         return { ok: false, status: 'failed', error: e.message };
     } finally {
         // A fast job's start event can beat its own request back; held a moment longer so
@@ -1417,7 +1482,10 @@ async function queueAction({ title, request, onEnd, noCancel = false }) {
     }
     // Answered on the spot ("already on the newest version"): nothing to queue.
     if (!response?.jobId) {
-        toast(response?.message ?? `${title}: nothing to do.`);
+        if (follow) {
+            actionAppend(response?.message ?? 'Nothing to do.');
+            finishAction({ status: 'succeeded' });
+        } else toast(response?.message ?? `${title}: nothing to do.`);
         return { ok: true, status: 'succeeded' };
     }
     const ended = new Promise((resolve) => {
@@ -1435,9 +1503,14 @@ async function queueAction({ title, request, onEnd, noCancel = false }) {
         } else queueEnds.set(response.jobId, finish);
     });
     const ahead = updateQueue.current ? 1 + updateQueue.pending.length : 0;
-    // A small log popup rather than a toast, which is easy to miss: it shows the first lines
-    // and goes away on its own; the topbar badge keeps the count.
-    queuePeek.show(response.jobId, title, ahead ? `waiting, ${ahead} ahead of it` : 'starting');
+    if (follow && pendingAction && !pendingAction.finished) {
+        if (ahead) actionAppend(`Waiting: ${ahead} ahead of it in the Update Queue.`);
+        adoptActionJob(response.jobId);
+    } else {
+        // A small log popup rather than a toast, which is easy to miss: it shows the first lines
+        // and goes away on its own; the topbar badge keeps the count.
+        queuePeek.show(response.jobId, title, ahead ? `waiting, ${ahead} ahead of it` : 'starting');
+    }
     loadUpdateQueue();
     return ended;
 }
@@ -5100,6 +5173,7 @@ const CHANNEL_RE = /^[a-z0-9][a-z0-9._-]{0,35}$/;
 const GAME_CHANNELS = {
     'chess-arena': '1v1 games and tournaments',
     'chess-bots': 'games against the bots',
+    'kplay-arcade': 'every KaPlay game',
 };
 
 async function loadKachatBroadcasts() {
@@ -5135,6 +5209,9 @@ async function loadKachatBroadcasts() {
         $('kachat-channel-new').disabled = false;
         $('kachat-channel-add').disabled = false;
         channelState.unsupported = false;
+        // An indexer with its own KaPlay switch follows the game rooms by that switch alone,
+        // whatever this list says; an older one follows them only while they are on it.
+        channelState.kaplaySwitch = 'feature_kaplay' in settings;
         channelState.defaults = settings.available_broadcast_channels || [];
         // "" and absent both arrive as an empty string, so the flag distinguishes
         // "not configured" from "configured to nothing" the way the indexer does.
@@ -5183,6 +5260,15 @@ function renderChannels(counts, total) {
         // stays recoverable. How many that is, is upstream's to decide.
         const removable = !channelState.defaults.includes(name);
         const game = GAME_CHANNELS[name];
+        // A game room the KaPlay switch governs keeps its card for the count, without a switch
+        // of its own here: flipping one would do nothing.
+        if (game && channelState.kaplaySwitch) {
+            return `<div class="channel-card game">
+              <div class="head"><span class="name" title="#${escapeHtml(name)}">#${escapeHtml(name)}</span></div>
+              <div class="count">${fmtNum(counts[name] || 0)}</div>
+              <div class="kind">KaPlay · ${escapeHtml(game)}. Its switch is on the KaPlay tab.</div>
+            </div>`;
+        }
         return `<div class="channel-card${on ? '' : ' off'}${on ? '' : ' untracked'}${game ? ' game' : ''}">
           <div class="head">
             <span class="name" title="#${escapeHtml(name)}">#${escapeHtml(name)}</span>
@@ -5190,7 +5276,7 @@ function renderChannels(counts, total) {
             <label class="switch"><input type="checkbox" data-channel="${escapeHtml(name)}"${on ? ' checked' : ''}><span class="track"></span></label>
           </div>
           <div class="count">${fmtNum(counts[name] || 0)}</div>
-          ${game ? `<div class="kind" title="Moves and results, not chat">KaPlay chess · ${escapeHtml(game)}</div>` : ''}
+          ${game ? `<div class="kind" title="Moves and results, not chat">KaPlay · ${escapeHtml(game)}</div>` : ''}
         </div>`;
     };
 
@@ -5222,7 +5308,10 @@ function renderChannels(counts, total) {
     // A game channel off the list is the louder case, and is named on its own: chess just
     // stops being recorded, with nothing in the apps to say why. Any game channel counts,
     // offered or not, since an older indexer may not ship #chess-bots as a default yet.
-    const gamesOff = Object.keys(GAME_CHANNELS).filter((c) => !channelState.tracked.includes(c));
+    // #kplay-arcade is left out: an indexer without the KaPlay switch never followed it.
+    const gamesOff = channelState.kaplaySwitch
+        ? []
+        : Object.keys(GAME_CHANNELS).filter((c) => c !== 'kplay-arcade' && !channelState.tracked.includes(c));
     if (gamesOff.length) {
         $('kachat-channels').insertAdjacentHTML(
             'afterend',
@@ -5826,8 +5915,10 @@ $('kachat-block-add').addEventListener('click', async () => {
         const parts = Object.entries(r.purged ?? {})
             .filter(([, n]) => n)
             .map(([kind, n]) => `${BLOCK_KINDS[kind] ?? kind.replace(/_/g, ' ')} ${fmtNum(n)}`);
-        result.className = 'verdict ok';
+        result.className = r.warning ? 'verdict bad' : 'verdict ok';
         result.textContent = `Blocked. ${parts.length ? `Deleted: ${parts.join(', ')}.` : 'There was nothing stored from it.'}`;
+        // The chat indexer could not purge: blocked all the same, and adding it again retries.
+        if (r.warning) result.textContent += ` ${r.warning} Block it again to retry the purge.`;
         result.hidden = false;
         $('kachat-block-address').value = '';
         $('kachat-block-note').value = '';
@@ -10160,8 +10251,11 @@ function showPanelUpdateOverlay(repo, ref, baseAt) {
     $('action-cancel').hidden = true;
     close.hidden = true;
     close.disabled = true;
-    $('action-bar').className = 'action-bar';
-    $('action-bar-fill').style.width = '';
+    $('action-hide').hidden = true;
+    $('action-bar').className = 'action-bar working';
+    $('action-bar-fill').style.width = '100%';
+    $('action-elapsed').textContent = '';
+    renderActionSteps({ phase: 'work' });
     $('action-overlay').hidden = false;
 
     const append = (line) => {
@@ -10202,6 +10296,7 @@ function showPanelUpdateOverlay(repo, ref, baseAt) {
         $('action-spinner').hidden = true;
         $('action-bar').className = `action-bar${failed ? ' failed' : ''}`;
         $('action-bar-fill').style.width = '100%';
+        renderActionSteps({ phase: 'work', outcome: failed ? 'failed' : 'succeeded' });
         close.hidden = false;
         close.disabled = false;
         close.focus();
@@ -10215,6 +10310,7 @@ function showPanelUpdateOverlay(repo, ref, baseAt) {
         try {
             const res = await fetch('/healthz', { cache: 'no-store' });
             if (res.ok && wentDown) {
+                renderActionSteps({ phase: 'finish' });
                 append('\nThe new panel is up. Reloading...');
                 stopStream();
                 return location.reload();

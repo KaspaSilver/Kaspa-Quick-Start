@@ -1126,6 +1126,8 @@
             <span class="chip"><small>Newest content</small><b id="kachat-newest-content">–</b></span>
           </div>
           <div id="kachat-notice" class="verdict" hidden></div>
+          <!-- Save, Check and Rebuild report here, so the answer shows on whichever subtab asked. -->
+          <p class="error" id="kachat-error" hidden></p>
         </div>
         <img class="hero-mark" src="kaspa-mark.png" alt="" width="160" height="160">
       </header>
@@ -3707,24 +3709,41 @@
   </form>
 </dialog>
 
-<!-- Installing, starting, stopping and uninstalling all take over the screen
-     while they run. Two reasons: the log is the only thing worth looking at
-     until it finishes, and docker is one machine -- a build, a stop and an
-     uninstall queued on top of each other take longer and read as a panel that
-     ignored the click. There is no way out of this until the job is done. -->
+<!-- The update screen. Installing, uninstalling and anything started from a tab
+     take over the screen while they run, with no way out until the job is done:
+     the log is the only thing worth looking at, and docker is one machine. An
+     update, rebuild or install that goes through the Update Queue opens here too,
+     but can be sent back to run in the background, where the queue shows it. -->
 <div id="action-overlay" class="action-overlay" hidden>
   <div class="action-card" role="dialog" aria-modal="true" aria-labelledby="action-title" aria-live="polite">
     <header class="action-head">
-      <span class="spinner" id="action-spinner"></span>
-      <h3 id="action-title">Working</h3>
+      <!-- The Kaspa mark with the spinner as a ring around it while it runs. -->
+      <span class="action-mark"><img src="kaspa-mark.png" alt="" width="44" height="44"><span class="spinner" id="action-spinner"></span></span>
+      <div class="action-heading">
+        <p class="action-kicker">Kaspa Quick Start</p>
+        <h3 id="action-title">Working</h3>
+      </div>
     </header>
-    <p class="muted" id="action-note"></p>
-    <pre class="logview action-log" id="action-log"></pre>
-    <div class="action-foot">
+    <p class="muted action-note" id="action-note"></p>
+    <div class="action-progress">
       <div class="action-bar" id="action-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
         <span id="action-bar-fill"></span>
       </div>
-      <span class="muted mono" id="action-elapsed"></span>
+      <div class="action-meta">
+        <span class="mono" id="action-elapsed"></span>
+        <span class="action-pct" id="action-pct"></span>
+      </div>
+    </div>
+    <!-- Where the job has got to, in four steps read off the same log the bar is. -->
+    <ol class="action-steps" id="action-steps">
+      <li data-step="start">Starting</li>
+      <li data-step="work">Working</li>
+      <li data-step="finish">Finishing</li>
+      <li data-step="end">Done</li>
+    </ol>
+    <pre class="logview action-log" id="action-log"></pre>
+    <div class="action-foot">
+      <button class="ghost" id="action-hide" hidden>Run in the background</button>
       <button class="ghost danger" id="action-cancel" hidden>Cancel</button>
       <button class="primary" id="action-close" disabled hidden>Close</button>
     </div>
