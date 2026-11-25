@@ -1148,6 +1148,7 @@
         <button class="subtab-btn quiet" data-subtab="kachat-transfer">Export / Import</button>
         <button class="subtab-btn quiet" data-subtab="kachat-updates">Updates</button>
         <button class="subtab-btn quiet" data-subtab="kachat-log">Logs</button>
+        <button class="subtab-btn quiet" data-subtab="kachat-block">Block</button>
         <button class="subtab-btn quiet danger" data-subtab="kachat-delete">Delete</button>
         <button class="subtab-btn quiet danger" data-subtab="kachat-uninstall">Uninstall</button>
         </div>
@@ -1703,6 +1704,55 @@
 
           <article class="card span2 uninstall-card" data-uninstall="translate"></article>
         </div>
+      </div>
+
+      <!--
+        Addresses whose every action the indexer refuses: nothing they send is stored, and
+        what it already has from them is deleted when they are added. The indexer's
+        /api/blocklist; an older build answers 404 and the tab says so.
+      -->
+      <div id="sub-kachat-block" class="subtab">
+        <article class="card span2 danger-zone">
+          <div class="node-head">
+            <h3>Block an address</h3>
+            <span id="kachat-block-tag" class="tag">–</span>
+          </div>
+          <p class="muted">
+            Nothing this address sends is indexed from now on: KaPosts, public chats, direct and
+            group chats, payments it sends, its profile, and its chess and arcade games. Whatever
+            the indexer already has from it is deleted when you add it. It all stays on chain;
+            this only decides what this indexer keeps and serves.
+          </p>
+          <div class="row block-add">
+            <label class="stack">Address
+              <input id="kachat-block-address" placeholder="kaspa:q…" autocomplete="off" spellcheck="false">
+            </label>
+            <label class="stack">Note, for you
+              <input id="kachat-block-note" placeholder="optional, for example spam" maxlength="200">
+            </label>
+            <button type="button" id="kachat-block-add" class="danger">Block address</button>
+          </div>
+          <p class="error" id="kachat-block-error" hidden></p>
+          <div id="kachat-block-result" class="verdict" hidden></div>
+        </article>
+
+        <article class="card span2">
+          <div class="node-head">
+            <h3>Blocked addresses</h3>
+            <button type="button" id="kachat-block-refresh" class="ghost" style="margin-left:auto">Refresh</button>
+          </div>
+          <div class="scroll-x">
+            <table class="blocks">
+              <thead><tr><th>Address</th><th>Note</th><th>Blocked</th><th>Deleted then</th><th></th></tr></thead>
+              <tbody id="kachat-block-rows"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
+            </table>
+          </div>
+          <p class="hint">
+            Unblocking only lifts the block. What was deleted when the address was added does
+            not come back by itself; KaPosts can be recovered under Export / Import, Recover
+            missed KaPosts.
+          </p>
+        </article>
       </div>
 
       <div id="sub-kachat-delete" class="subtab">

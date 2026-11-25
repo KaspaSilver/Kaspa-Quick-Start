@@ -4698,7 +4698,11 @@ async function kachat(path, { method = 'GET', body, raw = false } = {}) {
     } catch {
         /* empty body */
     }
-    if (!res.ok) throw new Error(data.error || res.statusText);
+    if (!res.ok) {
+        const err = new Error(data.error || res.statusText);
+        err.status = res.status;
+        throw err;
+    }
     return data;
 }
 
@@ -5515,6 +5519,7 @@ function renderKachatOffline() {
     for (const [id, span] of [
         ['kachat-recent', 5],
         ['kachat-bcast-rows', 5],
+        ['kachat-block-rows', 5],
     ]) {
         $(id).innerHTML = `<tr><td colspan="${span}" class="muted">${message}</td></tr>`;
     }
@@ -5575,6 +5580,9 @@ function refreshKachatPanel() {
             break;
         case 'kachat-translate':
             loadTranslate();
+            break;
+        case 'kachat-block':
+            loadKachatBlocklist();
             break;
         case 'kachat-delete':
             // Its public-chat purge needs the tracked channels for its picker.
@@ -5736,6 +5744,111 @@ function setKachatPolling(active) {
 // --- controls ---
 
 $('kachat-bcast-channel').addEventListener('change', loadBroadcastRows);
+
+// ---- Block: addresses the indexer refuses everything from ----
+
+// The network's own prefix and a bech32-looking body. The indexer checks it properly; this
+// only catches a paste of the wrong thing before anything is deleted.
+const blockAddressOk = (a) =>
+    new RegExp(`^${networkView === 'testnet' ? 'kaspatest' : 'kaspa'}:[a-z0-9]{61,63}$`).test(a);
+
+// The indexer's names for what it deleted, as this panel words them elsewhere.
+const BLOCK_KINDS = {
+    kaposts: 'KaPosts',
+    public_chats: 'public chats',
+    chats: 'direct chats',
+    groups: 'group chats',
+    profiles: 'profile',
+    games: 'game scores',
+};
+
+const BLOCK_OLD_BUILD = 'This indexer build cannot block addresses yet. Update the indexer under Updates once a build with address blocking is out.';
+
+function setBlockTag(text, cls = '') {
+    const tag = $('kachat-block-tag');
+    tag.textContent = text;
+    tag.className = `tag ${cls}`;
+}
+
+async function loadKachatBlocklist() {
+    const rows = $('kachat-block-rows');
+    let list;
+    try {
+        list = (await kachat('blocklist')).addresses ?? [];
+    } catch (e) {
+        const old = e.status === 404;
+        setBlockTag(old ? 'needs an update' : 'unavailable', old ? 'warn' : 'off');
+        $('kachat-block-add').disabled = old;
+        rows.innerHTML = `<tr><td colspan="5" class="muted">${escapeHtml(old ? BLOCK_OLD_BUILD : e.message)}</td></tr>`;
+        return;
+    }
+    $('kachat-block-add').disabled = false;
+    setBlockTag(list.length ? `${fmtNum(list.length)} blocked` : 'none blocked', list.length ? 'warn' : '');
+    rows.innerHTML = list.length
+        ? list
+              .map(
+                  (b) => `<tr>
+                    <td class="mono" title="${escapeHtml(b.address)}">${escapeHtml(chessShort(b.address))}</td>
+                    <td class="name">${escapeHtml(b.note || '')}</td>
+                    <td>${escapeHtml(b.added_at ? new Date(Number(b.added_at)).toLocaleString() : '–')}</td>
+                    <td>${b.purged === undefined || b.purged === null ? '–' : escapeHtml(fmtNum(b.purged))}</td>
+                    <td style="text-align:right"><button type="button" class="ghost" data-unblock="${escapeHtml(b.address)}">Unblock</button></td>
+                  </tr>`,
+              )
+              .join('')
+        : '<tr><td colspan="5" class="muted">Nobody is blocked.</td></tr>';
+}
+
+$('kachat-block-add').addEventListener('click', async () => {
+    const error = $('kachat-block-error');
+    const result = $('kachat-block-result');
+    error.hidden = true;
+    result.hidden = true;
+    const address = $('kachat-block-address').value.trim().toLowerCase();
+    const note = $('kachat-block-note').value.trim();
+    if (!blockAddressOk(address)) {
+        error.textContent = `That is not a ${networkView === 'testnet' ? 'kaspatest:' : 'kaspa:'} address.`;
+        error.hidden = false;
+        return;
+    }
+    if (!await askConfirm(`Block ${address}?\n\nEverything the indexer has from this address is deleted now, and nothing it sends is indexed again until you unblock it. Deleted data does not come back when you unblock.`)) return;
+    const button = $('kachat-block-add');
+    button.disabled = true;
+    try {
+        const r = await kachat('blocklist/add', { method: 'POST', body: note ? { address, note } : { address } });
+        const parts = Object.entries(r.purged ?? {})
+            .filter(([, n]) => n)
+            .map(([kind, n]) => `${BLOCK_KINDS[kind] ?? kind.replace(/_/g, ' ')} ${fmtNum(n)}`);
+        result.className = 'verdict ok';
+        result.textContent = `Blocked. ${parts.length ? `Deleted: ${parts.join(', ')}.` : 'There was nothing stored from it.'}`;
+        result.hidden = false;
+        $('kachat-block-address').value = '';
+        $('kachat-block-note').value = '';
+    } catch (e) {
+        error.textContent = e.status === 404 ? BLOCK_OLD_BUILD : e instanceof IndexerDown ? 'The indexer is not running.' : e.message;
+        error.hidden = false;
+    } finally {
+        button.disabled = false;
+        loadKachatBlocklist();
+    }
+});
+
+$('kachat-block-rows').addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-unblock]');
+    if (!button) return;
+    const address = button.dataset.unblock;
+    if (!await askConfirm(`Unblock ${address}?\n\nWhat it sends is indexed again from now on. What was deleted when it was blocked does not come back.`)) return;
+    button.disabled = true;
+    try {
+        await kachat('blocklist/remove', { method: 'POST', body: { address } });
+        toast('Unblocked.');
+    } catch (e) {
+        toast(e instanceof IndexerDown ? 'The indexer is not running.' : e.message, 'bad');
+    }
+    loadKachatBlocklist();
+});
+
+$('kachat-block-refresh').addEventListener('click', () => loadKachatBlocklist());
 $('kachat-jump').addEventListener('click', (event) => {
     const tile = event.target.closest('[data-goto]');
     if (tile) selectSubtab($('tab-kachat'), tile.dataset.goto);

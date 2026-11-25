@@ -3094,3 +3094,9 @@ body.dag-fullscreen { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
     .jump, .jump:hover:not(:disabled), .jump:focus-visible { transition: none; transform: none; }
 }
+
+/* Block: the address takes the room, the note what is left, the button its own width. */
+.block-add { align-items: flex-end; }
+.block-add label.stack { margin: 0; }
+.block-add label.stack:first-child { flex: 2 1 340px; }
+.block-add label.stack:nth-child(2) { flex: 1 1 200px; }
