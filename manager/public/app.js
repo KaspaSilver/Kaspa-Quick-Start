@@ -109,6 +109,55 @@ function kasShort(addr) {
     return m ? `${m[1]}:${m[2].slice(0, 4)}...${m[2].slice(-4)}` : s;
 }
 
+// Posts name their author by public key. A K account's address is that key's x-only part
+// (the 02/03 dropped) as a version-0 address, which is how the indexer matches the two.
+const KAS_CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
+const KAS_GENERATORS = [0x98f2bc8e61n, 0x79b76d99e2n, 0xf33e5fb3c4n, 0xae2eabe2a8n, 0x1e4f43e470n];
+
+function kasPolymod(values) {
+    let c = 1n;
+    for (const d of values) {
+        const c0 = c >> 35n;
+        c = ((c & 0x07ffffffffn) << 5n) ^ BigInt(d);
+        for (let i = 0; i < 5; i += 1) if ((c0 >> BigInt(i)) & 1n) c ^= KAS_GENERATORS[i];
+    }
+    return c ^ 1n;
+}
+
+/** The Kaspa address of a public key in hex, on the network on screen; '' when it isn't one. */
+function pubkeyAddress(hex) {
+    const x = /^(?:0[23])?([0-9a-f]{64})$/.exec(String(hex ?? '').toLowerCase());
+    if (!x) return '';
+    const hrp = networkView === 'testnet' ? 'kaspatest' : 'kaspa';
+    const data = [];
+    let acc = 0;
+    let bits = 0;
+    for (const b of [0, ...x[1].match(/../g).map((h) => parseInt(h, 16))]) {
+        acc = ((acc << 8) | b) & 0xfff;
+        bits += 8;
+        while (bits >= 5) {
+            bits -= 5;
+            data.push((acc >> bits) & 31);
+        }
+    }
+    if (bits) data.push((acc << (5 - bits)) & 31);
+    const mod = kasPolymod([...[...hrp].map((c) => c.charCodeAt(0) & 31), 0, ...data, 0, 0, 0, 0, 0, 0, 0, 0]);
+    const sum = Array.from({ length: 8 }, (_, i) => Number((mod >> BigInt(5 * (7 - i))) & 31n));
+    return `${hrp}:${[...data, ...sum].map((v) => KAS_CHARSET[v]).join('')}`;
+}
+
+/**
+ * An author's cell: Copy, then the short address (the whole one in its tooltip), so it can be
+ * pasted into Block or Time out. `inner` replaces the plain address text, e.g. with a link.
+ */
+function addrCell(address, inner) {
+    if (!address) return '<td class="muted">–</td>';
+    const a = escapeHtml(address);
+    return `<td class="mono addr-cell"><button type="button" class="copy-btn" data-copy="${a}" aria-label="Copy the address">Copy</button>${
+        inner ?? `<span title="${a}">${escapeHtml(kasShort(address))}</span>`
+    }</td>`;
+}
+
 function fmtBytes(text) {
     if (!text) return '–';
     return text; // docker already reports a human-readable size
@@ -5317,9 +5366,7 @@ function renderRecentRows(rows) {
                         kAge(Date.now() - r.timestamp),
                     )}</td>
                     <td>${escapeHtml(r.content_type)}</td>
-                    <td class="mono" title="${escapeHtml(r.sender_pubkey)}">${escapeHtml(
-                        r.sender_pubkey.slice(0, 12),
-                    )}…</td>
+                    ${addrCell(pubkeyAddress(r.sender_pubkey) || null)}
                     <td>${escapeHtml(r.preview) || '<span class="muted">–</span>'}</td>
                   </tr>`,
               )
@@ -5741,11 +5788,7 @@ async function loadBroadcastRows(page = bcastPage.page) {
                             kAge(Date.now() - r.timestamp),
                         )}</td>
                         <td>#${escapeHtml(r.channel)}</td>
-                        <td class="mono bcast-sender"><button type="button" class="copy-btn" data-copy="${escapeHtml(
-                            r.sender_address,
-                        )}" aria-label="Copy the sender's address">Copy</button><span title="${escapeHtml(r.sender_address)}">${escapeHtml(
-                            kasShort(r.sender_address),
-                        )}</span></td>
+                        ${addrCell(r.sender_address)}
                         <td>${escapeHtml(r.preview) || '<span class="muted">–</span>'}</td>
                       </tr>`,
                   )
@@ -6192,7 +6235,7 @@ async function loadKachatBlocklist() {
         ? list
               .map(
                   (b) => `<tr>
-                    <td class="mono" title="${escapeHtml(b.address)}">${escapeHtml(kasShort(b.address))}</td>
+                    ${addrCell(b.address)}
                     <td class="name">${escapeHtml(b.note || '')}</td>
                     <td>${escapeHtml(b.added_at ? new Date(Number(b.added_at)).toLocaleString() : '–')}</td>
                     <td>${b.purged === undefined || b.purged === null ? '–' : escapeHtml(fmtNum(b.purged))}</td>
@@ -6292,7 +6335,7 @@ async function loadTimeouts() {
         ? list
               .map(
                   (t) => `<tr>
-                    <td class="mono" title="${escapeHtml(t.address)}">${escapeHtml(kasShort(t.address))}</td>
+                    ${addrCell(t.address)}
                     <td class="name">${escapeHtml(t.note || '')}</td>
                     <td title="${escapeHtml(t.expires_at ? `Ends ${new Date(Number(t.expires_at)).toLocaleString()}` : '')}">${escapeHtml(timeLeft(t.expires_at))}</td>
                     <td>${t.purged === undefined || t.purged === null ? '–' : escapeHtml(fmtNum(t.purged))}</td>
@@ -8358,7 +8401,7 @@ async function loadArcadeBoard() {
     }
 }
 
-const kaplayNameCell = (a) => `<td class="mono" title="${escapeHtml(a)}">${escapeHtml(kasShort(a))}</td>`;
+const kaplayNameCell = (a) => addrCell(a);
 
 function renderChess(data, board) {
     const err = $('arcade-error');
@@ -8608,7 +8651,10 @@ async function loadProfilesHistory(page = 1) {
                 .map(
                     (x) =>
                         `<tr><td title="${escapeHtml(new Date(x.savedAt).toLocaleString())}">${escapeHtml(chessWhen(x.savedAt))}</td>` +
-                        `<td class="mono"><a href="#" data-profiles-address="${escapeHtml(x.address)}" title="Show only ${escapeHtml(x.address)}">${escapeHtml(kasShort(x.address))}</a></td>` +
+                        addrCell(
+                            x.address,
+                            `<a href="#" data-profiles-address="${escapeHtml(x.address)}" title="Show only ${escapeHtml(x.address)}">${escapeHtml(kasShort(x.address))}</a>`,
+                        ) +
                         `<td>${link(x.avatar)}</td><td>${link(x.banner)}</td><td>${link(x.bio)}</td><td>${link(x.linktree)}</td>` +
                         `<td>${x.current ? '<span class="tag ok">current</span>' : '<span class="muted">replaced</span>'}</td></tr>`,
                 )

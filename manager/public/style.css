@@ -1493,9 +1493,9 @@ table.ports td.note { color: var(--muted); font-size: 12.5px; font-family: inher
 }
 .copy-btn:hover { color: var(--text); border-color: var(--accent-dim); }
 .copy-btn.copied { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
-/* Public chat history: the sender's copy button sits before the shortened address. */
-.bcast-sender { white-space: nowrap; }
-.bcast-sender .copy-btn { margin-right: 8px; padding: 2px 8px; font-family: var(--font); vertical-align: middle; }
+/* An author's address: Copy, then the shortened address (addrCell in app.js). */
+.addr-cell { white-space: nowrap; }
+.addr-cell .copy-btn { margin-right: 8px; padding: 2px 8px; font-family: var(--font); vertical-align: middle; }
 
 #scan-results td { font-size: 13px; }
 #scan-results a { color: var(--accent); }
