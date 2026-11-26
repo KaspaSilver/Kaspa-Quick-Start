@@ -101,6 +101,14 @@ const fmtNum = (n) => (n === null || n === undefined || n === '' ? '–' : Numbe
 const escapeHtml = (value) =>
     String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
+// Every Kaspa address the panel shows reads kaspa:xxxx...xxxx: the prefix, then the first and
+// last four. The whole address stays in the tooltip or behind Copy.
+function kasShort(addr) {
+    const s = String(addr ?? '');
+    const m = /^([a-z]+):([a-z0-9]{12,})$/.exec(s);
+    return m ? `${m[1]}:${m[2].slice(0, 4)}...${m[2].slice(-4)}` : s;
+}
+
 function fmtBytes(text) {
     if (!text) return '–';
     return text; // docker already reports a human-readable size
@@ -5736,8 +5744,8 @@ async function loadBroadcastRows(page = bcastPage.page) {
                         <td class="mono bcast-sender"><button type="button" class="copy-btn" data-copy="${escapeHtml(
                             r.sender_address,
                         )}" aria-label="Copy the sender's address">Copy</button><span title="${escapeHtml(r.sender_address)}">${escapeHtml(
-                            r.sender_address.slice(0, 18),
-                        )}…</span></td>
+                            kasShort(r.sender_address),
+                        )}</span></td>
                         <td>${escapeHtml(r.preview) || '<span class="muted">–</span>'}</td>
                       </tr>`,
                   )
@@ -6184,7 +6192,7 @@ async function loadKachatBlocklist() {
         ? list
               .map(
                   (b) => `<tr>
-                    <td class="mono" title="${escapeHtml(b.address)}">${escapeHtml(chessShort(b.address))}</td>
+                    <td class="mono" title="${escapeHtml(b.address)}">${escapeHtml(kasShort(b.address))}</td>
                     <td class="name">${escapeHtml(b.note || '')}</td>
                     <td>${escapeHtml(b.added_at ? new Date(Number(b.added_at)).toLocaleString() : '–')}</td>
                     <td>${b.purged === undefined || b.purged === null ? '–' : escapeHtml(fmtNum(b.purged))}</td>
@@ -6207,7 +6215,7 @@ $('kachat-block-add').addEventListener('click', async () => {
         error.hidden = false;
         return;
     }
-    if (!await askConfirm(`Block ${address}?\n\nEverything the indexer has from this address is deleted now, and nothing it sends is indexed again until you unblock it. Deleted data does not come back when you unblock.`)) return;
+    if (!await askConfirm(`Block ${kasShort(address)}?\n\nEverything the indexer has from this address is deleted now, and nothing it sends is indexed again until you unblock it. Deleted data does not come back when you unblock.`)) return;
     const button = $('kachat-block-add');
     button.disabled = true;
     try {
@@ -6235,7 +6243,7 @@ $('kachat-block-rows').addEventListener('click', async (event) => {
     const button = event.target.closest('[data-unblock]');
     if (!button) return;
     const address = button.dataset.unblock;
-    if (!await askConfirm(`Unblock ${address}?\n\nWhat it sends is indexed again from now on. What was deleted when it was blocked does not come back.`)) return;
+    if (!await askConfirm(`Unblock ${kasShort(address)}?\n\nWhat it sends is indexed again from now on. What was deleted when it was blocked does not come back.`)) return;
     button.disabled = true;
     try {
         await kachat('blocklist/remove', { method: 'POST', body: { address } });
@@ -6284,7 +6292,7 @@ async function loadTimeouts() {
         ? list
               .map(
                   (t) => `<tr>
-                    <td class="mono" title="${escapeHtml(t.address)}">${escapeHtml(chessShort(t.address))}</td>
+                    <td class="mono" title="${escapeHtml(t.address)}">${escapeHtml(kasShort(t.address))}</td>
                     <td class="name">${escapeHtml(t.note || '')}</td>
                     <td title="${escapeHtml(t.expires_at ? `Ends ${new Date(Number(t.expires_at)).toLocaleString()}` : '')}">${escapeHtml(timeLeft(t.expires_at))}</td>
                     <td>${t.purged === undefined || t.purged === null ? '–' : escapeHtml(fmtNum(t.purged))}</td>
@@ -6307,7 +6315,7 @@ $('kachat-to-add').addEventListener('click', async () => {
         error.hidden = false;
         return;
     }
-    if (!await askConfirm(`Time out ${address} for 24 hours?\n\nThis blocks its public posts for 24 hours and deletes the last 24 hours of its public posts now (Posts, room messages, game scores, profile records). Its private chats are not limited. Deleted posts do not come back.`)) return;
+    if (!await askConfirm(`Time out ${kasShort(address)} for 24 hours?\n\nThis blocks its public posts for 24 hours and deletes the last 24 hours of its public posts now (Posts, room messages, game scores, profile records). Its private chats are not limited. Deleted posts do not come back.`)) return;
     const button = $('kachat-to-add');
     button.disabled = true;
     try {
@@ -6334,7 +6342,7 @@ $('kachat-to-rows').addEventListener('click', async (event) => {
     const button = event.target.closest('[data-timeout-end]');
     if (!button) return;
     const address = button.dataset.timeoutEnd;
-    if (!await askConfirm(`End the timeout for ${address} now?\n\nIts public posts are indexed again from now on. What was deleted when the timeout started does not come back.`)) return;
+    if (!await askConfirm(`End the timeout for ${kasShort(address)} now?\n\nIts public posts are indexed again from now on. What was deleted when the timeout started does not come back.`)) return;
     button.disabled = true;
     try {
         const r = await kachat('timeouts/remove', { method: 'POST', body: { address } });
@@ -7913,7 +7921,6 @@ function renderQr(el, text) {
 // --- KaChat bots: one square per kind (lib/bots.js on the server) ---
 
 let botsState = null;
-const botShort = (a) => (a && a.length > 26 ? `${a.slice(0, 16)}…${a.slice(-6)}` : a || '');
 const STAGE_TEXT = {
     off: 'Off',
     awaiting_pairing: 'Starting',
@@ -7996,7 +8003,7 @@ function renderBotReset() {
             (b) => `
       <div class="bot-reset-row" data-bot="${escapeHtml(b.id)}">
         <div><strong>${escapeHtml(b.title)}</strong>
-          <div class="muted"><code>${escapeHtml(botShort(b.address))}</code>${
+          <div class="muted"><code>${escapeHtml(kasShort(b.address))}</code>${
               b.balanceKas != null ? `, holds ${b.balanceKas.toFixed(8)} KAS` : ''
           }</div></div>
         <div class="row">
@@ -8073,7 +8080,7 @@ function botCard(b, d) {
         <div class="bot-wallet-row">
           <div class="bot-wallet-qr bot-qr" data-address="${escapeHtml(b.address)}"></div>
           <div>
-            <div class="row x4kas-copy"><code>${escapeHtml(b.address)}</code>
+            <div class="row x4kas-copy"><code title="${escapeHtml(b.address)}">${escapeHtml(kasShort(b.address))}</code>
               <button type="button" class="ghost mini" data-copy="${escapeHtml(b.address)}">Copy</button></div>
             ${low ? '<p class="hint bad">Its balance is low: send it a few KAS so it can keep messaging you.</p>' : ''}
             ${st?.error ? `<p class="error">${escapeHtml(st.error)}</p>` : ''}
@@ -8271,10 +8278,6 @@ $('bot-update').addEventListener('click', async () => {
 
 // Read-only views of Arcade's boards: the chess leaderboard the K-Digital-Freedom-Indexer replays from
 // #chess-arena and #chess-bots, and the Snake and 2048 scores from #kplay-arcade.
-const chessShort = (addr) => {
-    const s = String(addr ?? '');
-    return s.length > 24 ? `${s.slice(0, 12)}…${s.slice(-6)}` : s;
-};
 const chessWhen = (ms) => {
     if (!ms) return '–';
     try {
@@ -8355,7 +8358,7 @@ async function loadArcadeBoard() {
     }
 }
 
-const kaplayNameCell = (a) => `<td class="mono" title="${escapeHtml(a)}">${escapeHtml(chessShort(a))}</td>`;
+const kaplayNameCell = (a) => `<td class="mono" title="${escapeHtml(a)}">${escapeHtml(kasShort(a))}</td>`;
 
 function renderChess(data, board) {
     const err = $('arcade-error');
@@ -8605,7 +8608,7 @@ async function loadProfilesHistory(page = 1) {
                 .map(
                     (x) =>
                         `<tr><td title="${escapeHtml(new Date(x.savedAt).toLocaleString())}">${escapeHtml(chessWhen(x.savedAt))}</td>` +
-                        `<td class="mono"><a href="#" data-profiles-address="${escapeHtml(x.address)}" title="Show only ${escapeHtml(x.address)}">${escapeHtml(chessShort(x.address))}</a></td>` +
+                        `<td class="mono"><a href="#" data-profiles-address="${escapeHtml(x.address)}" title="Show only ${escapeHtml(x.address)}">${escapeHtml(kasShort(x.address))}</a></td>` +
                         `<td>${link(x.avatar)}</td><td>${link(x.banner)}</td><td>${link(x.bio)}</td><td>${link(x.linktree)}</td>` +
                         `<td>${x.current ? '<span class="tag ok">current</span>' : '<span class="muted">replaced</span>'}</td></tr>`,
                 )
