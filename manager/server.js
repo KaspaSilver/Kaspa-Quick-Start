@@ -5016,9 +5016,13 @@ function pinnedImages() {
 // A build's cache is last touched while it runs, a little before its image is
 // stamped Created; a slow Rust build takes well over an hour. Kept generous.
 const BUILD_MARGIN_HOURS = 24;
+// The most build cache Clean up keeps, most recently used first. One indexer build's cache
+// fits well inside it, so the next update stays fast; what goes is older builds' cache, which
+// piles up when the indexer is rebuilt often (85 GB after a busy day, 2026-11-26).
+const BUILD_CACHE_KEEP = '20GB';
 
 /**
- * Clears what accumulates from updates without costing the next update anything:
+ * Clears what accumulates from updates without slowing the next update down:
  *
  * 1. Untagged images: the previous image each rebuild replaced.
  * 2. Old versions of this stack's own images that no container uses (a kaspad
@@ -5028,9 +5032,11 @@ const BUILD_MARGIN_HOURS = 24;
  *    cache it used, so cache last used before the oldest image still in service
  *    was built belongs only to superseded builds: the next update of anything
  *    installed would not have reused it anyway.
+ * 4. Build cache over BUILD_CACHE_KEEP, least recently used first. Step 3 alone
+ *    keeps everything newer than the oldest image in service, so with a months-old
+ *    kaspad image and an indexer rebuilt many times since, it freed next to nothing.
  *
- * Third-party images and the cache the current builds use are kept, so updates
- * stay exactly as fast as before.
+ * Third-party images and the newest build cache are kept, so updates stay fast.
  */
 async function smartClean(onLine) {
     const out = async (args) => (await dockerctl.docker(args, { timeoutMs: 5 * 60_000 })).stdout.trim();
@@ -5080,6 +5086,38 @@ async function smartClean(onLine) {
     const args = ['builder', 'prune', '--all', '--force', '--filter', `until=${hours}h`];
     onLine(`$ docker ${args.join(' ')}`);
     await dockerctl.docker(args, { onLine, timeoutMs: 30 * 60_000 });
+
+    onLine(`Keeping the ${BUILD_CACHE_KEEP.replace('GB', ' GB')} of build cache used most recently.`);
+    // --max-used-space is Docker 28's name; older versions call the same limit --keep-storage.
+    for (const flag of ['--max-used-space', '--keep-storage']) {
+        const capArgs = ['builder', 'prune', '--all', '--force', flag, BUILD_CACHE_KEEP];
+        onLine(`$ docker ${capArgs.join(' ')}`);
+        try {
+            await dockerctl.docker(capArgs, { onLine, timeoutMs: 30 * 60_000 });
+            break;
+        } catch (e) {
+            if (!/unknown flag/i.test(e.message) || flag === '--keep-storage') throw e;
+        }
+    }
+}
+
+/** Docker's sizes ("85.21GB", "877.3MB", "0B") in bytes; 0 for anything else. */
+const DOCKER_UNITS = { '': 1, K: 1e3, M: 1e6, G: 1e9, T: 1e12 };
+function dockerBytes(text) {
+    const m = /^([\d.]+)\s*([kmgt]?)b$/i.exec(String(text ?? '').trim());
+    return m ? Number(m[1]) * DOCKER_UNITS[m[2].toUpperCase()] : 0;
+}
+
+/** What Docker's images and build cache take up now, in bytes. */
+async function dockerCacheBytes() {
+    const { stdout } = await dockerctl.docker(['system', 'df', '--format', '{{json .}}'], { timeoutMs: 60_000 });
+    let total = 0;
+    for (const line of stdout.split('\n')) {
+        if (!line.trim().startsWith('{')) continue;
+        const r = JSON.parse(line);
+        if (r.Type === 'Images' || r.Type === 'Build Cache') total += dockerBytes(r.Size);
+    }
+    return total;
 }
 
 route('GET', /^\/api\/system\/disk-cache$/, async (req, res) => {
@@ -5107,10 +5145,16 @@ route('POST', /^\/api\/system\/disk-cache\/clean$/, async (req, res) => {
     const clean = CACHE_CLEANS[String(body.what || '')];
     if (!clean) return fail(res, 400, 'Unknown clean-up.');
     const job = startJob(clean.title, async (onLine) => {
+        const before = await dockerCacheBytes().catch(() => null);
         if (clean.run) await clean.run(onLine);
         for (const args of clean.steps ?? []) {
             onLine(`$ docker ${args.join(' ')}`);
             await dockerctl.docker(args, { onLine, timeoutMs: 30 * 60_000 });
+        }
+        const after = await dockerCacheBytes().catch(() => null);
+        if (before !== null && after !== null) {
+            const freed = Math.max(0, before - after);
+            onLine(`Freed ${(freed / 1e9).toFixed(1)} GB. Images and build cache now take ${(after / 1e9).toFixed(1)} GB.`);
         }
         onLine('Volumes and containers were not touched.');
     });

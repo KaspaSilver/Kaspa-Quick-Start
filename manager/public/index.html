@@ -3575,9 +3575,9 @@
               image a container still uses. Nothing has to resync.</li>
             <li>Docker's cache is shared by everything on this machine, so this also
               clears unused images and build cache left by your other projects.</li>
-            <li><strong>Clean up</strong> keeps everything the current builds use, so
-              updates stay as fast as before. Only the deeper options below it make
-              the next update rebuild from scratch.</li>
+            <li><strong>Clean up</strong> keeps the newest 20&nbsp;GB of build cache, which
+              covers what the current builds use, so updates stay fast. Only the deeper
+              options below it make the next update rebuild from scratch.</li>
           </ul>
           <table class="kv-table" id="cache-usage">
             <thead><tr><th>What</th><th>Count</th><th>Size</th><th>Can be freed</th></tr></thead>
@@ -3590,8 +3590,9 @@
           <p class="hint">
             <strong>Clean up</strong> removes old untagged images, old versions of this
             stack's own images that nothing runs any more, and build cache left by
-            superseded builds. The cache your current builds use is kept, so the next
-            update is just as fast. This is the one to use routinely.
+            superseded builds, then trims the build cache to the 20&nbsp;GB used most
+            recently. When it is done the log says how much it freed. This is the one to
+            use routinely.
           </p>
           <details>
             <summary>Deeper clean-ups (the next update is slower)</summary>
