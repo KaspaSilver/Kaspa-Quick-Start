@@ -5908,6 +5908,7 @@ function renderKachatOffline() {
         ['kachat-recent', 5],
         ['kachat-bcast-rows', 5],
         ['kachat-block-rows', 5],
+        ['kachat-to-rows', 5],
     ]) {
         $(id).innerHTML = `<tr><td colspan="${span}" class="muted">${message}</td></tr>`;
     }
@@ -5969,6 +5970,7 @@ function refreshKachatPanel() {
             break;
         case 'kachat-block':
             loadKachatBlocklist();
+            loadTimeouts();
             break;
         case 'kachat-wordfilter':
             loadWordFilter();
@@ -6243,6 +6245,105 @@ $('kachat-block-rows').addEventListener('click', async (event) => {
 });
 
 $('kachat-block-refresh').addEventListener('click', () => loadKachatBlocklist());
+
+// ---- Timeouts: a 24-hour block that also deletes the last 24 hours of public posts ----
+
+const TIMEOUT_OLD_BUILD = 'This indexer build cannot time out addresses yet. Update the indexer under Updates once a build with timeouts is out.';
+
+function setTimeoutTag(text, cls = '') {
+    const tag = $('kachat-to-tag');
+    tag.textContent = text;
+    tag.className = `tag ${cls}`;
+}
+
+// Minutes are as fine as it needs: the list is redrawn by the 8-second refresh.
+function timeLeft(expiresAt) {
+    const min = Math.ceil((Number(expiresAt) - Date.now()) / 60_000);
+    if (!(min > 0)) return 'ending';
+    const h = Math.floor(min / 60);
+    return h ? `${h} h ${min % 60} min` : `${min} min`;
+}
+
+async function loadTimeouts() {
+    const rows = $('kachat-to-rows');
+    let list;
+    try {
+        list = (await kachat('timeouts')).timeouts ?? [];
+    } catch (e) {
+        const old = e.status === 404;
+        setTimeoutTag(old ? 'needs an update' : 'unavailable', old ? 'warn' : 'off');
+        $('kachat-to-add').disabled = old;
+        rows.innerHTML = `<tr><td colspan="5" class="muted">${escapeHtml(old ? TIMEOUT_OLD_BUILD : e instanceof IndexerDown ? 'The indexer is not running.' : e.message)}</td></tr>`;
+        return;
+    }
+    $('kachat-to-add').disabled = false;
+    setTimeoutTag(list.length ? `${fmtNum(list.length)} running` : 'none running', list.length ? 'warn' : '');
+    rows.innerHTML = list.length
+        ? list
+              .map(
+                  (t) => `<tr>
+                    <td class="mono" title="${escapeHtml(t.address)}">${escapeHtml(chessShort(t.address))}</td>
+                    <td class="name">${escapeHtml(t.note || '')}</td>
+                    <td title="${escapeHtml(t.expires_at ? `Ends ${new Date(Number(t.expires_at)).toLocaleString()}` : '')}">${escapeHtml(timeLeft(t.expires_at))}</td>
+                    <td>${t.purged === undefined || t.purged === null ? '–' : escapeHtml(fmtNum(t.purged))}</td>
+                    <td style="text-align:right"><button type="button" class="ghost" data-timeout-end="${escapeHtml(t.address)}">End now</button></td>
+                  </tr>`,
+              )
+              .join('')
+        : '<tr><td colspan="5" class="muted">No address is timed out.</td></tr>';
+}
+
+$('kachat-to-add').addEventListener('click', async () => {
+    const error = $('kachat-to-error');
+    const result = $('kachat-to-result');
+    error.hidden = true;
+    result.hidden = true;
+    const address = $('kachat-to-address').value.trim().toLowerCase();
+    const note = $('kachat-to-note').value.trim();
+    if (!blockAddressOk(address)) {
+        error.textContent = `That is not a ${networkView === 'testnet' ? 'kaspatest:' : 'kaspa:'} address.`;
+        error.hidden = false;
+        return;
+    }
+    if (!await askConfirm(`Time out ${address} for 24 hours?\n\nWhat it posted publicly in the last 24 hours is deleted now (KaPosts, room messages, game scores, profile records), and nothing it sends is indexed until the timeout ends. Deleted posts do not come back.`)) return;
+    const button = $('kachat-to-add');
+    button.disabled = true;
+    try {
+        const r = await kachat('timeouts/add', { method: 'POST', body: note ? { address, note } : { address } });
+        const parts = Object.entries(r.purged ?? {})
+            .filter(([, n]) => n)
+            .map(([kind, n]) => `${BLOCK_KINDS[kind] ?? kind.replace(/_/g, ' ')} ${fmtNum(n)}`);
+        const ends = r.expires_at ? ` It ends ${new Date(Number(r.expires_at)).toLocaleString()}.` : '';
+        result.className = 'verdict ok';
+        result.textContent = `Timed out.${ends} ${parts.length ? `Deleted: ${parts.join(', ')}.` : 'It had posted nothing publicly in the last 24 hours.'}`;
+        result.hidden = false;
+        $('kachat-to-address').value = '';
+        $('kachat-to-note').value = '';
+    } catch (e) {
+        error.textContent = e.status === 404 ? TIMEOUT_OLD_BUILD : e instanceof IndexerDown ? 'The indexer is not running.' : e.message;
+        error.hidden = false;
+    } finally {
+        button.disabled = false;
+        loadTimeouts();
+    }
+});
+
+$('kachat-to-rows').addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-timeout-end]');
+    if (!button) return;
+    const address = button.dataset.timeoutEnd;
+    if (!await askConfirm(`End the timeout for ${address} now?\n\nWhat it sends is indexed again from now on. What was deleted when the timeout started does not come back.`)) return;
+    button.disabled = true;
+    try {
+        const r = await kachat('timeouts/remove', { method: 'POST', body: { address } });
+        toast(r.deleted ? 'Timeout ended.' : 'That timeout had already ended.');
+    } catch (e) {
+        toast(e instanceof IndexerDown ? 'The indexer is not running.' : e.message, 'bad');
+    }
+    loadTimeouts();
+});
+
+$('kachat-to-refresh').addEventListener('click', () => loadTimeouts());
 
 // ---- Word filter: public chats and KaPosts with a listed word are not stored ----
 

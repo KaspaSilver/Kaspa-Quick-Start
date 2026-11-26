@@ -1148,7 +1148,7 @@
         <button class="subtab-btn quiet" data-subtab="kachat-transfer">Export / Import</button>
         <button class="subtab-btn quiet" data-subtab="kachat-updates">Updates</button>
         <button class="subtab-btn quiet" data-subtab="kachat-log">Logs</button>
-        <button class="subtab-btn quiet" data-subtab="kachat-block">Block</button>
+        <button class="subtab-btn quiet" data-subtab="kachat-block">Block &amp; time out</button>
         <button class="subtab-btn quiet" data-subtab="kachat-wordfilter">Word filter</button>
         <button class="subtab-btn quiet danger" data-subtab="kachat-delete">Delete</button>
         <button class="subtab-btn quiet danger" data-subtab="kachat-uninstall">Uninstall</button>
@@ -1754,6 +1754,53 @@
             Unblocking only lifts the block. What was deleted when the address was added does
             not come back by itself; KaPost posts can be recovered under Export / Import, Recover
             missed KaPost posts.
+          </p>
+        </article>
+
+        <!--
+          A 24-hour block: nothing the address sends is stored while it runs, and starting one
+          deletes what it posted publicly in the last 24 hours. The indexer's /api/timeouts;
+          an older build answers 404 and the cards say so.
+        -->
+        <article class="card span2 danger-zone">
+          <div class="node-head">
+            <h3>Time out an address for 24 hours</h3>
+            <span id="kachat-to-tag" class="tag">–</span>
+          </div>
+          <p class="muted">
+            For 24 hours nothing this address sends is indexed, chats included, as if it were
+            blocked; what it sends in that time is never stored, even afterwards. Starting the
+            timeout deletes what it posted publicly in the last 24 hours: KaPosts, room
+            messages, game scores and profile records. Its private chats stay. Timing out an
+            address that is already timed out starts its 24 hours again.
+          </p>
+          <div class="row block-add">
+            <label class="stack">Address
+              <input id="kachat-to-address" placeholder="kaspa:q…" autocomplete="off" spellcheck="false">
+            </label>
+            <label class="stack">Note, for you
+              <input id="kachat-to-note" placeholder="optional, for example spam" maxlength="200">
+            </label>
+            <button type="button" id="kachat-to-add" class="danger">Time out 24 h</button>
+          </div>
+          <p class="error" id="kachat-to-error" hidden></p>
+          <div id="kachat-to-result" class="verdict" hidden></div>
+        </article>
+
+        <article class="card span2">
+          <div class="node-head">
+            <h3>Running timeouts</h3>
+            <button type="button" id="kachat-to-refresh" class="ghost" style="margin-left:auto">Refresh</button>
+          </div>
+          <div class="scroll-x">
+            <table class="blocks">
+              <thead><tr><th>Address</th><th>Note</th><th>Time left</th><th>Deleted</th><th></th></tr></thead>
+              <tbody id="kachat-to-rows"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
+            </table>
+          </div>
+          <p class="hint">
+            A timeout leaves the list by itself when its 24 hours are up. Ending one early only
+            lets the address back in; what was deleted does not come back.
           </p>
         </article>
       </div>
