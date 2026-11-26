@@ -1496,6 +1496,7 @@ table.ports td.note { color: var(--muted); font-size: 12.5px; font-family: inher
 /* An author's address: Copy, then the shortened address (addrCell in app.js). */
 .addr-cell { white-space: nowrap; }
 .addr-cell .copy-btn { margin-right: 8px; padding: 2px 8px; font-family: var(--font); vertical-align: middle; }
+.addr-cell [data-name-for] { display: inline-block; max-width: 18em; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
 
 #scan-results td { font-size: 13px; }
 #scan-results a { color: var(--accent); }

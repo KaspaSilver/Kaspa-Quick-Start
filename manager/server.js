@@ -4175,6 +4175,57 @@ route('GET', /^\/api\/names\/rules$/, async (req, res, match, url) => {
 });
 
 /**
+ * The .kachat name of each address, for the Indexer screens that list authors. Asked of whatever
+ * answers /identity on that network's public name (.kachat Domains when it is routed there,
+ * else the indexer's own webserver) with its POST /identity/batch, and kept for ten minutes:
+ * the lists refresh every few seconds and names rarely change. Answers { names: {address: label} },
+ * label null for an address without one.
+ */
+const identityCache = new Map(); // address -> { label, at }
+const IDENTITY_KEEP_MS = 10 * 60_000;
+
+route('POST', /^\/api\/names\/identities$/, async (req, res, match, url) => {
+    const net = namesNet(url);
+    const body = await readBody(req);
+    const asked = [...new Set((Array.isArray(body.addresses) ? body.addresses : []).map(String))].slice(0, 200);
+    const now = Date.now();
+    const names = {};
+    const missing = [];
+    for (const a of asked) {
+        const kept = identityCache.get(a);
+        if (kept && now - kept.at < IDENTITY_KEEP_MS) names[a] = kept.label;
+        else missing.push(a);
+    }
+    if (missing.length) {
+        const origin = kachatDomains.routed(net)
+            ? `http://${kachatDomains.NETWORKS[net].host}:3080`
+            : net === 'testnet'
+              ? 'http://kachat-app-testnet:3080'
+              : 'http://kachat-app:3080';
+        try {
+            const r = await fetch(`${origin}/identity/batch`, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ addresses: missing }),
+                signal: AbortSignal.timeout(10_000),
+            });
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            const found = (await r.json()).identities ?? {};
+            for (const a of missing) {
+                const label = typeof found[a]?.label === 'string' && found[a].label ? found[a].label : null;
+                identityCache.set(a, { label, at: now });
+                names[a] = label;
+            }
+            while (identityCache.size > 5000) identityCache.delete(identityCache.keys().next().value);
+        } catch {
+            // Nothing answered (indexer down, or a build without names): the addresses stay as
+            // they are, and the next refresh asks again.
+        }
+    }
+    sendJson(res, 200, { names });
+});
+
+/**
  * Point one network's .kachat Domains server at a manifest in conf/names, and make it re-read
  * it when it is running. `up -d` applies a changed manifest *path* (it recreates the
  * container), but a new manifest under the same file name -- the usual case after a new

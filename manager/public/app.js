@@ -146,16 +146,59 @@ function pubkeyAddress(hex) {
     return `${hrp}:${[...data, ...sum].map((v) => KAS_CHARSET[v]).join('')}`;
 }
 
+// .kachat names of the addresses on screen, from the panel's /api/names/identities: address ->
+// { label, at }, label null for none. Kept for ten minutes, a miss for two, so the 8-second
+// refreshes draw names straight away and ask only for addresses not seen lately.
+const kasNames = new Map();
+const kasNamesWanted = new Set();
+let kasNamesTimer = null;
+
+function kasName(address) {
+    const kept = kasNames.get(address);
+    const fresh = kept && Date.now() - kept.at < (kept.label ? 10 : 2) * 60_000;
+    if (!fresh) {
+        kasNamesWanted.add(address);
+        kasNamesTimer ??= setTimeout(fetchKasNames, 0);
+    }
+    return kept?.label || '';
+}
+
+/** One request per network for every address the last render wanted, then the names drawn in. */
+async function fetchKasNames() {
+    kasNamesTimer = null;
+    const wanted = [...kasNamesWanted];
+    kasNamesWanted.clear();
+    for (const net of ['mainnet', 'testnet']) {
+        const list = wanted.filter((a) => a.startsWith('kaspatest:') === (net === 'testnet')).slice(0, 200);
+        if (!list.length) continue;
+        let names;
+        try {
+            names = (await api(`/api/names/identities?net=${net}`, { method: 'POST', body: { addresses: list } })).names ?? {};
+        } catch {
+            continue;
+        }
+        const now = Date.now();
+        for (const a of list) if (a in names) kasNames.set(a, { label: names[a], at: now });
+    }
+    for (const el of document.querySelectorAll('[data-name-for]')) {
+        const label = kasNames.get(el.dataset.nameFor)?.label;
+        if (label && el.textContent !== label) el.textContent = label;
+    }
+}
+
 /**
- * An author's cell: Copy, then the short address (the whole one in its tooltip), so it can be
- * pasted into Block or Time out. `inner` replaces the plain address text, e.g. with a link.
+ * An author's cell: Copy, then the author's .kachat name, or the short address when it has
+ * none (the whole address in its tooltip either way). Copy always copies the address, so it
+ * can be pasted into Block or Time out. `link` makes the text a link with those attributes.
  */
-function addrCell(address, inner) {
+function addrCell(address, link = '') {
     if (!address) return '<td class="muted">–</td>';
     const a = escapeHtml(address);
-    return `<td class="mono addr-cell"><button type="button" class="copy-btn" data-copy="${a}" aria-label="Copy the address">Copy</button>${
-        inner ?? `<span title="${a}">${escapeHtml(kasShort(address))}</span>`
-    }</td>`;
+    const text = escapeHtml(kasName(address) || kasShort(address));
+    const tag = link ? 'a' : 'span';
+    return `<td class="mono addr-cell"><button type="button" class="copy-btn" data-copy="${a}" aria-label="Copy the address">Copy</button><${tag}${
+        link ? ` href="#" ${link}` : ` title="${a}"`
+    } data-name-for="${a}">${text}</${tag}></td>`;
 }
 
 function fmtBytes(text) {
@@ -8651,10 +8694,7 @@ async function loadProfilesHistory(page = 1) {
                 .map(
                     (x) =>
                         `<tr><td title="${escapeHtml(new Date(x.savedAt).toLocaleString())}">${escapeHtml(chessWhen(x.savedAt))}</td>` +
-                        addrCell(
-                            x.address,
-                            `<a href="#" data-profiles-address="${escapeHtml(x.address)}" title="Show only ${escapeHtml(x.address)}">${escapeHtml(kasShort(x.address))}</a>`,
-                        ) +
+                        addrCell(x.address, `data-profiles-address="${escapeHtml(x.address)}" title="Show only ${escapeHtml(x.address)}"`) +
                         `<td>${link(x.avatar)}</td><td>${link(x.banner)}</td><td>${link(x.bio)}</td><td>${link(x.linktree)}</td>` +
                         `<td>${x.current ? '<span class="tag ok">current</span>' : '<span class="muted">replaced</span>'}</td></tr>`,
                 )
