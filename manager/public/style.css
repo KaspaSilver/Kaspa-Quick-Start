@@ -2098,15 +2098,25 @@ ul.plain li { margin: 8px 0; color: var(--muted); font-size: 13.5px; }
    total look wrong; the marker says why it is there with its switch off. */
 .channel-card.untracked { border: 1px dashed var(--line); }
 
+/* The count, with the remove button (a red trash can) in the bottom-right corner,
+   away from the switch so it isn't hit by mistake. */
+.channel-card .foot {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 10px;
+}
 .channel-card .drop {
+    display: inline-flex;
     background: none;
     border: 0;
-    color: var(--muted);
+    border-radius: 6px;
+    color: var(--danger);
     cursor: pointer;
-    padding: 0 2px;
-    font-size: 12px;
+    padding: 4px;
+    margin: 0 -4px -4px 0;
 }
-.channel-card .drop:hover { color: var(--danger); }
+.channel-card .drop:hover { background: color-mix(in srgb, var(--danger) 15%, transparent); }
 
 /* A channel KaPlay plays chess over: a line under the count says it is games, not chat. */
 .channel-card .kind {

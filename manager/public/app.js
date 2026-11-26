@@ -5594,10 +5594,12 @@ function renderChannels(counts, total) {
         return `<div class="channel-card${on ? '' : ' off'}${on ? '' : ' untracked'}">
           <div class="head">
             <span class="name" title="#${escapeHtml(name)}">#${escapeHtml(name)}</span>
-            ${removable ? `<button type="button" class="drop" data-drop-channel="${escapeHtml(name)}" title="Remove from the list">✕</button>` : ''}
             <label class="switch"><input type="checkbox" data-channel="${escapeHtml(name)}"${on ? ' checked' : ''}><span class="track"></span></label>
           </div>
-          <div class="count">${fmtNum(counts[name] || 0)}</div>
+          <div class="foot">
+            <div class="count">${fmtNum(counts[name] || 0)}</div>
+            ${removable ? `<button type="button" class="drop" data-drop-channel="${escapeHtml(name)}" title="Remove from the list" aria-label="Remove #${escapeHtml(name)} from the list">${TRASH_SVG}</button>` : ''}
+          </div>
         </div>`;
     };
 
@@ -5746,7 +5748,7 @@ $('kachat-channels').addEventListener('change', toggleChannel);
 $('kaplay-rooms').addEventListener('change', toggleChannel);
 
 $('kachat-channels').addEventListener('click', (event) => {
-    const channel = event.target.dataset?.dropChannel;
+    const channel = event.target.closest('[data-drop-channel]')?.dataset.dropChannel;
     if (!channel) return;
     channelState.tracked = channelState.tracked.filter((c) => c !== channel);
     setChannelsDirty(true);
