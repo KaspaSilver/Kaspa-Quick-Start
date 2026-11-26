@@ -5733,9 +5733,11 @@ async function loadBroadcastRows(page = bcastPage.page) {
                             kAge(Date.now() - r.timestamp),
                         )}</td>
                         <td>#${escapeHtml(r.channel)}</td>
-                        <td class="mono" title="${escapeHtml(r.sender_address)}">${escapeHtml(
+                        <td class="mono bcast-sender"><button type="button" class="copy-btn" data-copy="${escapeHtml(
+                            r.sender_address,
+                        )}" aria-label="Copy the sender's address">Copy</button><span title="${escapeHtml(r.sender_address)}">${escapeHtml(
                             r.sender_address.slice(0, 18),
-                        )}…</td>
+                        )}…</span></td>
                         <td>${escapeHtml(r.preview) || '<span class="muted">–</span>'}</td>
                       </tr>`,
                   )
