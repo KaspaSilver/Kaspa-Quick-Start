@@ -4184,6 +4184,21 @@ route('GET', /^\/api\/names\/rules$/, async (req, res, match, url) => {
 const identityCache = new Map(); // address -> { label, at }
 const IDENTITY_KEEP_MS = 10 * 60_000;
 
+// The Public chats rooms deleted on the Channels cards (see deletedChannels in store.js).
+route('GET', /^\/api\/kachat\/deleted-channels$/, async (req, res, match, url) => {
+    sendJson(res, 200, { channels: loadManagerConfig().deletedChannels[namesNet(url)] ?? [] });
+});
+
+route('POST', /^\/api\/kachat\/deleted-channels$/, async (req, res, match, url) => {
+    const body = await readBody(req);
+    if (!Array.isArray(body.channels)) return sendJson(res, 400, { error: 'channels must be a list.' });
+    const channels = [...new Set(body.channels.map(String).filter((c) => /^[a-z0-9][a-z0-9._-]{0,35}$/.test(c)))].slice(0, 500);
+    const cfg = loadManagerConfig();
+    cfg.deletedChannels[namesNet(url)] = channels;
+    saveManagerConfig(cfg);
+    sendJson(res, 200, { channels });
+});
+
 route('POST', /^\/api\/names\/identities$/, async (req, res, match, url) => {
     const net = namesNet(url);
     const body = await readBody(req);

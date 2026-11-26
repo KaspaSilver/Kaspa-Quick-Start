@@ -94,6 +94,9 @@ export const DEFAULT_MANAGER_CONFIG = {
     // The panel's own update check (Global settings > Update the control panel): every few
     // hours, and a banner when one is out. Nothing else is checked on its own.
     panelUpdates: { autoCheck: true },
+    // Public chat rooms deleted from the Channels cards, per network. The indexer still has their
+    // stored messages and may list them as defaults, so this is what keeps their cards gone.
+    deletedChannels: { mainnet: [], testnet: [] },
 };
 
 // ------------------------------------------------------------------- io ----

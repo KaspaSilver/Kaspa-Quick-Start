@@ -5462,7 +5462,7 @@ async function loadKachatKaposts({ fromStart = false } = {}) {
  * full list with the switch off stores nothing either, and that is not the same
  * as an empty list.
  */
-let channelState = { tracked: [], defaults: [], configured: false };
+let channelState = { tracked: [], defaults: [], deleted: [], configured: false };
 
 const CHANNEL_RE = /^[a-z0-9][a-z0-9._-]{0,35}$/;
 
@@ -5473,10 +5473,6 @@ const GAME_CHANNELS = {
     'chess-bots': 'games against the bots',
     'kplay-arcade': 'every Arcade game',
 };
-
-// Rooms the indexer still ships in its default list that are no longer defaults here, so their
-// cards can be removed and the panel never suggests tracking them again.
-const RETIRED_CHANNELS = new Set(['kachat-bugs']);
 
 /**
  * Reads the channel counts and the tracked list into channelState, for Public chats and for
@@ -5507,8 +5503,7 @@ async function loadChannelState() {
         // An indexer with its own Arcade switch follows the game rooms by that switch alone,
         // whatever this list says; an older one follows them only while they are on it.
         channelState.kaplaySwitch = 'feature_kaplay' in settings;
-        const shipped = settings.available_broadcast_channels || [];
-        channelState.defaults = shipped.filter((c) => !RETIRED_CHANNELS.has(c));
+        channelState.defaults = settings.available_broadcast_channels || [];
         // "" and absent both arrive as an empty string, so the flag distinguishes
         // "not configured" from "configured to nothing" the way the indexer does.
         channelState.configured = typeof settings.broadcast_channels === 'string' && settings.broadcast_channels.length > 0;
@@ -5517,10 +5512,19 @@ async function loadChannelState() {
         if (!channelState.dirty) {
             channelState.tracked = channelState.configured
                 ? settings.broadcast_channels.split(/\s+/).filter(Boolean)
-                : [...shipped]; // with no saved list the indexer tracks all it ships, retired rooms too
+                : [...channelState.defaults];
         }
     } catch {
         return false;
+    }
+    // Rooms deleted from the cards are kept by the panel, not the indexer. Unreadable, nothing is
+    // hidden, which only shows a deleted room again.
+    if (!channelState.dirty) {
+        try {
+            channelState.deleted = (await api(`/api/kachat/deleted-channels?net=${networkView}`)).channels ?? [];
+        } catch {
+            /* keeps the last list read */
+        }
     }
     channelState.counts = counts;
     channelState.total = total;
@@ -5569,18 +5573,17 @@ function renderChannels(counts, total) {
     //   stored    a channel with rows that is no longer tracked. The count is
     //             real and feeds the total, so dropping it would make the total
     //             look wrong.
-    //   offered   a channel the indexer ships as a default. Without these, one
-    //             added upstream after somebody saved their own list is
-    //             invisible here -- not tracked and no rows, so nothing to
-    //             render -- and the only way to find it is to already know the
-    //             name and type it in.
+    //   offered   a channel the indexer ships as a default, shown switched off
+    //             so it can be turned on without knowing its name.
+    // Any of them can be deleted, which takes it off the list and hides its card. Its stored
+    // messages stay (the total still counts them) and can be cleared from the Delete tab.
     // Whatever the Public chats cards show, the Game rooms on the Arcade tab follow the same list.
     renderKaplayRooms();
 
     const names = [
         ...new Set([...channelState.tracked, ...Object.keys(counts), ...channelState.defaults]),
     ]
-        .filter((c) => !GAME_CHANNELS[c])
+        .filter((c) => !GAME_CHANNELS[c] && (channelState.tracked.includes(c) || !channelState.deleted.includes(c)))
         .sort();
     // The indexer's total counts the game rooms too; their messages are moves, so they come off.
     const chatTotal = Math.max(0, total - Object.keys(GAME_CHANNELS).reduce((sum, c) => sum + (counts[c] || 0), 0));
@@ -5592,10 +5595,6 @@ function renderChannels(counts, total) {
 
     const card = (name) => {
         const on = channelState.tracked.includes(name);
-        // Only a channel the indexer does not ship with can be removed outright;
-        // the ones it ships are switched off instead, so the list it came with
-        // stays recoverable. How many that is, is upstream's to decide.
-        const removable = !channelState.defaults.includes(name);
         return `<div class="channel-card${on ? '' : ' off'}${on ? '' : ' untracked'}">
           <div class="head">
             <span class="name" title="#${escapeHtml(name)}">#${escapeHtml(name)}</span>
@@ -5603,7 +5602,7 @@ function renderChannels(counts, total) {
           </div>
           <div class="foot">
             <div class="count">${fmtNum(counts[name] || 0)}</div>
-            ${removable ? `<button type="button" class="drop" data-drop-channel="${escapeHtml(name)}" title="Remove from the list" aria-label="Remove #${escapeHtml(name)} from the list">${TRASH_SVG}</button>` : ''}
+            <button type="button" class="drop" data-drop-channel="${escapeHtml(name)}" title="Delete" aria-label="Delete #${escapeHtml(name)}">${TRASH_SVG}</button>
           </div>
         </div>`;
     };
@@ -5625,33 +5624,7 @@ function renderChannels(counts, total) {
             'afterend',
             '<p class="verdict bad" id="kachat-channels-none">Nothing is tracked, so no public chats are being stored at all.</p>',
         );
-        return;
     }
-
-    // A saved list is a decision and is never overridden, so a channel the
-    // indexer has started shipping since it was saved is pointed at rather than
-    // added. Only for a list somebody actually saved: an indexer with no list
-    // configured follows its own defaults and has nothing to miss.
-    const missing = channelState.configured
-        ? channelState.defaults.filter((c) => !channelState.tracked.includes(c) && !GAME_CHANNELS[c])
-        : [];
-    if (!missing.length) return;
-
-    $('kachat-channels').insertAdjacentHTML(
-        'afterend',
-        `<p class="verdict" id="kachat-channels-none">
-           The indexer now ships ${missing.length === 1 ? 'a channel' : `${missing.length} channels`} your saved
-           list does not track: ${missing.map((c) => `#${escapeHtml(c)}`).join(', ')}.
-           <button type="button" class="ghost" id="kachat-channels-adopt">Track ${missing.length === 1 ? 'it' : 'them'}</button>
-         </p>`,
-    );
-    $('kachat-channels-adopt').addEventListener('click', () => {
-        channelState.tracked = [...channelState.tracked, ...missing];
-        setChannelsDirty(true);
-        renderChannels(channelState.counts, channelState.total);
-        renderChannelSelects();
-        toast('Added. Save and apply to start collecting them.');
-    });
 }
 
 /**
@@ -5720,6 +5693,7 @@ function setChannelsDirty(dirty) {
 async function saveChannels() {
     try {
         await kachat('settings', { method: 'POST', body: { broadcast_channels: channelState.tracked.join('\n') } });
+        await api(`/api/kachat/deleted-channels?net=${networkView}`, { method: 'POST', body: { channels: channelState.deleted } });
         channelState.configured = true;
         setChannelsDirty(false);
         toast(
@@ -5756,6 +5730,7 @@ $('kachat-channels').addEventListener('click', (event) => {
     const channel = event.target.closest('[data-drop-channel]')?.dataset.dropChannel;
     if (!channel) return;
     channelState.tracked = channelState.tracked.filter((c) => c !== channel);
+    channelState.deleted = [...new Set([...channelState.deleted, channel])];
     setChannelsDirty(true);
     renderChannels(channelState.counts, channelState.total);
 });
@@ -5773,6 +5748,7 @@ $('kachat-channel-add').addEventListener('click', () => {
     if (channelState.tracked.includes(name)) return toast(`#${name} is already on the list.`);
 
     channelState.tracked = [...channelState.tracked, name];
+    channelState.deleted = channelState.deleted.filter((c) => c !== name);
     box.value = '';
     setChannelsDirty(true);
     renderChannels(channelState.counts, channelState.total);
