@@ -5474,6 +5474,10 @@ const GAME_CHANNELS = {
     'kplay-arcade': 'every Arcade game',
 };
 
+// Rooms the indexer still ships in its default list that are no longer defaults here, so their
+// cards can be removed and the panel never suggests tracking them again.
+const RETIRED_CHANNELS = new Set(['kachat-bugs']);
+
 /**
  * Reads the channel counts and the tracked list into channelState, for Public chats and for
  * Arcade's Game rooms. False when the indexer did not answer.
@@ -5503,7 +5507,8 @@ async function loadChannelState() {
         // An indexer with its own Arcade switch follows the game rooms by that switch alone,
         // whatever this list says; an older one follows them only while they are on it.
         channelState.kaplaySwitch = 'feature_kaplay' in settings;
-        channelState.defaults = settings.available_broadcast_channels || [];
+        const shipped = settings.available_broadcast_channels || [];
+        channelState.defaults = shipped.filter((c) => !RETIRED_CHANNELS.has(c));
         // "" and absent both arrive as an empty string, so the flag distinguishes
         // "not configured" from "configured to nothing" the way the indexer does.
         channelState.configured = typeof settings.broadcast_channels === 'string' && settings.broadcast_channels.length > 0;
@@ -5512,7 +5517,7 @@ async function loadChannelState() {
         if (!channelState.dirty) {
             channelState.tracked = channelState.configured
                 ? settings.broadcast_channels.split(/\s+/).filter(Boolean)
-                : [...channelState.defaults];
+                : [...shipped]; // with no saved list the indexer tracks all it ships, retired rooms too
         }
     } catch {
         return false;
