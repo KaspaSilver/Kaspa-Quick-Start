@@ -1758,8 +1758,8 @@
         </article>
 
         <!--
-          A 24-hour block: nothing the address sends is stored while it runs, and starting one
-          deletes what it posted publicly in the last 24 hours. The indexer's /api/timeouts;
+          A 24-hour block on public posts only (its private chats are still indexed), and
+          starting one deletes what it posted publicly in the last 24 hours. The indexer's /api/timeouts;
           an older build answers 404 and the cards say so.
         -->
         <article class="card span2 danger-zone">
@@ -1768,11 +1768,11 @@
             <span id="kachat-to-tag" class="tag">–</span>
           </div>
           <p class="muted">
-            For 24 hours nothing this address sends is indexed, chats included, as if it were
-            blocked; what it sends in that time is never stored, even afterwards. Starting the
-            timeout deletes what it posted publicly in the last 24 hours: KaPosts, room
-            messages, game scores and profile records. Its private chats stay. Timing out an
-            address that is already timed out starts its 24 hours again.
+            Blocks this address's public posts for 24 hours and deletes the last 24 hours of
+            its public posts: KaPosts, room messages, game scores and profile records. Public
+            posts it sends during the timeout are never stored, even afterwards. Its direct
+            chats, group chats and payments are not limited. Timing out an address that is
+            already timed out starts its 24 hours again.
           </p>
           <div class="row block-add">
             <label class="stack">Address
@@ -1800,7 +1800,7 @@
           </div>
           <p class="hint">
             A timeout leaves the list by itself when its 24 hours are up. Ending one early only
-            lets the address back in; what was deleted does not come back.
+            lets its public posts back in; what was deleted does not come back.
           </p>
         </article>
       </div>

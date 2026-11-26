@@ -6246,7 +6246,7 @@ $('kachat-block-rows').addEventListener('click', async (event) => {
 
 $('kachat-block-refresh').addEventListener('click', () => loadKachatBlocklist());
 
-// ---- Timeouts: a 24-hour block that also deletes the last 24 hours of public posts ----
+// ---- Timeouts: a 24-hour block on public posts that also deletes the last 24 hours of them ----
 
 const TIMEOUT_OLD_BUILD = 'This indexer build cannot time out addresses yet. Update the indexer under Updates once a build with timeouts is out.';
 
@@ -6305,7 +6305,7 @@ $('kachat-to-add').addEventListener('click', async () => {
         error.hidden = false;
         return;
     }
-    if (!await askConfirm(`Time out ${address} for 24 hours?\n\nWhat it posted publicly in the last 24 hours is deleted now (KaPosts, room messages, game scores, profile records), and nothing it sends is indexed until the timeout ends. Deleted posts do not come back.`)) return;
+    if (!await askConfirm(`Time out ${address} for 24 hours?\n\nThis blocks its public posts for 24 hours and deletes the last 24 hours of its public posts now (KaPosts, room messages, game scores, profile records). Its private chats are not limited. Deleted posts do not come back.`)) return;
     const button = $('kachat-to-add');
     button.disabled = true;
     try {
@@ -6332,7 +6332,7 @@ $('kachat-to-rows').addEventListener('click', async (event) => {
     const button = event.target.closest('[data-timeout-end]');
     if (!button) return;
     const address = button.dataset.timeoutEnd;
-    if (!await askConfirm(`End the timeout for ${address} now?\n\nWhat it sends is indexed again from now on. What was deleted when the timeout started does not come back.`)) return;
+    if (!await askConfirm(`End the timeout for ${address} now?\n\nIts public posts are indexed again from now on. What was deleted when the timeout started does not come back.`)) return;
     button.disabled = true;
     try {
         const r = await kachat('timeouts/remove', { method: 'POST', body: { address } });
