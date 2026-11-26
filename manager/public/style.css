@@ -2217,11 +2217,16 @@ ul.plain li { margin: 8px 0; color: var(--muted); font-size: 13.5px; }
    to compare a set somebody is choosing as a whole. */
 .lang-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
-    gap: 2px 14px;
+    grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+    gap: 6px 18px;
     margin: 12px 0;
 }
 .lang-grid .check { margin: 0; }
+/* Engine and Languages are full width: three stats in a row, the languages in as many columns as fit. */
+.grid.stats.translate-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 700px) {
+    .grid.stats.translate-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 
 /* The bottom of the action overlay: a bar while it runs, a way out when it is
    done. The two never show at once -- the absence of the button is what says
