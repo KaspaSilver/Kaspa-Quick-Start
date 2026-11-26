@@ -862,7 +862,7 @@ function refreshKaspadForView() {
     $('kachat-update-status').className = 'update-status';
     $('kachat-update-status').textContent = 'Not checked yet.';
     // The Indexer and Mining tabs read the viewed network's containers. An unsaved channel list
-    // and a KaPost page belong to the other network's indexer.
+    // and a Posts page belong to the other network's indexer.
     channelState.dirty = false;
     kapostsPage = { page: 1, total: 0 };
     bcastPage = { page: 1, total: 0 };
@@ -926,7 +926,7 @@ function selectSubtab(section, name) {
     // The ROI calculator seeds itself from the connected miners on open.
     if (name === 'mining-roi') loadRoi().catch(() => {});
     // A KaChat panel loads when it is opened rather than all of them upfront.
-    // KaPlay is its own read-only view (the chess and arcade boards the indexer replays),
+    // Arcade is its own read-only view (the chess and arcade boards the indexer replays),
     // so it loads its own data rather than the general indexer-panel refresh.
     if (name === 'kachat-kaplay') loadKaplay();
     if (name === 'kachat-profiles') loadProfiles().catch(() => {});
@@ -5139,8 +5139,8 @@ const KACHAT_TX_GROUPS = [
     ['group chats', ['gcomm', 'gctl']],
     ['public chats', ['bcast']],
     ['payments', ['pay']],
-    // Every KaPost op the indexer reads (kasia-indexer FOREIGN_KACHAT_OPS), tips apart (KQS-030).
-    ['KaPost', ['post', 'reply', 'quote', 'unquote', 'vote', 'upvote', 'downvote', 'follow', 'unfollow', 'block', 'unblock', 'edit', 'delete', 'poll', 'pollvote', 'broadcast']],
+    // Every Posts op the indexer reads (kasia-indexer FOREIGN_KACHAT_OPS), tips apart (KQS-030).
+    ['Posts', ['post', 'reply', 'quote', 'unquote', 'vote', 'upvote', 'downvote', 'follow', 'unfollow', 'block', 'unblock', 'edit', 'delete', 'poll', 'pollvote', 'broadcast']],
     ['tips', ['tip']],
     ['.kachat', ['name', 'offer', 'prices']],
     ['profiles', ['profile']],
@@ -5246,7 +5246,7 @@ async function loadKachatOverview() {
             ['public chats, 30 days', fmtNum(s.bcast_total)],
             ['indexed last 5 min', fmtNum(s.ingest_last_5m)],
             ['chat store', kBytes(s.chat_store_bytes ?? 0)],
-            ['KaPost database', kBytes(s.db_size_bytes)],
+            ['Posts database', kBytes(s.db_size_bytes)],
         ]
             .map(([label, v]) => kTile(label, v, 'small'))
             .join('');
@@ -5368,17 +5368,17 @@ let channelState = { tracked: [], defaults: [], configured: false };
 
 const CHANNEL_RE = /^[a-z0-9][a-z0-9._-]{0,35}$/;
 
-// Rooms KaPlay plays over rather than rooms people chat in. Their cards are on the KaPlay tab,
+// Rooms Arcade plays over rather than rooms people chat in. Their cards are on the Arcade tab,
 // not among the public chats. Untracked, the games are never recorded and the boards stay empty.
 const GAME_CHANNELS = {
     'chess-arena': '1v1 games and tournaments',
     'chess-bots': 'games against the bots',
-    'kplay-arcade': 'every KaPlay game',
+    'kplay-arcade': 'every Arcade game',
 };
 
 /**
  * Reads the channel counts and the tracked list into channelState, for Public chats and for
- * KaPlay's Game rooms. False when the indexer did not answer.
+ * Arcade's Game rooms. False when the indexer did not answer.
  */
 async function loadChannelState() {
     let counts = {};
@@ -5402,7 +5402,7 @@ async function loadChannelState() {
             return true;
         }
         channelState.unsupported = false;
-        // An indexer with its own KaPlay switch follows the game rooms by that switch alone,
+        // An indexer with its own Arcade switch follows the game rooms by that switch alone,
         // whatever this list says; an older one follows them only while they are on it.
         channelState.kaplaySwitch = 'feature_kaplay' in settings;
         channelState.defaults = settings.available_broadcast_channels || [];
@@ -5448,7 +5448,7 @@ async function loadKachatBroadcasts() {
     await loadBroadcastRows();
 }
 
-/** KaPlay's poll: only the channel state its Game rooms card needs. */
+/** Arcade's poll: only the channel state its Game rooms card needs. */
 async function loadKaplayRooms() {
     if (!(await loadChannelState())) {
         $('kaplay-rooms').innerHTML = '<p class="muted">The indexer is not answering.</p>';
@@ -5471,7 +5471,7 @@ function renderChannels(counts, total) {
     //             invisible here -- not tracked and no rows, so nothing to
     //             render -- and the only way to find it is to already know the
     //             name and type it in.
-    // Whatever the Public chats cards show, the Game rooms on the KaPlay tab follow the same list.
+    // Whatever the Public chats cards show, the Game rooms on the Arcade tab follow the same list.
     renderKaplayRooms();
 
     const names = [
@@ -5550,7 +5550,7 @@ function renderChannels(counts, total) {
 }
 
 /**
- * KaPlay's game rooms. An indexer with the KaPlay switch follows them by that switch alone, so
+ * Arcade's game rooms. An indexer with the Arcade switch follows them by that switch alone, so
  * their cards only count; an older one follows them by the channel list, so each card has its
  * own switch, saved with that list. #kplay-arcade only shows there once it is on the list: such
  * an indexer never followed it.
@@ -5594,12 +5594,12 @@ function renderKaplayRooms() {
     const gamesOff = bySwitch ? [] : names.filter((c) => c !== 'kplay-arcade' && !channelState.tracked.includes(c));
     off.hidden = !gamesOff.length;
     off.textContent = gamesOff.length
-        ? `${gamesOff.map((c) => `#${c}`).join(' and ')} ${gamesOff.length === 1 ? 'is' : 'are'} off, so KaPlay's ` +
+        ? `${gamesOff.map((c) => `#${c}`).join(' and ')} ${gamesOff.length === 1 ? 'is' : 'are'} off, so Arcade's ` +
           `${gamesOff.map((c) => GAME_CHANNELS[c]).join(' and ')} are not being recorded and those boards stay empty.`
         : '';
     saveRow.hidden = bySwitch;
     note.textContent = bySwitch
-        ? 'These rooms follow the Index KaPlay switch at the top of this tab.'
+        ? 'These rooms follow the Index Arcade switch at the top of this tab.'
         : 'This indexer follows the game rooms by its channel list, so Save and apply sends the whole list, Public chats included.';
     note.hidden = false;
 }
@@ -5664,7 +5664,7 @@ $('kachat-channel-add').addEventListener('click', () => {
     if (!CHANNEL_RE.test(name)) {
         return toast('Lowercase letters, digits, dots, dashes and underscores, up to 36 characters.', 'bad');
     }
-    if (GAME_CHANNELS[name]) return toast(`#${name} is a KaPlay game room. It is on the KaPlay tab.`);
+    if (GAME_CHANNELS[name]) return toast(`#${name} is an Arcade game room. It is on the Arcade tab.`);
     if (channelState.tracked.includes(name)) return toast(`#${name} is already on the list.`);
 
     channelState.tracked = [...channelState.tracked, name];
@@ -5680,7 +5680,7 @@ $('kachat-channel-new').addEventListener('keydown', (event) => {
 
 /**
  * The two room pickers: every room that is tracked or still has messages stored, so a room
- * switched off (or a KaPlay game room) can still be read and cleared.
+ * switched off (or an Arcade game room) can still be read and cleared.
  */
 function renderChannelSelects() {
     const counts = channelState.counts || {};
@@ -5699,7 +5699,7 @@ function renderChannelSelects() {
     if ([...purge.options].some((o) => o.value === picked)) purge.value = picked;
 }
 
-// The public chat history pages 50 at a time, the way KaPost's "Recently indexed" does: the
+// The public chat history pages 50 at a time, the way the Posts tab's "Recently indexed" does: the
 // admin API answers {total, items} for an offset. An indexer from before that answers a bare
 // array of its newest rows, which is shown as the one page it is.
 const BCAST_PAGE = 50;
@@ -5857,8 +5857,8 @@ const FEATURE_MISSING =
     'This indexer build cannot switch this on or off yet. Update the indexer under Updates once a build with it is out.';
 
 /**
- * The "index this" switches, one card at the top of each tab they govern: KaPost,
- * Public chats, Chats, KaPlay, Profiles. Each names its settings key in data-feature.
+ * The "index this" switches, one card at the top of each tab they govern: Posts,
+ * Public chats, Chats, Arcade, Profiles. Each names its settings key in data-feature.
  * A key the indexer does not report is one its build does not have, so that switch is
  * greyed out and says so rather than pretending to work. Switched-off kinds are marked
  * on Overview's Browse tiles too.
@@ -5990,7 +5990,7 @@ function refreshKachatPanel() {
 // ------------------------------------------------------------- translation ---
 
 /**
- * Server-side translation of KaPost posts.
+ * Server-side translation of posts.
  *
  * The apps send a post and a target language to the indexer they are already
  * pointed at, and get it back translated; the work is done here by a
@@ -6148,7 +6148,7 @@ const blockAddressOk = (a) =>
 
 // The indexer's names for what it deleted, as this panel words them elsewhere.
 const BLOCK_KINDS = {
-    kaposts: 'KaPost',
+    kaposts: 'Posts',
     public_chats: 'public chats',
     chats: 'direct chats',
     groups: 'group chats',
@@ -6305,7 +6305,7 @@ $('kachat-to-add').addEventListener('click', async () => {
         error.hidden = false;
         return;
     }
-    if (!await askConfirm(`Time out ${address} for 24 hours?\n\nThis blocks its public posts for 24 hours and deletes the last 24 hours of its public posts now (KaPosts, room messages, game scores, profile records). Its private chats are not limited. Deleted posts do not come back.`)) return;
+    if (!await askConfirm(`Time out ${address} for 24 hours?\n\nThis blocks its public posts for 24 hours and deletes the last 24 hours of its public posts now (Posts, room messages, game scores, profile records). Its private chats are not limited. Deleted posts do not come back.`)) return;
     const button = $('kachat-to-add');
     button.disabled = true;
     try {
@@ -6345,7 +6345,7 @@ $('kachat-to-rows').addEventListener('click', async (event) => {
 
 $('kachat-to-refresh').addEventListener('click', () => loadTimeouts());
 
-// ---- Word filter: public chats and KaPosts with a listed word are not stored ----
+// ---- Word filter: public chats and posts with a listed word are not stored ----
 
 const WF_OLD_BUILD = 'This indexer build has no word filter yet. Update the indexer under Updates once a build with it is out.';
 let wordFilterWords = [];
@@ -6407,14 +6407,14 @@ async function scanWordFilter() {
         const total = r.total ?? matches.length;
         const parts = [];
         if (r.public_chats) parts.push(`${fmtNum(r.public_chats)} public chat${r.public_chats === 1 ? '' : 's'}`);
-        if (r.kaposts) parts.push(`${fmtNum(r.kaposts)} KaPost${r.kaposts === 1 ? '' : 's'}`);
+        if (r.kaposts) parts.push(`${fmtNum(r.kaposts)} post${r.kaposts === 1 ? '' : 's'}`);
         setWfTag('kachat-wf-scan-tag', total ? `${parts.join(', ')} caught` : 'nothing caught', total ? 'warn' : 'ok');
         $('kachat-wf-scan-result').hidden = !total;
         $('kachat-wf-matches').innerHTML = matches
             .map(
                 (m) => `<tr>
                   <td class="muted" title="${escapeHtml(kTime(m.timestamp))}">${escapeHtml(kAge(Date.now() - m.timestamp))}</td>
-                  <td>${m.kind === 'public_chat' ? `#${escapeHtml(m.channel || '')}` : 'KaPost'}</td>
+                  <td>${m.kind === 'public_chat' ? `#${escapeHtml(m.channel || '')}` : 'Post'}</td>
                   <td><code>${escapeHtml(m.word)}</code></td>
                   <td>${escapeHtml(m.preview) || '<span class="muted">–</span>'}</td>
                 </tr>`,
@@ -6492,7 +6492,7 @@ The indexer deletes them and keeps them out for good. They are still on the Kasp
         const r = await kachat('word-filter/purge', { method: 'POST', body: {} });
         const done = $('kachat-wf-purged');
         done.className = 'verdict ok';
-        done.textContent = `Deleted ${fmtNum(r.public_chats ?? 0)} public chat${r.public_chats === 1 ? '' : 's'} and ${fmtNum(r.kaposts ?? 0)} KaPost${r.kaposts === 1 ? '' : 's'}.`;
+        done.textContent = `Deleted ${fmtNum(r.public_chats ?? 0)} public chat${r.public_chats === 1 ? '' : 's'} and ${fmtNum(r.kaposts ?? 0)} post${r.kaposts === 1 ? '' : 's'}.`;
         done.hidden = false;
         $('kachat-wf-scan-result').hidden = true;
         setWfTag('kachat-wf-scan-tag', 'nothing caught', 'ok');
@@ -6722,7 +6722,7 @@ $('tab-kachat').addEventListener('click', async (event) => {
 
     try {
         if (d.kachatDelContent) {
-            if (!await askConfirm('Delete this KaPost item from the index?\n\nThis removes the indexer\'s stored copy only. It is still on chain, and a re-index would bring it back. This cannot be undone here.')) return;
+            if (!await askConfirm('Delete this post from the index?\n\nThis removes the indexer\'s stored copy only. It is still on chain, and a re-index would bring it back. This cannot be undone here.')) return;
             await kachat('kaposts/delete', { method: 'POST', body: { tx_id: d.kachatDelContent } });
             toast('Deleted.');
             loadKachatKaposts();
@@ -8265,9 +8265,9 @@ $('bot-update').addEventListener('click', async () => {
     });
 });
 
-// ------------------------------------------------------------------- KaPlay ---
+// ------------------------------------------------------------------- Arcade ---
 
-// Read-only views of KaPlay's boards: the chess leaderboard the K-Digital-Freedom-Indexer replays from
+// Read-only views of Arcade's boards: the chess leaderboard the K-Digital-Freedom-Indexer replays from
 // #chess-arena and #chess-bots, and the Snake and 2048 scores from #kplay-arcade.
 const chessShort = (addr) => {
     const s = String(addr ?? '');
@@ -8396,7 +8396,7 @@ function renderChess(data, board) {
         '</tbody></table>';
 }
 
-// One board per KaPlay bot level the indexer has games for, lowest first. The indexer has
+// One board per Arcade bot level the indexer has games for, lowest first. The indexer has
 // already ranked each one (fewest moves, then earliest), so the order is kept as it comes.
 function renderChessBots(data) {
     $('arcade-summary').textContent = 'Fewest of their own moves each player needed to checkmate each bot.';
@@ -8404,7 +8404,7 @@ function renderChessBots(data) {
     const bots = data.bots || [];
     if (!bots.length) {
         box.innerHTML =
-            `<p class="muted">No bot games ${data.period === 'month' ? 'this month' : 'yet'}. KaPlay sends them on ` +
+            `<p class="muted">No bot games ${data.period === 'month' ? 'this month' : 'yet'}. Arcade sends them on ` +
             '#chess-bots, so if none ever show, check that room under Game rooms below.</p>';
         return;
     }
@@ -8578,7 +8578,7 @@ function renderProfiles(data) {
 }
 
 // "Every profile save": the indexer's all-time /profiles/history, 25 a page, with the
-// same windowed numbered pager as KaPost's "Recently indexed".
+// same windowed numbered pager as the Posts tab's "Recently indexed".
 let profilesHistory = { page: 1, total: 0, limit: 25, net: null };
 
 async function loadProfilesHistory(page = 1) {
@@ -8699,7 +8699,7 @@ function renderBackupStatus(s) {
         }, 2500);
     }
 }
-// ---- Recover missed KaPost posts (Indexer, Export / Import): the processor's reindex ----
+// ---- Recover missed posts (Indexer, Export / Import): the processor's reindex ----
 
 /**
  * The processor walks the node's blocks on request and indexes the KaChat transactions it
@@ -8775,7 +8775,7 @@ $('kachat-reindex-retry')?.addEventListener('click', async () => {
 $('kachat-reindex')?.addEventListener('click', async () => {
     if (
         !(await askConfirm(
-            "Reindex KaPost posts from the node's oldest block?\n\n" +
+            "Reindex posts from the node's oldest block?\n\n" +
                 'The processor walks every block the node still holds and indexes the KaChat transactions it finds. ' +
                 'Anything already indexed is skipped, and no notifications go out for old activity. ' +
                 'It takes a while and runs inside the indexer, so you can leave this page.',
@@ -8848,7 +8848,7 @@ $('backup-run')?.addEventListener('click', async () => {
 $('backup-restore')?.addEventListener('click', async () => {
     const p = $('backup-restore-path').value.trim();
     if (!p) return;
-    if (!await askConfirm(`Restore OVERWRITES the current KaPost database and re-imports the chat store from:\n${p}\n\nContinue?`)) return;
+    if (!await askConfirm(`Restore OVERWRITES the current Posts database and re-imports the chat store from:\n${p}\n\nContinue?`)) return;
     const el = $('backup-status'); el.hidden = false; el.textContent = 'Restoring… do not close this page.';
     try {
         await api('/api/kachat/backup/restore', { method: 'POST', body: { path: p } });
@@ -9241,7 +9241,7 @@ async function loadPushStats() {
     for (const k of Object.keys(env).sort()) rows.push([`APNs ${k}`, env[k]]);
     rows.push(['VoIP-capable', d.voip_capable ?? 0]);
     rows.push(['With primary addr', d.with_primary_address ?? 0]);
-    rows.push(['KaPost on', d.kaposts_enabled ?? 0]);
+    rows.push(['Posts on', d.kaposts_enabled ?? 0]);
     dl.innerHTML = rows
         .map(([k, v]) => `<div><dt>${escapeHtml(String(k))}</dt><dd>${escapeHtml(String(v))}</dd></div>`)
         .join('');

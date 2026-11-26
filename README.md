@@ -184,7 +184,7 @@ Nothing outside `manager/` is mounted, so changes to `docker-compose.yml`,
 | `17110` | wRPC Borsh          | serve Rusty/KDX style clients            |
 | `18110` | wRPC JSON           | serve browser / JSON clients (the panel already uses it internally) |
 | `5555`  | stratum             | only if you mine, and only for miners outside this machine |
-| `3080`  | KaPost REST API    | only if K or another client connects from outside this machine |
+| `3080`  | Posts REST API     | only if K or another client connects from outside this machine |
 | `8420`  | control panel       | bound to `127.0.0.1`, so do not forward it. To reach it from outside, publish it under Tunnel & domains |
 
 Nothing here is ever forwarded for a web address. Names on your own domain go
@@ -323,7 +323,7 @@ a courtesy rather than the actual rule. Nextcloud is never gated; it has nothing
 to do with the chain.
 
 **K-Digital-Freedom-Indexer.** Runs the [K-Digital-Freedom-Indexer](https://github.com/KaspaSilver/K-Digital-Freedom-Indexer)
-and gives you the whole thing here: Overview, KaPost, Broadcasts, Chats, Group
+and gives you the whole thing here: Overview, Posts, Broadcasts, Chats, Group
 chats, Export / Import and Settings, built into this panel rather than framed
 from somewhere else. The indexer is the engine and this is the interface to it,
 so moderation, deny lists, channel purges, imports and every indexer setting are
@@ -340,7 +340,7 @@ The first build compiles the indexer from Rust source and takes a while; follow
 it under Logs → K-Digital-Freedom-Indexer.
 
 **Push Service.** Push notifications for K, the all-in-one app (chats, groups,
-Wallet, KaPost, Public Chats rooms, KaPlay and `.kachat` names), sent by the
+Wallet, Posts, Public Chats rooms, Arcade and `.kachat` names), sent by the
 indexer. It takes your own Firebase project and service account for Android and
 your Apple Team ID, Key ID and `.p8` key for iPhone, and sends to K's
 `com.kachat.app` alone. The indexer decides which pushes each phone gets, so
@@ -459,9 +459,9 @@ bind-mounting a RocksDB database into Docker Desktop is painfully slow.
 | `proxy`   | `nginx:1.27-alpine`           | what each public name serves (only when Tunnel & domains is on) |
 | `cloudflared` | `cloudflare/cloudflared`  | the Cloudflare Tunnel: public names with no open port (only when Tunnel & domains is on and connected) |
 | `bridge`  | built from the release binary | stratum server for miners (only when mining is on) |
-| `kachat-app` + `kachat-db` | built from K-Digital-Freedom-Indexer | chat/KaPost indexer and its Postgres (only when KaChat is on) |
+| `kachat-app` + `kachat-db` | built from K-Digital-Freedom-Indexer | chat/posts indexer and its Postgres (only when KaChat is on) |
 | `nextcloud` + db/redis | `nextcloud:stable` + ffmpeg | K Nextcloud: media links and backups for K (only when it is on) |
-| `libretranslate` | `libretranslate/libretranslate` | translates KaPost for the indexer, offline (only when Translation is installed) |
+| `libretranslate` | `libretranslate/libretranslate` | translates posts for the indexer, offline (only when Translation is installed) |
 | `kachat-bot` | built from Kaspa-Block-Notifier | messages your phone when this node finds a block (only when KaChat Bot is installed) |
 
 Nothing here starts anything else. Installing the bridge does not start the

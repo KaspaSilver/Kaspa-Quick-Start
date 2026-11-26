@@ -788,7 +788,7 @@ route('PUT', /^\/api\/config$/, async (req, res) => {
 });
 
 // ---- KaChat automatic backup (Export/Import tab) --------------------------------
-// One combined, importable file per run (KaPost DB + full chat store), written nightly at
+// One combined, importable file per run (Posts DB + full chat store), written nightly at
 // 00:00 server time to an operator-chosen host path via a docker helper (see lib/backup.js).
 route('GET', /^\/api\/kachat\/backup$/, async (req, res) => {
     sendJson(res, 200, backup.status());
@@ -3422,7 +3422,7 @@ route('GET', /^\/api\/chess$/, async (req, res, match, url) => {
     sendJson(res, 200, { installed: true, running: state.running, leaderboard, tournaments, bots, period, error, botsError });
 });
 
-// KaPlay Arcade boards (Snake, 2048): each address's best verified score, from the stamps in the
+// Arcade boards (Snake, 2048): each address's best verified score, from the stamps in the
 // hidden #kplay-arcade room (K-Digital-Freedom-Indexer docs/KPLAY_ARCADE_LEADERBOARD.md §5). Read-only.
 route('GET', /^\/api\/arcade$/, async (req, res, match, url) => {
     const testnet = url.searchParams.get('net') === 'testnet';
@@ -4244,7 +4244,7 @@ async function reconcileNamesRoutes() {
     for (const net of Object.keys(kachatDomains.NETWORKS)) {
         const N = kachatDomains.NETWORKS[net];
         const st = await dockerctl.containerState(N.container).catch(() => null);
-        // The indexer's KaPost pushes name the actor from this server's /identity once it is
+        // The indexer's Posts pushes name the actor from this server's /identity once it is
         // installed with a registry (IDX-029); without one, the lookup is off. Picked up the
         // next time the indexer container is recreated (its Update).
         const identity = st && kachatDomains.manifestSet(net) ? `http://${N.host}:3080` : '';
@@ -4314,7 +4314,7 @@ route('GET', /^\/api\/kachat-domains$/, async (req, res, match, url) => {
 /**
  * What the names server depends on, out of K-Digital-Freedom-Indexer. Its image compiles the
  * whole kachat-webserver, but runs it names-only (/names, /market, /offers, /profiles,
- * /identity); the rest of that crate is the chat/KaPost indexer's, which gets commits nearly
+ * /identity); the rest of that crate is the chat/posts indexer's, which gets commits nearly
  * every day, and counting those (and every Cargo.lock bump) made .kachat Domains report an
  * update after almost every indexer commit. So: the names code, its two crates and its image.
  *

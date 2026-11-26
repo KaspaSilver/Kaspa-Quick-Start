@@ -19,8 +19,8 @@ const MAX_LINES = 5000;
 export const WINDOWS = { '1h': 3600, '6h': 6 * 3600, '24h': 24 * 3600 };
 
 /**
- * The KaPost processor's push-related lines the push service's own filter (/push/i) does not
- * already carry: KaPost and "quiet" (old transaction, no push) lines without the word push.
+ * The Posts processor's push-related lines the push service's own filter (/push/i) does not
+ * already carry: Posts and "quiet" (old transaction, no push) lines without the word push.
  */
 const KAPOSTS_PUSH = { test: (l) => /kaposts|quiet/i.test(l) && !/push/i.test(l) };
 
@@ -33,9 +33,9 @@ export const PRESETS = {
         label: 'Push & notifications',
         sections: [
             ['kachat-push', null, null],
-            ['kachat', KAPOSTS_PUSH, 'KaPost processor push lines'],
+            ['kachat', KAPOSTS_PUSH, 'Posts processor push lines'],
             ['kachat-push-testnet', null, null],
-            ['kachat-testnet', KAPOSTS_PUSH, 'KaPost processor push lines (testnet)'],
+            ['kachat-testnet', KAPOSTS_PUSH, 'Posts processor push lines (testnet)'],
         ],
     },
     indexer: { label: 'K-Digital-Freedom-Indexer', sections: [['kachat', null, null], ['kachat-testnet', null, null]] },

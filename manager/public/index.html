@@ -1115,7 +1115,7 @@
           <h2 class="hero-title">K-Digital-Freedom-Indexer <span id="kachat-state" class="tag">off</span></h2>
           <p class="hero-desc">
             Turns this node's chain data into the APIs K talks to: direct and group chats,
-            public chats, KaPost and mentions. It reads the node you already run, so nothing
+            public chats, Posts and mentions. It reads the node you already run, so nothing
             syncs twice.
           </p>
           <div class="hero-chips">
@@ -1135,10 +1135,10 @@
       <nav class="subnav" aria-label="K-Digital-Freedom-Indexer">
         <div class="subnav-group">
         <button class="subtab-btn active" data-subtab="kachat-overview">Overview</button>
-        <button class="subtab-btn" data-subtab="kachat-kaposts">KaPost</button>
+        <button class="subtab-btn" data-subtab="kachat-kaposts">Posts</button>
         <button class="subtab-btn" data-subtab="kachat-broadcasts">Public chats</button>
         <button class="subtab-btn" data-subtab="kachat-chats">Chats</button>
-        <button class="subtab-btn" data-subtab="kachat-kaplay">KaPlay</button>
+        <button class="subtab-btn" data-subtab="kachat-kaplay">Arcade</button>
         <button class="subtab-btn" data-subtab="kachat-profiles">Profiles</button>
         </div>
         <div class="subnav-group manage">
@@ -1158,7 +1158,7 @@
       <div id="sub-kachat-overview" class="subtab active">
         <section>
           <h3 class="row-title">Last 24 hours</h3>
-          <!-- Every KaChat transaction of the last 24 hours: private chats, KaPost and public chats. -->
+          <!-- Every KaChat transaction of the last 24 hours: private chats, Posts and public chats. -->
           <div class="tiles">
             <div class="stat stat-feature">
               <span id="kachat-day">–</span><small>KaChat transactions</small>
@@ -1175,10 +1175,10 @@
         <section>
           <h3 class="row-title">Browse</h3>
           <div class="jump-tiles" id="kachat-jump">
-            <button type="button" class="jump" data-goto="kachat-kaposts" data-feature="feature_kaposts"><b>KaPost</b><span id="kachat-jump-kaposts">–</span><small>posts</small></button>
+            <button type="button" class="jump" data-goto="kachat-kaposts" data-feature="feature_kaposts"><b>Posts</b><span id="kachat-jump-kaposts">–</span><small>posts</small></button>
             <button type="button" class="jump" data-goto="kachat-broadcasts" data-feature="feature_broadcasts"><b>Public chats</b><span id="kachat-jump-bcast">–</span><small>in 30 days</small></button>
             <button type="button" class="jump" data-goto="kachat-chats" data-feature="chat_indexer"><b>Chats</b><span id="kachat-jump-chats">–</span><small id="kachat-jump-chats-sub">direct and group messages</small></button>
-            <button type="button" class="jump" data-goto="kachat-kaplay" data-feature="feature_kaplay"><b>KaPlay</b><span>Boards</span><small>chess, Snake, 2048</small></button>
+            <button type="button" class="jump" data-goto="kachat-kaplay" data-feature="feature_kaplay"><b>Arcade</b><span>Boards</span><small>chess, Snake, 2048</small></button>
             <button type="button" class="jump" data-goto="kachat-profiles" data-feature="feature_profiles"><b>Profiles</b><span>Stats</span><small>avatars, bios, links</small></button>
           </div>
         </section>
@@ -1207,10 +1207,10 @@
         <article class="card feature-card">
           <div class="toggle-row">
             <div class="toggle-text">
-              <strong>Index KaPost</strong>
+              <strong>Index Posts</strong>
               <span class="muted">Posts, replies, quotes, reposts, votes, follows and tips. Off stops new ones being stored; what is here stays until you delete it.</span>
             </div>
-            <label class="switch"><input type="checkbox" id="kachat-tg-kaposts" data-feature="feature_kaposts" data-label="KaPost"><span class="track"></span></label>
+            <label class="switch"><input type="checkbox" id="kachat-tg-kaposts" data-feature="feature_kaposts" data-label="Posts"><span class="track"></span></label>
           </div>
           <p class="hint feature-note" hidden></p>
         </article>
@@ -1288,7 +1288,7 @@
           </p>
           <p class="hint">
             Newest first, 50 a page, from every room with messages stored, including ones no longer
-            indexed and KaPlay's game rooms. Only the channels switched on above are indexed, and
+            indexed and Arcade's game rooms. Only the channels switched on above are indexed, and
             the preview shows the first 200 characters.
           </p>
         </article>
@@ -1380,7 +1380,7 @@
       </div>
 
       <!--
-        KaPlay, the games in K, as one Arcade card. Chess: the 1v1 and tournament boards the
+        Arcade, the games in K, as one card. Chess: the 1v1 and tournament boards the
         indexer replays, and the bot boards from #chess-bots. Snake and 2048: each player's best
         verified score, from the stamps K sends to the hidden #kplay-arcade room. Read-only: the
         indexer's chess leaderboard and GET /arcade/leaderboard. Below it, the game rooms.
@@ -1389,10 +1389,10 @@
         <article class="card feature-card">
           <div class="toggle-row">
             <div class="toggle-text">
-              <strong>Index KaPlay</strong>
+              <strong>Index Arcade</strong>
               <span class="muted">Chess 1v1 and tournaments, games against the bots, and the Snake and 2048 scores. Off stops new games being stored; the boards keep what they have.</span>
             </div>
-            <label class="switch"><input type="checkbox" id="kachat-tg-kaplay" data-feature="feature_kaplay" data-label="KaPlay"><span class="track"></span></label>
+            <label class="switch"><input type="checkbox" id="kachat-tg-kaplay" data-feature="feature_kaplay" data-label="Arcade"><span class="track"></span></label>
           </div>
           <p class="hint feature-note" hidden></p>
         </article>
@@ -1421,7 +1421,7 @@
         </article>
 
         <!--
-          The public rooms K plays over, moved here from Public chats. An indexer with the KaPlay
+          The public rooms K plays over, moved here from Public chats. An indexer with the Arcade
           switch follows them by that switch; an older one by the channel list, so there each
           card has its own switch, saved with that list.
         -->
@@ -1535,7 +1535,7 @@
           <h3>Automatic backup</h3>
           <p class="muted">
             Every night at 12&nbsp;AM (server time) this writes <strong>one</strong> combined,
-            restorable <code>.tar.gz</code> (the KaPost database <em>and</em> the full chat store,
+            restorable <code>.tar.gz</code> (the Posts database <em>and</em> the full chat store,
             1:1 chats, groups, handshakes, push registrations) to a folder on this machine, e.g.
             an external drive. Restore brings back everything from a single file.
           </p>
@@ -1564,12 +1564,12 @@
           <div id="backup-status" class="verdict" hidden></div>
         </article>
 
-        <!-- The KaPost processor's reindex (K-Digital-Freedom-Indexer reindex.rs): for the time it was
+        <!-- The Posts processor's reindex (K-Digital-Freedom-Indexer reindex.rs): for the time it was
              down, nothing it missed comes back by itself. -->
         <article class="card span2">
-          <h3>Recover missed KaPost posts</h3>
+          <h3>Recover missed posts</h3>
           <p class="muted">
-            If the KaPost processor was down (a red Processor tile on the Overview), the posts,
+            If the Posts processor was down (a red Processor tile on the Overview), the posts,
             replies, votes, follows, profile updates and tips from that time were never indexed.
             This walks every block the node still holds, oldest first, and indexes the KaChat
             transactions in them. Anything already indexed is skipped, so it is safe to run any
@@ -1636,7 +1636,7 @@
               <div class="toggle-text">
                 <strong>Post translation</strong>
                 <span class="muted">
-                  K asks this indexer to translate a KaPost into the
+                  K asks this indexer to translate a post into the
                   reader's language, and it is answered here, by a translation
                   engine running on this machine. Nothing is sent to Google or
                   DeepL and there is no API key: the engine is
@@ -1694,11 +1694,11 @@
               Nothing, beyond this. Translation is served from the indexer's own
               address -- the same one already set in the app under Settings,
               Connection Settings, KaPost Indexer -- so there is no second domain
-              to publish and no new setting for anybody to fill in. If the KaPost
+              to publish and no new setting for anybody to fill in. If the Posts
               API is reachable, so is translation.
             </p>
             <dl class="kv">
-              <div><dt>Endpoint</dt><dd><code>POST /translate</code> on the KaPost API</dd></div>
+              <div><dt>Endpoint</dt><dd><code>POST /translate</code> on the Posts API</dd></div>
               <div><dt>Languages offered</dt><dd><code>GET /translate/languages</code></dd></div>
               <div><dt>Identity</dt><dd>None. It is the one endpoint that takes no pubkey, and post text is never logged.</dd></div>
               <div><dt>Cache</dt><dd>Keyed on the post's transaction id and target language, kept permanently.</dd></div>
@@ -1721,7 +1721,7 @@
             <span id="kachat-block-tag" class="tag">–</span>
           </div>
           <p class="muted">
-            Nothing this address sends is indexed from now on: KaPost, public chats, direct and
+            Nothing this address sends is indexed from now on: Posts, public chats, direct and
             group chats, payments it sends, its profile, and its chess and arcade games. Whatever
             the indexer already has from it is deleted when you add it. It all stays on chain;
             this only decides what this indexer keeps and serves.
@@ -1752,8 +1752,8 @@
           </div>
           <p class="hint">
             Unblocking only lifts the block. What was deleted when the address was added does
-            not come back by itself; KaPost posts can be recovered under Export / Import, Recover
-            missed KaPost posts.
+            not come back by itself; posts can be recovered under Export / Import, Recover
+            missed posts.
           </p>
         </article>
 
@@ -1769,7 +1769,7 @@
           </div>
           <p class="muted">
             Blocks this address's public posts for 24 hours and deletes the last 24 hours of
-            its public posts: KaPosts, room messages, game scores and profile records. Public
+            its public posts: Posts, room messages, game scores and profile records. Public
             posts it sends during the timeout are never stored, even afterwards. Its direct
             chats, group chats and payments are not limited. Timing out an address that is
             already timed out starts its 24 hours again.
@@ -1806,7 +1806,7 @@
       </div>
 
       <!--
-        Word filter: public chats and KaPosts containing a listed word are not stored. The list
+        Word filter: public chats and posts containing a listed word are not stored. The list
         and the switch live in the indexer (kachat-admin /api/word-filter, feature_word_filter);
         adding a word leaves stored messages alone, so a preview of what the list now catches
         follows every change, and deleting those is a separate step.
@@ -1816,7 +1816,7 @@
           <div class="toggle-row">
             <div class="toggle-text">
               <strong>Filter words</strong>
-              <span class="muted">Public chats and KaPosts that contain a word on the list are not stored, so no app reading this indexer shows them. Off stops checking new messages; the list is kept.</span>
+              <span class="muted">Public chats and posts that contain a word on the list are not stored, so no app reading this indexer shows them. Off stops checking new messages; the list is kept.</span>
             </div>
             <label class="switch"><input type="checkbox" id="kachat-tg-wordfilter" data-feature="feature_word_filter" data-label="Word filter" data-on-text="Word filter on." data-off-text="Word filter off: new messages are not checked."><span class="track"></span></label>
           </div>
@@ -1839,7 +1839,7 @@
             Whole words only, so <code>ass</code> does not catch "class". A <code>*</code> at the
             end catches any ending: <code>scam*</code> catches scams and scammer. Several words
             catch that exact phrase. Capitals, accents, stretched letters ("sooo") and swaps like
-            0 for o are matched too. Direct and group chats, profiles, .kachat names and KaPlay's
+            0 for o are matched too. Direct and group chats, profiles, .kachat names and Arcade's
             game rooms are not checked.
           </p>
         </article>
@@ -1885,13 +1885,13 @@
 
       <div id="sub-kachat-delete" class="subtab">
         <article class="card span2 danger-zone">
-          <h3>Delete KaPost data</h3>
+          <h3>Delete Posts data</h3>
           <p class="muted">
             This removes the indexer's stored copy only. The post is still on
             chain, and a re-index would bring it back. It happens immediately
             and cannot be undone from here.
           </p>
-          <label class="stack">Delete a KaPost item by transaction id
+          <label class="stack">Delete a post by transaction id
             <span class="row">
               <input id="kachat-del-content" placeholder="content transaction id (hex)" size="40">
               <button type="button" id="kachat-del-content-btn" class="danger">Delete item</button>
@@ -1955,7 +1955,7 @@
               routes. To reach chat from outside, use Tunnel &amp; domains, which
               forwards only the public routes.
             </p>
-            <label class="check"><input type="checkbox" id="kachat-pub-api"> KaPost REST API on 3080</label>
+            <label class="check"><input type="checkbox" id="kachat-pub-api"> Posts REST API on 3080</label>
             <div class="row">
               <button type="button" id="kachat-save" class="primary">Apply settings</button>
             </div>
@@ -2607,7 +2607,7 @@
             </div>
             <span id="push-state" class="tag off">not set</span>
           </div>
-          <p class="hint">K gets every notification from here: chats and groups, KaPost likes and replies,
+          <p class="hint">K gets every notification from here: chats and groups, post likes and replies,
           Public Chats rooms, KAS received and <code>.kachat</code> names. The K-Digital-Freedom-Indexer decides what each
           phone gets, so there is nothing to choose per app.</p>
           <p class="hint">Turn the Push Service on or off with its switch in the sidebar. Off keeps these settings but sends no notifications; the indexer keeps running either way. Flipping it restarts the indexer (about two minutes) if it is on.</p>
@@ -2689,7 +2689,7 @@
 
       <div id="sub-push-log" class="subtab">
       <div class="grid">
-        <!-- The indexer's push lines only (both the chat indexer and KaPost sends). -->
+        <!-- The indexer's push lines only (both the chat indexer and Posts sends). -->
         <div class="svclog span2" data-svclog="push" data-title="push service log"></div>
       </div>
       </div>
